@@ -308,8 +308,18 @@ describe('computeValue', () => {
   it('taxa_resposta ignora o que ainda está na fila', () => {
     const d = data({
       sends: [
-        { status: 'enviada', scheduled_at: '2026-09-02T12:00:00.000Z', sent_at: '2026-09-02T12:00:00.000Z', replied_at: null },
-        { status: 'respondida', scheduled_at: '2026-09-03T12:00:00.000Z', sent_at: '2026-09-03T12:00:00.000Z', replied_at: null },
+        {
+          status: 'enviada',
+          scheduled_at: '2026-09-02T12:00:00.000Z',
+          sent_at: '2026-09-02T12:00:00.000Z',
+          replied_at: null,
+        },
+        {
+          status: 'respondida',
+          scheduled_at: '2026-09-03T12:00:00.000Z',
+          sent_at: '2026-09-03T12:00:00.000Z',
+          replied_at: null,
+        },
         { status: 'fila', scheduled_at: '2026-09-04T12:00:00.000Z', sent_at: null, replied_at: null },
       ],
     });
@@ -319,7 +329,12 @@ describe('computeValue', () => {
   it('taxa_resposta conta quem tem replied_at mesmo sem o status', () => {
     const d = data({
       sends: [
-        { status: 'enviada', scheduled_at: '2026-09-02T12:00:00.000Z', sent_at: '2026-09-02T12:00:00.000Z', replied_at: '2026-09-03T12:00:00.000Z' },
+        {
+          status: 'enviada',
+          scheduled_at: '2026-09-02T12:00:00.000Z',
+          sent_at: '2026-09-02T12:00:00.000Z',
+          replied_at: '2026-09-03T12:00:00.000Z',
+        },
       ],
     });
     expect(computeValue('taxa_resposta', d, null, MES)).toBe(100);
@@ -542,8 +557,18 @@ describe('whatChanged', () => {
       ],
       sends: [
         // taxa_resposta (meta gte): 100% antes, 0% agora ⇒ piorou
-        { status: 'respondida', scheduled_at: '2026-08-30T12:00:00.000Z', sent_at: '2026-08-30T12:00:00.000Z', replied_at: null },
-        { status: 'enviada', scheduled_at: '2026-09-05T12:00:00.000Z', sent_at: '2026-09-05T12:00:00.000Z', replied_at: null },
+        {
+          status: 'respondida',
+          scheduled_at: '2026-08-30T12:00:00.000Z',
+          sent_at: '2026-08-30T12:00:00.000Z',
+          replied_at: null,
+        },
+        {
+          status: 'enviada',
+          scheduled_at: '2026-09-05T12:00:00.000Z',
+          sent_at: '2026-09-05T12:00:00.000Z',
+          replied_at: null,
+        },
       ],
     });
     const { good, bad } = whatChanged(d, null, HOJE);

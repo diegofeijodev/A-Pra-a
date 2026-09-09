@@ -208,9 +208,7 @@ export const emptyIndData = (): IndData => ({
  * (`stage_to`), e na falta dele o `stage_since` — só se o lead já chegou lá.
  */
 export function stageEnteredAt(lead: IndLeadRow, stage: number): string | undefined {
-  const ev = lead.events
-    .filter((e) => e.stage_to === stage)
-    .sort((a, b) => a.at.localeCompare(b.at))[0];
+  const ev = lead.events.filter((e) => e.stage_to === stage).sort((a, b) => a.at.localeCompare(b.at))[0];
   if (ev) return dayOf(ev.at);
   return lead.stage >= stage ? lead.stage_since : undefined;
 }
@@ -257,18 +255,12 @@ const STAGE_PERDIDO = 8;
 const STEP_FREELANCERS = 2;
 
 /** Valor calculado pelo sistema. `null` = sem base para calcular. */
-export function computeValue(
-  key: IndKey,
-  data: IndData,
-  pracaId: string | null,
-  r: IndRange,
-): number | null {
+export function computeValue(key: IndKey, data: IndData, pracaId: string | null, r: IndRange): number | null {
   const leads = leadsOf(data, pracaId);
   switch (key) {
     case 'clientes_ativos':
-      return leads.filter(
-        (l) => l.stage === STAGE_ATIVO && (stageEnteredAt(l, STAGE_ATIVO) ?? '') <= r.to,
-      ).length;
+      return leads.filter((l) => l.stage === STAGE_ATIVO && (stageEnteredAt(l, STAGE_ATIVO) ?? '') <= r.to)
+        .length;
 
     case 'recontratacao': {
       const base = leads.filter((l) => l.stage >= STAGE_PRIMEIRA_VAGA).length;
@@ -286,9 +278,7 @@ export function computeValue(
     }
 
     case 'perda_mensal': {
-      const perdidos = leads.filter(
-        (l) => l.stage === STAGE_PERDIDO && inRange(l.stage_since, r),
-      ).length;
+      const perdidos = leads.filter((l) => l.stage === STAGE_PERDIDO && inRange(l.stage_since, r)).length;
       const base = leads.filter((l) => l.stage >= STAGE_CADASTRO).length + perdidos;
       if (!base) return null;
       return (perdidos / base) * 100;
@@ -298,8 +288,8 @@ export function computeValue(
       // Sem ativo NO PERÍODO, divide pelos ativos de sempre (`||` do protótipo):
       // a verba do mês não deixa de ter custo só porque ninguém virou ativo nele.
       const novos =
-        leads.filter((l) => l.stage === STAGE_ATIVO && inRange(stageEnteredAt(l, STAGE_ATIVO), r))
-          .length || leads.filter((l) => l.stage === STAGE_ATIVO).length;
+        leads.filter((l) => l.stage === STAGE_ATIVO && inRange(stageEnteredAt(l, STAGE_ATIVO), r)).length ||
+        leads.filter((l) => l.stage === STAGE_ATIVO).length;
       const spend = spendInRange(data, pracaId, r);
       if (!novos || !spend) return null;
       return spend / novos;
@@ -311,16 +301,12 @@ export function computeValue(
     case 'passagem_etapa': {
       const tocados = leads.filter((l) => l.stage >= 2).length;
       if (!tocados) return null;
-      const chegaram = leads.filter(
-        (l) => l.stage >= STAGE_CADASTRO && l.stage !== STAGE_PERDIDO,
-      ).length;
+      const chegaram = leads.filter((l) => l.stage >= STAGE_CADASTRO && l.stage !== STAGE_PERDIDO).length;
       return (chegaram / tocados) * 100;
     }
 
     case 'taxa_resposta': {
-      const sends = data.sends.filter(
-        (m) => m.status !== 'fila' && inRange(m.sent_at ?? m.scheduled_at, r),
-      );
+      const sends = data.sends.filter((m) => m.status !== 'fila' && inRange(m.sent_at ?? m.scheduled_at, r));
       if (!sends.length) return null;
       const respondidas = sends.filter((m) => m.status === 'respondida' || m.replied_at).length;
       return (respondidas / sends.length) * 100;
@@ -368,13 +354,7 @@ interface ManualRead {
 }
 
 /** Último lançamento até o fim do período (e o último antes do início). */
-function manualOfPraca(
-  def: IndDef,
-  data: IndData,
-  pracaId: string,
-  r: IndRange,
-  today: string,
-): ManualRead {
+function manualOfPraca(def: IndDef, data: IndData, pracaId: string, r: IndRange, today: string): ManualRead {
   const hist = data.entries
     .filter((e) => e.key === def.key && e.praca_id === pracaId)
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -453,12 +433,8 @@ export function readIndicator(
   };
 }
 
-export const readAll = (
-  data: IndData,
-  pracaId: string | null,
-  r: IndRange,
-  today?: string,
-): IndReading[] => IND_CATALOG.map((d) => readIndicator(d, data, pracaId, r, today));
+export const readAll = (data: IndData, pracaId: string | null, r: IndRange, today?: string): IndReading[] =>
+  IND_CATALOG.map((d) => readIndicator(d, data, pracaId, r, today));
 
 // ── clientes ativos mês a mês ───────────────────────────────────
 export interface MonthPoint {
@@ -564,9 +540,7 @@ const FREELANCERS = IND_CATALOG.find((d) => d.key === 'freelancers')!;
  */
 const stepOf = (data: IndData, pracaId: string): number => {
   const fechadas = STEPS.filter((st) =>
-    data.actions
-      .filter((a) => a.praca_id === pracaId && a.step === st.n)
-      .every((a) => !!a.completed_at),
+    data.actions.filter((a) => a.praca_id === pracaId && a.step === st.n).every((a) => !!a.completed_at),
   ).length;
   return Math.min(STEPS.length, fechadas + 1);
 };
@@ -600,11 +574,7 @@ export interface IndPersonRowView {
 /** Toque de verdade no lead (nota e mudança de etapa não são contato). */
 const TOQUE = CONTACT_KINDS.filter((k) => k !== 'msg_in') as string[];
 
-export function personRows(
-  data: IndData,
-  r: IndRange,
-  today: string = todaySp(),
-): IndPersonRowView[] {
+export function personRows(data: IndData, r: IndRange, today: string = todaySp()): IndPersonRowView[] {
   return data.users.map((u) => {
     const acts = data.actions.filter((a) => a.owners.includes(u.id));
     // Uma conclusão por ação pontual (`completed_at`) e uma por dia marcado da
@@ -621,15 +591,12 @@ export function personRows(
       name: u.name,
       no_prazo: feitas.filter((c) => !isLate(c.act, data, today)).length,
       atrasadas: acts.filter((a) => isLate(a, data, today)).length,
-      leads_tocados: leads.filter((l) =>
-        l.events.some((e) => TOQUE.includes(e.kind) && inRange(e.at, r)),
-      ).length,
-      leads_avancados: leads.filter((l) =>
-        l.events.some((e) => e.kind === 'stage' && inRange(e.at, r)),
-      ).length,
+      leads_tocados: leads.filter((l) => l.events.some((e) => TOQUE.includes(e.kind) && inRange(e.at, r)))
+        .length,
+      leads_avancados: leads.filter((l) => l.events.some((e) => e.kind === 'stage' && inRange(e.at, r)))
+        .length,
       fechados: leads.filter(
-        (l) =>
-          l.stage >= STAGE_PRIMEIRA_VAGA && inRange(stageEnteredAt(l, STAGE_PRIMEIRA_VAGA), r),
+        (l) => l.stage >= STAGE_PRIMEIRA_VAGA && inRange(stageEnteredAt(l, STAGE_PRIMEIRA_VAGA), r),
       ).length,
       vagas: leads.reduce((a, l) => a + l.vagas.filter((v) => inRange(v.date, r)).length, 0),
     };
