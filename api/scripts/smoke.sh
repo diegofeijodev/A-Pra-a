@@ -1624,6 +1624,161 @@ check "ações da praça foram junto (cascata)" "NOT_FOUND" \
 check "praça ativa do Diego restaurada (sem resíduo)" "$PRACA_SEED" \
   "$(curl -s -X PATCH $API/v1/users/me -H "$J" -H "$HD" -d "{\"active_praca_id\":\"$PRACA_SEED\"}" | jq -r .active_praca_id)"
 
+echo "── Indicadores ──"
+# Roda DEPOIS da limpeza da praça de teste: as visões Praça e Pessoa contam
+# praças e contas ativas, e a praça do smoke sujaria as duas.
+# Janelas esperadas: 1º do mês, segunda desta semana e 90 dias contando hoje.
+MES1=$(TZ=America/Sao_Paulo date +%Y-%m-01)
+SEG=$(TZ=America/Sao_Paulo date -d "$HOJE -$(($(TZ=America/Sao_Paulo date -d "$HOJE" +%u) - 1)) days" +%F)
+D90=$(TZ=America/Sao_Paulo date -d "$HOJE -89 days" +%F)
+# O valor de vários indicadores depende do período, e no dia 1º de cada mês a
+# janela "este mês" tem UM dia — os dias de mídia e os toques do seed cairiam
+# fora. Por isso os números vão em `d90`, que abraça o seed inteiro em qualquer
+# dia do mês; `mes` fica para o que não depende de data (etapa do funil).
+IND=$(curl -s "$API/v1/indicators?scope=empresa&period=d90" -H "$HD")
+check "as 12 leituras do catálogo vêm na visão Empresa" "12" "$(echo "$IND" | jq '.readings | length')"
+check "o período padrão é o mês corrente" "$MES1 $HOJE este mês" \
+  "$(curl -s "$API/v1/indicators" -H "$HD" | jq -r '.range | "\(.from) \(.to) \(.label)"')"
+check "clientes ativos = os 3 leads do seed na etapa 7" "3" \
+  "$(echo "$IND" | jq '[.readings[] | select(.key=="clientes_ativos")][0].value')"
+# 8 leads na etapa ≥ 6 (3 na 6, 3 na 7, 2 perdidos), 5 deles na etapa ≥ 7.
+check "recontratação = 5 de 8 leads que rodaram a primeira vaga" "62.5" \
+  "$(echo "$IND" | jq '[.readings[] | select(.key=="recontratacao")][0].value')"
+check "preenchimento médio do seed abaixo do teto de 4 h" "2.73 ok" \
+  "$(echo "$IND" | jq -r '[.readings[] | select(.key=="tempo_preencher")][0] | "\((.value * 100 | round) / 100) \(.sem)"')"
+check "custo por cliente ativado = 720 de mídia / 3 ativos" "240 bad" \
+  "$(echo "$IND" | jq -r '[.readings[] | select(.key=="custo_cliente")][0] | "\(.value) \(.sem)"')"
+check "os 25 leads do seed entraram nos últimos 90 dias" "25" \
+  "$(echo "$IND" | jq '[.readings[] | select(.key=="leads_novos")][0].value')"
+check "perda mensal = 2 perdidos sobre a base de 13" "15.38" \
+  "$(echo "$IND" | jq '[.readings[] | select(.key=="perda_mensal")][0].value | (. * 100 | round) / 100')"
+check "passagem por etapa = 9 cadastrados de 21 tocados" "42.86" \
+  "$(echo "$IND" | jq '[.readings[] | select(.key=="passagem_etapa")][0].value | (. * 100 | round) / 100')"
+check "nenhuma ação do roteiro do seed está concluída" "0 bad" \
+  "$(echo "$IND" | jq -r '[.readings[] | select(.key=="playbook")][0] | "\(.value) \(.sem)"')"
+check "freelancers sem lançamento cai no resultado 22 da etapa 2" "22" \
+  "$(echo "$IND" | jq '[.readings[] | select(.key=="freelancers")][0].value')"
+check "indicador à mão sem lançamento é número velho" "null true none" \
+  "$(echo "$IND" | jq -r '[.readings[] | select(.key=="falta")][0] | "\(.value) \(.stale) \(.sem)"')"
+check "indicador calculado nunca é número velho" "false" \
+  "$(echo "$IND" | jq '[.readings[] | select(.key=="clientes_ativos")][0].stale')"
+check "o dono do indicador vira id de conta" "$DIEGO_ID" \
+  "$(echo "$IND" | jq -r '[.readings[] | select(.key=="playbook")][0].owner_id')"
+check "6 indicadores são número grande da Empresa" "6" "$(echo "$IND" | jq '[.readings[] | select(.hero)] | length')"
+check "a leitura traz meta, unidade, direção, frequência e fonte" "3 % lte semanal manual aplicativo Freela" \
+  "$(echo "$IND" | jq -r '[.readings[] | select(.key=="falta")][0] | "\(.meta) \(.unit) \(.dir) \(.freq) \(.source) \(.origem)"')"
+
+check "período hoje é o mesmo dia nas duas pontas" "$HOJE $HOJE" \
+  "$(curl -s "$API/v1/indicators?period=hoje" -H "$HD" | jq -r '.range | "\(.from) \(.to)"')"
+check "período semana começa na segunda" "$SEG esta semana" \
+  "$(curl -s "$API/v1/indicators?period=semana" -H "$HD" | jq -r '.range | "\(.from) \(.label)"')"
+check "período 90 dias conta hoje" "$D90 últimos 90 dias" \
+  "$(curl -s "$API/v1/indicators?period=d90" -H "$HD" | jq -r '.range | "\(.from) \(.label)"')"
+check "período livre usa as datas dadas" "2026-08-01 2026-08-31 período livre" \
+  "$(curl -s "$API/v1/indicators?period=livre&from=2026-08-01&to=2026-08-31" -H "$HD" | jq -r '.range | "\(.from) \(.to) \(.label)"')"
+check "período livre sem datas é barrado" "VALIDATION_ERROR" \
+  "$(curl -s "$API/v1/indicators?period=livre" -H "$HD" | jq -r .error.code)"
+check "período livre de trás para frente é barrado" "O início do período não pode ser depois do fim." \
+  "$(curl -s "$API/v1/indicators?period=livre&from=$HOJE&to=$MES1" -H "$HD" | jq -r .error.message)"
+check "período fora da lista é barrado" "VALIDATION_ERROR" \
+  "$(curl -s "$API/v1/indicators?period=decada" -H "$HD" | jq -r .error.code)"
+check "escopo praça sem praca_id é barrado" "VALIDATION_ERROR" \
+  "$(curl -s "$API/v1/indicators?scope=praca" -H "$HD" | jq -r .error.code)"
+check "escopo fora da lista é barrado" "VALIDATION_ERROR" \
+  "$(curl -s "$API/v1/indicators?scope=galaxia" -H "$HD" | jq -r .error.code)"
+check "praça que não existe no escopo praça = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s "$API/v1/indicators?scope=praca&praca_id=$BEEF" -H "$HD" | jq -r .error.code)"
+check "sem token não há indicador" "UNAUTHORIZED" "$(curl -s $API/v1/indicators | jq -r .error.code)"
+
+echo "── Indicadores: visão Empresa ──"
+EMP=$(curl -s "$API/v1/indicators/empresa?period=d90" -H "$HD")
+check "a visão Empresa traz 6 números grandes, 3 marcos e 12 meses" "6 3 12" \
+  "$(echo "$EMP" | jq -r '"\(.heroes | length) \(.milestones | length) \(.months | length)"')"
+check "os marcos são dez/26, fev/27 e ago/27" "dez/26 fev/27 ago/27" \
+  "$(echo "$EMP" | jq -r '[.milestones[].label] | join(" ")')"
+check "o marco traz o valor de hoje e quanto do caminho já foi" "clientes ativos 3 0" \
+  "$(echo "$EMP" | jq -r '.milestones[0].targets[0] | "\(.name) \(.value) \(.pct | floor)"')"
+check "profissionais responsivos sai do indicador à mão (22 da etapa 2)" "22" \
+  "$(echo "$EMP" | jq '[.milestones[].targets[] | select(.key=="freelancers")][0].value')"
+check "o último mês do gráfico é o mês de hoje, com os 3 ativos" "3" "$(echo "$EMP" | jq '.months[-1].value')"
+check "a meta do mês cresce mês a mês e não passa de 500" "true" \
+  "$(echo "$EMP" | jq '([.months[].meta] == ([.months[].meta] | sort)) and .months[-1].meta <= 500 and .months[-1].meta > 0')"
+check "o que mudou vem em dois lados, no máximo 3 de cada" "true" \
+  "$(echo "$EMP" | jq '(.changed.good | length) <= 3 and (.changed.bad | length) <= 3')"
+
+echo "── Indicadores: praça, pessoa e canal ──"
+PR_ROWS=$(curl -s "$API/v1/indicators/pracas?period=d90" -H "$HD")
+check "uma linha por praça (só a do seed sobrou)" "1" "$(echo "$PR_ROWS" | jq 'length')"
+check "a linha da praça traz etapa, ativos, freelancers e atrasadas" "Belo Horizonte + Contagem 1 3 22 true" \
+  "$(echo "$PR_ROWS" | jq -r '.[0] | "\(.praca.name) \(.step_atual) \(.ativos) \(.freelancers) \(.atrasadas > 0)"')"
+check "a praça sem lançamento de falta mostra nulo, não zero" "null" "$(echo "$PR_ROWS" | jq '.[0].falta')"
+PES_ROWS=$(curl -s "$API/v1/indicators/pessoas?period=d90" -H "$HD")
+check "uma linha por pessoa ativa (Diego, Daniel e Mkt)" "3 Diego Daniel Mkt externo" \
+  "$(echo "$PES_ROWS" | jq -r '"\(length) \([.[].name] | join(" "))"')"
+# Daniel: 10 leads tocados (só msg_out e visita contam — resposta do lead não),
+# 5 na etapa ≥ 6 e 10 vagas rodadas. O seed não tem evento de mudança de etapa,
+# então "avançaram" é 0 de propósito.
+check "a linha da pessoa conta toque, fechamento e vaga do período" "10 0 5 10" \
+  "$(echo "$PES_ROWS" | jq -r --arg i "$DANIEL_ID" '[.[] | select(.id==$i)][0] | "\(.leads_tocados) \(.leads_avancados) \(.fechados) \(.vagas)"')"
+check "a agência não toca lead nenhum" "0 0 0" \
+  "$(echo "$PES_ROWS" | jq -r '.[2] | "\(.leads_tocados) \(.fechados) \(.vagas)"')"
+CAN=$(curl -s "$API/v1/indicators/canais?praca_id=$PRACA_SEED&period=d90" -H "$HD")
+check "os 6 canais aparecem sempre, mesmo sem lead" "6 prospeccao trafego indicacao organico evento rede" \
+  "$(echo "$CAN" | jq -r '"\(length) \([.[].id] | join(" "))"')"
+check "importação e prospecção caem no mesmo canal" "13 1" \
+  "$(echo "$CAN" | jq -r '[.[] | select(.id=="prospeccao")][0] | "\(.leads) \(.ativos)"')"
+check "só o tráfego pago tem custo por cliente (720 / 1 ativo)" "720 null null" \
+  "$(echo "$CAN" | jq -r '"\([.[] | select(.id=="trafego")][0].custo) \([.[] | select(.id=="indicacao")][0].custo) \([.[] | select(.id=="organico")][0].custo)"')"
+check "canal sem lead nenhum não inventa conversão" "0 null null" \
+  "$(echo "$CAN" | jq -r '[.[] | select(.id=="evento")][0] | "\(.leads) \(.conv) \(.tempo_primeira_vaga)"')"
+check "a visão canal exige praca_id" "VALIDATION_ERROR" \
+  "$(curl -s "$API/v1/indicators/canais" -H "$HD" | jq -r .error.code)"
+check "praca_id malformado na visão canal é barrado" "VALIDATION_ERROR" \
+  "$(curl -s "$API/v1/indicators/canais?praca_id=nao-e-uuid" -H "$HD" | jq -r .error.code)"
+check "praça que não existe na visão canal = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s "$API/v1/indicators/canais?praca_id=$BEEF" -H "$HD" | jq -r .error.code)"
+
+echo "── Indicadores: lançamento à mão ──"
+LANC="\"praca_id\":\"$PRACA_SEED\",\"date\":\"$HOJE\""
+LE_FALTA='[.readings[] | select(.key=="falta")][0]'
+check "lançar falta 2,5 hoje" "$PRACA_SEED falta $HOJE 2.5" \
+  "$(curl -s -X POST $API/v1/indicators/falta/entries -H "$J" -H "$HD" -d "{$LANC,\"value\":2.5}" | jq -r '"\(.praca_id) \(.key) \(.date) \(.value)"')"
+LIDO=$(curl -s "$API/v1/indicators?scope=praca&praca_id=$PRACA_SEED&period=mes" -H "$HD" | jq "$LE_FALTA")
+check "a leitura da praça passa a mostrar 2,5, verde e fresco" "2.5 ok false $HOJE" \
+  "$(echo "$LIDO" | jq -r '"\(.value) \(.sem) \(.stale) \(.last_at)"')"
+check "o lançamento entra no histórico do indicador" "1 $HOJE 2.5" \
+  "$(echo "$LIDO" | jq -r '"\(.history | length) \(.history[0].date) \(.history[0].value)"')"
+check "na Empresa o lançamento da única praça é o valor da empresa" "2.5 false" \
+  "$(curl -s "$API/v1/indicators?scope=empresa&period=mes" -H "$HD" | jq -r "$LE_FALTA"' | "\(.value) \(.stale)"')"
+check "a visão Praça mostra a falta lançada" "2.5" \
+  "$(curl -s "$API/v1/indicators/pracas?period=mes" -H "$HD" | jq '.[0].falta')"
+curl -s -X POST $API/v1/indicators/falta/entries -H "$J" -H "$HD" -d "{$LANC,\"value\":9}" > /dev/null
+check "lançar o mesmo dia duas vezes corrige a linha, sem criar outra" "9 1 bad" \
+  "$(curl -s "$API/v1/indicators?scope=praca&praca_id=$PRACA_SEED&period=mes" -H "$HD" \
+    | jq -r "$LE_FALTA"' | "\(.value) \(.history | length) \(.sem)"')"
+check "indicador fora do catálogo = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/indicators/inventado/entries -H "$J" -H "$HD" -d "{$LANC,\"value\":1}" | jq -r .error.code)"
+check "lançar em praça que não existe = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/indicators/falta/entries -H "$J" -H "$HD" -d "{\"praca_id\":\"$BEEF\",\"date\":\"$HOJE\",\"value\":1}" | jq -r .error.code)"
+check "data que não existe no calendário é barrada" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/indicators/falta/entries -H "$J" -H "$HD" -d "{\"praca_id\":\"$PRACA_SEED\",\"date\":\"2026-02-31\",\"value\":1}" | jq -r .error.code)"
+check "valor nulo é barrado (não vira 500)" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/indicators/falta/entries -H "$J" -H "$HD" -d "{$LANC,\"value\":null}" | jq -r .error.code)"
+check "valor negativo é barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/indicators/falta/entries -H "$J" -H "$HD" -d "{$LANC,\"value\":-1}" | jq -r .error.code)"
+check "campo fora do DTO é barrado (whitelist)" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/indicators/falta/entries -H "$J" -H "$HD" -d "{$LANC,\"value\":1,\"nome\":\"x\"}" | jq -r .error.code)"
+check "apagar indicador fora do catálogo = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X DELETE "$API/v1/indicators/inventado/entries?praca_id=$PRACA_SEED&date=$HOJE" -H "$HD" | jq -r .error.code)"
+# Sem resíduo: apaga o lançamento do smoke e confere que o indicador voltou a nulo.
+check "apaga o lançamento do smoke" "true" \
+  "$(curl -s -X DELETE "$API/v1/indicators/falta/entries?praca_id=$PRACA_SEED&date=$HOJE" -H "$HD" | jq -r .ok)"
+check "apagar dia sem lançamento também responde ok" "true" \
+  "$(curl -s -X DELETE "$API/v1/indicators/falta/entries?praca_id=$PRACA_SEED&date=$HOJE" -H "$HD" | jq -r .ok)"
+check "a falta voltou a não ter número (sem resíduo)" "null true 0" \
+  "$(curl -s "$API/v1/indicators?scope=praca&praca_id=$PRACA_SEED&period=mes" -H "$HD" \
+    | jq -r "$LE_FALTA"' | "\(.value) \(.stale) \(.history | length)"')"
+
 echo
 printf 'Resultado: \033[32m%d ok\033[0m, \033[31m%d falha(s)\033[0m\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

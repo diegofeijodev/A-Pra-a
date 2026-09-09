@@ -16,6 +16,7 @@ import { CatalogModule } from './modules/catalog/catalog.module';
 import { DisparosModule } from './modules/disparos/disparos.module';
 import { GeoModule } from './modules/geo/geo.module';
 import { ImportsModule } from './modules/imports/imports.module';
+import { IndicatorsModule } from './modules/indicators/indicators.module';
 import { LeadsModule } from './modules/leads/leads.module';
 import { MessagesModule } from './modules/messages/messages.module';
 import { MidiaModule } from './modules/midia/midia.module';
@@ -43,6 +44,7 @@ import { UsersModule } from './modules/users/users.module';
     DisparosModule,
     CadencesModule,
     MidiaModule,
+    IndicatorsModule,
   ],
   providers: [
     // Subclasse do ThrottlerGuard: o teto do formulário público vem do

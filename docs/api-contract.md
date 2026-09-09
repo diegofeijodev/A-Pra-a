@@ -1674,3 +1674,213 @@ tirados dos roteiros-modelo (`aprovado`, `producao`, `a_fazer`, `aprovacao`,
 contratante e **6 dias** lançados (`today-6` a `today-1`, R$ 120/dia → 720
 investidos, 5 conversões). Idempotente: se a praça seed já tem campanha, o seed
 não faz nada.
+
+---
+
+## 16. Indicadores — `/v1/indicators`
+
+Painel único de **Empresa, Praça, Pessoa e Canal**. Nada aqui é tabela de
+resumo: cada requisição monta um retrato do banco (funil, ações, mídia,
+mensagens, etapas, lançamentos) e roda as funções puras de
+`src/domain/indicator-rules.ts` — porta de
+`.prototype/src/lib/praca/indicadores.ts`. O catálogo dos 12 indicadores, os 3
+marcos, os 6 canais e os 5 períodos são estáticos
+(`src/domain/catalog/indicators.ts`, §4). Formatação (`fmtVal`, cor do
+semáforo) é do web: a API só devolve número — com a precisão do cálculo
+(`2.7272727272727275`, não `2,73`). Os exemplos deste bloco estão abreviados.
+
+| Método | Rota | Query / corpo | Resposta |
+|---|---|---|---|
+| GET | `/v1/indicators` | `?scope=empresa\|praca&praca_id&period&from&to` | `{range, readings: IndReadingView[]}` (12, na ordem do catálogo) |
+| GET | `/v1/indicators/empresa` | `?period&from&to` | `{range, heroes, milestones, months, changed}` |
+| GET | `/v1/indicators/pracas` | `?period&from&to` | `IndPracaRowView[]` (uma por praça) |
+| GET | `/v1/indicators/pessoas` | `?period&from&to` | `IndPersonRowView[]` (uma por conta **ativa**) |
+| GET | `/v1/indicators/canais` | `?praca_id` (obrigatório)`&period&from&to` | `IndCanalRowView[]` (sempre 6) |
+| POST | `/v1/indicators/:key/entries` | `{praca_id, date, value}` | `IndicatorEntryView` (upsert) |
+| DELETE | `/v1/indicators/:key/entries` | `?praca_id&date` | `{ok: true}` |
+
+Todas exigem JWT e nenhuma é só de admin — quem lança o número à mão é quem
+opera a praça. `:key` fora do catálogo → `404 NOT_FOUND`; `praca_id` que não
+existe → `404 NOT_FOUND`; `praca_id` malformado ou ausente onde é obrigatório →
+`400 VALIDATION_ERROR` (é filtro, não caminho).
+
+### Período
+
+`period ∈ hoje | semana | mes | d90 | livre`, **padrão `mes`**. A janela sai de
+"hoje" em Brasília (`todaySp()`), nunca do relógio do navegador:
+
+| `period` | `from` | `to` | `label` |
+|---|---|---|---|
+| `hoje` | hoje | hoje | `hoje` |
+| `semana` | **segunda** desta semana | hoje | `esta semana` |
+| `mes` | dia 1º do mês | hoje | `este mês` |
+| `d90` | hoje − 89 dias | hoje | `últimos 90 dias` |
+| `livre` | `from` | `to` | `período livre` |
+
+`from`/`to` são **obrigatórios em `livre`** (ausentes → `400
+VALIDATION_ERROR`) e ignorados nos outros. `from > to` →
+`400 VALIDATION_ERROR` ("O início do período não pode ser depois do fim.").
+O indicador calculado compara com a **janela anterior de mesmo tamanho**
+(`prev`), imediatamente antes de `from`.
+
+`range` volta em toda resposta: `{ "from": "2026-09-01", "to": "2026-09-09", "label": "este mês" }`.
+
+### Escopo
+
+`scope=empresa` (padrão) soma **todas** as praças; `scope=praca` exige
+`praca_id` e olha só uma (com `scope=empresa` o `praca_id` é ignorado). Lead
+**arquivado** e lead **de teste** ficam sempre fora — número de operação não
+conta simulação nem casa que saiu da base.
+
+### `IndReadingView`
+
+```json
+{
+  "key": "falta", "name": "Falta",
+  "what": "Percentual de turnos em que o freelancer não apareceu.",
+  "meta": 3, "meta_label": "≤ 3%", "unit": "%", "dir": "lte", "freq": "semanal",
+  "owner_id": "uuid", "source": "manual", "origem": "aplicativo Freela",
+  "hero": true, "value": 2.5, "prev": 8, "delta": -5.5, "sem": "ok",
+  "stale": false, "last_at": "2026-09-09",
+  "history": [{ "date": "2026-09-09", "value": 2.5 }]
+}
+```
+
+`owner_id` é o `owner_email` do catálogo resolvido para id de conta — `null` se
+a conta não existe ou está desativada. `hero` marca os 6 números grandes da visão Empresa.
+`value: null` significa **sem base para calcular** (não zero): a tela mostra "—".
+
+`sem` (semáforo): `ok` bateu a meta · `warn` até 15% fora · `bad` abaixo disso ·
+`none` sem número. `dir=gte` compara `value >= meta`; `dir=lte`, `value <= meta`.
+
+### Os 12 indicadores
+
+`source: "sistema"` = calculado a cada requisição; `source: "manual"` = lançado
+à mão (`indicator_entries`).
+
+| `key` | como sai o número |
+|---|---|
+| `clientes_ativos` | leads na etapa 7 que entraram nela até o fim do período |
+| `recontratacao` | leads na etapa ≥ 7 sobre leads na etapa ≥ 6 (%) |
+| `tempo_preencher` | média das horas das vagas preenchidas; na Empresa, média das **praças** (não das vagas) |
+| `falta` | **à mão** |
+| `perda_mensal` | perdidos (etapa 8) no período sobre a base da etapa ≥ 5 mais eles (%) |
+| `custo_cliente` | verba de mídia do período ÷ clientes que viraram ativos |
+| `freelancers` | **à mão**; sem lançamento, cai no resultado da **etapa 2** da praça |
+| `leads_novos` | leads com `entered_at` no período |
+| `passagem_etapa` | leads na etapa ≥ 5 (menos os perdidos) sobre leads na etapa ≥ 2 (%) |
+| `taxa_resposta` | envios respondidos sobre envios que saíram da fila no período (%) |
+| `contratos_rede` | **à mão** |
+| `playbook` | ações pontuais vencidas até o fim do período que já foram concluídas (%) |
+
+A verba de mídia é a soma dos **dias lançados** no tráfego dentro do período e
+só cai no `gasto` declarado da campanha quando **nenhum** dia entrou na janela
+(mesma regra do `metrics.investido` de §15).
+
+### Indicador à mão: número velho e junção de praças
+
+`stale: true` é o "número velho" da tela (a linha fica cinza): **nenhum**
+lançamento, ou o último mais antigo que a frequência do indicador
+(`diária` 1 dia, `semanal` 7, `mensal` 31). Indicador calculado nunca é velho.
+
+`value` é o último lançamento **até `range.to`**; `prev`, o último **antes de
+`range.from`**; `last_at` é sempre a data do lançamento mais recente. Na visão
+**Empresa** os últimos valores de cada praça são juntados: **soma** quando
+`unit` é vazio (contagem — freelancers, contratos de rede) e **média** quando é
+`%`, `h` ou `R$` (proporção). `stale` na Empresa só é `true` quando **todas** as
+praças estão velhas.
+
+### `GET /v1/indicators/empresa`
+
+```json
+{
+  "range": { "from": "2026-09-01", "to": "2026-09-09", "label": "este mês" },
+  "heroes": [ "…6 IndReadingView com hero: true…" ],
+  "milestones": [
+    { "when": "2026-12-31", "label": "dez/26",
+      "targets": [{ "name": "clientes ativos", "meta": 500, "unit": "",
+                    "key": "clientes_ativos", "dir": "gte", "value": 3, "pct": 0.6 }] }
+  ],
+  "months": [{ "month": "2026-09", "label": "set/26", "value": 3, "meta": 216 }],
+  "changed": {
+    "good": [{ "name": "Leads novos no mês", "from": 1, "to": 3, "pct": 200, "good": true, "unit": "" }],
+    "bad": []
+  }
+}
+```
+
+`milestones` são os 3 marcos do catálogo (dez/26, fev/27, ago/27) com o valor de
+hoje e `pct` = quanto do caminho já foi andado: `dir=gte` → `value / meta`;
+`dir=lte` → `meta / value`; teto de 100%, e 0 quando não há número.
+
+`months` são 12 meses terminando no mês de hoje. `value` = clientes ativos que
+já eram ativos no fim daquele mês. `meta` é o caminho **interpolado** de zero em
+01/06/2026 até 500 em 31/12/2026, medido no dia 1º de cada mês (antes de jun/26
+é 0; depois de dez/26 fica em 500).
+
+`changed` é o "o que mudou desde a semana passada": compara os **últimos 7 dias**
+com os 7 anteriores, ignora variação abaixo de 1% e devolve os **3 maiores**
+saltos de cada lado (`good` = andou na direção da meta). `from`/`to` aqui são
+valores do indicador, não datas.
+
+### `GET /v1/indicators/pracas`
+
+```json
+{ "praca": { "id": "uuid", "name": "Belo Horizonte + Contagem" },
+  "step_atual": 1, "ativos": 3, "recontratacao": 62.5, "fill": 2.73,
+  "falta": null, "freelancers": 22, "custo": 240, "atrasadas": 6 }
+```
+
+`step_atual` = quantas etapas do roteiro têm **todas** as ações concluídas, mais
+um, com teto na etapa 11 — etapa sem ação nenhuma conta como concluída (quirk do
+protótipo, mantido). `atrasadas` = ações **pontuais** da praça vencidas e ainda
+abertas (ação concluída nunca conta como atrasada). `falta` e `freelancers` vêm
+do lançamento à mão; o resto é calculado para aquela praça.
+
+### `GET /v1/indicators/pessoas`
+
+```json
+{ "id": "uuid", "name": "Daniel", "no_prazo": 0, "atrasadas": 4,
+  "leads_tocados": 10, "leads_avancados": 0, "fechados": 5, "vagas": 10 }
+```
+
+Uma linha por conta **ativa**, na ordem das pessoas (§3) — é material para a
+conversa individual, **não** ranking. `no_prazo` = conclusões de ação (pontual ou
+dia marcado de recorrente) dentro do período; `atrasadas` = ações pontuais dela
+vencidas e abertas; `leads_tocados` = leads distintos dela com **mensagem
+enviada, ligação ou visita** no período (resposta do lead e nota não são toque);
+`leads_avancados` = leads dela com evento de mudança de etapa no período;
+`fechados` = leads dela que entraram na etapa ≥ 6 no período; `vagas` = vagas
+dos leads dela com data no período.
+
+### `GET /v1/indicators/canais`
+
+```json
+{ "id": "trafego", "label": "Tráfego pago", "leads": 7, "ativos": 1,
+  "conv": 14.29, "custo": 720, "tempo_primeira_vaga": null }
+```
+
+Sempre os **6 canais** do catálogo, mesmo os sem lead. O canal do lead sai da
+`origem` escrita nele (`canalOf`): sem casar nenhuma palavra, cai em
+`prospeccao`. `conv` = ativos ÷ leads do canal (%). `custo` só existe em
+`trafego` — os outros canais não consomem verba, e vem `null` neles.
+`tempo_primeira_vaga` = média de dias entre a entrada do lead e a **primeira**
+vaga dele (negativo é descartado: vaga anterior à entrada é dado de importação).
+
+### Lançamento à mão
+
+```
+POST /v1/indicators/falta/entries   { "praca_id": "uuid", "date": "2026-09-09", "value": 2.5 }
+→ { "praca_id": "uuid", "key": "falta", "date": "2026-09-09", "value": 2.5 }
+```
+
+**Upsert por (praça, indicador, dia)** — `indicator_entries` tem PK tripla:
+lançar o mesmo dia duas vezes **corrige** a linha, não cria outra. `value` é
+número de 0 a 1 000 000 000 (`null` ou negativo → `400 VALIDATION_ERROR`);
+`date` precisa existir no calendário (`2026-02-31` → `400 VALIDATION_ERROR`).
+Lançar em `key` de `source: "sistema"` é aceito e entra no `history`, mas **não**
+muda o `value` daquele indicador — quem manda ali é o cálculo.
+
+`DELETE /v1/indicators/:key/entries?praca_id&date` apaga um lançamento e
+responde `{ok: true}` mesmo quando o dia não tinha nada (idempotente). Não é
+rota de admin.
