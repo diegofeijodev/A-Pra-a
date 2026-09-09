@@ -69,11 +69,7 @@ describe('scheduleTimes', () => {
 
   it('respeita o intervalo mínimo entre mensagens', () => {
     const t = scheduleTimes(3, SABADO_21H_BRT, ST, semSorte);
-    expect(t).toEqual([
-      '2026-09-14T12:00:00.000Z',
-      '2026-09-14T12:00:20.000Z',
-      '2026-09-14T12:00:40.000Z',
-    ]);
+    expect(t).toEqual(['2026-09-14T12:00:00.000Z', '2026-09-14T12:00:20.000Z', '2026-09-14T12:00:40.000Z']);
   });
 
   it('limite diário 2 com 3 mensagens joga a terceira para o dia seguinte', () => {

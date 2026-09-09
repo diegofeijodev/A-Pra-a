@@ -15,12 +15,7 @@ import {
   registerDecorator,
   type ValidationOptions,
 } from 'class-validator';
-import {
-  AUDIENCES,
-  CHANNELS,
-  SEND_MODES,
-  TEMPLATE_DEFAULT_KEYS,
-} from '../../../domain/catalog/messages';
+import { AUDIENCES, CHANNELS, SEND_MODES, TEMPLATE_DEFAULT_KEYS } from '../../../domain/catalog/messages';
 
 const AUDIENCE_IDS = AUDIENCES.map((a) => a.id);
 const CHANNEL_IDS = CHANNELS.map((c) => c.id);

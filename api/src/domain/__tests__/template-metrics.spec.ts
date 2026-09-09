@@ -42,7 +42,11 @@ describe('templateMetrics', () => {
   });
 
   it('taxa de resposta é respondida / enviada', () => {
-    const m = templateMetrics(TPL, [send({ status: 'respondida' }), send(), send({ status: 'entregue' })], LEADS);
+    const m = templateMetrics(
+      TPL,
+      [send({ status: 'respondida' }), send(), send({ status: 'entregue' })],
+      LEADS,
+    );
     expect(m.responded).toBe(1);
     expect(m.resp_rate).toBeCloseTo(1 / 3);
   });

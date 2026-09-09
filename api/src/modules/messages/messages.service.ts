@@ -15,14 +15,14 @@ import {
   type RenderCtx,
   type RenderPraca,
 } from '../../domain/template-render';
-import { templateMetrics, type MetricsLead, type MetricsSend, type TemplateMetrics } from '../../domain/template-metrics';
-import { LeadsService } from '../leads/leads.service';
 import {
-  CreateBlockDto,
-  RenderTemplateDto,
-  TemplateBodyDto,
-  UpdateSettingsDto,
-} from './dto/messages.dto';
+  templateMetrics,
+  type MetricsLead,
+  type MetricsSend,
+  type TemplateMetrics,
+} from '../../domain/template-metrics';
+import { LeadsService } from '../leads/leads.service';
+import { CreateBlockDto, RenderTemplateDto, TemplateBodyDto, UpdateSettingsDto } from './dto/messages.dto';
 
 export interface AttachmentView {
   kind: string;
@@ -102,49 +102,24 @@ export class MessagesService {
     });
     if (rows.length === 0) return [];
 
-    const sends = await this.prisma.msg_sends.findMany({
-      where: { template_id: { in: rows.map((r) => r.id) } },
-      select: {
-        template_id: true,
-        lead_id: true,
-        variant: true,
-        status: true,
-        sent_at: true,
-        stage_at_send: true,
-      },
-    });
-    const metricSends: MetricsSend[] = sends.map((s) => ({
-      ...s,
-      sent_at: s.sent_at?.toISOString() ?? null,
-    }));
-
-    // Só os leads que aparecem em algum envio — a medição de "avançou" precisa
-    // da etapa atual deles, não da base inteira.
-    const leadIds = [...new Set(sends.map((s) => s.lead_id))];
-    const leadsById: Record<string, MetricsLead> = {};
-    if (leadIds.length > 0) {
-      const leads = await this.prisma.leads.findMany({
-        where: { id: { in: leadIds } },
-        select: { id: true, stage: true, stage_since: true },
-      });
-      for (const l of leads) leadsById[l.id] = { stage: l.stage, stage_since: l.stage_since };
-    }
-
+    const { sends, leadsById } = await this.metricsInputs(rows.map((r) => r.id));
     return rows
-      .map((r) => ({ ...this.toTemplateView(r), metrics: templateMetrics(r.id, metricSends, leadsById) }))
+      .map((r) => ({ ...this.toTemplateView(r), metrics: templateMetrics(r.id, sends, leadsById) }))
       .sort((a, b) => b.metrics.resp_rate - a.metrics.resp_rate || b.metrics.sent - a.metrics.sent);
   }
 
   async createTemplate(dto: TemplateBodyDto): Promise<TemplateView> {
     const row = await this.prisma.msg_templates.create({ data: this.toTemplateData(dto) });
-    return { ...this.toTemplateView(row), metrics: templateMetrics(row.id, [], {}) };
+    return { ...this.toTemplateView(row), metrics: await this.metricsFor(row.id) };
   }
 
   /** PUT substitui o modelo inteiro — anexo ausente no corpo some. */
   async replaceTemplate(id: string, dto: TemplateBodyDto): Promise<TemplateView> {
     await this.templateOrFail(id);
     const row = await this.prisma.msg_templates.update({ where: { id }, data: this.toTemplateData(dto) });
-    return { ...this.toTemplateView(row), metrics: templateMetrics(row.id, [], {}) };
+    // A medição é CARREGADA, não zerada: editar um modelo que já foi disparado
+    // não pode responder `sent: 0` enquanto o GET mostra o número de verdade.
+    return { ...this.toTemplateView(row), metrics: await this.metricsFor(row.id) };
   }
 
   async removeTemplate(id: string): Promise<{ ok: true }> {
@@ -293,8 +268,57 @@ export class MessagesService {
   }
 
   // ── internos ────────────────────────────────────────────────
-  /** Linha 1 de `app_settings`, criada na primeira leitura se o seed não rodou. */
+  /**
+   * Envios e leads que a medição precisa, para um conjunto de modelos. Duas
+   * consultas no total (envios → leads que aparecem neles), nunca a base
+   * inteira de leads: `templateMetrics` só olha a etapa atual de quem recebeu.
+   */
+  private async metricsInputs(
+    templateIds: string[],
+  ): Promise<{ sends: MetricsSend[]; leadsById: Record<string, MetricsLead> }> {
+    if (templateIds.length === 0) return { sends: [], leadsById: {} };
+
+    const rows = await this.prisma.msg_sends.findMany({
+      where: { template_id: { in: templateIds } },
+      select: {
+        template_id: true,
+        lead_id: true,
+        variant: true,
+        status: true,
+        sent_at: true,
+        stage_at_send: true,
+      },
+    });
+    const sends: MetricsSend[] = rows.map((s) => ({ ...s, sent_at: s.sent_at?.toISOString() ?? null }));
+
+    const leadIds = [...new Set(rows.map((s) => s.lead_id))];
+    const leadsById: Record<string, MetricsLead> = {};
+    if (leadIds.length > 0) {
+      const leads = await this.prisma.leads.findMany({
+        where: { id: { in: leadIds } },
+        select: { id: true, stage: true, stage_since: true },
+      });
+      for (const l of leads) leadsById[l.id] = { stage: l.stage, stage_since: l.stage_since };
+    }
+    return { sends, leadsById };
+  }
+
+  /**
+   * Medição de um modelo só — é o que POST e PUT devolvem junto da linha
+   * salva. Passa pelo mesmo caminho da lista de propósito: a resposta de uma
+   * edição tem que bater com o que o `GET` mostra do mesmo modelo.
+   */
+  private async metricsFor(id: string): Promise<TemplateMetrics> {
+    const { sends, leadsById } = await this.metricsInputs([id]);
+    return templateMetrics(id, sends, leadsById);
+  }
+
+  /** Linha 1 de `app_settings`. O caminho normal é o seed; ler não escreve. */
   private async settingsRow() {
+    const row = await this.prisma.app_settings.findUnique({ where: { id: 1 } });
+    if (row) return row;
+    // Seed não rodou (banco novo). `upsert` em vez de `create` para duas
+    // leituras simultâneas não brigarem pela chave 1.
     return this.prisma.app_settings.upsert({
       where: { id: 1 },
       update: {},
@@ -327,11 +351,15 @@ export class MessagesService {
     return p ?? undefined;
   }
 
-  /** Prova social do texto: outra casa da mesma cidade, a primeira por nome. */
+  /**
+   * Prova social do texto: outra casa da mesma cidade, a primeira por nome.
+   * `is_test` fica fora — esse nome vai dentro da mensagem que um prospecto
+   * real recebe, e "Bar de Teste QA" numa mensagem fria queima o contato.
+   */
   private async neighborOf(leadId: string, city: string): Promise<string | undefined> {
     if (!city.trim()) return undefined;
     const n = await this.prisma.leads.findFirst({
-      where: { archived: false, city, id: { not: leadId } },
+      where: { archived: false, is_test: false, city, id: { not: leadId } },
       orderBy: [{ name: 'asc' }],
       select: { name: true },
     });

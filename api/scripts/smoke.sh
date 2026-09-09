@@ -653,6 +653,10 @@ TPL_ID=$(echo "$NOVO_TPL" | jq -r .id)
 check "modelo novo guarda o anexo" "video" "$(echo "$NOVO_TPL" | jq -r '.attachment.kind')"
 check "modelo novo sem text_b vem vazio" "" "$(echo "$NOVO_TPL" | jq -r '.text_b')"
 check "modelo novo nasce com métrica zerada" "0" "$(echo "$NOVO_TPL" | jq '.metrics.sent')"
+check "métrica do POST bate com a que o GET mostra do mesmo modelo" "true" \
+  "$(curl -s $API/v1/msg-templates -H "$HD" \
+    | jq --argjson m "$(echo "$NOVO_TPL" | jq -c '.metrics')" --arg i "$TPL_ID" \
+      '([.[] | select(.id==$i)][0].metrics) == $m')"
 check "público fora do catálogo barrado" "VALIDATION_ERROR" \
   "$(curl -s -X POST $API/v1/msg-templates -H "$J" -H "$HD" \
     -d '{"name":"X","audience":"dono","stage":1,"channel":"whatsapp","text_a":"oi"}' | jq -r .error.code)"
@@ -675,6 +679,13 @@ EDITADO=$(curl -s -X PUT $API/v1/msg-templates/$TPL_ID -H "$J" -H "$HD" \
 check "PUT troca o modelo inteiro" "freelancer" "$(echo "$EDITADO" | jq -r '.audience')"
 check "PUT sem anexo tira o anexo" "null" "$(echo "$EDITADO" | jq -r '.attachment')"
 check "PUT guarda a variante B" "Olá {{nome}}" "$(echo "$EDITADO" | jq -r '.text_b')"
+# A resposta de POST/PUT carrega a medição do banco, não um objeto zerado à
+# mão: quando a Task 10 começar a gravar `msg_sends`, editar um modelo já
+# disparado não pode responder `sent: 0` enquanto o GET mostra o número real.
+check "métrica do PUT bate com a que o GET mostra do mesmo modelo" "true" \
+  "$(curl -s $API/v1/msg-templates -H "$HD" \
+    | jq --argjson m "$(echo "$EDITADO" | jq -c '.metrics')" --arg i "$TPL_ID" \
+      '([.[] | select(.id==$i)][0].metrics) == $m')"
 check "PUT sem campo obrigatório barrado" "VALIDATION_ERROR" \
   "$(curl -s -X PUT $API/v1/msg-templates/$TPL_ID -H "$J" -H "$HD" -d '{"name":"só o nome"}' | jq -r .error.code)"
 check "PUT em modelo inexistente = NOT_FOUND" "NOT_FOUND" \
