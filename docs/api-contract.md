@@ -822,3 +822,179 @@ Corpo:
   vem `{"ok": true, "duplicate": true}` em vez de criar um segundo registro.
   Telefone vazio nunca casa como duplicata. Envios simultâneos do mesmo
   telefone são serializados no servidor; só um lead nasce.
+
+---
+
+## 12. Mensagens — `/v1/msg-templates`, `/v1/settings`, `/v1/blocklist`
+
+Modelos de mensagem (com A/B e medição), configurações de envio da operação e
+lista de bloqueio. Porta de `.prototype/src/lib/praca/mensagens.ts`.
+
+| Método | Rota | Corpo | Resposta |
+|---|---|---|---|
+| GET | `/v1/msg-templates` | — | `TemplateView[]` |
+| POST | `/v1/msg-templates` | `TemplateBody` | `TemplateView` |
+| POST | `/v1/msg-templates/render` | `{text, lead_id?}` | `{text, missing}` |
+| PUT | `/v1/msg-templates/:id` | `TemplateBody` | `TemplateView` |
+| DELETE | `/v1/msg-templates/:id` | — | `{ok: true}` |
+| GET | `/v1/settings` | — | `SettingsView` |
+| PATCH | `/v1/settings` | campos opcionais | `SettingsView` |
+| GET | `/v1/blocklist` | — | `BlockView[]` |
+| POST | `/v1/blocklist` | `{phone, name?, reason?, lead_id?}` | `BlockView` |
+| DELETE | `/v1/blocklist/:id` | — | `{ok: true}` |
+
+Todas exigem JWT. `:id` malformado → `404 NOT_FOUND` (nunca 500).
+
+### `TemplateView`
+
+```json
+{
+  "id": "00000000-0000-4000-8000-00000000f001",
+  "name": "Contratante · toque 1 (lead novo)",
+  "audience": "contratante",
+  "stage": 1,
+  "channel": "whatsapp",
+  "text_a": "Oi {{primeiro_nome_dono}}…",
+  "text_b": "",
+  "attachment": { "kind": "video", "name": "caso-40s.mp4", "url": null },
+  "created_at": "2026-09-09T12:00:00.000Z",
+  "metrics": {
+    "sent": 0, "responded": 0, "resp_rate": 0,
+    "advanced": 0, "adv_rate": 0,
+    "a": { "sent": 0, "responded": 0, "rate": 0 },
+    "b": { "sent": 0, "responded": 0, "rate": 0 },
+    "winner": "—"
+  }
+}
+```
+
+- `text_b` é sempre **string**: sem variante B o wire manda `""`, nunca `null`.
+- `attachment` é `null` quando não há anexo; `url` dentro dele pode ser `null`.
+- Ordem da lista: `metrics.resp_rate` desc, depois `metrics.sent` desc; empate
+  mantém a ordem de criação (é o caso com `msg_sends` vazio).
+
+**`metrics`** (`mensagens.ts:184-224`) — só conta envio que saiu da fila
+(`status != "fila"`):
+
+- `sent` = envios do modelo; `responded` = `status == "respondida"`;
+  `resp_rate = responded / sent`.
+- `advanced` = envios em que o lead **subiu de etapa** em relação a
+  `stage_at_send` e a mudança de etapa está a até 7 dias do envio
+  (`diffDays(data do envio, lead.stage_since)` entre 0 e 7, mesma conta do
+  protótipo). `adv_rate = advanced / sent`.
+- `a`/`b` = a mesma quebra por variante. `winner` só sai de `"—"` com **3
+  envios de cada lado** e taxas diferentes — amostra menor não elege nada.
+
+### `TemplateBody` (POST e PUT)
+
+```json
+{
+  "name": "Contratante · toque 1",
+  "audience": "contratante",
+  "stage": 1,
+  "channel": "whatsapp",
+  "text_a": "Oi {{primeiro_nome_dono}}",
+  "text_b": "",
+  "attachment": { "kind": "video", "name": "caso.mp4", "url": "https://…" }
+}
+```
+
+- `audience ∈ contratante | freelancer`; `channel ∈ whatsapp | email | interno`;
+  `stage` inteiro de 0 a 8 (0 = vale para qualquer etapa); `text_a` de 1 a 4000
+  caracteres; `text_b` opcional, até 4000, `""` permitido.
+- `attachment` opcional: `kind ∈ video | imagem | documento`, `name`
+  obrigatório, `url` opcional. `null` ou ausente = sem anexo.
+- **PUT substitui o modelo inteiro**: anexo que não vier no corpo é removido.
+  Fora do catálogo, campo faltando ou campo desconhecido → `400
+  VALIDATION_ERROR`.
+
+### `POST /v1/msg-templates/render`
+
+Prévia do texto antes de virar disparo. Corpo `{text, lead_id?}` (`text` até
+4000; `lead_id` UUID opcional), resposta `{text, missing}`.
+
+Substitui `{{variavel}}` pelas 16 variáveis do catálogo (§4). **Variável sem
+valor não some**: fica visível como `⟨variavel⟩` — e entra em `missing`, junto
+com qualquer `{{nome_inventado}}` que não exista no catálogo.
+
+De onde vem cada valor:
+
+| Variável | Origem |
+|---|---|
+| `nome` | `lead.decisor`, caindo para `lead.name` |
+| `estabelecimento`, `cidade` | `lead.name`, `lead.city` |
+| `primeiro_nome_dono` | primeiro nome de `lead.decisor` |
+| `bairro` | último pedaço de `lead.address` depois da vírgula |
+| `data_vaga` | primeira vaga do lead, ou hoje (Brasília) |
+| `praca`, `data` | praça do lead — sem lead, a **praça ativa** de quem chamou |
+| `meu_nome` | primeiro nome de quem está logado |
+| `estabelecimento_vizinho` | outro lead não arquivado da mesma cidade, o primeiro por nome |
+| `link_video_caso`, `link_cadastro`, `funcao`, `valor`, `dia_forte`, `turno` | `settings.template_defaults` |
+
+`lead_id` que não existe → `404 NOT_FOUND`; `lead_id` que não é UUID → `400
+VALIDATION_ERROR`.
+
+### `SettingsView` e `PATCH /v1/settings`
+
+```json
+{
+  "mode": "fila",
+  "window_start": 9,
+  "window_end": 19,
+  "sunday": false,
+  "daily_limit": 200,
+  "gap_min": 20,
+  "gap_max": 90,
+  "daily_quota": 20,
+  "template_defaults": {
+    "link_video_caso": "https://freela.app/casos/bh",
+    "link_cadastro": "https://freela.app/cadastro",
+    "funcao": "garçom",
+    "valor": "R$ 120",
+    "dia_forte": "sábado",
+    "turno": "18h às 00h"
+  }
+}
+```
+
+Uma linha só no banco (`app_settings`, id 1) — é ajuste da operação inteira,
+não por pessoa nem por praça. A linha nasce na primeira leitura se o seed não
+tiver rodado. Todos os campos do `PATCH` são opcionais.
+
+- `mode ∈ fila | freela` (§4, `send_modes`).
+- `window_start`/`window_end` são **horas de Brasília** e ficam **presas** em
+  `hard_min..hard_max` (8–20): mandar `7` grava `8` e a resposta já mostra `8`
+  — não é erro. Depois de presas, `window_end > window_start`, senão `400
+  VALIDATION_ERROR`.
+- `gap_min`/`gap_max` em **segundos**, mínimo 5, com `gap_max > gap_min`.
+  `daily_limit` e `daily_quota` inteiros ≥ 1.
+- `template_defaults` é **parcial**: manda só a chave que mudou, o resto fica.
+  Aceita apenas as 6 chaves acima, valores de até 300 caracteres — qualquer
+  outra chave é `400 VALIDATION_ERROR`. A resposta traz sempre as 6, com o
+  padrão do catálogo no que não foi configurado; gravar `""` numa chave também
+  cai no padrão do catálogo (variável-padrão vazia não faria o texto render).
+
+O agendamento do lote (`nextSlot`/`scheduleTimes`, `src/domain/send-schedule.ts`)
+lê essa janela **em horário de Brasília**, independente do fuso do processo:
+sábado 21h BRT com `sunday: false` e janela 9–19 cai na segunda às 9h BRT.
+
+### `BlockView` e lista de bloqueio
+
+```json
+{
+  "id": "uuid",
+  "phone": "(31) 98000-1000",
+  "phone_key": "980001000",
+  "name": "adicionado na mão",
+  "lead_id": null,
+  "at": "2026-09-09T12:00:00.000Z",
+  "reason": "pedido manual"
+}
+```
+
+- Lista ordenada por `at` desc.
+- `POST` normaliza o telefone em `phone_key` (últimos 9 dígitos, §10): telefone
+  sem dígito nenhum → `400 VALIDATION_ERROR`; chave já bloqueada → `409
+  ALREADY_BLOCKED` (o mesmo número escrito de outro jeito é o mesmo bloqueio).
+- `name` vazio vira `"adicionado na mão"`; `reason` vazio vira
+  `"pedido manual"`. `lead_id` é opcional e guardado como veio.

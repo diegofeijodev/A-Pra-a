@@ -90,7 +90,22 @@ export const OPTOUT_WORDS = [
 export const HARD_MIN = 8;
 export const HARD_MAX = 20;
 
-export const DEFAULT_TEMPLATE_DEFAULTS = {
+// Variáveis que NÃO saem do lead: no protótipo estavam cravadas no código do
+// render; aqui viram configuração editável (`app_settings.template_defaults`).
+export const TEMPLATE_DEFAULT_KEYS = [
+  'link_video_caso',
+  'link_cadastro',
+  'funcao',
+  'valor',
+  'dia_forte',
+  'turno',
+] as const;
+
+export type TemplateDefaultKey = (typeof TEMPLATE_DEFAULT_KEYS)[number];
+
+export type TemplateDefaults = Record<TemplateDefaultKey, string>;
+
+export const DEFAULT_TEMPLATE_DEFAULTS: TemplateDefaults = {
   link_video_caso: 'https://freela.app/casos/bh',
   link_cadastro: 'https://freela.app/cadastro',
   funcao: 'garçom',

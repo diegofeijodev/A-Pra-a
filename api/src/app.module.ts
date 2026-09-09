@@ -14,6 +14,7 @@ import { CatalogModule } from './modules/catalog/catalog.module';
 import { GeoModule } from './modules/geo/geo.module';
 import { ImportsModule } from './modules/imports/imports.module';
 import { LeadsModule } from './modules/leads/leads.module';
+import { MessagesModule } from './modules/messages/messages.module';
 import { PracasModule } from './modules/pracas/pracas.module';
 import { PublicModule } from './modules/public/public.module';
 import { UsersModule } from './modules/users/users.module';
@@ -34,6 +35,7 @@ import { UsersModule } from './modules/users/users.module';
     LeadsModule,
     ImportsModule,
     PublicModule,
+    MessagesModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

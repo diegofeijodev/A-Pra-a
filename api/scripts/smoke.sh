@@ -604,6 +604,149 @@ check "admin apaga o lead do formulário (sem resíduo)" "true" \
   "$(curl -s -X DELETE $API/v1/leads/$FORM_ID -H "$HD" | jq -r .ok)"
 check "lead do formulário sumiu" "NOT_FOUND" "$(curl -s $API/v1/leads/$FORM_ID -H "$HD" | jq -r .error.code)"
 
+echo "── Mensagens ──"
+# --- modelos do seed: só leitura, nada aqui deixa resíduo ---
+TPL_F001="00000000-0000-4000-8000-00000000f001"
+TPL_F007="00000000-0000-4000-8000-00000000f007"
+TPLS=$(curl -s $API/v1/msg-templates -H "$HD")
+check "seed traz os 8 modelos do protótipo" "8" "$(echo "$TPLS" | jq 'length')"
+check "modelo 1 tem id fixo (as cadências referenciam por id)" "true" \
+  "$(echo "$TPLS" | jq --arg i "$TPL_F001" 'any(.id==$i)')"
+check "sem envio, a lista sai na ordem de criação" "$TPL_F001" "$(echo "$TPLS" | jq -r '.[0].id')"
+check "toque 1 vem com o anexo de vídeo do protótipo" "caso-40s.mp4" \
+  "$(echo "$TPLS" | jq -r --arg i "$TPL_F001" '[.[] | select(.id==$i)][0].attachment.name')"
+check "modelo sem variante B manda string vazia, não null" "" \
+  "$(echo "$TPLS" | jq -r --arg i "$TPL_F007" '[.[] | select(.id==$i)][0].text_b')"
+check "modelo sem envio nasce com 0 enviada" "0" \
+  "$(echo "$TPLS" | jq --arg i "$TPL_F001" '[.[] | select(.id==$i)][0].metrics.sent')"
+check "sem amostra não há vencedor do A/B" "—" \
+  "$(echo "$TPLS" | jq -r --arg i "$TPL_F001" '[.[] | select(.id==$i)][0].metrics.winner')"
+
+# --- render ---
+BAR_MERCADO=$(curl -s "$API/v1/leads?praca_id=$PRACA_SEED&q=bar%20do%20mercado" -H "$HD" | jq -r '.[0].id')
+RENDER=$(curl -s -X POST $API/v1/msg-templates/render -H "$J" -H "$HD" \
+  -d "{\"text\":\"Oi {{primeiro_nome_dono}}, aqui é {{meu_nome}} — {{estabelecimento}} em {{cidade}}. {{inventada}}\",\"lead_id\":\"$BAR_MERCADO\"}")
+check "render troca as variáveis pelos dados do lead do seed" \
+  "Oi Marcos, aqui é Diego — Bar do Mercado em Belo Horizonte. ⟨inventada⟩" "$(echo "$RENDER" | jq -r .text)"
+check "variável desconhecida entra em missing" "inventada" "$(echo "$RENDER" | jq -r '.missing[0]')"
+check "variável preenchida não entra em missing" "1" "$(echo "$RENDER" | jq '.missing | length')"
+check "render pega a praça do lead" "Belo Horizonte + Contagem" \
+  "$(curl -s -X POST $API/v1/msg-templates/render -H "$J" -H "$HD" \
+    -d "{\"text\":\"{{praca}}\",\"lead_id\":\"$BAR_MERCADO\"}" | jq -r .text)"
+check "render acha um vizinho da mesma cidade" "true" \
+  "$(curl -s -X POST $API/v1/msg-templates/render -H "$J" -H "$HD" \
+    -d "{\"text\":\"{{estabelecimento_vizinho}}\",\"lead_id\":\"$BAR_MERCADO\"}" | jq '.text != "⟨estabelecimento_vizinho⟩" and .text != "Bar do Mercado"')"
+check "sem lead, {{praca}} cai na praça ativa de quem está logado" "Praça $SUF" \
+  "$(curl -s -X POST $API/v1/msg-templates/render -H "$J" -H "$HD" -d '{"text":"{{praca}}"}' | jq -r .text)"
+check "sem lead, o que vem do lead fica visível" "⟨estabelecimento⟩ · R$ 120" \
+  "$(curl -s -X POST $API/v1/msg-templates/render -H "$J" -H "$HD" -d '{"text":"{{estabelecimento}} · {{valor}}"}' | jq -r .text)"
+check "render com lead inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/msg-templates/render -H "$J" -H "$HD" \
+    -d '{"text":"oi","lead_id":"00000000-0000-4000-8000-00000000beef"}' | jq -r .error.code)"
+check "render com lead_id malformado = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/msg-templates/render -H "$J" -H "$HD" -d '{"text":"oi","lead_id":"nao-e-uuid"}' | jq -r .error.code)"
+
+# --- modelo de teste: criado, editado e apagado aqui mesmo ---
+NOVO_TPL=$(curl -s -X POST $API/v1/msg-templates -H "$J" -H "$HD" \
+  -d "{\"name\":\"Modelo $SUF\",\"audience\":\"contratante\",\"stage\":1,\"channel\":\"whatsapp\",\"text_a\":\"Oi {{primeiro_nome_dono}}\",\"attachment\":{\"kind\":\"video\",\"name\":\"caso.mp4\",\"url\":\"https://exemplo/caso.mp4\"}}")
+TPL_ID=$(echo "$NOVO_TPL" | jq -r .id)
+check "modelo novo guarda o anexo" "video" "$(echo "$NOVO_TPL" | jq -r '.attachment.kind')"
+check "modelo novo sem text_b vem vazio" "" "$(echo "$NOVO_TPL" | jq -r '.text_b')"
+check "modelo novo nasce com métrica zerada" "0" "$(echo "$NOVO_TPL" | jq '.metrics.sent')"
+check "público fora do catálogo barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/msg-templates -H "$J" -H "$HD" \
+    -d '{"name":"X","audience":"dono","stage":1,"channel":"whatsapp","text_a":"oi"}' | jq -r .error.code)"
+check "etapa fora do funil (9) barrada" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/msg-templates -H "$J" -H "$HD" \
+    -d '{"name":"X","audience":"contratante","stage":9,"channel":"whatsapp","text_a":"oi"}' | jq -r .error.code)"
+check "canal fora do catálogo barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/msg-templates -H "$J" -H "$HD" \
+    -d '{"name":"X","audience":"contratante","stage":1,"channel":"sms","text_a":"oi"}' | jq -r .error.code)"
+check "tipo de anexo fora do catálogo barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/msg-templates -H "$J" -H "$HD" \
+    -d '{"name":"X","audience":"contratante","stage":1,"channel":"whatsapp","text_a":"oi","attachment":{"kind":"planilha","name":"x.xlsx"}}' | jq -r .error.code)"
+check "text_a vazio barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/msg-templates -H "$J" -H "$HD" \
+    -d '{"name":"X","audience":"contratante","stage":1,"channel":"whatsapp","text_a":""}' | jq -r .error.code)"
+check "9 modelos com o de teste" "9" "$(curl -s $API/v1/msg-templates -H "$HD" | jq 'length')"
+
+EDITADO=$(curl -s -X PUT $API/v1/msg-templates/$TPL_ID -H "$J" -H "$HD" \
+  -d "{\"name\":\"Modelo $SUF v2\",\"audience\":\"freelancer\",\"stage\":0,\"channel\":\"interno\",\"text_a\":\"Oi {{nome}}\",\"text_b\":\"Olá {{nome}}\"}")
+check "PUT troca o modelo inteiro" "freelancer" "$(echo "$EDITADO" | jq -r '.audience')"
+check "PUT sem anexo tira o anexo" "null" "$(echo "$EDITADO" | jq -r '.attachment')"
+check "PUT guarda a variante B" "Olá {{nome}}" "$(echo "$EDITADO" | jq -r '.text_b')"
+check "PUT sem campo obrigatório barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X PUT $API/v1/msg-templates/$TPL_ID -H "$J" -H "$HD" -d '{"name":"só o nome"}' | jq -r .error.code)"
+check "PUT em modelo inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X PUT $API/v1/msg-templates/00000000-0000-4000-8000-00000000beef -H "$J" -H "$HD" \
+    -d '{"name":"X","audience":"contratante","stage":1,"channel":"whatsapp","text_a":"oi"}' | jq -r .error.code)"
+check "DELETE de modelo inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X DELETE $API/v1/msg-templates/00000000-0000-4000-8000-00000000beef -H "$HD" | jq -r .error.code)"
+check "modelo com id malformado = NOT_FOUND (não 500)" "NOT_FOUND" \
+  "$(curl -s -X DELETE $API/v1/msg-templates/nao-e-uuid -H "$HD" | jq -r .error.code)"
+check "apaga o modelo de teste (sem resíduo)" "true" \
+  "$(curl -s -X DELETE $API/v1/msg-templates/$TPL_ID -H "$HD" | jq -r .ok)"
+check "voltou aos 8 modelos do seed" "8" "$(curl -s $API/v1/msg-templates -H "$HD" | jq 'length')"
+
+# --- configurações de envio (uma linha só; tudo é devolvido no fim) ---
+SET0=$(curl -s $API/v1/settings -H "$HD")
+check "janela padrão abre às 9h" "9" "$(echo "$SET0" | jq '.window_start')"
+check "janela padrão fecha às 19h" "19" "$(echo "$SET0" | jq '.window_end')"
+check "modo de envio padrão é a fila manual" "fila" "$(echo "$SET0" | jq -r '.mode')"
+check "settings traz as 6 variáveis-padrão" "6" "$(echo "$SET0" | jq '.template_defaults | length')"
+check "valor-padrão da variável {{valor}}" "R\$ 120" "$(echo "$SET0" | jq -r '.template_defaults.valor')"
+check "hora abaixo do mínimo é presa em 8" "8" \
+  "$(curl -s -X PATCH $API/v1/settings -H "$J" -H "$HD" -d '{"window_start":7}' | jq '.window_start')"
+check "hora acima do máximo é presa em 20" "20" \
+  "$(curl -s -X PATCH $API/v1/settings -H "$J" -H "$HD" -d '{"window_end":23}' | jq '.window_end')"
+check "janela que fecha antes de abrir barrada" "VALIDATION_ERROR" \
+  "$(curl -s -X PATCH $API/v1/settings -H "$J" -H "$HD" -d '{"window_start":18,"window_end":10}' | jq -r .error.code)"
+check "intervalo máximo menor que o mínimo barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X PATCH $API/v1/settings -H "$J" -H "$HD" -d '{"gap_min":90,"gap_max":20}' | jq -r .error.code)"
+check "intervalo mínimo abaixo de 5s barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X PATCH $API/v1/settings -H "$J" -H "$HD" -d '{"gap_min":1}' | jq -r .error.code)"
+check "limite diário 0 barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X PATCH $API/v1/settings -H "$J" -H "$HD" -d '{"daily_limit":0}' | jq -r .error.code)"
+check "modo fora do catálogo barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X PATCH $API/v1/settings -H "$J" -H "$HD" -d '{"mode":"oficial"}' | jq -r .error.code)"
+check "variável-padrão desconhecida barrada" "VALIDATION_ERROR" \
+  "$(curl -s -X PATCH $API/v1/settings -H "$J" -H "$HD" -d '{"template_defaults":{"inventada":"x"}}' | jq -r .error.code)"
+check "campo desconhecido no corpo barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X PATCH $API/v1/settings -H "$J" -H "$HD" -d '{"meta_token":"x"}' | jq -r .error.code)"
+check "template_defaults parcial troca só a chave mandada" "R\$ 200" \
+  "$(curl -s -X PATCH $API/v1/settings -H "$J" -H "$HD" -d '{"template_defaults":{"valor":"R$ 200"}}' | jq -r '.template_defaults.valor')"
+check "as outras variáveis-padrão ficaram como estavam" "garçom" \
+  "$(curl -s $API/v1/settings -H "$HD" | jq -r '.template_defaults.funcao')"
+check "render usa o valor recém-configurado" "R\$ 200" \
+  "$(curl -s -X POST $API/v1/msg-templates/render -H "$J" -H "$HD" -d '{"text":"{{valor}}"}' | jq -r .text)"
+RESTAURA=$(curl -s -X PATCH $API/v1/settings -H "$J" -H "$HD" \
+  -d "{\"window_start\":$(echo "$SET0" | jq '.window_start'),\"window_end\":$(echo "$SET0" | jq '.window_end'),\"template_defaults\":{\"valor\":\"$(echo "$SET0" | jq -r '.template_defaults.valor')\"}}")
+check "janela restaurada (sem resíduo)" "9" "$(echo "$RESTAURA" | jq '.window_start')"
+check "valor-padrão restaurado (sem resíduo)" "R\$ 120" "$(echo "$RESTAURA" | jq -r '.template_defaults.valor')"
+
+# --- lista de bloqueio ---
+BLOQ_TEL="(31) 9${SUF: -8}"
+BLOQ=$(curl -s -X POST $API/v1/blocklist -H "$J" -H "$HD" -d "{\"phone\":\"$BLOQ_TEL\"}")
+BLOQ_ID=$(echo "$BLOQ" | jq -r .id)
+check "bloqueio nasce com o nome padrão" "adicionado na mão" "$(echo "$BLOQ" | jq -r .name)"
+check "bloqueio nasce com o motivo padrão" "pedido manual" "$(echo "$BLOQ" | jq -r .reason)"
+check "chave do bloqueio são os últimos 9 dígitos" "9" "$(echo "$BLOQ" | jq -r '.phone_key | length')"
+check "mesmo número escrito de outro jeito já está bloqueado" "ALREADY_BLOCKED" \
+  "$(curl -s -X POST $API/v1/blocklist -H "$J" -H "$HD" \
+    -d "{\"phone\":\"$(echo "$BLOQ_TEL" | tr -cd '0-9')\"}" | jq -r .error.code)"
+check "telefone sem dígito barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/blocklist -H "$J" -H "$HD" -d '{"phone":"sem numero"}' | jq -r .error.code)"
+check "bloqueio aparece na lista" "true" \
+  "$(curl -s $API/v1/blocklist -H "$HD" | jq --arg i "$BLOQ_ID" 'any(.id==$i)')"
+check "apagar bloqueio inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X DELETE $API/v1/blocklist/00000000-0000-4000-8000-00000000beef -H "$HD" | jq -r .error.code)"
+check "bloqueio com id malformado = NOT_FOUND (não 500)" "NOT_FOUND" \
+  "$(curl -s -X DELETE $API/v1/blocklist/nao-e-uuid -H "$HD" | jq -r .error.code)"
+check "apaga o bloqueio de teste (sem resíduo)" "true" \
+  "$(curl -s -X DELETE $API/v1/blocklist/$BLOQ_ID -H "$HD" | jq -r .ok)"
+check "bloqueio apagado sumiu da lista" "false" \
+  "$(curl -s $API/v1/blocklist -H "$HD" | jq --arg i "$BLOQ_ID" 'any(.id==$i)')"
+
 echo "── Limpeza da praça de teste ──"
 check "admin apaga a praça de teste" "true" "$(curl -s -X DELETE $API/v1/pracas/$NOVA_ID -H "$HD" | jq -r .ok)"
 check "praça de teste sumiu" "NOT_FOUND" "$(curl -s $API/v1/pracas/$NOVA_ID -H "$HD" | jq -r .error.code)"

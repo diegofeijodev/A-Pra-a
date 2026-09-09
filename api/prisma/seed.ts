@@ -8,12 +8,15 @@
  *
  * `main()` chama `seedUsers`, depois o roteiro-modelo (`seedTemplateActions`)
  * e a praça de demonstração (`seedPraca`, que instancia o roteiro como ações)
- * e por fim o funil de leads dessa praça (`seedLeads`) — sempre nesta ordem,
- * porque cada uma depende da anterior.
+ * e o funil de leads dessa praça (`seedLeads`) — sempre nesta ordem, porque
+ * cada uma depende da anterior. Por último, os modelos de mensagem e a linha
+ * de configurações de envio (`seedMsgTemplates`/`seedAppSettings`), que não
+ * dependem de nada acima.
  */
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { seedLeads } from './seed-data/leads';
+import { seedAppSettings, seedMsgTemplates } from './seed-data/msg-templates';
 import { seedPraca } from './seed-data/praca';
 import { seedTemplateActions } from './seed-data/template-actions';
 
@@ -84,6 +87,8 @@ async function main() {
     await seedTemplateActions(prisma);
     await seedPraca(prisma);
     await seedLeads(prisma);
+    await seedMsgTemplates(prisma);
+    await seedAppSettings(prisma);
   } finally {
     await prisma.$disconnect();
   }
