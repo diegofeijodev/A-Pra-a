@@ -36,5 +36,14 @@ services:
     ports:
       - '3014:3014'
 
+# Sub-rede fixa: o pool padrão do Docker (172.17-31) já está esgotado nesta
+# máquina e a rede caía em 192.168.0.0/20, colidindo com a Wi-Fi do dono
+# (192.168.0.x) — o host deixava de alcançar localhost:5437.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.60.0.0/24
+
 volumes:
   praca_pgdata:
