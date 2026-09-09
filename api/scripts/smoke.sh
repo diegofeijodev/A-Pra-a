@@ -495,6 +495,27 @@ check "desfazer não apaga lead que só foi completado" "0" \
 check "admin apaga o lead do teste de completar (sem resíduo)" "true" \
   "$(curl -s -X DELETE $API/v1/leads/$VAZIO_ID -H "$HD" | jq -r .ok)"
 
+# Praça pela cidade do arquivo, gravando de verdade: a linha de cidade
+# conhecida cai na praça mais antiga que casa; a desconhecida entra órfã.
+cat > /tmp/praca-smoke-import.json <<EOF
+{"file_name":"por-cidade-$SUF.csv","columns":$COLS,"rows":[{"Nome":"Arquivo BH $SUF","Telefone":"(31) 97002-0001","Cidade":"Belo Horizonte"},{"Nome":"Arquivo sem praça $SUF","Telefone":"(41) 97002-0002","Cidade":"Curitiba"}],"map":$MAPA,"origem":"importação","dup_action":"ignorar","praca_mode":"arquivo","owner_mode":"lote","lote_owner_id":"$DIEGO_ID"}
+EOF
+RUN_ARQ=$(curl -s -X POST $API/v1/imports/run -H "$J" -H "$HD" -d @/tmp/praca-smoke-import.json)
+LOTE_ARQ=$(echo "$RUN_ARQ" | jq -r .batch_id)
+check "importa as duas pela cidade do arquivo" "2" "$(echo "$RUN_ARQ" | jq '.imported')"
+check "relatório avisa a linha que ficou sem praça" "1 sem praça" "$(echo "$RUN_ARQ" | jq -r '.reasons[0]')"
+check "cidade conhecida cai na praça do seed" "$PRACA_SEED" \
+  "$(curl -s "$API/v1/leads?q=Arquivo%20BH%20$SUF" -H "$HD" | jq -r '.[0].praca_id')"
+ORFAO=$(curl -s "$API/v1/leads?q=Arquivo%20sem%20pra%C3%A7a%20$SUF" -H "$HD" | jq -r '.[0].id')
+check "cidade desconhecida entra sem praça" "null" \
+  "$(curl -s $API/v1/leads/$ORFAO -H "$HD" | jq -r '.praca_id')"
+check "lead sem praça aparece na lista de órfãos" "1" \
+  "$(curl -s $API/v1/leads/orphans -H "$HD" | jq --arg i "$ORFAO" '[.[] | select(.id==$i)] | length')"
+DESFAZ_ARQ=$(curl -s -X POST $API/v1/imports/$LOTE_ARQ/undo -H "$HD")
+check "desfazer leva as duas (inclusive a órfã)" "2" "$(echo "$DESFAZ_ARQ" | jq '.removed')"
+check "nenhum órfão sobra do smoke" "0" \
+  "$(curl -s $API/v1/leads/orphans -H "$HD" | jq --arg i "$ORFAO" '[.[] | select(.id==$i)] | length')"
+
 check "desfazer importação que não existe = NOT_FOUND" "NOT_FOUND" \
   "$(curl -s -X POST $API/v1/imports/00000000-0000-4000-8000-00000000beef/undo -H "$HD" | jq -r .error.code)"
 check "id malformado no desfazer = NOT_FOUND (não 500)" "NOT_FOUND" \

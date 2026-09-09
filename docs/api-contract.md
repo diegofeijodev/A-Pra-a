@@ -627,7 +627,8 @@ protótipo (`lib/praca/intake.ts`).
   `possible_dup: true`).
 - **`praca_mode`**: `lote` (a praça de `lote_praca_id` vale para o arquivo
   inteiro) ou `arquivo` (a praça sai da cidade de cada linha — a primeira praça
-  cuja cidade **ou** nome contém a cidade da linha). Sem casar, o lead entra
+  cuja cidade **ou** nome contém a cidade da linha; em empate vence a **mais
+  antiga**, que é a ordem em que as praças são lidas). Sem casar, o lead entra
   **sem praça** e aparece em `GET /v1/leads/orphans`.
 - **`owner_mode`**: `lote` (todos para `lote_owner_id`) ou `rodizio`
   (distribui em ordem entre `rodizio_ids`; vazio = todo mundo ativo).

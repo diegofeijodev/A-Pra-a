@@ -332,24 +332,32 @@ export class ImportsService {
   private async avaliar(dto: EvaluateImportDto, db: Db) {
     if (dto.praca_mode === 'lote') await this.assertPraca(dto.lote_praca_id, db);
 
-    const [candidatos, pracas] = await Promise.all([
-      db.leads.findMany({
-        where: { archived: false },
-        select: {
-          id: true,
-          name: true,
-          address: true,
-          city: true,
-          phone: true,
-          cnpj: true,
-          instagram: true,
-          decisor: true,
-        },
-      }),
+    // Uma consulta de cada vez, nunca `Promise.all`: aqui o `db` pode ser o
+    // cliente da transação do `run`, preso a UMA conexão — disparar duas
+    // consultas em paralelo nele não paraleliza nada e ainda quebra atrás de
+    // alguns poolers.
+    const candidatos = await db.leads.findMany({
+      where: { archived: false },
+      select: {
+        id: true,
+        name: true,
+        address: true,
+        city: true,
+        phone: true,
+        cnpj: true,
+        instagram: true,
+        decisor: true,
+      },
+    });
+    const pracas =
       dto.praca_mode === 'arquivo'
-        ? db.pracas.findMany({ select: { id: true, name: true, city: true } })
-        : Promise.resolve([]),
-    ]);
+        ? // Ordem explícita: "a primeira praça que casa" precisa ser sempre a
+          // mesma — sem `orderBy` o Postgres não promete ordem nenhuma.
+          await db.pracas.findMany({
+            select: { id: true, name: true, city: true },
+            orderBy: { created_at: 'asc' },
+          })
+        : [];
 
     const porId = new Map(candidatos.map((c) => [c.id, c]));
     // A lista cresce a cada linha aceita: duas linhas iguais no MESMO arquivo
