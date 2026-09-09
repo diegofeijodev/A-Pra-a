@@ -12,12 +12,15 @@
  * cada uma depende da anterior. Por último, os modelos de mensagem e a linha
  * de configurações de envio (`seedMsgTemplates`/`seedAppSettings`), que não
  * dependem de nada acima, e as cadências-modelo (`seedCadences`), que dependem
- * dos modelos de mensagem (os nós apontam para `SEED_TEMPLATE_IDS`).
+ * dos modelos de mensagem (os nós apontam para `SEED_TEMPLATE_IDS`). Por fim
+ * a mídia da praça (`seedMidia`: provas, campanhas, criativos e tráfego), que
+ * depende da praça existir.
  */
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { seedCadences } from './seed-data/cadences';
 import { seedLeads } from './seed-data/leads';
+import { seedMidia } from './seed-data/midia';
 import { seedAppSettings, seedMsgTemplates } from './seed-data/msg-templates';
 import { seedPraca } from './seed-data/praca';
 import { seedTemplateActions } from './seed-data/template-actions';
@@ -92,6 +95,7 @@ async function main() {
     await seedMsgTemplates(prisma);
     await seedAppSettings(prisma);
     await seedCadences(prisma);
+    await seedMidia(prisma);
   } finally {
     await prisma.$disconnect();
   }

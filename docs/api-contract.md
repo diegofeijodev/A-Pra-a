@@ -1432,3 +1432,227 @@ responde `{created}` — é o "restaurar as 5 cadências prontas" da tela.
 primeira rodada matricularia todo lead na etapa 1 e todo lead que rodou a
 primeira vaga, marcando mensagem como enviada na ficha de gente real sem ninguém
 ter pedido. Ligar cada uma é ato de gente (o botão play da tela).
+
+---
+
+## 15. Mídia — `/v1/campanhas`, `/v1/creatives`, `/v1/traffic`, `/v1/proofs`
+
+Mídia é o **último passo do playbook, não o primeiro**: campanha existe para
+multiplicar uma praça que já funciona. Por isso tudo aqui é atravessado por dois
+freios — o **portão** das etapas 2 e 6 e o **tempo de preenchimento** da vaga.
+Porta de `.prototype/src/lib/praca/campanhas.ts` e dos componentes
+`CampEstrategia.tsx`, `CampCriativos.tsx`, `CampTrafego.tsx`.
+
+| Método | Rota | Corpo | Resposta |
+|---|---|---|---|
+| GET | `/v1/proofs` | `?praca_id` (obrigatório) | `ProofView[]` |
+| POST | `/v1/proofs` | `{praca_id, kind, title}` | `ProofView` |
+| GET | `/v1/campanhas` | `?praca_id` (opcional) | `CampanhaView[]` (ordem de criação) |
+| POST | `/v1/campanhas` | `CampanhaBody` | `CampanhaView` |
+| POST | `/v1/campanhas/suggest-name` | `{praca_id, publico, objetivo, start}` | `{name}` |
+| GET | `/v1/campanhas/fill-hours` | `?praca_id` (obrigatório) | `FillBrakeView` |
+| PUT | `/v1/campanhas/:id` | `CampanhaBody` | `CampanhaView` |
+| DELETE | `/v1/campanhas/:id` | — | `{ok: true}` |
+| POST | `/v1/campanhas/:id/duplicate` | `{praca_id}` | `CampanhaView` (a cópia) |
+| POST | `/v1/campanhas/:id/status` | `{status, justification?}` | `CampanhaView` |
+| GET | `/v1/creatives` | `?campanha_id` (obrigatório) | `CreativeView[]` (por prazo) |
+| POST | `/v1/creatives` | `CreativeBody` | `CreativeView` |
+| PUT | `/v1/creatives/:id` | `CreativeBody` | `CreativeView` |
+| DELETE | `/v1/creatives/:id` | — | `{ok: true}` |
+| POST | `/v1/creatives/:id/status` | `{status}` | `CreativeView` |
+| POST | `/v1/creatives/:id/publish-date` | `{date}` | `CreativeView` |
+| POST | `/v1/creatives/:id/review` | `{kind, text?}` | `CreativeView` |
+| GET | `/v1/traffic` | `?campanha_id` (obrigatório) | `TrafficEntryView[]` |
+| POST | `/v1/traffic` | `TrafficBody` | `TrafficEntryView` |
+| PUT | `/v1/traffic/:id` | `TrafficBody` | `TrafficEntryView` |
+| DELETE | `/v1/traffic/:id` | — | `{ok: true}` |
+| PUT | `/v1/traffic/:id/days` | `{date, investido, alcance, cliques, conversoes, auto?}` | `TrafficDayView` |
+| POST | `/v1/traffic/:id/pull-api` | — | `TrafficDayView` (o dia de hoje) |
+
+Todas exigem JWT e nenhuma é só de admin (quem monta a campanha é a agência).
+`:id` malformado → `404 NOT_FOUND` (nunca 500); `?praca_id`/`?campanha_id`
+malformado ou ausente onde é obrigatório → `400 VALIDATION_ERROR` (é filtro, não
+caminho). Conjuntos fechados vêm do catálogo de mídia (`src/domain/catalog/midia.ts`).
+
+### `ProofView`
+
+```json
+{ "id": "uuid", "praca_id": "uuid", "kind": "video_dono", "title": "Bar do Mercado — sábado sem falta" }
+```
+
+`kind ∈ video_dono | video_freela | caso`, `title` até 200. A prova é da **praça**,
+não da campanha: a mesma prova entra em quantas campanhas quiser, e prova de
+outra praça na campanha → `400 VALIDATION_ERROR`.
+
+### `CampanhaView`
+
+```json
+{
+  "id": "uuid", "name": "BH-Contratante-Cadastro-Set26", "praca_id": "uuid",
+  "publico": "contratante", "objetivo": "cadastro_contratante",
+  "start": "2026-09-09", "end": "2026-10-09", "verba": 6000, "gasto": 0,
+  "dor": "Dono de bar perde o sábado quando falta gente no turno.",
+  "oferta": "Primeira contratação sem taxa.",
+  "mensagem_chave": "Faltou gente? A vaga é preenchida no mesmo dia…",
+  "provas": ["uuid"], "destino": "formulario",
+  "kpi_name": "Cadastros de contratante", "kpi_meta": 30, "kpi_custo": 130,
+  "cac_teto": 130, "status": "ativa",
+  "gate_justification": { "by": "Diego", "at": "2026-09-09T12:00:00.000Z", "text": "…" },
+  "created_at": "2026-09-09T12:00:00.000Z",
+  "metrics": { "investido": 720, "alcance": 64800, "cliques": 1188, "conversoes": 5,
+               "cpc": 144, "leads": 0, "cadastros": 0, "ativos": 0,
+               "cp_cadastro": 0, "cp_ativo": 0, "acima_teto": false },
+  "gate": { "ok": false, "falta": ["Etapa 2 — 40 garçons confirmados (hoje: 22)"] }
+}
+```
+
+`CampanhaBody` = `{praca_id, publico ∈ contratante|freelancer,
+objetivo ∈ catalog.objetivos, start, end, verba, gasto, dor (1..400),
+oferta (≤400), mensagem_chave (1..400), provas: uuid[], destino ∈ catalog.destinos,
+kpi_name (≤120), kpi_meta, kpi_custo, cac_teto, status? (padrão `rascunho`),
+justification?}`. Todos obrigatórios no `POST` e no `PUT`, menos `status` e
+`justification`.
+
+**`name` não entra no corpo** — quem monta é o servidor (`campanhaName`), a partir
+da sigla da cidade da praça, do público, do objetivo e do mês do `start`
+(`BH-Contratante-Cadastro-Set26`, o mesmo nome usado no Meta e no Google). Mandar
+`name` → `400 VALIDATION_ERROR` (whitelist). `POST /v1/campanhas/suggest-name`
+devolve o nome antes de salvar, para a tela mostrar enquanto se escolhe.
+
+`metrics` (`campMetrics`): `investido` é a soma dos dias lançados no tráfego e só
+cai no `gasto` declarado quando **nenhum** dia foi lançado; `cpc` é custo por
+**conversão**; `leads` são os leads com `campanha_id` desta campanha, `cadastros`
+os que estão na etapa ≥ 5 e `ativos` os que estão exatamente na 7; `acima_teto` é
+`cp_ativo > cac_teto` **e** `ativos > 0` — sem ativo não há alerta, dividir por
+zero não é notícia.
+
+### O portão (freio de mídia)
+
+`gate` (`gatesOk`) lê as etapas do playbook da praça: a **2** (40 garçons
+confirmados) e a **6** (5 clientes com segunda vaga). Etapa liberada na mão
+(`unlocked_at` da etapa 3 / 7) dispensa o número, como na tela de etapas (§6).
+
+Sair do rascunho com o portão fechado exige **justificativa escrita**: se
+`status != "rascunho"`, `gate.ok == false` e a campanha ainda **não** tem
+`gate_justification`, o `POST /:id/status` (e o `POST`/`PUT` que muda o status)
+pede `justification` de 10 a 400 caracteres. Sem ela:
+
+```json
+{ "error": { "code": "GATE_JUSTIFICATION_REQUIRED",
+             "message": "Esta praça ainda não bateu o portão. Escreva a justificativa (mínimo 10 caracteres)." } }
+```
+
+A justificativa fica gravada com autor (nome de quem estava logado) e hora, e
+**não é cobrada de novo**: reeditar o briefing ou pausar/reativar depois passa
+direto. O texto do aviso da tela é `catalog.gate_warning` (§4).
+
+`GET /v1/campanhas/fill-hours?praca_id` é o outro freio — `FillBrakeView`:
+
+```json
+{ "praca_id": "uuid", "fill_hours": 2.7, "limit_h": 4, "above": false }
+```
+
+`fill_hours` é a média de horas das vagas **preenchidas que anotaram a hora**
+(`lead_vagas`) dos leads da praça, `null` quando ninguém anotou. `above` acende o
+`catalog.fill_alert`: acima de 4 horas, corta a mídia e volta para a captação de
+freelancer.
+
+### `DELETE /v1/campanhas/:id`
+
+Leva criativos, comentários, entradas de tráfego e dias por cascata. O **lead
+não vai**: não há FK dele para a campanha, então o mesmo `DELETE` zera
+`leads.campanha_id` na mesma transação — apagar campanha nunca apaga gente do
+funil, só apaga a origem dela.
+
+### `POST /v1/campanhas/:id/duplicate`
+
+Copia a campanha para outra praça (`{praca_id}`): nome **recalculado** para a
+praça de destino, `provas` trocadas pelas primeiras da praça de destino (mesma
+quantidade), `gasto: 0`, `status: "rascunho"`, sem a justificativa de portão da
+origem. Os criativos vão como `a_fazer`, sem arquivo, sem comentário e sem
+aprovação. **Tráfego não vai**: verba, gerenciador e números são da praça de
+origem.
+
+### `CreativeView`
+
+```json
+{
+  "id": "uuid", "campanha_id": "uuid", "formato": "reels",
+  "titulo": "O dia do dono", "gancho": "3 primeiros segundos: …",
+  "roteiro": { "gancho": "…", "desenvolvimento": "…", "prova": "…", "cta": "…" },
+  "legenda": "…", "cta_botao": "Abrir vaga", "owner_id": null,
+  "due": "2026-09-14", "publish_at": "2026-09-16", "status": "aprovado",
+  "file_url": "", "ia": { "tool": "Sora", "prompt": "…" },
+  "approved_at": "2026-09-09T12:00:00.000Z", "created_at": "2026-09-09T12:00:00.000Z",
+  "comments": [ { "id": "uuid", "at": "2026-09-09T12:00:00.000Z",
+                  "author": "Diego", "kind": "aprovacao", "text": "Aprovado." } ]
+}
+```
+
+`CreativeBody` = `{campanha_id, formato ∈ catalog.formatos, titulo (≤120),
+gancho (≤240), roteiro {gancho, desenvolvimento, prova, cta} (≤1000 cada),
+legenda (≤1000), cta_botao (≤40), owner_id (uuid|null), due, publish_at (dia|null),
+status ∈ catalog.creative_status, file_url (≤500), ia {tool ∈ catalog.ia_tools,
+prompt (≤2000)} | null}`. `owner_id` de pessoa que não existe →
+`400 VALIDATION_ERROR`. Os roteiros-modelo prontos vêm em `catalog.script_models` (§4).
+
+`POST /:id/review` é a revisão da agência:
+
+- `{kind: "aprovacao", text?}` → `status: "aprovado"` e `approved_at` = agora;
+  `text` vazio grava o comentário **`"Aprovado."`**.
+- `{kind: "ajuste", text}` → `status: "producao"` e `approved_at` **apagado** — o
+  que voltou para a mesa não está mais aprovado. `text` é obrigatório
+  (`400 VALIDATION_ERROR` sem ele).
+
+O comentário fica no nome de quem estava logado, com `kind ∈ nota|ajuste|aprovacao`.
+`POST /:id/publish-date {date}` muda `publish_at` **e** deixa o comentário
+`nota`: `Data de publicação movida para dd/mm/aaaa.`. `POST /:id/status {status}`
+só move o quadro, sem comentário.
+
+`DELETE /v1/creatives/:id` tira o id do criativo das entradas de tráfego que o
+citavam na mesma transação (`traffic_entries.criativos` é array sem FK) — sem
+isso o id órfão travaria o próximo `PUT` da entrada.
+
+### `TrafficEntryView`
+
+```json
+{
+  "id": "uuid", "campanha_id": "uuid", "plataforma": "meta",
+  "nome_la": "BH-Contratante-Cadastro-Set26",
+  "publico": "Donos de bar e restaurante, 25–55…",
+  "geo": "Belo Horizonte · MG + cidades num raio de 50 km",
+  "verba_diaria": 120, "criativos": ["uuid"], "manager_url": "", "api_connected": false,
+  "days": [ { "id": "uuid", "entry_id": "uuid", "date": "2026-09-03",
+              "investido": 120, "alcance": 9200, "cliques": 168,
+              "conversoes": 0, "auto": false } ]
+}
+```
+
+`TrafficBody` = `{campanha_id, plataforma ∈ meta|google, nome_la (≤120),
+publico (≤300), geo (≤200), verba_diaria ≥ 0, criativos: uuid[], manager_url
+(http(s) ou vazio, ≤500), api_connected}`. `criativos` só aceita criativo **desta
+campanha** com status `aprovado` ou `publicado` → senão `400 VALIDATION_ERROR`:
+no gerenciador não entra peça que ninguém aprovou.
+
+`PUT /v1/traffic/:id/days` é **upsert por data** (`traffic_days` é único em
+`entry_id + date`): mandar o mesmo dia duas vezes **corrige** a linha, não cria
+outra. `auto` marca que o número veio da plataforma, não da mão.
+
+`POST /v1/traffic/:id/pull-api` é o "puxar pela API" da tela. Sem
+`api_connected` → `400 API_NOT_CONNECTED`. Com ela, grava (upsert) o dia de
+**hoje** (Brasília) estimado a partir da verba diária, exatamente como o
+protótipo: `investido = verba_diaria`, `alcance = verba_diaria × 90`,
+`cliques = round(verba_diaria × 1,6)`, `conversoes = max(1, round(verba_diaria /
+110))`, `auto: true`. É simulação declarada — a integração de verdade com Meta e
+Google ainda não existe.
+
+### Seed da mídia
+
+A praça de demonstração nasce com a mídia do protótipo: **13 provas** (5 vídeos
+de dono, 5 de freelancer, 3 casos escritos), **2 campanhas** (contratante e
+freelancer, nomes montados por `campanhaName` com o mês de hoje), **5 criativos**
+tirados dos roteiros-modelo (`aprovado`, `producao`, `a_fazer`, `aprovacao`,
+`a_fazer`), **1 entrada de tráfego no Meta** com os 3 criativos da campanha de
+contratante e **6 dias** lançados (`today-6` a `today-1`, R$ 120/dia → 720
+investidos, 5 conversões). Idempotente: se a praça seed já tem campanha, o seed
+não faz nada.

@@ -18,6 +18,7 @@ import { GeoModule } from './modules/geo/geo.module';
 import { ImportsModule } from './modules/imports/imports.module';
 import { LeadsModule } from './modules/leads/leads.module';
 import { MessagesModule } from './modules/messages/messages.module';
+import { MidiaModule } from './modules/midia/midia.module';
 import { PracasModule } from './modules/pracas/pracas.module';
 import { PublicModule } from './modules/public/public.module';
 import { UsersModule } from './modules/users/users.module';
@@ -41,6 +42,7 @@ import { UsersModule } from './modules/users/users.module';
     MessagesModule,
     DisparosModule,
     CadencesModule,
+    MidiaModule,
   ],
   providers: [
     // Subclasse do ThrottlerGuard: o teto do formulário público vem do

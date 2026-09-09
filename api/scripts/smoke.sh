@@ -1317,6 +1317,273 @@ check "não sobrou inscrição nenhuma no banco" "0" "$(curl -s $API/v1/enrollme
 check "funil da praça seed voltou aos 25 leads" "25" \
   "$(curl -s "$API/v1/leads?praca_id=$PRACA_SEED&archived=true" -H "$HD" | jq 'length')"
 
+echo "── Mídia ──"
+# Sigla + mês/ano do nome de campanha (`campanhaName`): a praça do seed é
+# "Belo Horizonte · MG" (sigla BH) e o mês é o de HOJE em Brasília — o mesmo
+# `todaySp()` que o seed usou para abrir as campanhas.
+MESES_ABR=(Jan Fev Mar Abr Mai Jun Jul Ago Set Out Nov Dez)
+MESANO="${MESES_ABR[$(($(TZ=America/Sao_Paulo date +%-m) - 1))]}$(TZ=America/Sao_Paulo date +%y)"
+HOJE30_BR=$(TZ=America/Sao_Paulo date -d '+30 days' +%d/%m/%Y)
+BEEF="00000000-0000-4000-8000-00000000beef"
+
+# Corpo da campanha: praca_id, publico, objetivo, dor, provas (JSON), extra.
+# `name` NUNCA entra — quem monta é o servidor.
+corpo_camp() {
+  printf '{"praca_id":"%s","publico":"%s","objetivo":"%s","start":"%s","end":"%s","verba":1000,"gasto":0,"dor":"%s","oferta":"","mensagem_chave":"Vaga aberta hoje na sua cidade.","provas":%s,"destino":"whatsapp","kpi_name":"Freelas confirmados","kpi_meta":10,"kpi_custo":50,"cac_teto":130%s}' \
+    "$1" "$2" "$3" "$HOJE" "$HOJE30" "$4" "$5" "$6"
+}
+
+PROVAS=$(curl -s "$API/v1/proofs?praca_id=$PRACA_SEED" -H "$HD")
+check "praça do seed tem as 13 provas do protótipo" "13" "$(echo "$PROVAS" | jq 'length')"
+check "as provas vêm nos 3 tipos" "3" "$(echo "$PROVAS" | jq '[.[].kind] | unique | length')"
+check "/v1/proofs sem praca_id é barrado" "VALIDATION_ERROR" "$(curl -s "$API/v1/proofs" -H "$HD" | jq -r .error.code)"
+check "prova de praça que não existe = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/proofs -H "$J" -H "$HD" -d "{\"praca_id\":\"$BEEF\",\"kind\":\"caso\",\"title\":\"X\"}" | jq -r .error.code)"
+check "tipo de prova fora do catálogo é barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/proofs -H "$J" -H "$HD" -d "{\"praca_id\":\"$PRACA_SEED\",\"kind\":\"podcast\",\"title\":\"X\"}" | jq -r .error.code)"
+PROVA_SEED=$(echo "$PROVAS" | jq -r '.[0].id')
+
+CAMPS=$(curl -s "$API/v1/campanhas?praca_id=$PRACA_SEED" -H "$HD")
+check "praça do seed tem as 2 campanhas do protótipo" "2" "$(echo "$CAMPS" | jq 'length')"
+CS1=$(echo "$CAMPS" | jq '[.[] | select(.publico=="contratante")][0]')
+CS2=$(echo "$CAMPS" | jq '[.[] | select(.publico=="freelancer")][0]')
+check "o nome da campanha é o mesmo do gerenciador" "BH-Contratante-Cadastro-$MESANO" "$(echo "$CS1" | jq -r .name)"
+check "os 6 dias de tráfego somam 720 investidos" "720" "$(echo "$CS1" | jq '.metrics.investido')"
+check "os 6 dias somam 5 conversões" "5" "$(echo "$CS1" | jq '.metrics.conversoes')"
+check "custo por conversão = 720 / 5" "144" "$(echo "$CS1" | jq '.metrics.cpc')"
+check "alcance e cliques somam os 6 dias" "64800 1188" \
+  "$(echo "$CS1" | jq -r '"\(.metrics.alcance) \(.metrics.cliques)"')"
+check "a campanha de contratante carrega 3 provas" "3" "$(echo "$CS1" | jq '.provas | length')"
+check "campanha sem dia lançado fica no gasto declarado" "0" "$(echo "$CS2" | jq '.metrics.investido')"
+check "a campanha de freelancer carrega 2 provas" "2" "$(echo "$CS2" | jq '.provas | length')"
+check "sem lead de campanha, não há cadastro nem ativo" "0 0 false" \
+  "$(echo "$CS1" | jq -r '"\(.metrics.cadastros) \(.metrics.ativos) \(.metrics.acima_teto)"')"
+check "o portão da praça do seed está fechado" "false" "$(echo "$CS1" | jq '.gate.ok')"
+check "o portão diz que falta a etapa 2 (22 de 40)" "Etapa 2 — 40 garçons confirmados (hoje: 22)" \
+  "$(echo "$CS1" | jq -r '.gate.falta[0]')"
+check "o portão também cobra a etapa 6" "Etapa 6 — 5 clientes com segunda vaga (hoje: 0)" \
+  "$(echo "$CS1" | jq -r '.gate.falta[1]')"
+check "GET /v1/campanhas sem praca_id lista todas" "true" "$(curl -s $API/v1/campanhas -H "$HD" | jq 'length >= 2')"
+CS1_ID=$(echo "$CS1" | jq -r .id)
+CS2_ID=$(echo "$CS2" | jq -r .id)
+check "os 5 criativos do seed estão nas 2 campanhas" "3 2" \
+  "$(curl -s "$API/v1/creatives?campanha_id=$CS1_ID" -H "$HD" | jq 'length') $(curl -s "$API/v1/creatives?campanha_id=$CS2_ID" -H "$HD" | jq 'length')"
+TR_SEED=$(curl -s "$API/v1/traffic?campanha_id=$CS1_ID" -H "$HD")
+check "a entrada do seed é do Meta com 6 dias" "meta 6" "$(echo "$TR_SEED" | jq -r '"\(.[0].plataforma) \(.[0].days | length)"')"
+check "a entrada do seed leva os 3 criativos da campanha" "3" "$(echo "$TR_SEED" | jq '.[0].criativos | length')"
+
+FILL=$(curl -s "$API/v1/campanhas/fill-hours?praca_id=$PRACA_SEED" -H "$HD")
+check "o freio de mídia usa o teto de 4 horas" "4" "$(echo "$FILL" | jq '.limit_h')"
+check "o preenchimento do seed fica entre 2 h e 3 h" "true" \
+  "$(echo "$FILL" | jq '.fill_hours > 2 and .fill_hours <= 3')"
+check "abaixo do teto, o freio não acende" "false" "$(echo "$FILL" | jq '.above')"
+
+check "sugerir nome não precisa de campanha nenhuma" "BH-Freelancer-PrimeiraVaga-$MESANO" \
+  "$(curl -s -X POST $API/v1/campanhas/suggest-name -H "$J" -H "$HD" \
+    -d "{\"praca_id\":\"$PRACA_SEED\",\"publico\":\"freelancer\",\"objetivo\":\"primeira_vaga\",\"start\":\"$HOJE\"}" | jq -r .name)"
+
+# --- campanha de teste na praça do seed (sai inteira no fim da seção) ---
+CAMP=$(curl -s -X POST $API/v1/campanhas -H "$J" -H "$HD" \
+  -d "$(corpo_camp "$PRACA_SEED" freelancer primeira_vaga "Vaga do sábado sem ninguém para pegar." "[\"$PROVA_SEED\"]" "")")
+CAMP_ID=$(echo "$CAMP" | jq -r .id)
+check "campanha nova nasce rascunho" "rascunho" "$(echo "$CAMP" | jq -r .status)"
+check "o nome é montado pelo servidor" "BH-Freelancer-PrimeiraVaga-$MESANO" "$(echo "$CAMP" | jq -r .name)"
+check "campanha nova nasce sem número nenhum" "0 0 0" \
+  "$(echo "$CAMP" | jq -r '"\(.metrics.investido) \(.metrics.conversoes) \(.metrics.leads)"')"
+check "campanha nova nasce sem justificativa de portão" "null" "$(echo "$CAMP" | jq -r '.gate_justification')"
+check "mandar 'name' no corpo é barrado (o nome é do servidor)" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/campanhas -H "$J" -H "$HD" \
+    -d "$(corpo_camp "$PRACA_SEED" freelancer primeira_vaga "Dor." "[]" ",\"name\":\"na mão\"")" | jq -r .error.code)"
+check "briefing sem a dor não salva" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/campanhas -H "$J" -H "$HD" \
+    -d "$(corpo_camp "$PRACA_SEED" freelancer primeira_vaga "" "[]" "")" | jq -r .error.code)"
+check "prova de outra praça não entra na campanha" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/campanhas -H "$J" -H "$HD" \
+    -d "$(corpo_camp "$NOVA_ID" freelancer primeira_vaga "Dor." "[\"$PROVA_SEED\"]" "")" | jq -r .error.code)"
+check "campanha que já nasce ativa com portão fechado exige justificativa" "GATE_JUSTIFICATION_REQUIRED" \
+  "$(curl -s -X POST $API/v1/campanhas -H "$J" -H "$HD" \
+    -d "$(corpo_camp "$PRACA_SEED" freelancer primeira_vaga "Dor." "[]" ",\"status\":\"ativa\"")" | jq -r .error.code)"
+
+check "sair do rascunho com o portão fechado exige justificativa" "GATE_JUSTIFICATION_REQUIRED" \
+  "$(curl -s -X POST $API/v1/campanhas/$CAMP_ID/status -H "$J" -H "$HD" -d '{"status":"ativa"}' | jq -r .error.code)"
+check "a mensagem do portão explica o mínimo de 10 caracteres" "Esta praça ainda não bateu o portão. Escreva a justificativa (mínimo 10 caracteres)." \
+  "$(curl -s -X POST $API/v1/campanhas/$CAMP_ID/status -H "$J" -H "$HD" -d '{"status":"ativa"}' | jq -r .error.message)"
+check "justificativa de menos de 10 caracteres é barrada" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/campanhas/$CAMP_ID/status -H "$J" -H "$HD" -d '{"status":"ativa","justification":"curta"}' | jq -r .error.code)"
+ATIVA=$(curl -s -X POST $API/v1/campanhas/$CAMP_ID/status -H "$J" -H "$HD" \
+  -d '{"status":"ativa","justification":"Diego assumiu o risco: a casa grande pediu o anúncio."}')
+check "com justificativa a campanha sai do rascunho" "ativa" "$(echo "$ATIVA" | jq -r .status)"
+check "a justificativa grava quem escreveu" "Diego" "$(echo "$ATIVA" | jq -r .gate_justification.by)"
+check "a justificativa grava o texto" "Diego assumiu o risco: a casa grande pediu o anúncio." \
+  "$(echo "$ATIVA" | jq -r .gate_justification.text)"
+check "a segunda mudança de status não cobra justificativa de novo" "pausada" \
+  "$(curl -s -X POST $API/v1/campanhas/$CAMP_ID/status -H "$J" -H "$HD" -d '{"status":"pausada"}' | jq -r .status)"
+check "status fora do catálogo é barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/campanhas/$CAMP_ID/status -H "$J" -H "$HD" -d '{"status":"morta"}' | jq -r .error.code)"
+check "status de campanha inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/campanhas/$BEEF/status -H "$J" -H "$HD" -d '{"status":"pausada"}' | jq -r .error.code)"
+check "id de campanha malformado = NOT_FOUND (não 500)" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/campanhas/nao-e-uuid/status -H "$J" -H "$HD" -d '{"status":"pausada"}' | jq -r .error.code)"
+
+# O PUT também passa pelo portão quando MUDA o status: campanha em rascunho sem
+# justificativa nenhuma não vira "ativa" pelo briefing.
+CAMP2=$(curl -s -X POST $API/v1/campanhas -H "$J" -H "$HD" \
+  -d "$(corpo_camp "$PRACA_SEED" contratante marca "Marca desconhecida na praça." "[]" "")")
+CAMP2_ID=$(echo "$CAMP2" | jq -r .id)
+check "o PUT que sai do rascunho sem justificativa é barrado" "GATE_JUSTIFICATION_REQUIRED" \
+  "$(curl -s -X PUT $API/v1/campanhas/$CAMP2_ID -H "$J" -H "$HD" \
+    -d "$(corpo_camp "$PRACA_SEED" contratante marca "Marca desconhecida na praça." "[]" ",\"status\":\"ativa\"")" | jq -r .error.code)"
+check "o PUT que fica no rascunho passa sem justificativa" "rascunho" \
+  "$(curl -s -X PUT $API/v1/campanhas/$CAMP2_ID -H "$J" -H "$HD" \
+    -d "$(corpo_camp "$PRACA_SEED" contratante marca "Outra dor." "[]" "")" | jq -r .status)"
+# Campanha sem prova nenhuma copiada para praça sem prova nenhuma: a cópia nasce
+# vazia em vez de estourar. (A cópia vive na praça de teste e sai com ela no fim.)
+check "duplicar campanha sem prova não quebra" "rascunho 0" \
+  "$(curl -s -X POST $API/v1/campanhas/$CAMP2_ID/duplicate -H "$J" -H "$HD" -d "{\"praca_id\":\"$NOVA_ID\"}" \
+    | jq -r '"\(.status) \(.provas | length)"')"
+check "apaga a segunda campanha de teste (sem resíduo)" "true" \
+  "$(curl -s -X DELETE $API/v1/campanhas/$CAMP2_ID -H "$HD" | jq -r .ok)"
+
+PUTC=$(curl -s -X PUT $API/v1/campanhas/$CAMP_ID -H "$J" -H "$HD" \
+  -d "$(corpo_camp "$PRACA_SEED" contratante cadastro_contratante "Dono perde o sábado." "[\"$PROVA_SEED\"]" ",\"status\":\"pausada\"")")
+check "o PUT recalcula o nome pelo público e pelo objetivo" "BH-Contratante-Cadastro-$MESANO" "$(echo "$PUTC" | jq -r .name)"
+check "o PUT mantém a justificativa já gravada" "Diego" "$(echo "$PUTC" | jq -r .gate_justification.by)"
+check "reeditar o briefing sem mexer no status passa" "pausada" "$(echo "$PUTC" | jq -r .status)"
+check "prova repetida no corpo entra uma vez (não estoura a chave)" "1" \
+  "$(curl -s -X PUT $API/v1/campanhas/$CAMP_ID -H "$J" -H "$HD" \
+    -d "$(corpo_camp "$PRACA_SEED" contratante cadastro_contratante "Dono perde o sábado." "[\"$PROVA_SEED\",\"$PROVA_SEED\"]" ",\"status\":\"pausada\"")" | jq '.provas | length')"
+
+# --- criativos ---
+CR_CORPO="\"campanha_id\":\"$CAMP_ID\",\"formato\":\"reels\",\"titulo\":\"Reels do sábado\",\"gancho\":\"Sábado, 19h, faltou garçom.\",\"roteiro\":{\"gancho\":\"g\",\"desenvolvimento\":\"d\",\"prova\":\"p\",\"cta\":\"c\"},\"legenda\":\"Legenda do reels.\",\"cta_botao\":\"Abrir vaga\",\"owner_id\":\"$DIEGO_ID\",\"due\":\"$HOJE3\""
+CR=$(curl -s -X POST $API/v1/creatives -H "$J" -H "$HD" -d "{$CR_CORPO,\"status\":\"producao\"}")
+CR_ID=$(echo "$CR" | jq -r .id)
+check "criativo nasce sem aprovação e sem comentário" "null 0" \
+  "$(echo "$CR" | jq -r '"\(.approved_at) \(.comments | length)"')"
+check "o roteiro volta nas 4 partes" "g d p c" \
+  "$(echo "$CR" | jq -r '"\(.roteiro.gancho) \(.roteiro.desenvolvimento) \(.roteiro.prova) \(.roteiro.cta)"')"
+check "criativo sem IA volta com ia nulo" "null" "$(echo "$CR" | jq -r '.ia')"
+check "formato fora do catálogo é barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/creatives -H "$J" -H "$HD" -d "{$CR_CORPO,\"status\":\"producao\",\"formato\":\"outdoor\"}" | jq -r .error.code)"
+check "ferramenta de IA fora do catálogo é barrada" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/creatives -H "$J" -H "$HD" -d "{$CR_CORPO,\"status\":\"producao\",\"ia\":{\"tool\":\"Photoshop\",\"prompt\":\"x\"}}" | jq -r .error.code)"
+check "criativo de campanha que não existe = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/creatives -H "$J" -H "$HD" -d "{$CR_CORPO,\"status\":\"producao\",\"campanha_id\":\"$BEEF\"}" | jq -r .error.code)"
+
+APROV=$(curl -s -X POST $API/v1/creatives/$CR_ID/review -H "$J" -H "$HD" -d '{"kind":"aprovacao"}')
+check "aprovar joga o criativo para aprovado" "aprovado" "$(echo "$APROV" | jq -r .status)"
+check "aprovar marca a hora da aprovação" "true" "$(echo "$APROV" | jq '.approved_at != null')"
+check "aprovação sem texto grava 'Aprovado.'" "Aprovado." "$(echo "$APROV" | jq -r '.comments[-1].text')"
+check "o comentário fica no nome de quem aprovou" "Diego aprovacao" \
+  "$(echo "$APROV" | jq -r '.comments[-1] | "\(.author) \(.kind)"')"
+AJUSTE=$(curl -s -X POST $API/v1/creatives/$CR_ID/review -H "$J" -H "$HD" -d '{"kind":"ajuste","text":"Trocar a capa: o preço está ilegível."}')
+check "pedir ajuste volta o criativo para produção" "producao" "$(echo "$AJUSTE" | jq -r .status)"
+check "pedir ajuste apaga a aprovação anterior" "null" "$(echo "$AJUSTE" | jq -r '.approved_at')"
+check "pedir ajuste sem texto é barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/creatives/$CR_ID/review -H "$J" -H "$HD" -d '{"kind":"ajuste"}' | jq -r .error.code)"
+PUB=$(curl -s -X POST $API/v1/creatives/$CR_ID/publish-date -H "$J" -H "$HD" -d "{\"date\":\"$HOJE30\"}")
+check "mover a publicação muda a data" "$HOJE30" "$(echo "$PUB" | jq -r .publish_at)"
+check "mover a publicação deixa nota no criativo" "Data de publicação movida para $HOJE30_BR." \
+  "$(echo "$PUB" | jq -r '.comments[-1].text')"
+check "a nota da publicação entra como 'nota'" "nota" "$(echo "$PUB" | jq -r '.comments[-1].kind')"
+check "trocar só o status não deixa comentário" "producao 3" \
+  "$(curl -s -X POST $API/v1/creatives/$CR_ID/status -H "$J" -H "$HD" -d '{"status":"producao"}' | jq -r '"\(.status) \(.comments | length)"')"
+# Volta para aprovado: só criativo aprovado entra no gerenciador de tráfego.
+curl -s -X POST $API/v1/creatives/$CR_ID/review -H "$J" -H "$HD" -d '{"kind":"aprovacao","text":"Capa refeita."}' > /dev/null
+CR2=$(curl -s -X POST $API/v1/creatives -H "$J" -H "$HD" -d "{$CR_CORPO,\"status\":\"a_fazer\",\"titulo\":\"Story da vaga\"}")
+CR2_ID=$(echo "$CR2" | jq -r .id)
+check "os 2 criativos aparecem na campanha" "2" \
+  "$(curl -s "$API/v1/creatives?campanha_id=$CAMP_ID" -H "$HD" | jq 'length')"
+
+# --- tráfego ---
+TR_CORPO="\"campanha_id\":\"$CAMP_ID\",\"plataforma\":\"meta\",\"nome_la\":\"BH-Contratante-Teste\",\"publico\":\"Donos de bar, 25–55\",\"geo\":\"Belo Horizonte + 50 km\",\"verba_diaria\":120"
+check "criativo que não foi aprovado não entra no gerenciador" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/traffic -H "$J" -H "$HD" -d "{$TR_CORPO,\"criativos\":[\"$CR2_ID\"]}" | jq -r .error.code)"
+check "endereço de gerenciador inválido é barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/traffic -H "$J" -H "$HD" -d "{$TR_CORPO,\"criativos\":[],\"manager_url\":\"nao-e-url\"}" | jq -r .error.code)"
+TR=$(curl -s -X POST $API/v1/traffic -H "$J" -H "$HD" -d "{$TR_CORPO,\"criativos\":[\"$CR_ID\"]}")
+TR_ID=$(echo "$TR" | jq -r .id)
+check "entrada de tráfego nasce sem dia lançado e no manual" "0 false" \
+  "$(echo "$TR" | jq -r '"\(.days | length) \(.api_connected)"')"
+# Aprovado o segundo criativo, o gerenciador aceita os dois.
+curl -s -X POST $API/v1/creatives/$CR2_ID/review -H "$J" -H "$HD" -d '{"kind":"aprovacao"}' > /dev/null
+check "o gerenciador aceita os 2 criativos aprovados" "2" \
+  "$(curl -s -X PUT $API/v1/traffic/$TR_ID -H "$J" -H "$HD" \
+    -d "{$TR_CORPO,\"criativos\":[\"$CR_ID\",\"$CR2_ID\"]}" | jq '.criativos | length')"
+curl -s -X PUT $API/v1/traffic/$TR_ID/days -H "$J" -H "$HD" \
+  -d "{\"date\":\"$HOJE\",\"investido\":100,\"alcance\":9000,\"cliques\":150,\"conversoes\":2}" > /dev/null
+D2=$(curl -s -X PUT $API/v1/traffic/$TR_ID/days -H "$J" -H "$HD" \
+  -d "{\"date\":\"$HOJE\",\"investido\":150,\"alcance\":9500,\"cliques\":160,\"conversoes\":3}")
+check "lançar o mesmo dia duas vezes corrige a linha" "1" \
+  "$(curl -s "$API/v1/traffic?campanha_id=$CAMP_ID" -H "$HD" | jq '.[0].days | length')"
+check "o segundo lançamento é o que vale" "150 3" "$(echo "$D2" | jq -r '"\(.investido) \(.conversoes)"')"
+check "lançamento na mão não vem marcado como automático" "false" "$(echo "$D2" | jq '.auto')"
+check "puxar pela API sem a API ligada é barrado" "API_NOT_CONNECTED" \
+  "$(curl -s -X POST $API/v1/traffic/$TR_ID/pull-api -H "$HD" | jq -r .error.code)"
+check "ligar a API na entrada" "true" \
+  "$(curl -s -X PUT $API/v1/traffic/$TR_ID -H "$J" -H "$HD" \
+    -d "{$TR_CORPO,\"criativos\":[\"$CR_ID\",\"$CR2_ID\"],\"api_connected\":true}" | jq -r .api_connected)"
+PULL=$(curl -s -X POST $API/v1/traffic/$TR_ID/pull-api -H "$HD")
+check "puxar pela API usa a verba diária do dia" "120 10800 192 1" \
+  "$(echo "$PULL" | jq -r '"\(.investido) \(.alcance) \(.cliques) \(.conversoes)"')"
+check "a linha puxada da API vem marcada como automática" "true" "$(echo "$PULL" | jq '.auto')"
+check "puxar pela API não cria segunda linha para o mesmo dia" "1" \
+  "$(curl -s "$API/v1/traffic?campanha_id=$CAMP_ID" -H "$HD" | jq '.[0].days | length')"
+check "entrada de tráfego que não existe = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/traffic/$BEEF/pull-api -H "$HD" | jq -r .error.code)"
+
+# Lead vindo do anúncio: é ele que vira "cadastro" e "ativo" nos números.
+LEAD_MID=$(curl -s -X POST $API/v1/leads -H "$J" -H "$HD" \
+  -d "{\"praca_id\":\"$PRACA_SEED\",\"name\":\"Bar da Mídia $SUF\",\"city\":\"Belo Horizonte\",\"phone\":\"(31) 97777-1111\",\"decisor\":\"Fulano de Teste\",\"classe\":\"alvo\",\"origem\":\"anúncio\",\"owner_id\":\"$DIEGO_ID\",\"campanha_id\":\"$CAMP_ID\"}")
+LEAD_MID_ID=$(echo "$LEAD_MID" | jq -r .id)
+CAMP_NUM=$(curl -s "$API/v1/campanhas?praca_id=$PRACA_SEED" -H "$HD" | jq --arg i "$CAMP_ID" '[.[] | select(.id==$i)][0]')
+check "o dia puxado da API entra nos números da campanha" "120" "$(echo "$CAMP_NUM" | jq '.metrics.investido')"
+check "o lead do anúncio conta na campanha, ainda sem cadastro" "1 0 0" \
+  "$(echo "$CAMP_NUM" | jq -r '"\(.metrics.leads) \(.metrics.cadastros) \(.metrics.ativos)"')"
+
+# --- duplicar para outra praça ---
+UBE=$(curl -s -X POST $API/v1/pracas -H "$J" -H "$HD" \
+  -d "{\"name\":\"Uberlândia $SUF\",\"city\":\"Uberlândia · MG\",\"start_date\":\"2026-09-01\",\"end_date\":\"2026-12-08\"}")
+UBE_ID=$(echo "$UBE" | jq -r .id)
+PROVA_UBE=$(curl -s -X POST $API/v1/proofs -H "$J" -H "$HD" \
+  -d "{\"praca_id\":\"$UBE_ID\",\"kind\":\"caso\",\"title\":\"Caso escrito: 3 PDVs em Uberlândia\"}" | jq -r .id)
+DUP=$(curl -s -X POST $API/v1/campanhas/$CAMP_ID/duplicate -H "$J" -H "$HD" -d "{\"praca_id\":\"$UBE_ID\"}")
+DUP_ID=$(echo "$DUP" | jq -r .id)
+check "a cópia ganha o nome da praça de destino" "UBE-Contratante-Cadastro-$MESANO" "$(echo "$DUP" | jq -r .name)"
+check "a cópia volta para o rascunho e zera o gasto" "rascunho 0" "$(echo "$DUP" | jq -r '"\(.status) \(.gasto)"')"
+check "a cópia não leva a justificativa de portão da origem" "null" "$(echo "$DUP" | jq -r '.gate_justification')"
+check "a cópia troca a prova pela da praça de destino" "$PROVA_UBE" "$(echo "$DUP" | jq -r '.provas[0]')"
+check "a cópia é outra campanha" "true" "$(echo "$DUP" | jq --arg i "$CAMP_ID" '.id != $i')"
+check "a cópia não leva o tráfego (verba é da praça de origem)" "0" \
+  "$(curl -s "$API/v1/traffic?campanha_id=$DUP_ID" -H "$HD" | jq 'length')"
+DUP_CR=$(curl -s "$API/v1/creatives?campanha_id=$DUP_ID" -H "$HD")
+check "a cópia leva os 2 criativos como 'a fazer'" "2 0" \
+  "$(echo "$DUP_CR" | jq -r '"\(length) \([.[] | select(.status != "a_fazer")] | length)"')"
+check "a cópia dos criativos vem sem arquivo, comentário nem aprovação" "true" \
+  "$(echo "$DUP_CR" | jq 'all(.file_url == "" and (.comments | length) == 0 and .approved_at == null)')"
+check "duplicar para praça que não existe = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/campanhas/$CAMP_ID/duplicate -H "$J" -H "$HD" -d "{\"praca_id\":\"$BEEF\"}" | jq -r .error.code)"
+
+# --- limpeza da mídia de teste ---
+check "apaga o segundo criativo" "true" "$(curl -s -X DELETE $API/v1/creatives/$CR2_ID -H "$HD" | jq -r .ok)"
+check "apagar o criativo o tira da entrada de tráfego (sem id órfão)" "1" \
+  "$(curl -s "$API/v1/traffic?campanha_id=$CAMP_ID" -H "$HD" | jq '.[0].criativos | length')"
+check "apaga a entrada de tráfego" "true" "$(curl -s -X DELETE $API/v1/traffic/$TR_ID -H "$HD" | jq -r .ok)"
+check "apaga a campanha de teste" "true" "$(curl -s -X DELETE $API/v1/campanhas/$CAMP_ID -H "$HD" | jq -r .ok)"
+check "os criativos foram junto com a campanha (cascata)" "NOT_FOUND" \
+  "$(curl -s "$API/v1/creatives?campanha_id=$CAMP_ID" -H "$HD" | jq -r .error.code)"
+check "apagar a campanha solta o lead em vez de apagá-lo" "null" \
+  "$(curl -s $API/v1/leads/$LEAD_MID_ID -H "$HD" | jq -r '.campanha_id')"
+check "apaga o lead do anúncio (sem resíduo)" "true" "$(curl -s -X DELETE $API/v1/leads/$LEAD_MID_ID -H "$HD" | jq -r .ok)"
+check "apaga a praça de Uberlândia (leva a cópia)" "true" "$(curl -s -X DELETE $API/v1/pracas/$UBE_ID -H "$HD" | jq -r .ok)"
+check "a cópia foi com a praça (cascata)" "NOT_FOUND" \
+  "$(curl -s "$API/v1/traffic?campanha_id=$DUP_ID" -H "$HD" | jq -r .error.code)"
+check "praça do seed voltou às 2 campanhas (sem resíduo)" "2" \
+  "$(curl -s "$API/v1/campanhas?praca_id=$PRACA_SEED" -H "$HD" | jq 'length')"
+check "as 13 provas do seed continuam lá" "13" \
+  "$(curl -s "$API/v1/proofs?praca_id=$PRACA_SEED" -H "$HD" | jq 'length')"
+check "funil da praça seed voltou aos 25 leads (mídia sem resíduo)" "25" \
+  "$(curl -s "$API/v1/leads?praca_id=$PRACA_SEED&archived=true" -H "$HD" | jq 'length')"
+
 echo "── Limpeza da praça de teste ──"
 check "admin apaga a praça de teste" "true" "$(curl -s -X DELETE $API/v1/pracas/$NOVA_ID -H "$HD" | jq -r .ok)"
 check "praça de teste sumiu" "NOT_FOUND" "$(curl -s $API/v1/pracas/$NOVA_ID -H "$HD" | jq -r .error.code)"
