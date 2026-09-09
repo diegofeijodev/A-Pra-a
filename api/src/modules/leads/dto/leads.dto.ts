@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
   IsIn,
@@ -14,9 +14,10 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { IsDayString } from '../../../common/validation/is-day.decorator';
-import { CLASSES, CONTACT_KINDS, LOST_REASONS, ORIGENS } from '../../../domain/catalog';
+import { CLASSES, CONTACT_KINDS, LOST_REASONS } from '../../../domain/catalog';
 
 const CLASSE_IDS = CLASSES.map((c) => c.id);
+const aparado = () => Transform(({ value }) => (typeof value === 'string' ? value.trim() : value));
 /** Tipos de evento que entram por `POST /events`. `stage` fica de fora: só o `/move` grava etapa. */
 export const WIRE_EVENT_KINDS = [...CONTACT_KINDS, 'note'] as string[];
 
@@ -119,7 +120,13 @@ export class CreateLeadDto {
   @IsIn(CLASSE_IDS)
   classe!: string;
 
-  @IsIn(ORIGENS as unknown as string[])
+  // Texto livre: a importação (`IMPORT_ORIGENS`), o formulário público e o
+  // diálogo de novo lead gravam origens fora da lista curta de `ORIGENS`, que
+  // fica no catálogo só como sugestão de tela.
+  @aparado()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(60)
   origem!: string;
 
   @IsUUID()
@@ -197,7 +204,10 @@ export class UpdateLeadDto {
   classe?: string;
 
   @IsOptional()
-  @IsIn(ORIGENS as unknown as string[])
+  @aparado()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(60)
   origem?: string;
 
   @IsOptional()

@@ -263,10 +263,18 @@ check "lead novo sem contato tem 0 dia parado" "0" "$(echo "$LEAD" | jq '.stalle
 check "lead com dono inexistente = NOT_FOUND" "NOT_FOUND" \
   "$(curl -s -X POST $API/v1/leads -H "$J" -H "$HD" -d "{\"name\":\"X\",\"phone\":\"31999999999\",\"classe\":\"alvo\",\"origem\":\"prospecção\",\"owner_id\":\"00000000-0000-4000-8000-00000000dead\"}" | jq -r .error.code)"
 
+# Origem é texto livre: a importação, o formulário público e o diálogo de novo
+# lead usam origens fora da lista curta do catálogo.
+LEAD_ORIGEM=$(curl -s -X POST $API/v1/leads -H "$J" -H "$HD" \
+  -d "{\"praca_id\":\"$PRACA_SEED\",\"name\":\"Origem $SUF\",\"phone\":\"(31) 97777-6666\",\"classe\":\"depois\",\"origem\":\" prospecção ativa \",\"owner_id\":\"$DIEGO_ID\"}")
+check "origem fora da lista curta é aceita e vem aparada" "prospecção ativa" \
+  "$(echo "$LEAD_ORIGEM" | jq -r .origem)"
+curl -s -X DELETE $API/v1/leads/$(echo "$LEAD_ORIGEM" | jq -r .id) -H "$HD" > /dev/null
+
 FILA=$(curl -s "$API/v1/leads/queue" -H "$HD")
 check "fila do dia traz o lead novo" "1" \
   "$(echo "$FILA" | jq --arg i "$LEAD_ID" '[.items[] | select(.id==$i)] | length')"
-check "fila do dia usa a cota de app_settings" "20" "$(echo "$FILA" | jq '.quota')"
+check "fila do dia usa a cota padrão (20) sem app_settings" "20" "$(echo "$FILA" | jq '.quota')"
 check "fila do dia nunca passa da cota" "true" "$(echo "$FILA" | jq '(.items | length) <= .quota')"
 check "casa grande vem na frente da fila" "grande" "$(echo "$FILA" | jq -r '.items[0].classe')"
 check "fila conta as casas grandes" "true" "$(echo "$FILA" | jq '.grandes >= 1')"

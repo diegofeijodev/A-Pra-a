@@ -164,9 +164,13 @@ export const PARA_LISTA = {
 
 /** Include do detalhe: timeline inteira e as vagas. */
 const COM_TUDO = {
-  events: { orderBy: { at: 'asc' } },
-  vagas: { orderBy: { date: 'asc' } },
-} as const;
+  // `id` como desempate: dois eventos gravados no mesmo milissegundo (mover de
+  // etapa grava lead + evento juntos) precisam sair sempre na mesma ordem.
+  // Sem `as const` no objeto todo: `readonly [...]` não serve de `orderBy` para
+  // o Prisma — o literal é fixado campo a campo.
+  events: { orderBy: [{ at: 'asc' as const }, { id: 'asc' as const }] },
+  vagas: { orderBy: { date: 'asc' as const } },
+};
 
 const stageName = (n: number): string => FUNNEL_STAGES.find((s) => s.n === n)?.name ?? '?';
 
@@ -258,9 +262,7 @@ export class LeadsService {
       stalled: leads.filter((l) => isStalled(l.rules, hoje)).length,
       critical: leads.filter((l) => isCritical(l.rules, hoje)).length,
       lost: leads.filter((l) => l.stage === 8).length,
-      pipeline: leads
-        .filter((l) => l.stage >= 1 && l.stage <= 6)
-        .reduce((a, l) => a + estValue(l.classe), 0),
+      pipeline: leads.filter((l) => l.stage >= 1 && l.stage <= 6).reduce((a, l) => a + estValue(l.classe), 0),
     };
   }
 
@@ -434,9 +436,7 @@ export class LeadsService {
     return {
       ...(dto.city !== undefined ? { city: dto.city.trim() } : {}),
       ...(dto.address !== undefined ? { address: dto.address.trim() } : {}),
-      ...(dto.phone !== undefined
-        ? { phone: dto.phone.trim(), phone_key: phoneKey(dto.phone) }
-        : {}),
+      ...(dto.phone !== undefined ? { phone: dto.phone.trim(), phone_key: phoneKey(dto.phone) } : {}),
       ...(dto.cnpj !== undefined ? { cnpj: dto.cnpj.trim() } : {}),
       ...(dto.instagram !== undefined ? { instagram: dto.instagram.trim() } : {}),
       ...(dto.site !== undefined ? { site: dto.site.trim() } : {}),
@@ -544,12 +544,7 @@ export class LeadsService {
     };
   }
 
-  private toView(
-    lead: LeadColumns,
-    eventos: EventoRow[],
-    vagas: VagaRow[],
-    today: string,
-  ): LeadView {
+  private toView(lead: LeadColumns, eventos: EventoRow[], vagas: VagaRow[], today: string): LeadView {
     return {
       ...this.toListView(lead, eventos, eventos.length, vagas.length, today),
       events: eventos.map((e) => ({

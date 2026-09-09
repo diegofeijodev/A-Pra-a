@@ -537,6 +537,12 @@ ficha sem um segundo GET).
 - **POST**: `entered_at` e `stage_since` nascem com hoje (Brasília) e o
   `phone_key` (últimos 9 dígitos) é derivado do `phone`. `stage` padrão é `1`.
   `owner_id`, `praca_id` e `campanha_id` que não existem → `404 NOT_FOUND`.
+- `origem` é **texto livre** (1 a 60 caracteres, aparado). As listas do
+  catálogo (§4 `origens` e `import_origens`) são sugestão de tela, não trava:
+  a importação de planilha, o formulário público e o diálogo de novo lead
+  gravam origens que não estão na lista curta (`tráfego pago`, `orgânico`,
+  `prospecção ativa`, `evento`). `classe` e `lost_reason`, esses sim, são
+  conjuntos fechados do catálogo.
 - **PATCH** não aceita `stage`: etapa muda só pelo `/move`, que grava o evento
   e reinicia o `stage_since`. Mandar `stage` no PATCH →
   `400 VALIDATION_ERROR` (`forbidNonWhitelisted`).
