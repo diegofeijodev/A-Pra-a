@@ -39,6 +39,30 @@ Lovable "PRAÇA" para a stack do Freela.
   máquina do usuário trava com builds paralelos). Prefira `tsc --noEmit`, o
   `smoke.sh` e o `browser-check.mjs` a `next build`.
 
+## Regras de baixo consumo (máquina do dono)
+
+A máquina do dono tem 7,6 GB de RAM e outros containers/projetos rodando —
+ela **trava** (e já reiniciou sozinha) sob build/teste em paralelo. Ao rodar
+verificações em `api/`:
+
+1. **Nunca rode `npm run build` / `nest build`** durante uma tarefa comum. Se
+   precisar confirmar que um JSON importado (`resolveJsonModule`) chega ao
+   `dist/`, declare-o defensivamente em `nest-cli.json` →
+   `compilerOptions.assets` (com `outDir` explícito) em vez de rodar o build
+   para checar.
+2. `jest.config.js` tem `maxWorkers: 1` — não reverta. Rode `npm test` só
+   quando nenhum outro processo Node nosso (API, outro jest, etc.) estiver de
+   pé.
+3. Para smoke test, use `npm run start:smoke` (`ts-node --transpile-only`,
+   sem `--watch`) em vez de `start:dev` — sobe uma vez, sem o watcher do
+   Nest recompilando em segundo plano. Suba em background, espere
+   `curl -s localhost:3014/health` responder, rode `npm run smoke`, e
+   **mate o processo** em seguida (confira com
+   `ss -ltn | grep 3014` que a porta ficou livre) antes de rodar qualquer
+   outra coisa.
+4. `npm run typecheck` (`tsc --noEmit`) roda **uma vez, sozinho**, no fim da
+   tarefa. Nunca dois de {jest, tsc, API} ao mesmo tempo.
+
 ## Comandos
 
 ```bash

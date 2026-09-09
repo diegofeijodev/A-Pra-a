@@ -87,6 +87,24 @@ check "catálogo é público: .steps|length" "11" "$(echo "$CATALOGO" | jq '.ste
 check "catálogo: .send_modes|length" "2" "$(echo "$CATALOGO" | jq '.send_modes | length')"
 check "catálogo: .indicators|length" "12" "$(echo "$CATALOGO" | jq '.indicators | length')"
 
+echo "── Geo ──"
+# Público, só leitura do JSON estático (data/municipios.json) — sem resíduo.
+check "estados|length == 27" "27" "$(curl -s $API/v1/geo/estados | jq 'length')"
+check "municipios sem uf = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s $API/v1/geo/municipios | jq -r .error.code)"
+check "municipios?uf=MG traz Belo Horizonte" "true" \
+  "$(curl -s "$API/v1/geo/municipios?uf=MG" | jq 'any(.nome=="Belo Horizonte")')"
+check "municipios?uf=RJ não traz Rio de Janeiro (regra EXCLUIR geo.ts:26)" "false" \
+  "$(curl -s "$API/v1/geo/municipios?uf=RJ" | jq 'any(.nome=="Rio de Janeiro")')"
+check "vizinhas de Belo Horizonte (3106200, raio padrão) >= 10" "true" \
+  "$(curl -s "$API/v1/geo/municipios/3106200/vizinhas" | jq '(.vizinhas | length) >= 10')"
+check "vizinhas: da maior para a menor população" "true" \
+  "$(curl -s "$API/v1/geo/municipios/3106200/vizinhas" | jq '[.vizinhas[].pop] as $p | $p == ($p | sort | reverse)')"
+check "vizinhas: ibge inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s "$API/v1/geo/municipios/0000000/vizinhas" | jq -r .error.code)"
+check "vizinhas: km fora do range (301) = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s "$API/v1/geo/municipios/3106200/vizinhas?km=301" | jq -r .error.code)"
+
 echo
 printf 'Resultado: \033[32m%d ok\033[0m, \033[31m%d falha(s)\033[0m\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

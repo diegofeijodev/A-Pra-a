@@ -10,8 +10,9 @@ aqui primeiro. Swagger interativo em `/docs` (fora de produção).
   `todaySp()` (`src/common/time/dates.ts`), nunca de `new Date().toISOString()`.
 - Erro **sempre** `{ "error": { "code": "CODIGO", "message": "texto" } }`.
 - Autenticação: `Authorization: Bearer <jwt>` (HS256, 12h). Rotas públicas
-  (`@Public()`): `GET /health`, `POST /v1/auth/login` e `GET /v1/catalog`.
-  Todas as demais exigem token — `JwtAuthGuard` é global.
+  (`@Public()`): `GET /health`, `POST /v1/auth/login`, `GET /v1/catalog` e
+  todo o `GET /v1/geo/*` (§5). Todas as demais exigem token — `JwtAuthGuard`
+  é global.
 - `ValidationPipe` global com `whitelist + forbidNonWhitelisted + transform`:
   campo sem decorator no DTO derruba a requisição com `VALIDATION_ERROR`.
   PATCH aceita apenas os campos declarados — mandar o objeto inteiro que veio
@@ -128,3 +129,56 @@ Campos da resposta:
 `shared/users` (`diego@praca.local`, `daniel@praca.local`, `mkt@praca.local`);
 o serviço de indicadores (tarefa futura) resolve para `owner_id` procurando o
 usuário por e-mail, `null` se não existir.
+
+## 5. Geo — `/v1/geo`
+
+Municípios do IBGE (coordenadas + população, Censo 2022) — dado estático em
+`src/modules/geo/data/municipios.json` (copiado de
+`.prototype/src/lib/praca/municipios.json`), carregado uma vez no boot. Todas
+as rotas são **públicas** (`@Public()`, sem token — ver §1); usadas na tela de
+abertura de praça, antes de existir vínculo com uma praça específica.
+
+**Regra `EXCLUIR`** (do protótipo, `geo.ts:26`): os municípios "Rio de
+Janeiro" e "São Paulo" nunca aparecem — nem em `/municipios`, nem como
+`centro` ou `vizinhas` de `/vizinhas`. A exclusão é aplicada uma vez, na
+carga do JSON, e vale para o módulo inteiro (inclusive `GET
+/v1/geo/municipios/:ibge/vizinhas` com o `:ibge` de uma dessas duas cidades
+— `404 NOT_FOUND`, o mesmo código de um IBGE que não existe).
+
+`Municipio` (forma usada em `/municipios` e em `centro`/cada item de
+`vizinhas`):
+
+```json
+{
+  "ibge": "3106200",
+  "nome": "Belo Horizonte",
+  "uf": "MG",
+  "lat": -19.9102,
+  "lon": -43.9266,
+  "pop": 2315560,
+  "capital": true
+}
+```
+
+| Método | Rota | Query | Resposta | Observação |
+|---|---|---|---|---|
+| GET | `/estados` | — | `string[]` (27 UFs, código de 2 letras) | ordem do JSON de origem |
+| GET | `/municipios` | `uf` (obrigatória) | `Municipio[]` | ordenado por `nome` (`localeCompare` pt-BR); `400 VALIDATION_ERROR` sem `uf` |
+| GET | `/municipios/:ibge/vizinhas` | `km?` (1–300, default 50) | `{centro, raio_km, vizinhas, pop_total}` | `404 NOT_FOUND` se `:ibge` não existe |
+
+`GET /municipios/:ibge/vizinhas`:
+
+- `centro`: o próprio `Municipio` de `:ibge`.
+- `raio_km`: o `km` efetivamente usado (o da query, ou 50).
+- `vizinhas`: `Municipio[]` + `km` (distância até o centro, `haversineKm`,
+  sem arredondar), **excluindo o próprio centro**, ordenado da maior para a
+  menor população.
+- `pop_total`: soma de `pop` de todas as `vizinhas` **mais** a `pop` do
+  `centro` (mesmo cálculo do protótipo, `AberturaPraca.tsx` — `popTotal`).
+
+`km` fora de `1..300` (ex.: `0` ou `301`) → `400 VALIDATION_ERROR`.
+
+`GeoService` (uso interno, fora do wire): `haversineKm(aLat, aLon, bLat,
+bLon)` — mesma fórmula de `geo.ts:41-57` (Haversine, raio da Terra = 6371 km);
+`cidadesNoRaio(ibge, km)`; `find(ibge)` (lookup simples, `undefined` se não
+existir); `municipiosPorUf(uf)`; `estados()`.
