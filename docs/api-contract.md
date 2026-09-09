@@ -1309,9 +1309,9 @@ número. Cadência sem passo nenhum → `400 NO_STEPS`.
 ```
 
 `status ∈ ativo | aguardando | saiu | concluido`. `exit_reason` é, no caminho
-normal, um motivo de `catalog.exit_reason_label` (`respondeu`, `abriu_vaga`,
+normal, um motivo de `catalog.exit_reason_labels` (`respondeu`, `abriu_vaga`,
 `reaquecer_30`, `reaquecer_60`, `fila_confirmacao`, `fecha_conta`, `fim`,
-`bloqueio`, `manual`); a saída disparada por uma **condição** grava o motivo da
+`bloqueio`, `manual`, `arquivado`); a saída disparada por uma **condição** grava o motivo da
 regra (`abriu_vaga`) ou, nas outras regras, o **id da ação** (`sai`,
 `reaquecer_30`…) — é o que o protótipo faz, e a tela cai no id quando não há
 rótulo. `POST /v1/enrollments/:id/exit` só aceita os motivos do catálogo.
@@ -1320,7 +1320,9 @@ task | cond`; `send_id` só na mensagem). `next_at` é quando o próximo nó ven
 
 `POST /v1/enrollments/:id/exit` marca `saiu` com `exit_reason = reason ?? manual`
 — tirada na mão, sem os efeitos das saídas do motor (não mexe em etapa,
-reaquecimento nem próximo passo).
+reaquecimento nem próximo passo). Inscrição já encerrada (`saiu`/`concluido`) →
+`400 ALREADY_EXITED`: reescrever o motivo apagaria por que a pessoa saiu de
+verdade e o painel passaria a contar "retirada manual" no lugar.
 
 ### `GET /v1/cadences/:id/stats`
 
@@ -1354,16 +1356,22 @@ para as outras.
 Três fases por rodada, na ordem do protótipo:
 
 1. **Entrada automática** — só cadências **não pausadas** com
-   `entry ∈ catalog.auto_entries` (`stage_novo` = etapa 1, `reheat_due` =
+   `entry` automática (constante do servidor `AUTO_ENTRIES`, não exposta no
+   catálogo): (`stage_novo` = etapa 1, `reheat_due` =
    `reheat_at <= hoje`, `first_vaga` = etapa 6). As outras regras
    (`praca_mapeamento`, `freela_first_turn`, `manual`) entram só pelo `enroll`.
    Fora: arquivado, `is_test` e quem **já teve** inscrição naquela cadência (em
    qualquer estado — senão quem saiu voltaria na rodada seguinte, para sempre).
-   Teto de 30 por rodada e por cadência (`catalog.max_enroll_per_tick`), mais
-   antigos primeiro. Quem já roda outra cadência entra `aguardando`.
+   Teto de 30 por rodada e por cadência (`MAX_ENROLL_PER_TICK`, também constante
+   do servidor), mais antigos primeiro, em ordem fixa de cadência (`created_at`).
+   Quem já roda outra cadência entra `aguardando`. Cada matrícula é serializada
+   por pessoa (`pg_advisory_xact_lock`), como a da tela.
 2. **Avanço** de quem está `ativo` com `next_at <= agora` (cadência pausada não
    anda). Caminha pelos nós enquanto vencerem:
    - trilha acabou → sai com a ação de `exit` e motivo `fim`;
+   - **lead arquivado** → sai como `saiu`/`arquivado` com a nota
+     `Saiu da cadência “X” (lead arquivado).`, antes de qualquer nó: quem foi
+     tirado da base não recebe mais toque (o protótipo continuava mandando);
    - **respondeu depois de entrar** (`lead_events.kind = msg_in` com
      `at >= started_at`) → sai como `sai_conversa`/`respondeu`, sempre, antes de
      qualquer nó;
@@ -1400,11 +1408,12 @@ sem autor humano):
 
 | Ação | Evento | Efeito no lead |
 |---|---|---|
-| `sai_conversa` | `Saiu da cadência “X” (respondeu) → etapa Conversa aberta.` | etapa 3, `stage_since` hoje |
+| `sai_conversa` | `Saiu da cadência “X” (respondeu) → etapa Conversa aberta.` | etapa 3 e `stage_since` hoje **só se a etapa atual for menor que 3** (a etapa só sobe; quem já passou fica onde está e o evento vai sem `stage_to`) |
 | `reaquecer_30` / `reaquecer_60` | `Saiu da cadência “X” → fila de reaquecimento em N dias.` | `reheat_at` = hoje + N |
 | `fila_confirmacao` | `Saiu da cadência “X” → fila de ligação de confirmação.` | próximo passo `Ligar para confirmar presença` hoje |
 | `fecha_conta` | `Cadência “X” encerrada — conta fechada e resultado registrado.` | — |
 | `sai` (e qualquer outra) | `Saiu da cadência “X”.` | — |
+| *(lead arquivado)* | `Saiu da cadência “X” (lead arquivado).` | — |
 
 `fim` e `fecha_conta` fecham a inscrição como `concluido`; o resto é `saiu`.
 

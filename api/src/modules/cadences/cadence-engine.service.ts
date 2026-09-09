@@ -77,6 +77,10 @@ export class CadenceEngineService {
   async tick(now: Date = new Date()): Promise<{ changed: boolean }> {
     const cadences = await this.prisma.cadences.findMany({
       include: { nodes: { orderBy: { sort: 'asc' } } },
+      // Ordem fixa: com duas cadências automáticas disputando o mesmo lead, é
+      // ela que decide quem matricula e quem fica esperando — a rodada tem de
+      // dar sempre o mesmo resultado.
+      orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
     });
     if (cadences.length === 0) return { changed: false };
 
@@ -173,27 +177,32 @@ export class CadenceEngineService {
     const entram = leads.filter((l) => matchesEntry(cad.entry, l, st.hoje));
     if (entram.length === 0) return;
 
-    // Uma cadência por pessoa: quem já roda outra entra na fila de espera.
-    const ocupados = new Set(
-      (
-        await this.prisma.enrollments.findMany({
-          where: { lead_id: { in: entram.map((l) => l.id) }, status: ATIVO },
-          select: { lead_id: true },
-        })
-      ).map((r) => r.lead_id),
-    );
-
-    await this.prisma.enrollments.createMany({
-      data: entram.map((l) => ({
-        cadence_id: cad.id,
-        lead_id: l.id,
-        started_at: st.now,
-        next_at: new Date(stepDueAt(st.now_iso, first.day)),
-        status: ocupados.has(l.id) ? AGUARDANDO : ATIVO,
-        stage_at_start: l.stage,
-      })),
-    });
-    st.changed = true;
+    for (const l of entram) {
+      // Mesma trava por pessoa do `enroll` da tela: sem ela, uma matrícula
+      // manual gravada entre a peneira acima e este insert colocaria a pessoa
+      // duas vezes na mesma trilha. Uma transação por lead — a falha de uma não
+      // derruba a matrícula das outras 29.
+      await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`cadence-enroll:${l.id}`}))`;
+        const ja = await tx.enrollments.count({ where: { cadence_id: cad.id, lead_id: l.id } });
+        if (ja) return;
+        await tx.enrollments.create({
+          data: {
+            cadence_id: cad.id,
+            lead_id: l.id,
+            started_at: st.now,
+            next_at: new Date(stepDueAt(st.now_iso, first.day)),
+            // Relê "está ocupado?" com o lock na mão: o mapa acima foi lido
+            // antes da trava.
+            status: (await tx.enrollments.count({ where: { lead_id: l.id, status: ATIVO } }))
+              ? AGUARDANDO
+              : ATIVO,
+            stage_at_start: l.stage,
+          },
+        });
+        st.changed = true;
+      });
+    }
   }
 
   /** O recorte da regra de entrada que o Postgres sabe filtrar. */
@@ -243,9 +252,28 @@ export class CadenceEngineService {
         phone: true,
         stage: true,
         praca_id: true,
+        archived: true,
       },
     });
     if (!lead) return;
+
+    // Lead arquivado saiu do funil: a trilha para nele. Sem isso a cadência
+    // continuaria mandando mensagem para quem foi tirado da base de propósito.
+    if (lead.archived) {
+      await this.leadEvent(
+        tx,
+        lead.id,
+        'note',
+        `Saiu da cadência “${cad.name}” (lead arquivado).`,
+        st.now,
+      );
+      await tx.enrollments.update({
+        where: { id: e.id },
+        data: { status: SAIU, exit_reason: 'arquivado' },
+      });
+      st.changed = true;
+      return;
+    }
 
     const desde = e.started_at.toISOString();
     // As duas perguntas que decidem tudo, respondidas UMA vez: nada dentro do
@@ -269,19 +297,12 @@ export class CadenceEngineService {
     for (let guard = 0; guard < GUARD; guard++) {
       const node = firstPendingNode(cad.nodes, logs);
       if (!node) {
-        ({ status, exitReason } = await this.applyExit(tx, cad, lead.id, cad.exit_action, 'fim', st));
+        ({ status, exitReason } = await this.applyExit(tx, cad, lead, cad.exit_action, 'fim', st));
         break;
       }
       // Respondeu depois de entrar: sai na hora e vira conversa de gente.
       if (respondeu) {
-        ({ status, exitReason } = await this.applyExit(
-          tx,
-          cad,
-          lead.id,
-          'sai_conversa',
-          'respondeu',
-          st,
-        ));
+        ({ status, exitReason } = await this.applyExit(tx, cad, lead, 'sai_conversa', 'respondeu', st));
         break;
       }
 
@@ -298,7 +319,7 @@ export class CadenceEngineService {
           ({ status, exitReason } = await this.applyExit(
             tx,
             cad,
-            lead.id,
+            lead,
             node.action,
             node.rule === 'abriu_vaga' ? 'abriu_vaga' : node.action,
             st,
@@ -341,7 +362,7 @@ export class CadenceEngineService {
       // Lead de teste ("Testar comigo") ignora bloqueio e limite diário: é o
       // seu próprio número, e o teste tem de rodar a trilha inteira agora.
       if (!e.is_test && chave && st.bloqueados.has(chave)) {
-        ({ status, exitReason } = await this.applyExit(tx, cad, lead.id, 'sai', 'bloqueio', st));
+        ({ status, exitReason } = await this.applyExit(tx, cad, lead, 'sai', 'bloqueio', st));
         break;
       }
       if (!e.is_test && st.sent_today >= st.settings.daily_limit) {
@@ -409,9 +430,9 @@ export class CadenceEngineService {
     });
     // Prova social: outra casa da mesma cidade. Leitura fora da transação de
     // propósito — é `SELECT` de apoio ao texto, não faz parte do commit.
-    const vizinho = (await this.messages.neighborsByCity([lead.city])).get(lead.city)?.find(
-      (v) => v.id !== lead.id,
-    )?.name;
+    const vizinho = (await this.messages.neighborsByCity([lead.city]))
+      .get(lead.city)
+      ?.find((v) => v.id !== lead.id)?.name;
 
     const corpo = node.text ?? tpl?.text_a ?? '';
     const text = renderTemplate(corpo, {
@@ -475,22 +496,30 @@ export class CadenceEngineService {
   private async applyExit(
     tx: Prisma.TransactionClient,
     cad: CadenceComNos,
-    leadId: string,
+    lead: { id: string; stage: number },
     action: string,
     reason: string,
     st: Tick,
   ): Promise<{ status: string; exitReason: string }> {
+    const leadId = lead.id;
     const nome = cad.name;
     if (action === 'sai_conversa') {
+      // A etapa só SOBE. No protótipo isso era `stage: 3` cravado, e um cliente
+      // ativo (etapa 7) que respondesse voltava para "Conversa aberta" — a
+      // resposta rebaixava quem já estava mais à frente. Quem já passou da
+      // etapa 3 sai da cadência e ganha o evento, mas fica onde está.
+      const sobe = lead.stage < 3;
       await this.leadEvent(
         tx,
         leadId,
         'stage',
         `Saiu da cadência “${nome}” (respondeu) → etapa Conversa aberta.`,
         st.now,
-        3,
+        sobe ? 3 : undefined,
       );
-      await tx.leads.update({ where: { id: leadId }, data: { stage: 3, stage_since: st.hoje } });
+      if (sobe) {
+        await tx.leads.update({ where: { id: leadId }, data: { stage: 3, stage_since: st.hoje } });
+      }
     } else if (action === 'reaquecer_30' || action === 'reaquecer_60') {
       const dias = action === 'reaquecer_30' ? 30 : 60;
       await this.leadEvent(

@@ -172,9 +172,7 @@ export class CadencesService {
     await this.templatesOrFail(dto.nodes);
 
     const existentes = new Set(atual.nodes.map((n) => n.id));
-    const manter = dto.nodes
-      .map((n) => n.id)
-      .filter((nid): nid is string => !!nid && existentes.has(nid));
+    const manter = dto.nodes.map((n) => n.id).filter((nid): nid is string => !!nid && existentes.has(nid));
 
     await this.prisma.$transaction(async (tx) => {
       await tx.cadences.update({ where: { id }, data: this.toCadenceData(dto) });
@@ -287,7 +285,11 @@ export class CadencesService {
    * e prova social). As inscrições de teste anteriores saem: duas trilhas
    * comprimidas ao mesmo tempo no mesmo número viram bagunça.
    */
-  async test(id: string, dto: TestCadenceDto, user: AuthUser): Promise<{ enrollment_id: string; lead_id: string }> {
+  async test(
+    id: string,
+    dto: TestCadenceDto,
+    user: AuthUser,
+  ): Promise<{ enrollment_id: string; lead_id: string }> {
     const cad = await this.cadenceOrFail(id);
     if (!stepNodes(cad.nodes)[0]) {
       throw new BadRequestException({
@@ -379,7 +381,16 @@ export class CadencesService {
 
   /** Tira a pessoa da cadência na mão (`store.tsx:752-758`). */
   async exitEnrollment(id: string, dto: ExitEnrollmentDto): Promise<EnrollmentView> {
-    await this.enrollmentOrFail(id);
+    const atual = await this.enrollmentOrFail(id);
+    // Inscrição encerrada não sai de novo: reescrever o motivo apagaria por que
+    // a pessoa saiu de verdade (respondeu, bloqueio, fim da trilha) e o painel
+    // passaria a contar "retirada manual" no lugar.
+    if (atual.status === SAIU || atual.status === CONCLUIDO) {
+      throw new BadRequestException({
+        code: 'ALREADY_EXITED',
+        message: 'Esta inscrição já saiu da cadência.',
+      });
+    }
     const row = await this.prisma.enrollments.update({
       where: { id },
       data: { status: SAIU, exit_reason: dto.reason ?? 'manual' },
@@ -481,9 +492,7 @@ export class CadencesService {
 
   private nodeError(n: CadenceNodeDto): string | null {
     if (n.kind === 'msg') {
-      return n.template_id || n.text?.trim()
-        ? null
-        : 'nó de mensagem precisa de template_id ou de text.';
+      return n.template_id || n.text?.trim() ? null : 'nó de mensagem precisa de template_id ou de text.';
     }
     if (n.kind === 'task') return n.task?.trim() ? null : 'nó de tarefa precisa de task.';
     return n.rule && n.action ? null : 'nó de condição precisa de rule e action.';

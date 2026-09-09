@@ -54,6 +54,8 @@ export const EXIT_REASON_LABEL: Record<string, string> = {
   bloqueio: 'estava na lista de bloqueio',
   pausada: 'cadência pausada',
   manual: 'retirada manual',
+  // Não vem do protótipo: lá o lead arquivado continuava recebendo a trilha.
+  arquivado: 'lead arquivado',
 };
 
 // Regras de entrada que o relógio de cadências dispara sozinho (as demais —

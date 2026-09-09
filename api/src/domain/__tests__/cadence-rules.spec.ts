@@ -165,6 +165,11 @@ describe('firstPendingNode', () => {
   });
 
   it('trilha inteira cumprida não tem próximo nó', () => {
-    expect(firstPendingNode(NODES, NODES.map((n) => ({ node_id: n.id })))).toBeUndefined();
+    expect(
+      firstPendingNode(
+        NODES,
+        NODES.map((n) => ({ node_id: n.id })),
+      ),
+    ).toBeUndefined();
   });
 });

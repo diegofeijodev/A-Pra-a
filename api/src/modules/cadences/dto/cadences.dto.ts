@@ -15,12 +15,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
-import {
-  COND_ACTIONS,
-  COND_RULES,
-  ENTRY_RULES,
-  EXIT_REASON_LABEL,
-} from '../../../domain/catalog/cadences';
+import { COND_ACTIONS, COND_RULES, ENTRY_RULES, EXIT_REASON_LABEL } from '../../../domain/catalog/cadences';
 import { AUDIENCES, CHANNELS } from '../../../domain/catalog/messages';
 
 const aparado = () => Transform(({ value }) => (typeof value === 'string' ? value.trim() : value));

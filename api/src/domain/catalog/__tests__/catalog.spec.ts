@@ -82,8 +82,10 @@ describe('domain/catalog — cadences', () => {
   it('ENTRY_RULES tem as 6 regras de entrada', () => expect(ENTRY_RULES.length).toBe(6));
   it('COND_RULES tem as 3 condições de nó', () => expect(COND_RULES.length).toBe(3));
   it('COND_ACTIONS tem as 7 ações de saída', () => expect(COND_ACTIONS.length).toBe(7));
-  it('EXIT_REASON_LABEL rotula os 10 motivos de saída', () => {
-    expect(Object.keys(EXIT_REASON_LABEL).length).toBe(10);
+  // 10 do protótipo + `arquivado` (lead arquivado para a trilha, Task 11).
+  it('EXIT_REASON_LABEL rotula os 11 motivos de saída', () => {
+    expect(Object.keys(EXIT_REASON_LABEL).length).toBe(11);
+    expect(EXIT_REASON_LABEL.arquivado).toBe('lead arquivado');
   });
   it('AUTO_ENTRIES tem as 3 entradas automáticas', () => {
     expect(AUTO_ENTRIES).toEqual(['stage_novo', 'reheat_due', 'first_vaga']);

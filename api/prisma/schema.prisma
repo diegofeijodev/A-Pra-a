@@ -339,6 +339,8 @@ model msg_sends {
   @@index([lead_id])
   @@index([status, mode])
   @@index([freela_campaign_id])
+  // Limite diário das cadências: quantas mensagens já saíram hoje (Brasília).
+  @@index([sent_at])
 }
 
 // ── cadências ────────────────────────────────────────────────
@@ -392,6 +394,8 @@ model enrollments {
 
   @@index([cadence_id, status])
   @@index([lead_id, status])
+  // A consulta do relógio a cada 15 s: quem está ativo e já venceu.
+  @@index([status, next_at])
 }
 
 model enrollment_logs {

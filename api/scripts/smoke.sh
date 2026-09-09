@@ -1179,6 +1179,11 @@ check "a inscrição em espera nasce aguardando" "aguardando" \
 SAIDA=$(curl -s -X POST $API/v1/enrollments/$INSC_ID/exit -H "$J" -H "$HD" -d '{}')
 check "sair na mão marca saiu com motivo manual" "saiu manual" \
   "$(echo "$SAIDA" | jq -r '"\(.status) \(.exit_reason)"')"
+check "sair de inscrição que já saiu = ALREADY_EXITED" "ALREADY_EXITED" \
+  "$(curl -s -X POST $API/v1/enrollments/$INSC_ID/exit -H "$J" -H "$HD" -d '{}' | jq -r .error.code)"
+check "a inscrição encerrada mantém o motivo original" "manual" \
+  "$(curl -s "$API/v1/enrollments?cadence_id=$CAD_PROSP" -H "$HD" \
+    | jq -r --arg i "$INSC_ID" '[.[] | select(.id==$i)][0].exit_reason')"
 check "motivo de saída fora do catálogo barrado" "VALIDATION_ERROR" \
   "$(curl -s -X POST $API/v1/enrollments/$INSC_ID/exit -H "$J" -H "$HD" -d '{"reason":"cansei"}' | jq -r .error.code)"
 check "sair de inscrição inexistente = NOT_FOUND" "NOT_FOUND" \
@@ -1204,6 +1209,23 @@ check "o teste vence agora (não espera a janela)" "true" \
     | jq --arg i "$TESTE_INSC_ID" '[.[] | select(.id==$i)][0] | .next_at == .started_at')"
 check "telefone curto no teste barrado" "VALIDATION_ERROR" \
   "$(curl -s -X POST $API/v1/cadences/$CAD_ENG_ID/test -H "$J" -H "$HD" -d '{"phone":"31"}' | jq -r .error.code)"
+
+# Quem já passou da Conversa aberta e responde: sai da cadência, mas a etapa
+# NÃO desce (a resposta é registrada antes da primeira rodada do relógio).
+LEAD6=$(curl -s -X POST $API/v1/leads -H "$J" -H "$HD" \
+  -d "{\"praca_id\":\"$PRACA_SEED\",\"name\":\"Cliente Cadência $SUF\",\"city\":\"Cidade Cad $SUF\",\"phone\":\"(31) 98555-${SUF: -4}\",\"decisor\":\"Cliente de Teste\",\"classe\":\"grande\",\"origem\":\"prospecção\",\"owner_id\":\"$DIEGO_ID\",\"stage\":6}")
+LEAD6_ID=$(echo "$LEAD6" | jq -r .id)
+check "o lead da regra de etapa nasce na etapa 6" "6" "$(echo "$LEAD6" | jq '.stage')"
+curl -s -X POST $API/v1/cadences/$CAD_ENG_ID/enroll -H "$J" -H "$HD" -d "{\"lead_id\":\"$LEAD6_ID\"}" > /dev/null
+curl -s -X POST $API/v1/leads/$LEAD6_ID/events -H "$J" -H "$HD" \
+  -d '{"kind":"msg_in","text":"quero sim, me liga hoje"}' > /dev/null
+
+# Lead arquivado: a trilha para nele (não é do protótipo — lá continuava indo).
+LEAD_ARQ=$(curl -s -X POST $API/v1/leads -H "$J" -H "$HD" \
+  -d "{\"praca_id\":\"$PRACA_SEED\",\"name\":\"Arquivado Cadência $SUF\",\"city\":\"Cidade Cad $SUF\",\"phone\":\"(31) 98444-${SUF: -4}\",\"decisor\":\"Sumido de Teste\",\"classe\":\"alvo\",\"origem\":\"prospecção\",\"owner_id\":\"$DIEGO_ID\",\"stage\":2}")
+LEAD_ARQ_ID=$(echo "$LEAD_ARQ" | jq -r .id)
+curl -s -X POST $API/v1/cadences/$CAD_ENG_ID/enroll -H "$J" -H "$HD" -d "{\"lead_id\":\"$LEAD_ARQ_ID\"}" > /dev/null
+curl -s -X POST $API/v1/leads/$LEAD_ARQ_ID/archive -H "$HD" > /dev/null
 
 # O relógio roda a cada 15 s: uma espera para ver a trilha andar de verdade.
 sleep 20
@@ -1232,6 +1254,21 @@ check "o texto do envio foi renderizado (sem variável crua)" "false" \
 check "quem grava é a cadência, não uma pessoa" "Cadência" \
   "$(echo "$TESTE_LEAD2" | jq -r '[.events[] | select(.kind=="msg_out")][0].author_label')"
 check "o toque da cadência conta como último contato" "$HOJE" "$(echo "$TESTE_LEAD2" | jq -r '.last_contact_date')"
+E6=$(echo "$ENG_INSCS" | jq --arg l "$LEAD6_ID" '[.[] | select(.lead_id==$l)][0]')
+check "quem responde sai da cadência na hora" "saiu respondeu" \
+  "$(echo "$E6" | jq -r '"\(.status) \(.exit_reason)"')"
+LEAD6_VIEW=$(curl -s $API/v1/leads/$LEAD6_ID -H "$HD")
+check "quem já passou da Conversa aberta não é rebaixado ao responder" "6" "$(echo "$LEAD6_VIEW" | jq '.stage')"
+check "a saída por resposta deixa o evento sem mudança de etapa" "1" \
+  "$(echo "$LEAD6_VIEW" | jq --arg t "Saiu da cadência “Cadência do relógio $SUF” (respondeu) → etapa Conversa aberta." \
+    '[.events[] | select(.text == $t and .stage_to == null)] | length')"
+E_ARQ=$(echo "$ENG_INSCS" | jq --arg l "$LEAD_ARQ_ID" '[.[] | select(.lead_id==$l)][0]')
+check "lead arquivado para a trilha" "saiu arquivado" "$(echo "$E_ARQ" | jq -r '"\(.status) \(.exit_reason)"')"
+LEAD_ARQ_VIEW=$(curl -s $API/v1/leads/$LEAD_ARQ_ID -H "$HD")
+check "a saída do arquivado deixa a nota no histórico" "true" \
+  "$(echo "$LEAD_ARQ_VIEW" | jq --arg t "Saiu da cadência “Cadência do relógio $SUF” (lead arquivado)." 'any(.events[]; .text == $t)')"
+check "lead arquivado não recebeu mensagem nenhuma" "0" \
+  "$(echo "$LEAD_ARQ_VIEW" | jq '[.events[] | select(.kind=="msg_out")] | length')"
 ESPERA_VIEW=$(echo "$ENG_INSCS" | jq --arg l "$CAD_LEAD_ID" '[.[] | select(.lead_id==$l)][0]')
 check "quem estava esperando entrou quando a pessoa ficou livre" "ativo" "$(echo "$ESPERA_VIEW" | jq -r '.status')"
 # Cadência pausada continua parada: a inscrição da prospecção passou a rodada
@@ -1250,7 +1287,8 @@ check "quem está dentro aparece com o passo e a hora do próximo" "true" \
   "$(echo "$STATS" | jq '[.inside[] | select(.step_index >= 1 and .next_at != null)] | length >= 1')"
 check "quem está dentro vem com o nome do lead" "true" \
   "$(echo "$STATS" | jq '(.inside | map(select(.lead_name != "")) | length) == (.inside | length)')"
-check "ninguém saiu desta cadência ainda" "0" "$(echo "$STATS" | jq '.exits | length')"
+check "o painel conta os motivos de quem saiu" "true" \
+  "$(echo "$STATS" | jq '[.exits[].reason] | (index("respondeu") != null) and (index("arquivado") != null)')"
 PROSP_STATS=$(curl -s $API/v1/cadences/$CAD_PROSP/stats -H "$HD")
 check "a saída manual entra na conta dos motivos" "manual 1" \
   "$(echo "$PROSP_STATS" | jq -r '.exits[0] | "\(.reason) \(.count)"')"
@@ -1266,6 +1304,10 @@ check "apaga o lead Bar $SUF (sem resíduo)" "true" \
   "$(curl -s -X DELETE $API/v1/leads/$CAD_LEAD_ID -H "$HD" | jq -r .ok)"
 check "apaga o lead da corrida de inscrição (sem resíduo)" "true" \
   "$(curl -s -X DELETE $API/v1/leads/$CAD_LEAD2_ID -H "$HD" | jq -r .ok)"
+check "apaga o lead da regra de etapa (sem resíduo)" "true" \
+  "$(curl -s -X DELETE $API/v1/leads/$LEAD6_ID -H "$HD" | jq -r .ok)"
+check "apaga o lead arquivado do teste (sem resíduo)" "true" \
+  "$(curl -s -X DELETE $API/v1/leads/$LEAD_ARQ_ID -H "$HD" | jq -r .ok)"
 check "as inscrições foram junto com os leads (cascata)" "0" \
   "$(curl -s "$API/v1/enrollments?cadence_id=$CAD_ENG_ID" -H "$HD" | jq 'length')"
 check "apaga a cadência do relógio (sem resíduo)" "true" \
