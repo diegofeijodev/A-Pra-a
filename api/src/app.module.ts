@@ -2,9 +2,10 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 
 import { validateEnv } from './common/config/env.validation';
+import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
 import { PrismaModule } from './common/database/prisma.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { HealthModule } from './common/health/health.module';
@@ -40,7 +41,9 @@ import { UsersModule } from './modules/users/users.module';
     DisparosModule,
   ],
   providers: [
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // Subclasse do ThrottlerGuard: o teto do formulário público vem do
+    // ambiente (`PUBLIC_LEADS_PER_MINUTE`), o resto continua no balde de 300/min.
+    { provide: APP_GUARD, useClass: AppThrottlerGuard },
     // Depois do Throttler: barra abuso de tráfego antes de gastar CPU
     // verificando token. Global — rotas ficam fechadas por padrão, `@Public()`
     // é a exceção explícita.

@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { AuthUser } from '../../common/auth/auth-user';
 import { PrismaService } from '../../common/database/prisma.service';
 import { isUuid } from '../../common/ids/uuid';
@@ -79,6 +80,9 @@ interface TemplateRow {
   attachment_url: string | null;
   created_at: Date;
 }
+
+/** Prisma normal ou o cliente de uma transação aberta por quem chamou. */
+type Db = PrismaService | Prisma.TransactionClient;
 
 const NOME_PADRAO_BLOQUEIO = 'adicionado na mão';
 const MOTIVO_PADRAO_BLOQUEIO = 'pedido manual';
@@ -267,18 +271,24 @@ export class MessagesService {
    * resposta do lead — diferente do `POST /v1/blocklist`, que é ato manual e
    * avisa quando o número já está lá.
    */
-  async blockIfNew(input: {
-    phone: string;
-    name: string;
-    lead_id: string | null;
-    reason: string;
-  }): Promise<boolean> {
+  async blockIfNew(
+    input: {
+      phone: string;
+      name: string;
+      lead_id: string | null;
+      reason: string;
+    },
+    // `db` = a transação de quem chamou. O opt-out da fila de envios grava a
+    // resposta e o bloqueio no MESMO commit: registrar "pediu para parar" sem
+    // bloquear o número é o pior dos dois mundos.
+    db: Db = this.prisma,
+  ): Promise<boolean> {
     const key = phoneKey(input.phone);
     if (!key) return false;
-    const ja = await this.prisma.blocklist.count({ where: { phone_key: key } });
+    const ja = await db.blocklist.count({ where: { phone_key: key } });
     if (ja) return false;
     try {
-      await this.prisma.blocklist.create({
+      await db.blocklist.create({
         data: {
           phone: input.phone,
           phone_key: key,
@@ -409,21 +419,27 @@ export class MessagesService {
   /**
    * Os DOIS primeiros leads (por nome) de cada cidade — a fonte do
    * `{{estabelecimento_vizinho}}`. Dois, e não um, porque o vizinho de um lead
-   * é o primeiro que não seja ele mesmo: com dois, um disparo de 2.000
-   * mensagens resolve a prova social com uma consulta por cidade, em vez de
-   * uma por lead. Cidade vazia não tem vizinho.
+   * é o primeiro que não seja ele mesmo.
+   *
+   * UMA consulta para todas as cidades (não uma por cidade), apoiada no índice
+   * `leads(city, name)`: um disparo que pega 30 cidades resolve a prova social
+   * de todas de uma vez. Cidade vazia não tem vizinho.
    */
   async neighborsByCity(cities: string[]): Promise<Map<string, { id: string; name: string }[]>> {
     const out = new Map<string, { id: string; name: string }[]>();
-    for (const city of new Set(cities.filter((c) => c.trim()))) {
-      // Uma consulta por vez (a máquina do dono não gosta de rajada).
-      const rows = await this.prisma.leads.findMany({
-        where: { archived: false, is_test: false, city },
-        orderBy: [{ name: 'asc' }],
-        take: 2,
-        select: { id: true, name: true },
-      });
-      out.set(city, rows);
+    const alvo = [...new Set(cities.filter((c) => c.trim()))];
+    if (alvo.length === 0) return out;
+
+    const rows = await this.prisma.leads.findMany({
+      where: { archived: false, is_test: false, city: { in: alvo } },
+      orderBy: [{ city: 'asc' }, { name: 'asc' }],
+      select: { id: true, name: true, city: true },
+    });
+    for (const r of rows) {
+      const lista = out.get(r.city) ?? [];
+      // Só os dois primeiros de cada cidade interessam — o resto é descartado
+      // na hora, sem crescer a memória com a cidade inteira.
+      if (lista.length < 2) out.set(r.city, [...lista, { id: r.id, name: r.name }]);
     }
     return out;
   }

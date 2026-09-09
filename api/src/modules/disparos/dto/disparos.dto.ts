@@ -1,8 +1,8 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
-  IsDateString,
   IsIn,
+  IsISO8601,
   IsInt,
   IsObject,
   IsOptional,
@@ -21,6 +21,7 @@ import { CLASSES } from '../../../domain/catalog/funnel';
 import { SEND_MODES } from '../../../domain/catalog/messages';
 
 const CLASSE_IDS = CLASSES.map((c) => c.id);
+const aparado = () => Transform(({ value }) => (typeof value === 'string' ? value.trim() : value));
 const MODE_IDS = SEND_MODES.map((m) => m.id);
 
 /** Status que a fila manual aceita marcar à mão. `falhou` é do motor, não da tela. */
@@ -37,6 +38,32 @@ function IsAllOrUuid(validationOptions?: ValidationOptions) {
       validator: {
         validate: (value: unknown) => value === 'all' || (typeof value === 'string' && isUuid(value)),
         defaultMessage: () => `deve ser 'all' ou um UUID`,
+      },
+    });
+  };
+}
+
+/**
+ * Instante ISO 8601 **com fuso** (`Z` ou `±HH:MM`).
+ *
+ * `datetime-local` do navegador ("2026-09-14T12:00") é proibido de propósito: o
+ * processo da API roda em UTC, então `new Date("2026-09-14T12:00")` viraria
+ * 09:00 de Brasília e o lote sairia três horas antes do combinado. Quem converte
+ * é o web, que sabe o fuso de quem está olhando.
+ */
+function IsIsoInstant(validationOptions?: ValidationOptions) {
+  return function (object: object, propertyName: string) {
+    registerDecorator({
+      name: 'isIsoInstant',
+      target: object.constructor,
+      propertyName,
+      options: validationOptions,
+      validator: {
+        validate: (value: unknown) =>
+          typeof value === 'string' &&
+          /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/.test(value) &&
+          !Number.isNaN(new Date(value).getTime()),
+        defaultMessage: () => 'deve ser ISO 8601 com fuso, ex.: 2026-09-14T12:00:00Z',
       },
     });
   };
@@ -103,9 +130,10 @@ export class PreviewDisparoDto {
   @IsIn(MODE_IDS, { message: `deve ser um de: ${MODE_IDS.join(', ')}` })
   mode!: string;
 
-  // Ausente = agora. ISO ou "YYYY-MM-DDTHH:mm" (o `datetime-local` da tela).
+  // Ausente = agora. Instante ISO com fuso — nunca hora "solta".
   @IsOptional()
-  @IsDateString()
+  @IsISO8601({ strict: true })
+  @IsIsoInstant()
   scheduled_at?: string;
 }
 
@@ -123,6 +151,8 @@ export class MarkSendDto {
 }
 
 export class ReplySendDto {
+  // Apara antes de validar: resposta só com espaços não é resposta.
+  @aparado()
   @IsString()
   @MinLength(1)
   @MaxLength(2000)

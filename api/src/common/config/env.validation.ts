@@ -10,6 +10,11 @@ const envSchema = z.object({
   PUBLIC_URL: z.string().default('http://localhost:3014'),
   APP_URL: z.string().default('http://localhost:3024'),
 
+  // Teto do formulário público por minuto e por IP (é o único ponto que a
+  // internet escreve sem login). Produção fica em 10; em desenvolvimento vale
+  // afrouxar para o smoke rodar duas vezes seguidas.
+  PUBLIC_LEADS_PER_MINUTE: z.coerce.number().int().min(1).default(10),
+
   // Integração com o Freela (api-freela). Sem as três, /v1/freela/* responde 503.
   FREELA_API_URL: z.string().default(''),
   FREELA_ADMIN_EMAIL: z.string().default(''),

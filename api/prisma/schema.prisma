@@ -207,6 +207,9 @@ model leads {
   @@index([praca_id, stage])
   @@index([phone_key])
   @@index([import_batch_id])
+  // Prova social do render (`{{estabelecimento_vizinho}}`): os primeiros por
+  // nome de cada cidade, numa consulta só para o lote inteiro.
+  @@index([city, name])
 }
 
 model lead_events {

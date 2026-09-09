@@ -812,15 +812,46 @@ PRV_FREELA=$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
   -d "{\"filters\":$FILTRO,\"template_id\":\"$TPL_F001\",\"mode\":\"freela\"}")
 check "prévia no modo freela ainda não descreve a campanha" "null" "$(echo "$PRV_FREELA" | jq -r '.freela')"
 check "no modo freela sem hora marcada o lote sai imediato" "imediato" "$(echo "$PRV_FREELA" | jq -r '.eta')"
+# Hora marcada é INSTANTE (ISO com fuso). O `datetime-local` cru do navegador
+# ("2026-09-14T12:00") é barrado: a API roda em UTC e o lote sairia 3h antes.
+MARCADA="$(TZ=America/Sao_Paulo date -u -d '+2 hours' +%Y-%m-%dT%H:%M:%S)Z"
+check "prévia aceita hora marcada em ISO com fuso" "$MARCADA" \
+  "$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
+    -d "{\"filters\":$FILTRO,\"template_id\":\"$TPL_F001\",\"mode\":\"freela\",\"scheduled_at\":\"$MARCADA\"}" \
+    | jq -r '.first_at' | sed 's/\.000Z$/Z/')"
+check "com hora marcada o modo freela mostra a espera, não 'imediato'" "false" \
+  "$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
+    -d "{\"filters\":$FILTRO,\"template_id\":\"$TPL_F001\",\"mode\":\"freela\",\"scheduled_at\":\"$MARCADA\"}" \
+    | jq '.eta == "imediato"')"
+check "hora marcada sem fuso (datetime-local cru) barrada" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
+    -d "{\"filters\":$FILTRO,\"template_id\":\"$TPL_F001\",\"mode\":\"fila\",\"scheduled_at\":\"2026-09-14T12:00\"}" | jq -r .error.code)"
+check "hora marcada que não é data barrada" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
+    -d "{\"filters\":$FILTRO,\"template_id\":\"$TPL_F001\",\"mode\":\"fila\",\"scheduled_at\":\"amanha\"}" | jq -r .error.code)"
 FREELA_HTTP=$(curl -s -o /tmp/praca-smoke-freela.json -w '%{http_code}' -X POST $API/v1/disparos -H "$J" -H "$HD" \
   -d "{\"filters\":$FILTRO,\"template_id\":\"$TPL_F001\",\"mode\":\"freela\"}")
 check "criar no modo freela sem conexão = 503" "503" "$FREELA_HTTP"
 check "criar no modo freela sem conexão = FREELA_NOT_CONFIGURED" "FREELA_NOT_CONFIGURED" \
   "$(jq -r .error.code /tmp/praca-smoke-freela.json)"
 
-NOVO_DISP=$(curl -s -X POST $API/v1/disparos -H "$J" -H "$HD" \
-  -d "{\"filters\":$FILTRO,\"template_id\":\"$TPL_F001\",\"split\":true,\"mode\":\"fila\"}")
+# Corrida: dois cliques em "Confirmar" ao mesmo tempo. O lock consultivo por
+# modelo dentro da transação faz o segundo ver a fila do primeiro e não montar
+# nada — sem ele, os dois liam a trava de 30 dias antes de qualquer um gravar e
+# o lead recebia a mesma mensagem duas vezes.
+CORRIDA_BODY="{\"filters\":$FILTRO,\"template_id\":\"$TPL_F001\",\"split\":true,\"mode\":\"fila\"}"
+curl -s -X POST $API/v1/disparos -H "$J" -H "$HD" -d "$CORRIDA_BODY" > /tmp/praca-smoke-disp-a.json &
+curl -s -X POST $API/v1/disparos -H "$J" -H "$HD" -d "$CORRIDA_BODY" > /tmp/praca-smoke-disp-b.json &
+wait
+check "dois 'Confirmar' ao mesmo tempo montam a fila UMA vez" "5" \
+  "$(( $(jq -r '.created // 0' /tmp/praca-smoke-disp-a.json) + $(jq -r '.created // 0' /tmp/praca-smoke-disp-b.json) ))"
+check "o clique perdedor não tem para quem mandar" "NO_RECIPIENTS" \
+  "$(jq -r '.error.code // empty' /tmp/praca-smoke-disp-a.json /tmp/praca-smoke-disp-b.json | head -1)"
+NOVO_DISP=$(jq -c 'select(.id != null)' /tmp/praca-smoke-disp-a.json /tmp/praca-smoke-disp-b.json | head -1)
+rm -f /tmp/praca-smoke-disp-a.json /tmp/praca-smoke-disp-b.json
 DISP_ID=$(echo "$NOVO_DISP" | jq -r .id)
+check "só um disparo foi criado na corrida" "1" \
+  "$(curl -s $API/v1/disparos -H "$HD" | jq --arg n "Contratante · toque 1 (lead novo) · $(TZ=America/Sao_Paulo date +%d/%m/%Y)" '[.[] | select(.name==$n)] | length')"
 check "criou uma mensagem por lead que podia receber" "5" "$(echo "$NOVO_DISP" | jq '.created')"
 check "nada pulado pela lista de bloqueio" "0" "$(echo "$NOVO_DISP" | jq '.skipped_block')"
 check "nada pulado pela trava de 30 dias" "0" "$(echo "$NOVO_DISP" | jq '.skipped_dup')"
@@ -929,8 +960,15 @@ check "modo de envio fora do catálogo barrado" "VALIDATION_ERROR" \
     -d "{\"filters\":$FILTRO,\"template_id\":\"$TPL_F001\",\"mode\":\"provedor\"}" | jq -r .error.code)"
 check "status de marcação fora de enviada/entregue barrado" "VALIDATION_ERROR" \
   "$(curl -s -X POST $API/v1/sends/$SEND1/mark -H "$J" -H "$HD" -d '{"status":"falhou"}' | jq -r .error.code)"
+# Envio já respondido não volta atrás (apagaria a resposta do painel).
+check "marcar envio já respondido = ALREADY_REPLIED" "ALREADY_REPLIED" \
+  "$(curl -s -X POST $API/v1/sends/$SEND2/mark -H "$J" -H "$HD" -d '{"status":"enviada"}' | jq -r .error.code)"
+check "o envio respondido continua respondida" "respondida" \
+  "$(curl -s $API/v1/disparos/$DISP_ID -H "$HD" | jq -r --arg i "$SEND2" '[.sends[] | select(.id==$i)][0].status')"
 check "resposta sem texto barrada" "VALIDATION_ERROR" \
   "$(curl -s -X POST $API/v1/sends/$SEND1/reply -H "$J" -H "$HD" -d '{"text":""}' | jq -r .error.code)"
+check "resposta só com espaço barrada (o texto é aparado antes de validar)" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/sends/$SEND1/reply -H "$J" -H "$HD" -d '{"text":"   "}' | jq -r .error.code)"
 check "disparo inexistente = NOT_FOUND" "NOT_FOUND" \
   "$(curl -s $API/v1/disparos/00000000-0000-4000-8000-00000000beef -H "$HD" | jq -r .error.code)"
 check "disparo com id malformado = NOT_FOUND (não 500)" "NOT_FOUND" \

@@ -767,7 +767,9 @@ limpeza do admin. O lote continua na lista, com `imported` abatido e o motivo
 Porta pública do formulário de captura (`.prototype/src/routes/formulario.$pracaId.tsx`):
 embutido em landing page/anúncio, sem login. As duas rotas são `@Public()` e
 **não** entram no throttle de 300 req/min — o `POST` tem o seu próprio, bem
-mais apertado.
+mais apertado: **`PUBLIC_LEADS_PER_MINUTE` por minuto e por IP** (padrão 10, o
+valor de produção; em desenvolvimento sobe para o smoke rodar duas vezes
+seguidas). Estourar responde `429 TOO_MANY_REQUESTS`.
 
 | Método | Rota | Corpo | Resposta |
 |---|---|---|---|
@@ -1088,6 +1090,12 @@ inexistente → `404 NOT_FOUND`.
 
 ### `POST /v1/disparos`
 
+`scheduled_at` (na prévia e na criação) é **instante ISO 8601 com fuso** (`Z` ou
+`±HH:MM`, ex.: `2026-09-14T12:00:00Z`). Hora "solta" do `datetime-local`
+(`2026-09-14T12:00`) é `400 VALIDATION_ERROR`: o processo da API roda em UTC e
+gravar 12:00 sem fuso adiantaria o lote em três horas. Quem converte é o web,
+que sabe o fuso de quem está olhando.
+
 Mesmo corpo da prévia, mais `name?` (até 160). Cria a linha de `disparos` e a
 fila de `msg_sends` na **mesma transação**, com `status: "fila"`, o `mode` do
 disparo, a `variant` e o **texto já renderizado** — mudar o modelo depois não
@@ -1102,6 +1110,11 @@ cada mensagem vem do agendamento acima.
 - `mode: "freela"` sem conexão com o Freela → `503 FREELA_NOT_CONFIGURED`
   (`src/modules/disparos/freela-gate.ts`; hoje é **sempre** — a Task 15 troca a
   porteira por `FreelaClient.isConfigured()`).
+- A criação é **serializada por modelo** (`pg_advisory_xact_lock` em
+  `'disparo:' || template_id`) e relê a trava de 30 dias **dentro** da
+  transação: dois cliques em "Confirmar" (ou duas abas) não montam a fila duas
+  vezes — o segundo vê os envios do primeiro, pula esses leads (`skipped_dup`) e,
+  se não sobrar ninguém, responde `400 NO_RECIPIENTS` sem gravar nada.
 
 ### `DisparoView`
 
@@ -1161,8 +1174,10 @@ aconteceu. Rota por **envio** (não por disparo) porque envio também nasce de
 cadência.
 
 `mark` — `{status}` com `status ∈ enviada | entregue` (`falhou` é do motor, não
-da tela). Grava `sent_at` se ainda estiver vazio e **não reescreve** o que já
-existe. `enviada` é o toque de verdade: grava evento `msg_out` na timeline do
+da tela). Envio já `respondida` → `400 ALREADY_REPLIED` ("Este envio já foi
+respondido."): voltar atrás apagaria a resposta do painel e gravaria um segundo
+evento de saída. Grava `sent_at` se ainda estiver vazio e **não reescreve** o que
+já existe. `enviada` é o toque de verdade: grava evento `msg_out` na timeline do
 lead — `"<modelo> (variação A) enviada por WhatsApp."` (rótulo do canal, §4) — e
 atualiza `last_contact_at`, o que zera os dias parados do funil. `entregue` só
 confirma a entrega, sem evento novo. Responde o `SendView` atualizado.
@@ -1173,5 +1188,13 @@ confirma a entrega, sem evento novo. Responde o `SendView` atualizado.
 `blocklist` na hora, com `name` do lead, `lead_id` e motivo
 `pediu para não receber: “<texto>”` — número já bloqueado não vira erro. Responde
 `{blocked}` (`true` = o texto é um pedido de opt-out).
+
+`reply` apara o texto antes de validar: corpo só com espaço é `400
+VALIDATION_ERROR`.
+
+As duas rotas gravam **tudo num commit** — envio, evento do lead,
+`last_contact_at`, bloqueio do opt-out e o fechamento do disparo em `concluido`.
+Nada de "pediu para parar" registrado sem o número bloqueado, nem lote com a fila
+zerada preso em `agendado`.
 
 Envio inexistente → `404 NOT_FOUND`.

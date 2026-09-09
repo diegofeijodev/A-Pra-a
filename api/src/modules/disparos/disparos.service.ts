@@ -155,6 +155,12 @@ interface Plano {
   render: (item: PublicoLead, index: number) => { variant: 'A' | 'B'; text: string };
 }
 
+/** Prisma normal ou o cliente de uma transação já aberta. */
+type Db = PrismaService | Prisma.TransactionClient;
+
+/** Quantas mensagens a prévia mostra (`Disparos.tsx:80`). */
+const PREVIEW_SIZE = 5;
+
 const NA_FILA = 'fila';
 const STATUS_CONCLUIDO = 'concluido';
 const STATUS_AGENDADO = 'agendado';
@@ -184,7 +190,9 @@ export class DisparosService {
    */
   async preview(dto: PreviewDisparoDto, user: AuthUser): Promise<DisparoPreviewView> {
     const tpl = await this.templateOrFail(dto.template_id);
-    const plano = await this.plan(dto, tpl, user);
+    // 5: a prévia mostra 5 mensagens, então resolver praça e vizinho das 2.000
+    // do lote seria trabalho jogado fora a cada tecla no filtro.
+    const plano = await this.plan(dto, tpl, user, PREVIEW_SIZE);
     return {
       audience: plano.audience,
       sendable: plano.sendable.length,
@@ -192,7 +200,7 @@ export class DisparosService {
       dupes: plano.dupes,
       first_at: plano.first_at,
       eta: plano.eta,
-      previews: plano.sendable.slice(0, 5).map((item, i) => {
+      previews: plano.sendable.slice(0, PREVIEW_SIZE).map((item, i) => {
         const { variant, text } = plano.render(item, i);
         return { lead_id: item.lead.id, name: item.lead.name, city: item.lead.city, variant, text };
       }),
@@ -217,13 +225,7 @@ export class DisparosService {
     }
 
     const plano = await this.plan(dto, tpl, user);
-    if (plano.sendable.length === 0) {
-      throw new BadRequestException({
-        code: 'NO_RECIPIENTS',
-        message:
-          'Ninguém pode receber este disparo: o público está vazio ou todos caíram na lista de bloqueio ou na trava de 30 dias.',
-      });
-    }
+    if (plano.sendable.length === 0) throw this.semDestinatario();
 
     // Render fora da transação: montar 2.000 textos com a transação aberta
     // seguraria a conexão por nada.
@@ -242,11 +244,30 @@ export class DisparosService {
       };
     });
 
-    const id = await this.prisma.$transaction(async (tx) => {
+    const feito = await this.prisma.$transaction(async (tx) => {
+      // Serializa por MODELO: dois cliques em "Confirmar" (ou duas abas) leriam
+      // a trava de 30 dias antes de qualquer um gravar (TOCTOU) e montariam a
+      // fila duas vezes para os mesmos leads. O lock é por transação (libera no
+      // commit/rollback) e só trava quem disputa o mesmo modelo — igual ao que a
+      // Task 8 fez no formulário público.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`disparo:${tpl.id}`}))`;
+
+      // Segunda leitura da trava, agora com o lock na mão: quem entrou na fila
+      // de um disparo concorrente sai deste.
+      const repetidos = await this.dupLeadIds(
+        tx,
+        tpl.id,
+        sends.map((x) => x.lead_id),
+      );
+      const finais = sends.filter((x) => !repetidos.has(x.lead_id));
+      if (finais.length === 0) throw this.semDestinatario();
+
       const disparo = await tx.disparos.create({
         data: {
           name: dto.name?.trim() || `${tpl.name} · ${brToday()}`,
-          scheduled_at: new Date(plano.first_at),
+          // Primeira mensagem que sobrou (a fila pode ter perdido a cabeça para
+          // o disparo concorrente).
+          scheduled_at: finais[0]!.scheduled_at,
           mode: dto.mode,
           template_id: tpl.id,
           split: plano.split,
@@ -254,19 +275,19 @@ export class DisparosService {
           by: user.id,
           filters: this.toFiltersJson(dto.filters),
           skipped_block: plano.blocked,
-          skipped_dup: plano.dupes,
+          skipped_dup: plano.dupes + (sends.length - finais.length),
           status: STATUS_AGENDADO,
         },
       });
-      await tx.msg_sends.createMany({ data: sends.map((s) => ({ ...s, disparo_id: disparo.id })) });
-      return disparo.id;
+      await tx.msg_sends.createMany({ data: finais.map((x) => ({ ...x, disparo_id: disparo.id })) });
+      return { id: disparo.id, created: finais.length, skipped_dup: disparo.skipped_dup };
     });
 
     return {
-      id,
-      created: sends.length,
+      id: feito.id,
+      created: feito.created,
       skipped_block: plano.blocked,
-      skipped_dup: plano.dupes,
+      skipped_dup: feito.skipped_dup,
     };
   }
 
@@ -332,19 +353,27 @@ export class DisparosService {
    */
   async mark(id: string, dto: MarkSendDto, user: AuthUser): Promise<SendView> {
     const send = await this.sendOrFail(id);
+    // Envio já respondido não volta atrás: marcar "enviada" apagaria a resposta
+    // do lead do painel e gravaria um segundo evento de saída.
+    if (send.status === RESPONDIDA) {
+      throw new BadRequestException({
+        code: 'ALREADY_REPLIED',
+        message: 'Este envio já foi respondido.',
+      });
+    }
     const at = new Date();
-    const writes: Prisma.PrismaPromise<unknown>[] = [
-      this.prisma.msg_sends.update({
+    // Leitura fora da transação: só o texto do evento depende dela.
+    const nome = dto.status === 'enviada' ? await this.templateName(send.template_id) : '';
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.msg_sends.update({
         where: { id },
         // `sent_at` não é reescrito: marcar entregue depois de enviada mantém a
         // hora em que a mensagem saiu.
         data: { status: dto.status, sent_at: send.sent_at ?? at },
-      }),
-    ];
-    if (dto.status === 'enviada') {
-      const nome = await this.templateName(send.template_id);
-      writes.push(
-        this.prisma.lead_events.create({
+      });
+      if (dto.status === 'enviada') {
+        await tx.lead_events.create({
           data: {
             lead_id: send.lead_id,
             at,
@@ -352,12 +381,13 @@ export class DisparosService {
             kind: 'msg_out',
             text: `${nome} (variação ${send.variant}) enviada por ${channelLabel(send.channel)}.`,
           },
-        }),
-        this.prisma.leads.update({ where: { id: send.lead_id }, data: { last_contact_at: at } }),
-      );
-    }
-    await this.prisma.$transaction(writes);
-    if (send.disparo_id) await this.settle(send.disparo_id);
+        });
+        await tx.leads.update({ where: { id: send.lead_id }, data: { last_contact_at: at } });
+      }
+      // No MESMO commit: se o fechamento do disparo ficasse fora e falhasse, o
+      // último envio sairia da fila e o lote continuaria "agendado" para sempre.
+      if (send.disparo_id) await this.settle(send.disparo_id, tx);
+    });
     return this.toSendView(await this.sendOrFail(id));
   }
 
@@ -372,27 +402,33 @@ export class DisparosService {
     const at = new Date();
     const blocked = isOptOut(texto);
 
-    await this.prisma.$transaction([
-      this.prisma.msg_sends.update({
+    // Tudo num commit: resposta, evento, último contato, bloqueio do opt-out e
+    // fechamento do lote. Gravar "pediu para não receber" e não bloquear o
+    // número é o pior dos dois mundos — o próximo disparo bateria na mesma
+    // porta.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.msg_sends.update({
         where: { id },
         // Respondeu ⇒ saiu, mesmo que ninguém tenha marcado como enviada.
         data: { status: RESPONDIDA, replied_at: at, sent_at: send.sent_at ?? at },
-      }),
-      this.prisma.lead_events.create({
-        data: { lead_id: send.lead_id, at, author_id: user.id, kind: 'msg_in', text: texto },
-      }),
-      this.prisma.leads.update({ where: { id: send.lead_id }, data: { last_contact_at: at } }),
-    ]);
-
-    if (blocked) {
-      await this.messages.blockIfNew({
-        phone: send.lead.phone,
-        name: send.lead.name,
-        lead_id: send.lead_id,
-        reason: `pediu para não receber: “${texto}”`,
       });
-    }
-    if (send.disparo_id) await this.settle(send.disparo_id);
+      await tx.lead_events.create({
+        data: { lead_id: send.lead_id, at, author_id: user.id, kind: 'msg_in', text: texto },
+      });
+      await tx.leads.update({ where: { id: send.lead_id }, data: { last_contact_at: at } });
+      if (blocked) {
+        await this.messages.blockIfNew(
+          {
+            phone: send.lead.phone,
+            name: send.lead.name,
+            lead_id: send.lead_id,
+            reason: `pediu para não receber: “${texto}”`,
+          },
+          tx,
+        );
+      }
+      if (send.disparo_id) await this.settle(send.disparo_id, tx);
+    });
     return { blocked };
   }
 
@@ -403,11 +439,18 @@ export class DisparosService {
    * — é o que faz o que a pessoa revisou ser exatamente o que entra na fila
    * (inclusive a ordem, que é quem decide a variante A/B).
    */
-  private async plan(dto: PreviewDisparoDto, tpl: TemplateRow, user: AuthUser): Promise<Plano> {
+  private async plan(
+    dto: PreviewDisparoDto,
+    tpl: TemplateRow,
+    user: AuthUser,
+    /** Quantos envios vão ser renderizados: 5 na prévia, todos na criação. */
+    renderLimit?: number,
+  ): Promise<Plano> {
     const settings = await this.messages.getSettings();
     const publico = await this.audience(dto.filters);
     const bloqueados = await this.messages.blockedKeys();
     const repetidos = await this.dupLeadIds(
+      this.prisma,
       tpl.id,
       publico.map((p) => p.lead.id),
     );
@@ -439,8 +482,12 @@ export class DisparosService {
 
     const hasB = !!tpl.text_b?.trim();
     const split = dto.split && hasB;
-    const pracas = await this.pracasByIds(parte.sendable.map((p) => p.lead.praca_id));
-    const vizinhos = await this.messages.neighborsByCity(parte.sendable.map((p) => p.lead.city));
+    // Só quem vai ser renderizado precisa de praça e de vizinho. `render` vale,
+    // portanto, para os `renderLimit` primeiros (prévia) ou para todos (criação).
+    const aRenderizar =
+      renderLimit === undefined ? parte.sendable : parte.sendable.slice(0, renderLimit);
+    const pracas = await this.pracasByIds(aRenderizar.map((p) => p.lead.praca_id));
+    const vizinhos = await this.messages.neighborsByCity(aRenderizar.map((p) => p.lead.city));
     const me = { name: user.name };
     const defaults = settings.template_defaults;
 
@@ -521,9 +568,9 @@ export class DisparosService {
    * modelo e por lead (é o que reduz volume de verdade); a janela de 30 dias é
    * decidida pela regra pura testada (`isDupSend`), não por SQL.
    */
-  private async dupLeadIds(templateId: string, leadIds: string[]): Promise<Set<string>> {
+  private async dupLeadIds(db: Db, templateId: string, leadIds: string[]): Promise<Set<string>> {
     if (leadIds.length === 0) return new Set();
-    const rows = await this.prisma.msg_sends.findMany({
+    const rows = await db.msg_sends.findMany({
       where: { template_id: templateId, lead_id: { in: leadIds } },
       select: { lead_id: true, template_id: true, scheduled_at: true },
     });
@@ -561,12 +608,12 @@ export class DisparosService {
 
   // ── internos ────────────────────────────────────────────────
   /** Fecha o disparo quando não sobrou ninguém na fila (`store.tsx:670-679`). */
-  private async settle(disparoId: string): Promise<void> {
-    const naFila = await this.prisma.msg_sends.count({
+  private async settle(disparoId: string, db: Db = this.prisma): Promise<void> {
+    const naFila = await db.msg_sends.count({
       where: { disparo_id: disparoId, status: NA_FILA },
     });
     if (naFila > 0) return;
-    await this.prisma.disparos.updateMany({
+    await db.disparos.updateMany({
       where: { id: disparoId, status: { not: STATUS_CONCLUIDO } },
       data: { status: STATUS_CONCLUIDO },
     });
@@ -728,6 +775,14 @@ export class DisparosService {
       failure_reason: s.failure_reason,
       stage_at_send: s.stage_at_send,
     };
+  }
+
+  private semDestinatario() {
+    return new BadRequestException({
+      code: 'NO_RECIPIENTS',
+      message:
+        'Ninguém pode receber este disparo: o público está vazio ou todos caíram na lista de bloqueio ou na trava de 30 dias.',
+    });
   }
 
   private disparoNaoAchado() {
