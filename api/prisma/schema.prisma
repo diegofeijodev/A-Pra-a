@@ -1,0 +1,543 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── pessoas ──────────────────────────────────────────────────
+model users {
+  id              String   @id @default(uuid()) @db.Uuid
+  email           String   @unique
+  password_hash   String
+  name            String
+  role_label      String   @default("")
+  color           String   @default("#ECA826")
+  phone           String   @default("")
+  is_admin        Boolean  @default(false)
+  active          Boolean  @default(true)
+  theme           String   @default("dark")
+  active_praca_id String?  @db.Uuid
+  sort            Int      @default(0)
+  created_at      DateTime @default(now())
+
+  dismissed_notifs user_dismissed_notifs[]
+}
+
+model user_dismissed_notifs {
+  user_id  String   @db.Uuid
+  notif_id String
+  at       DateTime @default(now())
+  user     users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@id([user_id, notif_id])
+}
+
+// ── praça ────────────────────────────────────────────────────
+model pracas {
+  id               String   @id @default(uuid()) @db.Uuid
+  name             String
+  city             String
+  start_date       String
+  end_date         String
+  cobertura_uf     String?
+  cobertura_cidade String?
+  cobertura_ibge   String?
+  lat              Float?
+  lon              Float?
+  vizinhas         String[] @default([])
+  created_at       DateTime @default(now())
+
+  step_states praca_step_states[]
+  actions     actions[]
+  leads       leads[]
+  proofs      proofs[]
+  campanhas   campanhas[]
+}
+
+model praca_step_states {
+  praca_id      String    @db.Uuid
+  step_n        Int
+  actual        Float?
+  unlocked_by   String?   @db.Uuid
+  unlocked_at   DateTime?
+  unlock_reason String?
+  praca         pracas    @relation(fields: [praca_id], references: [id], onDelete: Cascade)
+
+  @@id([praca_id, step_n])
+}
+
+// ── roteiro-modelo e ações ───────────────────────────────────
+model template_actions {
+  id             String   @id @default(uuid()) @db.Uuid
+  key            String   @unique
+  step           Int
+  title          String
+  owners         String[] @default([])
+  rec_kind       String
+  rec_day        Int?
+  rec_start_day  Int?
+  rec_end_day    Int?
+  rec_weekday    Int?
+  rec_month_day  Int?
+  tools          String[] @default([])
+  how_to         String[] @default([])
+  expected       String?
+  msg            String?
+  attention      String?
+  expects_result Boolean  @default(false)
+  sort           Int      @default(0)
+}
+
+model actions {
+  id             String    @id @default(uuid()) @db.Uuid
+  praca_id       String    @db.Uuid
+  template_key   String?
+  step           Int
+  title          String
+  owners         String[]  @default([])
+  rec_kind       String
+  rec_day        Int?
+  rec_start_day  Int?
+  rec_end_day    Int?
+  rec_weekday    Int?
+  rec_month_day  Int?
+  tools          String[]  @default([])
+  expected       String?
+  msg            String?
+  attention      String?
+  expects_result Boolean   @default(false)
+  due_override   String?
+  postpone_count Int       @default(0)
+  completed_at   DateTime?
+  completed_by   String?   @db.Uuid
+  result         Float?
+  sort           Int       @default(0)
+  created_at     DateTime  @default(now())
+  praca          pracas    @relation(fields: [praca_id], references: [id], onDelete: Cascade)
+
+  completions action_completions[]
+  comments    action_comments[]
+  subitems    action_subitems[]
+
+  @@index([praca_id, step])
+}
+
+model action_completions {
+  action_id String   @db.Uuid
+  date      String
+  by        String   @db.Uuid
+  at        DateTime @default(now())
+  result    Float?
+  action    actions  @relation(fields: [action_id], references: [id], onDelete: Cascade)
+
+  @@id([action_id, date])
+}
+
+model action_comments {
+  id        String   @id @default(uuid()) @db.Uuid
+  action_id String   @db.Uuid
+  author_id String   @db.Uuid
+  at        DateTime @default(now())
+  text      String
+  action    actions  @relation(fields: [action_id], references: [id], onDelete: Cascade)
+}
+
+model action_subitems {
+  id        String  @id @default(uuid()) @db.Uuid
+  action_id String  @db.Uuid
+  text      String
+  done      Boolean @default(false)
+  sort      Int     @default(0)
+  action    actions @relation(fields: [action_id], references: [id], onDelete: Cascade)
+}
+
+// ── indicadores ──────────────────────────────────────────────
+model indicator_entries {
+  praca_id String @db.Uuid
+  key      String
+  date     String
+  value    Float
+
+  @@id([praca_id, key, date])
+}
+
+// ── funil ────────────────────────────────────────────────────
+model leads {
+  id              String    @id @default(uuid()) @db.Uuid
+  praca_id        String?   @db.Uuid
+  name            String
+  city            String    @default("")
+  address         String    @default("")
+  phone           String    @default("")
+  phone_key       String    @default("")
+  cnpj            String?
+  instagram       String?
+  site            String?
+  decisor         String    @default("—")
+  decisor_role    String    @default("")
+  classe          String    @default("alvo")
+  origem          String    @default("prospecção")
+  owner_id        String?   @db.Uuid
+  stage           Int       @default(1)
+  entered_at      String
+  stage_since     String
+  last_contact_at DateTime?
+  next_step_what  String?
+  next_step_date  String?
+  lost_reason     String?
+  reheat_at       String?
+  archived        Boolean   @default(false)
+  import_batch_id String?   @db.Uuid
+  possible_dup    Boolean   @default(false)
+  snooze_until    String?
+  campanha_id     String?   @db.Uuid
+  form_answer     String?
+  is_test         Boolean   @default(false)
+  created_at      DateTime  @default(now())
+  praca           pracas?   @relation(fields: [praca_id], references: [id], onDelete: SetNull)
+
+  events      lead_events[]
+  vagas       lead_vagas[]
+  sends       msg_sends[]
+  enrollments enrollments[]
+
+  @@index([praca_id, stage])
+  @@index([phone_key])
+  @@index([import_batch_id])
+}
+
+model lead_events {
+  id           String   @id @default(uuid()) @db.Uuid
+  lead_id      String   @db.Uuid
+  at           DateTime @default(now())
+  author_id    String?  @db.Uuid
+  author_label String?
+  kind         String
+  text         String
+  stage_to     Int?
+  lead         leads    @relation(fields: [lead_id], references: [id], onDelete: Cascade)
+
+  @@index([lead_id, at])
+}
+
+model lead_vagas {
+  id      String  @id @default(uuid()) @db.Uuid
+  lead_id String  @db.Uuid
+  date    String
+  funcao  String
+  filled  Boolean @default(false)
+  hours   Float?
+  lead    leads   @relation(fields: [lead_id], references: [id], onDelete: Cascade)
+}
+
+model import_mappings {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String   @unique
+  map        Json
+  created_at DateTime @default(now())
+}
+
+model import_batches {
+  id        String   @id @default(uuid()) @db.Uuid
+  at        DateTime @default(now())
+  file_name String
+  by        String   @db.Uuid
+  origem    String
+  imported  Int
+  ignored   Int
+  reasons   String[] @default([])
+}
+
+// ── mensagens ────────────────────────────────────────────────
+model msg_templates {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String
+  audience        String
+  stage           Int      @default(0)
+  channel         String   @default("whatsapp")
+  text_a          String
+  text_b          String?
+  attachment_kind String?
+  attachment_name String?
+  attachment_url  String?
+  created_at      DateTime @default(now())
+}
+
+model app_settings {
+  id                Int     @id @default(1)
+  mode              String  @default("fila")
+  window_start      Int     @default(9)
+  window_end        Int     @default(19)
+  sunday            Boolean @default(false)
+  daily_limit       Int     @default(200)
+  gap_min           Int     @default(20)
+  gap_max           Int     @default(90)
+  daily_quota       Int     @default(20)
+  template_defaults Json    @default("{}")
+}
+
+model blocklist {
+  id        String   @id @default(uuid()) @db.Uuid
+  phone     String
+  phone_key String   @unique
+  name      String   @default("")
+  lead_id   String?  @db.Uuid
+  at        DateTime @default(now())
+  reason    String   @default("")
+}
+
+model disparos {
+  id                 String   @id @default(uuid()) @db.Uuid
+  name               String
+  at                 DateTime @default(now())
+  scheduled_at       DateTime
+  mode               String
+  template_id        String   @db.Uuid
+  split              Boolean  @default(false)
+  channel            String
+  by                 String   @db.Uuid
+  filters            Json
+  skipped_block      Int      @default(0)
+  skipped_dup        Int      @default(0)
+  status             String   @default("agendado")
+  freela_campaign_id String?
+
+  sends msg_sends[]
+}
+
+model msg_sends {
+  id                  String    @id @default(uuid()) @db.Uuid
+  disparo_id          String?   @db.Uuid
+  cadence_id          String?   @db.Uuid
+  node_id             String?   @db.Uuid
+  enrollment_id       String?   @db.Uuid
+  template_id         String?   @db.Uuid
+  variant             String    @default("A")
+  lead_id             String    @db.Uuid
+  channel             String    @default("whatsapp")
+  text                String
+  mode                String    @default("fila")
+  scheduled_at        DateTime
+  sent_at             DateTime?
+  replied_at          DateTime?
+  status              String    @default("fila")
+  failure_reason      String?
+  stage_at_send       Int
+  freela_campaign_id  String?
+  freela_recipient_id String?
+  created_at          DateTime  @default(now())
+  disparo             disparos? @relation(fields: [disparo_id], references: [id], onDelete: Cascade)
+  lead                leads     @relation(fields: [lead_id], references: [id], onDelete: Cascade)
+
+  @@index([disparo_id])
+  @@index([lead_id])
+  @@index([status, mode])
+  @@index([freela_campaign_id])
+}
+
+// ── cadências ────────────────────────────────────────────────
+model cadences {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  audience    String
+  entry       String
+  exit_action String
+  exit_note   String   @default("")
+  paused      Boolean  @default(false)
+  created_at  DateTime @default(now())
+
+  nodes       cadence_nodes[]
+  enrollments enrollments[]
+}
+
+model cadence_nodes {
+  id          String   @id @default(uuid()) @db.Uuid
+  cadence_id  String   @db.Uuid
+  sort        Int
+  kind        String
+  day         Int      @default(0)
+  channel     String?
+  template_id String?  @db.Uuid
+  text        String?
+  task        String?
+  rule        String?
+  action      String?
+  note        String?
+  cadence     cadences @relation(fields: [cadence_id], references: [id], onDelete: Cascade)
+
+  @@index([cadence_id, sort])
+}
+
+model enrollments {
+  id             String    @id @default(uuid()) @db.Uuid
+  cadence_id     String    @db.Uuid
+  lead_id        String    @db.Uuid
+  started_at     DateTime
+  next_at        DateTime
+  status         String    @default("ativo")
+  exit_reason    String?
+  stage_at_start Int
+  is_test        Boolean   @default(false)
+  compress_sec   Int?
+  cadence        cadences  @relation(fields: [cadence_id], references: [id], onDelete: Cascade)
+  lead           leads     @relation(fields: [lead_id], references: [id], onDelete: Cascade)
+
+  logs enrollment_logs[]
+
+  @@index([cadence_id, status])
+  @@index([lead_id, status])
+}
+
+model enrollment_logs {
+  id            String      @id @default(uuid()) @db.Uuid
+  enrollment_id String      @db.Uuid
+  node_id       String      @db.Uuid
+  at            DateTime    @default(now())
+  send_id       String?     @db.Uuid
+  kind          String
+  enrollment    enrollments @relation(fields: [enrollment_id], references: [id], onDelete: Cascade)
+}
+
+// ── mídia ────────────────────────────────────────────────────
+model proofs {
+  id       String @id @default(uuid()) @db.Uuid
+  praca_id String @db.Uuid
+  kind     String
+  title    String
+  praca    pracas @relation(fields: [praca_id], references: [id], onDelete: Cascade)
+
+  campanhas campanha_provas[]
+}
+
+model campanhas {
+  id             String    @id @default(uuid()) @db.Uuid
+  name           String
+  praca_id       String    @db.Uuid
+  publico        String
+  objetivo       String
+  start          String
+  end            String
+  verba          Float     @default(0)
+  gasto          Float     @default(0)
+  dor            String    @default("")
+  oferta         String    @default("")
+  mensagem_chave String    @default("")
+  destino        String    @default("formulario")
+  kpi_name       String    @default("")
+  kpi_meta       Float     @default(0)
+  kpi_custo      Float     @default(0)
+  cac_teto       Float     @default(0)
+  status         String    @default("rascunho")
+  gate_just_by   String?
+  gate_just_at   DateTime?
+  gate_just_text String?
+  created_at     DateTime  @default(now())
+  praca          pracas    @relation(fields: [praca_id], references: [id], onDelete: Cascade)
+
+  provas    campanha_provas[]
+  creatives creatives[]
+  traffic   traffic_entries[]
+}
+
+model campanha_provas {
+  campanha_id String    @db.Uuid
+  proof_id    String    @db.Uuid
+  campanha    campanhas @relation(fields: [campanha_id], references: [id], onDelete: Cascade)
+  proof       proofs    @relation(fields: [proof_id], references: [id], onDelete: Cascade)
+
+  @@id([campanha_id, proof_id])
+}
+
+model creatives {
+  id                     String    @id @default(uuid()) @db.Uuid
+  campanha_id            String    @db.Uuid
+  formato                String
+  titulo                 String    @default("")
+  gancho                 String    @default("")
+  roteiro_gancho         String    @default("")
+  roteiro_desenvolvimento String   @default("")
+  roteiro_prova          String    @default("")
+  roteiro_cta            String    @default("")
+  legenda                String    @default("")
+  cta_botao              String    @default("Saiba mais")
+  owner_id               String?   @db.Uuid
+  due                    String
+  publish_at             String?
+  status                 String    @default("a_fazer")
+  file_url               String    @default("")
+  ia_tool                String?
+  ia_prompt              String?
+  approved_at            DateTime?
+  created_at             DateTime  @default(now())
+  campanha               campanhas @relation(fields: [campanha_id], references: [id], onDelete: Cascade)
+
+  comments creative_comments[]
+}
+
+model creative_comments {
+  id          String    @id @default(uuid()) @db.Uuid
+  creative_id String    @db.Uuid
+  at          DateTime  @default(now())
+  author      String
+  text        String
+  kind        String
+  creative    creatives @relation(fields: [creative_id], references: [id], onDelete: Cascade)
+}
+
+model traffic_entries {
+  id            String    @id @default(uuid()) @db.Uuid
+  campanha_id   String    @db.Uuid
+  plataforma    String
+  nome_la       String    @default("")
+  publico       String    @default("")
+  geo           String    @default("")
+  verba_diaria  Float     @default(0)
+  criativos     String[]  @default([])
+  manager_url   String    @default("")
+  api_connected Boolean   @default(false)
+  campanha      campanhas @relation(fields: [campanha_id], references: [id], onDelete: Cascade)
+
+  days traffic_days[]
+}
+
+model traffic_days {
+  id         String          @id @default(uuid()) @db.Uuid
+  entry_id   String          @db.Uuid
+  date       String
+  investido  Float           @default(0)
+  alcance    Int             @default(0)
+  cliques    Int             @default(0)
+  conversoes Int             @default(0)
+  auto       Boolean         @default(false)
+  entry      traffic_entries @relation(fields: [entry_id], references: [id], onDelete: Cascade)
+
+  @@unique([entry_id, date])
+}
+
+// ── integração Freela ────────────────────────────────────────
+model freela_campaigns {
+  id               String    @id @default(uuid()) @db.Uuid
+  freela_id        String    @unique
+  name             String
+  kind             String
+  praca_id         String?   @db.Uuid
+  disparo_id       String?   @db.Uuid
+  audience         String
+  audience_filters Json?
+  status           String
+  stats            Json?
+  created_by       String    @db.Uuid
+  created_at       DateTime  @default(now())
+  last_synced_at   DateTime?
+}
+
+model freela_templates {
+  id         String   @id @default(uuid()) @db.Uuid
+  freela_id  String   @unique
+  praca_id   String?  @db.Uuid
+  created_by String   @db.Uuid
+  created_at DateTime @default(now())
+}

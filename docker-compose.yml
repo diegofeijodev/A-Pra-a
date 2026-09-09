@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: praca-postgres
+    environment:
+      POSTGRES_USER: praca
+      POSTGRES_PASSWORD: praca
+      POSTGRES_DB: praca
+    ports:
+      - '5437:5432'
+    volumes:
+      - praca_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U praca -d praca']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./api
+    container_name: praca-api
+    profiles: ['full']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://praca:praca@postgres:5432/praca?schema=public
+      # Sem segredo embutido: `validateEnv` exige 16+ chars, então o container
+      # falha na largada com mensagem clara em vez de subir com segredo público.
+      JWT_SECRET: ${JWT_SECRET:-}
+      NODE_ENV: production
+      PORT: 3014
+      CORS_ORIGINS: http://localhost:3024
+      PUBLIC_URL: http://localhost:3014
+      APP_URL: http://localhost:3024
+    ports:
+      - '3014:3014'
+
+volumes:
+  praca_pgdata:
