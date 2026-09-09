@@ -69,8 +69,8 @@ Regras de desativação (`active:false`, via `PATCH /:id` ou `DELETE /:id`):
 - A última conta admin ativa não pode ser desativada: `400 LAST_ADMIN`.
 
 `theme` ∈ `dark`, `light`. `color` é hex (`#RRGGBB`). `active_praca_id`
-referencia `pracas.id` (sem FK no banco — a praça é criada em tarefa futura);
-`null` desvincula.
+referencia `pracas.id` (§6; sem FK no banco — quando a praça é apagada, o
+campo é limpo à mão pelo `DELETE /v1/pracas/:id`); `null` desvincula.
 
 ## 4. Catálogo — `/v1/catalog`
 
@@ -182,3 +182,257 @@ carga do JSON, e vale para o módulo inteiro (inclusive `GET
 bLon)` — mesma fórmula de `geo.ts:41-57` (Haversine, raio da Terra = 6371 km);
 `cidadesNoRaio(ibge, km)`; `find(ibge)` (lookup simples, `undefined` se não
 existir); `municipiosPorUf(uf)`; `estados()`.
+
+## 6. Praças — `/v1/pracas`
+
+Praça é a unidade de trabalho do sistema: uma cidade (mais as vizinhas) sendo
+aberta em ~98 dias, com o roteiro-modelo (§8) instanciado como ações (§7) e as
+11 etapas do catálogo (§4 `steps`) medidas por portões.
+
+`PracaView`:
+
+```json
+{
+  "id": "uuid",
+  "name": "Belo Horizonte + Contagem",
+  "city": "Belo Horizonte · MG",
+  "start_date": "2026-09-01",
+  "end_date": "2026-12-08",
+  "cobertura": {
+    "uf": "MG",
+    "cidade": "Belo Horizonte",
+    "ibge": "3106200",
+    "lat": -19.9102,
+    "lon": -43.9266,
+    "vizinhas": ["Contagem", "Betim", "..."]
+  },
+  "steps": { "2": { "actual": 22, "unlock": null } },
+  "created_at": "2026-09-09T11:00:00.000Z"
+}
+```
+
+- `cobertura` é `null` quando a praça foi aberta sem cidade-sede do IBGE.
+- `steps` só traz as etapas que já têm estado (resultado lançado ou destrave);
+  a chave é o número da etapa. `unlock` é `{by, at, reason}` ou `null`.
+
+| Método | Rota | Quem | Corpo | Observação |
+|---|---|---|---|---|
+| GET | `/` | autenticado | — | `PracaView[]`, ordem `created_at` |
+| POST | `/` | autenticado | `{name, city, start_date, end_date, cobertura?}` | `201`; instancia o roteiro-modelo e vira a praça ativa de quem criou |
+| GET | `/:id` | autenticado | — | `PracaView` |
+| PATCH | `/:id` | autenticado | `{name?, city?, start_date?, end_date?}` | `PracaView` |
+| DELETE | `/:id` | **admin** | — | apaga a praça e tudo dela (cascata); `{ok:true}` |
+| POST | `/:id/recalc-dates` | autenticado | — | `{ok:true, updated}` |
+| GET | `/:id/steps` | autenticado | — | `StepInfoView[]` (as 11 etapas, em ordem) |
+| PUT | `/:id/steps/:n/result` | autenticado | `{value}` | `StepInfoView` da etapa |
+| POST | `/:id/steps/:n/unlock` | autenticado | `{reason}` | `StepInfoView` da etapa; autor = quem está logado |
+| GET | `/:id/agenda` | autenticado | — | ver "Agenda" abaixo |
+
+`POST /` — `cobertura` entra como `{ibge, km?}` (código de 7 dígitos do IBGE,
+raio em km, 1–300, padrão 50): UF, cidade, `lat`/`lon` e `vizinhas` saem do
+`GeoService` (§5), nunca do cliente. `ibge` que não existe → `404 NOT_FOUND`.
+A criação instancia **todas** as `template_actions` como `actions` da praça
+(mesmas colunas, `template_key` = `key` da modelo, `how_to` vira subitem) e
+grava `users.active_praca_id` de quem criou.
+
+`end_date` anterior a `start_date` → `400 VALIDATION_ERROR` (em `POST` e em
+`PATCH`, considerando os campos que já estão gravados).
+
+`POST /:id/recalc-dates` devolve as ações da praça para a data do roteiro:
+zera `due_override` e `postpone_count` de todas (comentários de adiamento
+ficam, como rastro). `updated` = quantas ações foram tocadas.
+
+`DELETE /:id` apaga em cascata ações, subitens, comentários, conclusões e
+estados de etapa; quem estava com essa praça ativa fica com
+`active_praca_id: null` (o campo não tem FK — ver §3).
+
+`:n` fora das 11 etapas do roteiro → `404 NOT_FOUND`.
+
+### `StepInfoView`
+
+```json
+{
+  "n": 3,
+  "name": "Fechar os 10 primeiros PDVs",
+  "block": "Começar",
+  "expected": "10 clientes fechados, sendo 3 casas grandes, todos com a primeira vaga marcada.",
+  "gate": null,
+  "status": "locked",
+  "done": 0,
+  "total": 6,
+  "window": ["2026-09-17", "2026-09-28"],
+  "lock_reason": "Falta bater o Portão: 40 garçons confirmados. Hoje: 22",
+  "actual": null,
+  "unlock": null
+}
+```
+
+- `gate` é o portão **da própria etapa** (`{target, dir, label}`, do catálogo)
+  ou `null`; quem trava a etapa é o portão da etapa anterior (`GATED_BY`:
+  3←2, 7←6, 11←10).
+- `status`: `locked` (portão da anterior não batido e sem destrave) ·
+  `done` (todas as ações concluídas **e** `actual` lançado) · `active`
+  (alguma concluída) · `todo`.
+- `lock_reason` só vem preenchido em `locked`; o texto é o do protótipo
+  (`Falta bater o Portão: {label}. Hoje: {actual da anterior, 0 se vazio}`).
+- `window` é `[primeiro, último]` dia da etapa, calculado do `start_date` da
+  praça + os dias do roteiro (`day`/`start_day`/`end_day`); `null` se a etapa
+  não tem ação.
+- Portão `gte` compara com `actual ?? 0` (sem resultado nunca bate); portão
+  `lte` exige resultado lançado. Assimetria portada do protótipo.
+
+### Agenda — `GET /:id/agenda?from&to&person`
+
+```json
+{
+  "late": [{ "action_id": "uuid", "date": "2026-09-03", "days_late": 7 }],
+  "today": [{ "action_id": "uuid", "date": "2026-09-10" }],
+  "next7": [{ "date": "2026-09-11", "action_ids": ["uuid"] }],
+  "by_date": { "2026-09-12": ["uuid"] },
+  "load": [{ "user_id": "uuid", "count": 3 }]
+}
+```
+
+- `late`, `today` e `next7` são **sempre relativos a hoje** (`todaySp()`), não
+  a `from`/`to`. `next7` cobre os 7 dias seguintes a hoje (sem hoje),
+  agrupado e ordenado por data.
+- Ação com data marcada (`once`) entra em `late` quando venceu e não foi
+  concluída. Ação recorrente entra **no máximo uma vez**: a varredura vai de 7
+  dias atrás até ontem e para na primeira ocorrência perdida — ou seja, a mais
+  antiga dentro da janela (mesmo comportamento do protótipo,
+  `routes/index.tsx:604-608`).
+- `person`: `all` (padrão) ou o uuid de uma pessoa; filtra `late`, `today`,
+  `next7` e `by_date` por `owners`. Qualquer outro valor →
+  `400 VALIDATION_ERROR`.
+- `load` **ignora** `person` de propósito (é a barra de carga do dia de todo
+  mundo): uma linha por pessoa ativa, com quantas ações caem hoje para ela e
+  ainda não estão concluídas.
+- `from`/`to` valem só para `by_date`, que cobre o intervalo **inclusive**.
+  Sem os dois, `by_date` vem vazio (`{}`); com só um deles, o outro vira o
+  mesmo dia. Intervalo invertido ou maior que **62 dias** →
+  `400 VALIDATION_ERROR`.
+
+### Recorrência (`rec`)
+
+Objeto usado nas ações (§7) e no roteiro-modelo (§8); no banco vira colunas
+`rec_*`:
+
+| `kind` | Campos | Quando ocorre |
+|---|---|---|
+| `once` | `day` | no dia `start_date + day` (ou em `due_override`, se adiada) |
+| `daily` | `start_day`, `end_day?` | todo dia da janela |
+| `weekday` | `start_day`, `end_day?` | de segunda a sexta, dentro da janela |
+| `weekly` | `weekday` (0=domingo), `start_day`, `end_day?` | naquele dia da semana, dentro da janela |
+| `monthly` | `month_day`, `start_day` | todo dia `month_day` do mês, a partir do início |
+
+`start_day`/`end_day`/`day` são **dias desde o início da praça**, não datas.
+Ação fixa (`step: 0`) roda todo dia, **inclusive antes** do `start_date` da
+praça (regra do protótipo) — mas ainda respeita o `end_day`.
+
+## 7. Ações — `/v1/actions`
+
+`ActionView`:
+
+```json
+{
+  "id": "uuid",
+  "praca_id": "uuid",
+  "template_key": "s1a2",
+  "step": 1,
+  "title": "Aprovar a área desenhada",
+  "owners": ["uuid"],
+  "rec": { "kind": "once", "day": 3 },
+  "tools": ["CRM"],
+  "expected": null,
+  "msg": null,
+  "attention": null,
+  "expects_result": false,
+  "due_override": null,
+  "postpone_count": 0,
+  "completed_at": null,
+  "completed_by": null,
+  "result": null,
+  "sort": 1,
+  "completions": { "2026-09-07": { "by": "uuid", "at": "2026-09-07T12:00:00.000Z", "result": null } },
+  "comments": [{ "id": "uuid", "author_id": "uuid", "at": "2026-09-09T11:00:00.000Z", "text": "…" }],
+  "subitems": [{ "id": "uuid", "text": "Abrir o Google Maps…", "done": false, "sort": 0 }]
+}
+```
+
+`template_key` é `null` em ação avulsa. `step: 0` = ação fixa (fora das
+etapas). `completions` é um mapa por data (só ação recorrente usa).
+
+| Método | Rota | Corpo | Observação |
+|---|---|---|---|
+| GET | `/?praca_id=` | — | `ActionView[]` da praça, ordem `step, sort`; `praca_id` é obrigatório |
+| POST | `/` | `{praca_id, title, owners, due_date}` | ação avulsa: `step 0`, `rec once day 0`, `due_override = due_date` |
+| GET | `/:id` | — | `ActionView` |
+| PATCH | `/:id` | `{title?, owners?}` | `ActionView` |
+| POST | `/:id/complete` | `{date?, result?}` | conclui |
+| POST | `/:id/uncomplete` | `{date?}` | desfaz |
+| POST | `/:id/postpone` | `{new_date, reason}` | só ação `once` |
+| POST | `/:id/reassign` | `{user_id}` | troca o dono (`owners` vira `[user_id]`) |
+| POST | `/:id/comments` | `{text}` | `ActionView` com o comentário no fim |
+| POST | `/:id/subitems` | `{text}` | novo subitem no fim |
+| POST | `/:id/subitems/:sid/toggle` | — | marca/desmarca |
+
+Toda rota devolve o `ActionView` inteiro depois de escrever (o front repinta a
+ação sem um segundo GET). Exige token; não há restrição de admin — qualquer
+pessoa do time mexe em qualquer ação.
+
+- **complete**: ação `once` grava `completed_at`, `completed_by` e `result`
+  (o `date` do corpo é ignorado). Ação recorrente grava a ocorrência do dia em
+  `completions[date]` — `date` padrão é hoje em Brasília. Repetir só atualiza
+  quem/quando (idempotente).
+- **uncomplete**: `once` limpa `completed_at/by/result`; recorrente apaga a
+  ocorrência de `date` (padrão hoje).
+- **postpone**: só faz sentido com data marcada — ação recorrente responde
+  `400 ACTION_NOT_POSTPONABLE`. Grava `due_override = new_date`, soma 1 em
+  `postpone_count` e deixa o comentário `Adiada para dd/mm/aaaa — motivo`.
+- `owners`/`user_id` que não existem em `users` → `404 NOT_FOUND`.
+- `:sid` que não é subitem daquela ação → `404 NOT_FOUND`.
+
+> POST sem corpo (`recalc-dates`, `toggle`) precisa ser enviado **sem**
+> `Content-Type: application/json` — o Fastify recusa corpo vazio com esse
+> cabeçalho antes de a requisição chegar no Nest.
+
+## 8. Roteiro-modelo — `/v1/template-actions`
+
+O playbook de abertura de praça: 84 ações-modelo (seed
+`prisma/seed-data/template-actions.ts`, portadas do protótipo). Toda praça
+nova nasce com uma cópia dessa lista.
+
+Item:
+
+```json
+{
+  "id": "uuid",
+  "key": "s2a3",
+  "step": 2,
+  "title": "Disparar a reativação em lotes de 300 por dia",
+  "owners": ["uuid"],
+  "rec": { "kind": "weekday", "start_day": 5, "end_day": 12 },
+  "tools": ["WhatsApp Business"],
+  "how_to": ["…"],
+  "expected": null,
+  "msg": null,
+  "attention": "Não dispare a base inteira de uma vez: lotes de 300 evitam bloqueio do número.",
+  "expects_result": false,
+  "sort": 15
+}
+```
+
+| Método | Rota | Quem | Corpo | Observação |
+|---|---|---|---|---|
+| GET | `/` | autenticado | — | lista ordenada por `sort` |
+| POST | `/` | **admin** | `{step, title, owners, rec}` | `201`; `key` é gerada (`custom-xxxxxxxx`) |
+| PATCH | `/:id` | **admin** | `{title?, owners?, rec?}` | |
+| DELETE | `/:id` | **admin** | — | `{ok:true}` |
+
+- `key` é a identidade estável da ação-modelo: o seed faz upsert por ela com
+  `update: {}`, então rodar o seed de novo **não** desfaz edição do time.
+- `step`: `0` (ação fixa) ou `1..11`; fora disso → `400 VALIDATION_ERROR`.
+- `rec` precisa dos campos do seu `kind` (§6 "Recorrência") — faltando
+  qualquer um, `400 VALIDATION_ERROR`.
+- `DELETE` só tira do roteiro-modelo: as ações já instanciadas nas praças
+  continuam lá.

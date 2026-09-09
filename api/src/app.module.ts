@@ -8,9 +8,11 @@ import { validateEnv } from './common/config/env.validation';
 import { PrismaModule } from './common/database/prisma.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { HealthModule } from './common/health/health.module';
+import { ActionsModule } from './modules/actions/actions.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { GeoModule } from './modules/geo/geo.module';
+import { PracasModule } from './modules/pracas/pracas.module';
 import { UsersModule } from './modules/users/users.module';
 
 @Module({
@@ -24,6 +26,8 @@ import { UsersModule } from './modules/users/users.module';
     UsersModule,
     CatalogModule,
     GeoModule,
+    PracasModule,
+    ActionsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

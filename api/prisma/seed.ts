@@ -6,11 +6,14 @@
  * (agência). IDs fixos (`SEED_USER_IDS`) para as próximas tarefas referenciarem
  * donos (ex.: `owner_id` de leads/actions) sem precisar reconsultar o banco.
  *
- * `main()` chama `seedUsers` e, nas próximas tarefas do plano, as demais
- * seeds — sempre nesta ordem.
+ * `main()` chama `seedUsers`, depois o roteiro-modelo (`seedTemplateActions`)
+ * e a praça de demonstração (`seedPraca`, que instancia o roteiro como ações)
+ * — sempre nesta ordem, porque cada uma depende da anterior.
  */
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { seedPraca } from './seed-data/praca';
+import { seedTemplateActions } from './seed-data/template-actions';
 
 const SENHA_DEMO = 'praca123';
 
@@ -76,6 +79,8 @@ async function main() {
   const prisma = new PrismaClient();
   try {
     await seedUsers(prisma);
+    await seedTemplateActions(prisma);
+    await seedPraca(prisma);
   } finally {
     await prisma.$disconnect();
   }

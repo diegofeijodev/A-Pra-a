@@ -27,6 +27,7 @@ check "senha errada = INVALID_CREDENTIALS" "INVALID_CREDENTIALS" \
 DANIEL=$(curl -s -X POST $API/v1/auth/login -H "$J" -d '{"email":"daniel@praca.local","password":"praca123"}')
 TN=$(echo "$DANIEL" | jq -r .access_token); HN="Authorization: Bearer $TN"
 [ "$TN" != "null" ] && ok "login do Daniel" || ko "login do Daniel" "$DANIEL"
+DANIEL_ID=$(echo "$DANIEL" | jq -r .user.id)
 
 check "sem token em /v1/users = UNAUTHORIZED" "UNAUTHORIZED" "$(curl -s $API/v1/users | jq -r .error.code)"
 check "daniel (não admin) não cria pessoa" "FORBIDDEN" \
@@ -104,6 +105,127 @@ check "vizinhas: ibge inexistente = NOT_FOUND" "NOT_FOUND" \
   "$(curl -s "$API/v1/geo/municipios/0000000/vizinhas" | jq -r .error.code)"
 check "vizinhas: km fora do range (301) = VALIDATION_ERROR" "VALIDATION_ERROR" \
   "$(curl -s "$API/v1/geo/municipios/3106200/vizinhas?km=301" | jq -r .error.code)"
+
+echo "── Praças e ações ──"
+PRACA_SEED="00000000-0000-4000-8000-0000000000aa"
+
+# --- praça do seed: só leitura, nada aqui deixa resíduo ---
+check "praça do seed tem as 84 ações do roteiro" "84" \
+  "$(curl -s "$API/v1/actions?praca_id=$PRACA_SEED" -H "$HD" | jq 'length')"
+check "roteiro-modelo tem 84 ações-modelo" "84" \
+  "$(curl -s $API/v1/template-actions -H "$HD" | jq 'length')"
+check "ação s1a1 nasce com os subitens do how_to" "3" \
+  "$(curl -s "$API/v1/actions?praca_id=$PRACA_SEED" -H "$HD" | jq '[.[] | select(.template_key=="s1a1")][0].subitems | length')"
+
+ETAPAS=$(curl -s $API/v1/pracas/$PRACA_SEED/steps -H "$HD")
+check "etapa 2 do seed com resultado 22" "22" "$(echo "$ETAPAS" | jq '[.[] | select(.n==2)][0].actual')"
+check "etapa 3 travada pelo portão (22 < 40)" "locked" "$(echo "$ETAPAS" | jq -r '[.[] | select(.n==3)][0].status')"
+check "etapa 3 diz qual portão falta" "true" \
+  "$(echo "$ETAPAS" | jq '[.[] | select(.n==3)][0].lock_reason | startswith("Falta bater o Portão")')"
+check "GET /steps devolve as 11 etapas" "11" "$(echo "$ETAPAS" | jq 'length')"
+
+AGENDA=$(curl -s $API/v1/pracas/$PRACA_SEED/agenda -H "$HD")
+check "agenda: carga do dia com as 3 pessoas" "3" "$(echo "$AGENDA" | jq '.load | length')"
+check "agenda: sem from/to, by_date vem vazio" "0" "$(echo "$AGENDA" | jq '.by_date | length')"
+check "agenda: from..to inclusive (3 dias)" "3" \
+  "$(curl -s "$API/v1/pracas/$PRACA_SEED/agenda?from=2026-09-01&to=2026-09-03" -H "$HD" | jq '.by_date | length')"
+check "agenda: intervalo acima de 62 dias barrado" "VALIDATION_ERROR" \
+  "$(curl -s "$API/v1/pracas/$PRACA_SEED/agenda?from=2026-01-01&to=2026-12-31" -H "$HD" | jq -r .error.code)"
+check "agenda: person que não é 'all' nem uuid barrado" "VALIDATION_ERROR" \
+  "$(curl -s "$API/v1/pracas/$PRACA_SEED/agenda?person=fulano" -H "$HD" | jq -r .error.code)"
+check "praça com id malformado = NOT_FOUND (não 500)" "NOT_FOUND" \
+  "$(curl -s $API/v1/pracas/nao-e-uuid -H "$HD" | jq -r .error.code)"
+
+# --- praça de teste: tudo que escreve acontece aqui e some no DELETE do fim ---
+NOVA=$(curl -s -X POST $API/v1/pracas -H "$J" -H "$HD" \
+  -d "{\"name\":\"Praça $SUF\",\"city\":\"Belo Horizonte · MG\",\"start_date\":\"2026-09-01\",\"end_date\":\"2026-12-08\",\"cobertura\":{\"ibge\":\"3106200\"}}")
+NOVA_ID=$(echo "$NOVA" | jq -r .id)
+check "praça nova instancia as 84 ações do roteiro" "84" \
+  "$(curl -s "$API/v1/actions?praca_id=$NOVA_ID" -H "$HD" | jq 'length')"
+check "cobertura resolvida pelo IBGE traz as vizinhas" "true" "$(echo "$NOVA" | jq '(.cobertura.vizinhas | length) > 0')"
+check "cobertura guarda a cidade-sede" "Belo Horizonte" "$(echo "$NOVA" | jq -r .cobertura.cidade)"
+check "quem abre a praça entra nela (active_praca_id)" "$NOVA_ID" \
+  "$(curl -s $API/v1/auth/me -H "$HD" | jq -r .user.active_praca_id)"
+check "praça nova: fim antes do começo barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/pracas -H "$J" -H "$HD" -d '{"name":"X","city":"Y","start_date":"2026-09-10","end_date":"2026-09-01"}' | jq -r .error.code)"
+
+check "etapa 3 da praça nova nasce travada" "locked" \
+  "$(curl -s $API/v1/pracas/$NOVA_ID/steps -H "$HD" | jq -r '[.[] | select(.n==3)][0].status')"
+DESTRAVE=$(curl -s -X POST $API/v1/pracas/$NOVA_ID/steps/3/unlock -H "$J" -H "$HD" -d '{"reason":"decisão do Diego no smoke"}')
+check "destravar a etapa 3 solta para 'todo'" "todo" "$(echo "$DESTRAVE" | jq -r .status)"
+check "destrave registra quem destravou" "$DIEGO_ID" "$(echo "$DESTRAVE" | jq -r .unlock.by)"
+check "lançar resultado da etapa 2" "40" \
+  "$(curl -s -X PUT $API/v1/pracas/$NOVA_ID/steps/2/result -H "$J" -H "$HD" -d '{"value":40}' | jq '.actual')"
+check "etapa que não existe = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X PUT $API/v1/pracas/$NOVA_ID/steps/99/result -H "$J" -H "$HD" -d '{"value":1}' | jq -r .error.code)"
+
+ACOES=$(curl -s "$API/v1/actions?praca_id=$NOVA_ID" -H "$HD")
+S1A2=$(echo "$ACOES" | jq -r '[.[] | select(.template_key=="s1a2")][0].id')
+F1=$(echo "$ACOES" | jq -r '[.[] | select(.template_key=="f1")][0].id')
+check "concluir ação com data marcada grava completed_at" "true" \
+  "$(curl -s -X POST $API/v1/actions/$S1A2/complete -H "$J" -H "$HD" -d '{}' | jq '.completed_at != null')"
+check "desfazer a conclusão volta para null" "null" \
+  "$(curl -s -X POST $API/v1/actions/$S1A2/uncomplete -H "$J" -H "$HD" -d '{}' | jq -r '.completed_at')"
+check "concluir ação recorrente registra a ocorrência do dia" "1" \
+  "$(curl -s -X POST $API/v1/actions/$F1/complete -H "$J" -H "$HD" -d '{"date":"2026-09-07"}' | jq '.completions | length')"
+check "desfazer a ocorrência do dia" "0" \
+  "$(curl -s -X POST $API/v1/actions/$F1/uncomplete -H "$J" -H "$HD" -d '{"date":"2026-09-07"}' | jq '.completions | length')"
+
+ADIADA=$(curl -s -X POST $API/v1/actions/$S1A2/postpone -H "$J" -H "$HD" -d '{"new_date":"2026-09-30","reason":"dono viajou"}')
+check "adiar conta o adiamento" "1" "$(echo "$ADIADA" | jq '.postpone_count')"
+check "adiar muda a data devida" "2026-09-30" "$(echo "$ADIADA" | jq -r '.due_override')"
+check "adiar deixa comentário com data e motivo" "true" \
+  "$(echo "$ADIADA" | jq '.comments[-1].text == "Adiada para 30/09/2026 — dono viajou"')"
+check "adiar ação recorrente é barrado" "ACTION_NOT_POSTPONABLE" \
+  "$(curl -s -X POST $API/v1/actions/$F1/postpone -H "$J" -H "$HD" -d '{"new_date":"2026-09-30","reason":"não vale"}' | jq -r .error.code)"
+check "recalc-dates zera adiamentos da praça" "true" \
+  "$(curl -s -X POST $API/v1/pracas/$NOVA_ID/recalc-dates -H "$HD" | jq '.updated >= 84')"
+check "ação volta para a data do roteiro" "0" \
+  "$(curl -s $API/v1/actions/$S1A2 -H "$HD" | jq '.postpone_count')"
+check "recalc-dates limpa o due_override" "null" \
+  "$(curl -s $API/v1/actions/$S1A2 -H "$HD" | jq -r '.due_override')"
+
+check "passar a ação para outra pessoa" "$DANIEL_ID" \
+  "$(curl -s -X POST $API/v1/actions/$S1A2/reassign -H "$J" -H "$HD" -d "{\"user_id\":\"$DANIEL_ID\"}" | jq -r '.owners[0]')"
+SUB=$(curl -s -X POST $API/v1/actions/$S1A2/subitems -H "$J" -H "$HD" -d '{"text":"subitem do smoke"}')
+SUB_ID=$(echo "$SUB" | jq -r '.subitems[-1].id')
+check "marcar subitem" "true" \
+  "$(curl -s -X POST $API/v1/actions/$S1A2/subitems/$SUB_ID/toggle -H "$HD" | jq '.subitems[-1].done')"
+check "subitem de outra ação = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/actions/$F1/subitems/$SUB_ID/toggle -H "$HD" | jq -r .error.code)"
+
+AVULSA=$(curl -s -X POST $API/v1/actions -H "$J" -H "$HD" \
+  -d "{\"praca_id\":\"$NOVA_ID\",\"title\":\"Ação avulsa do smoke\",\"owners\":[\"$DIEGO_ID\"],\"due_date\":\"2026-09-20\"}")
+check "ação avulsa entra como fixa (step 0)" "0" "$(echo "$AVULSA" | jq '.step')"
+check "ação avulsa fica com a data escolhida" "2026-09-20" "$(echo "$AVULSA" | jq -r '.due_override')"
+check "ação avulsa com dono inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/actions -H "$J" -H "$HD" -d "{\"praca_id\":\"$NOVA_ID\",\"title\":\"X\",\"owners\":[\"00000000-0000-4000-8000-00000000dead\"],\"due_date\":\"2026-09-20\"}" | jq -r .error.code)"
+check "ação que não existe = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s $API/v1/actions/00000000-0000-4000-8000-00000000beef -H "$HD" | jq -r .error.code)"
+
+echo "── Roteiro-modelo (só admin escreve) ──"
+check "daniel (não admin) não cria ação-modelo" "FORBIDDEN" \
+  "$(curl -s -X POST $API/v1/template-actions -H "$J" -H "$HN" -d "{\"step\":1,\"title\":\"Não deve entrar\",\"owners\":[\"$DIEGO_ID\"],\"rec\":{\"kind\":\"once\",\"day\":1}}" | jq -r .error.code)"
+check "daniel não apaga praça" "FORBIDDEN" "$(curl -s -X DELETE $API/v1/pracas/$NOVA_ID -H "$HN" | jq -r .error.code)"
+MODELO=$(curl -s -X POST $API/v1/template-actions -H "$J" -H "$HD" \
+  -d "{\"step\":1,\"title\":\"Ação-modelo do smoke $SUF\",\"owners\":[\"$DIEGO_ID\"],\"rec\":{\"kind\":\"weekly\",\"weekday\":2,\"start_day\":10}}")
+MODELO_ID=$(echo "$MODELO" | jq -r .id)
+check "admin cria ação-modelo com recorrência semanal" "2" "$(echo "$MODELO" | jq '.rec.weekday')"
+check "rec sem o campo do kind = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/template-actions -H "$J" -H "$HD" -d "{\"step\":1,\"title\":\"X\",\"owners\":[\"$DIEGO_ID\"],\"rec\":{\"kind\":\"monthly\",\"start_day\":1}}" | jq -r .error.code)"
+check "admin edita a ação-modelo" "Ação-modelo editada" \
+  "$(curl -s -X PATCH $API/v1/template-actions/$MODELO_ID -H "$J" -H "$HD" -d '{"title":"Ação-modelo editada"}' | jq -r .title)"
+check "admin apaga a ação-modelo (sem resíduo)" "true" \
+  "$(curl -s -X DELETE $API/v1/template-actions/$MODELO_ID -H "$HD" | jq -r .ok)"
+check "roteiro-modelo voltou às 84" "84" "$(curl -s $API/v1/template-actions -H "$HD" | jq 'length')"
+
+echo "── Limpeza da praça de teste ──"
+check "admin apaga a praça de teste" "true" "$(curl -s -X DELETE $API/v1/pracas/$NOVA_ID -H "$HD" | jq -r .ok)"
+check "praça de teste sumiu" "NOT_FOUND" "$(curl -s $API/v1/pracas/$NOVA_ID -H "$HD" | jq -r .error.code)"
+check "ações da praça foram junto (cascata)" "NOT_FOUND" \
+  "$(curl -s $API/v1/actions/$S1A2 -H "$HD" | jq -r .error.code)"
+check "praça ativa do Diego restaurada (sem resíduo)" "$PRACA_SEED" \
+  "$(curl -s -X PATCH $API/v1/users/me -H "$J" -H "$HD" -d "{\"active_praca_id\":\"$PRACA_SEED\"}" | jq -r .active_praca_id)"
 
 echo
 printf 'Resultado: \033[32m%d ok\033[0m, \033[31m%d falha(s)\033[0m\n' "$PASS" "$FAIL"
