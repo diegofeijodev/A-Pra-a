@@ -9,7 +9,8 @@ check(){ if [ "$2" = "$3" ]; then ok "$1"; else ko "$1" "esperado '$2', veio '$3
 
 J='Content-Type: application/json'
 # Sufixo novo a cada rodada: o smoke cria uma pessoa de teste de verdade.
-SUF=${SUF:-$(date +%s)}
+# Nanossegundos (não só segundos) — duas rodadas no mesmo segundo não colidem.
+SUF=${SUF:-$(date +%s%N)}
 EMAIL_TESTE="teste$SUF@praca.local"
 
 echo "── Saúde e login ──"
@@ -54,7 +55,18 @@ check "admin troca senha de qualquer um" "true" \
 echo "── Regras de desativação ──"
 check "id malformado = NOT_FOUND (não 500)" "NOT_FOUND" \
   "$(curl -s -X PATCH $API/v1/users/nao-e-uuid -H "$J" -H "$HD" -d '{"sort":1}' | jq -r .error.code)"
-check "admin não desativa a si mesmo" "CANNOT_DEACTIVATE_SELF" \
+
+# Diego é o único admin neste ponto: rebaixar OU desativar a si mesmo tiraria
+# o último admin ativo do sistema — LAST_ADMIN barra as duas formas.
+check "único admin não se autorrebaixa (is_admin:false)" "LAST_ADMIN" \
+  "$(curl -s -X PATCH $API/v1/users/$DIEGO_ID -H "$J" -H "$HD" -d '{"is_admin":false}' | jq -r .error.code)"
+check "único admin não se autodesativa (active:false)" "LAST_ADMIN" \
+  "$(curl -s -X PATCH $API/v1/users/$DIEGO_ID -H "$J" -H "$HD" -d '{"active":false}' | jq -r .error.code)"
+
+# Promove a pessoa de teste a admin: agora há 2 admins ativos, então desativar
+# Diego não é mais "o último admin" — vira caso puro de CANNOT_DEACTIVATE_SELF.
+curl -s -X PATCH $API/v1/users/$TESTE_ID -H "$J" -H "$HD" -d '{"is_admin":true}' > /dev/null
+check "admin não desativa a si mesmo (havendo outro admin)" "CANNOT_DEACTIVATE_SELF" \
   "$(curl -s -X DELETE $API/v1/users/$DIEGO_ID -H "$HD" | jq -r .error.code)"
 
 curl -s -X DELETE $API/v1/users/$TESTE_ID -H "$HD" > /dev/null
@@ -62,6 +74,11 @@ check "conta de teste desativada" "false" \
   "$(curl -s $API/v1/users -H "$HD" | jq --arg i "$TESTE_ID" '[.[] | select(.id==$i)][0].active')"
 check "login da conta desativada = UNAUTHORIZED" "UNAUTHORIZED" \
   "$(curl -s -X POST $API/v1/auth/login -H "$J" -d "{\"email\":\"$EMAIL_TESTE\",\"password\":\"teste123\"}" | jq -r .error.code)"
+
+# Sem resíduo: o Diego seed nasce com theme "dark" — o smoke trocou para
+# "light" lá em cima, então devolve antes de terminar.
+check "tema do Diego restaurado (sem resíduo)" "dark" \
+  "$(curl -s -X PATCH $API/v1/users/me -H "$J" -H "$HD" -d '{"theme":"dark"}' | jq -r .theme)"
 
 echo
 printf 'Resultado: \033[32m%d ok\033[0m, \033[31m%d falha(s)\033[0m\n' "$PASS" "$FAIL"

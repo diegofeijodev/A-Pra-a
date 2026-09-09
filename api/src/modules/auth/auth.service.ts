@@ -55,7 +55,12 @@ export class AuthService {
   }
 
   private issueToken(view: UserView): Promise<string> {
-    return this.jwtService.signAsync({ sub: view.id, email: view.email, name: view.name, is_admin: view.is_admin });
+    return this.jwtService.signAsync({
+      sub: view.id,
+      email: view.email,
+      name: view.name,
+      is_admin: view.is_admin,
+    });
   }
 
   async login(email: string, password: string) {
