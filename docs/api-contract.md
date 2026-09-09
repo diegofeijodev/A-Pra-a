@@ -1884,3 +1884,58 @@ muda o `value` daquele indicador — quem manda ali é o cálculo.
 `DELETE /v1/indicators/:key/entries?praca_id&date` apaga um lançamento e
 responde `{ok: true}` mesmo quando o dia não tinha nada (idempotente). Não é
 rota de admin.
+
+## 17. Notificações — `/v1/notifications`
+
+Os avisos do sino — porta de `.prototype/src/components/praca/Layout.tsx:42-89`
+(`useNotifications`). Cada requisição monta um retrato **de UMA praça**
+(etapas, ações, funil, mídia) e roda a função pura
+`buildNotifications` de `src/domain/notification-rules.ts`; quem lê o banco e
+filtra pelas dispensas do usuário é o `NotificationsService`.
+
+| Método | Rota | Query / corpo | Resposta |
+|---|---|---|---|
+| GET | `/v1/notifications` | `?praca_id` (obrigatório) | `NotifItem[]`, já sem as dispensadas pelo usuário logado |
+| POST | `/v1/notifications/dismiss` | `{ids: string[]}` (1 a 100, cada um até 120 chars) | `{ok: true}` |
+| POST | `/v1/notifications/undismiss` | `{ids: string[]}` (1 a 100, cada um até 120 chars) | `{ok: true}` |
+
+Todas exigem JWT; nenhuma é só de admin. `praca_id` ausente ou malformado →
+`400 VALIDATION_ERROR`; praça que não existe → `404 NOT_FOUND`.
+
+### `NotifItem`
+
+```json
+{ "id": "<praca_id>:lock-3", "text": "Etapa 3 travada — Falta bater o Portão: 40 garçons confirmados. Hoje: 22", "tone": "warn" }
+```
+
+`tone ∈ warn | info`. `id` é **sempre** prefixado com `<praca_id>:` — a
+dispensa é por usuário (`user_dismissed_notifs`, PK `[user_id, notif_id]`), e
+sem o prefixo o mesmo `lock-3` de duas praças diferentes compartilharia
+dispensa. O resto do id segue o esquema do protótipo:
+
+| id (sem o prefixo) | regra | tone |
+|---|---|---|
+| `tmw-<action_id>` | ação **recorrente** (não `once`) que ocorre amanhã | `info` |
+| `lock-<n>` | etapa `n` travada (o portão da etapa anterior não bateu e ninguém destravou) | `warn` |
+| `stall-<n>` | etapa `n` **ativa** e sem NENHUMA ação concluída há mais de 7 dias | `warn` |
+| `lead-<lead_id>` | lead crítico: mais de 15 dias sem toque, fora a etapa 8 (perdido) — mesmo limiar de `lead-rules.ts#isCritical` | `warn` |
+| `fill-<praca_id>` | freio automático: tempo médio de preenchimento das vagas da praça acima de `FILL_LIMIT_H` (4h) | `warn` |
+| `teto-<campanha_id>` | campanha **ativa** da praça com `metrics.acima_teto` (custo por cliente novo acima do `cac_teto`) | `warn` |
+
+A ordem da lista é a mesma do protótipo: amanhã → etapas travadas/paradas →
+leads críticos → freio de preenchimento → campanhas acima do teto. Etapa
+`done`/`todo` nunca gera aviso; etapa `active` sem nenhuma conclusão registrada
+também não (nada para comparar com os 7 dias).
+
+### `POST /v1/notifications/dismiss` e `.../undismiss`
+
+```
+POST /v1/notifications/dismiss   { "ids": ["<praca_id>:lock-3"] }
+→ { "ok": true }
+```
+
+`dismiss` é um **upsert por (usuário, id)** — dispensar de novo não dá erro
+nem duplica linha. `undismiss` apaga a dispensa; id nunca dispensado também
+responde `{ok: true}` (idempotente, igual ao `DELETE` de §16). Não existe
+"dispensar para todo mundo": a dispensa é sempre da conta logada, e a mesma
+`id` pode estar dispensada para um usuário e visível para outro.

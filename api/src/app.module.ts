@@ -20,6 +20,7 @@ import { IndicatorsModule } from './modules/indicators/indicators.module';
 import { LeadsModule } from './modules/leads/leads.module';
 import { MessagesModule } from './modules/messages/messages.module';
 import { MidiaModule } from './modules/midia/midia.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PracasModule } from './modules/pracas/pracas.module';
 import { PublicModule } from './modules/public/public.module';
 import { UsersModule } from './modules/users/users.module';
@@ -45,6 +46,7 @@ import { UsersModule } from './modules/users/users.module';
     CadencesModule,
     MidiaModule,
     IndicatorsModule,
+    NotificationsModule,
   ],
   providers: [
     // Subclasse do ThrottlerGuard: o teto do formulário público vem do

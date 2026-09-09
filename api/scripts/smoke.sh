@@ -1779,6 +1779,48 @@ check "a falta voltou a não ter número (sem resíduo)" "null true 0" \
   "$(curl -s "$API/v1/indicators?scope=praca&praca_id=$PRACA_SEED&period=mes" -H "$HD" \
     | jq -r "$LE_FALTA"' | "\(.value) \(.stale) \(.history | length)"')"
 
+echo "── Notificações ──"
+check "praca_id é obrigatório" "VALIDATION_ERROR" \
+  "$(curl -s "$API/v1/notifications" -H "$HD" | jq -r .error.code)"
+check "praca_id malformado é barrado" "VALIDATION_ERROR" \
+  "$(curl -s "$API/v1/notifications?praca_id=nao-e-uuid" -H "$HD" | jq -r .error.code)"
+check "praça que não existe = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s "$API/v1/notifications?praca_id=$BEEF" -H "$HD" | jq -r .error.code)"
+check "sem token = UNAUTHORIZED" "UNAUTHORIZED" \
+  "$(curl -s "$API/v1/notifications?praca_id=$PRACA_SEED" | jq -r .error.code)"
+
+NOTIFS=$(curl -s "$API/v1/notifications?praca_id=$PRACA_SEED" -H "$HD")
+check "cada aviso tem id, text e tone (warn ou info)" "true" \
+  "$(echo "$NOTIFS" | jq '(length > 0) and ([.[] | has("id","text","tone")] | all) and ([.[].tone] | all(. == "warn" or . == "info"))')"
+LOCK3="$PRACA_SEED:lock-3"
+check "praça seed tem a etapa 3 travada (step 2 = 22 < 40)" "true" \
+  "$(echo "$NOTIFS" | jq --arg id "$LOCK3" '[.[] | select(.id == $id)] | length == 1')"
+check "o aviso de etapa travada é tone warn, com o motivo do portão" "warn true" \
+  "$(echo "$NOTIFS" | jq -r --arg id "$LOCK3" '[.[] | select(.id == $id)][0] | "\(.tone) \(.text | startswith("Etapa 3 travada — Falta bater o Portão"))"')"
+
+check "ids vazios são barrados" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/notifications/dismiss -H "$J" -H "$HD" -d '{"ids":[]}' | jq -r .error.code)"
+IDS_101=$(jq -n -c '[range(1;102)] | map("x\(.)")')
+check "mais de 100 ids são barrados" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/notifications/dismiss -H "$J" -H "$HD" -d "{\"ids\":$IDS_101}" | jq -r .error.code)"
+
+check "dispensa lock-3 pro Diego" "true" \
+  "$(curl -s -X POST $API/v1/notifications/dismiss -H "$J" -H "$HD" -d "{\"ids\":[\"$LOCK3\"]}" | jq -r .ok)"
+check "dispensar de novo é idempotente" "true" \
+  "$(curl -s -X POST $API/v1/notifications/dismiss -H "$J" -H "$HD" -d "{\"ids\":[\"$LOCK3\"]}" | jq -r .ok)"
+check "lock-3 dispensado some da lista do Diego" "0" \
+  "$(curl -s "$API/v1/notifications?praca_id=$PRACA_SEED" -H "$HD" | jq --arg id "$LOCK3" '[.[] | select(.id == $id)] | length')"
+check "dispensa é POR USUÁRIO — Daniel ainda vê lock-3" "1" \
+  "$(curl -s "$API/v1/notifications?praca_id=$PRACA_SEED" -H "$HN" | jq --arg id "$LOCK3" '[.[] | select(.id == $id)] | length')"
+
+# Sem resíduo: desfaz a dispensa e confere que a tabela voltou ao estado de antes.
+check "undismiss devolve lock-3 pro Diego" "true" \
+  "$(curl -s -X POST $API/v1/notifications/undismiss -H "$J" -H "$HD" -d "{\"ids\":[\"$LOCK3\"]}" | jq -r .ok)"
+check "lock-3 volta a aparecer pro Diego (sem resíduo)" "1" \
+  "$(curl -s "$API/v1/notifications?praca_id=$PRACA_SEED" -H "$HD" | jq --arg id "$LOCK3" '[.[] | select(.id == $id)] | length')"
+check "undismiss de id nunca dispensado também responde ok" "true" \
+  "$(curl -s -X POST $API/v1/notifications/undismiss -H "$J" -H "$HD" -d '{"ids":["nunca-dispensado"]}' | jq -r .ok)"
+
 echo
 printf 'Resultado: \033[32m%d ok\033[0m, \033[31m%d falha(s)\033[0m\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
