@@ -9,6 +9,7 @@ import { PrismaModule } from './common/database/prisma.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { HealthModule } from './common/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { CatalogModule } from './modules/catalog/catalog.module';
 import { UsersModule } from './modules/users/users.module';
 
 @Module({
@@ -20,6 +21,7 @@ import { UsersModule } from './modules/users/users.module';
     HealthModule,
     AuthModule,
     UsersModule,
+    CatalogModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

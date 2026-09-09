@@ -80,6 +80,13 @@ check "login da conta desativada = UNAUTHORIZED" "UNAUTHORIZED" \
 check "tema do Diego restaurado (sem resíduo)" "dark" \
   "$(curl -s -X PATCH $API/v1/users/me -H "$J" -H "$HD" -d '{"theme":"dark"}' | jq -r .theme)"
 
+echo "── Catálogo ──"
+# Sem header de Authorization: /v1/catalog é pública (@Public()).
+CATALOGO=$(curl -s $API/v1/catalog)
+check "catálogo é público: .steps|length" "11" "$(echo "$CATALOGO" | jq '.steps | length')"
+check "catálogo: .send_modes|length" "2" "$(echo "$CATALOGO" | jq '.send_modes | length')"
+check "catálogo: .indicators|length" "12" "$(echo "$CATALOGO" | jq '.indicators | length')"
+
 echo
 printf 'Resultado: \033[32m%d ok\033[0m, \033[31m%d falha(s)\033[0m\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
