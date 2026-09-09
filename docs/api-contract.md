@@ -441,3 +441,156 @@ Item:
   qualquer um, `400 VALIDATION_ERROR`.
 - `DELETE` só tira do roteiro-modelo: as ações já instanciadas nas praças
   continuam lá.
+
+## 9. Funil de leads — `/v1/leads`
+
+Os contratantes mapeados na praça (bares, restaurantes, hotéis, buffets e casas
+de evento) e o histórico de cada um. Etapas 1 a 8 do funil vêm do catálogo
+(§4 `funnel`).
+
+`LeadListView`:
+
+```json
+{
+  "id": "uuid",
+  "praca_id": "uuid",
+  "name": "Bar do Mercado",
+  "city": "Belo Horizonte",
+  "address": "Rua 100, Belo Horizonte",
+  "phone": "(31) 98000-1000",
+  "cnpj": null,
+  "instagram": "@bardomercado",
+  "site": "",
+  "decisor": "Marcos Vieira",
+  "decisor_role": "Proprietário",
+  "classe": "alvo",
+  "origem": "importação",
+  "owner_id": "uuid",
+  "stage": 1,
+  "entered_at": "2026-08-28",
+  "stage_since": "2026-09-06",
+  "last_contact_at": null,
+  "last_contact_date": null,
+  "stalled_days": 3,
+  "est_value": 2200,
+  "next_step": { "what": "Novo toque no WhatsApp", "date": "2026-09-11" },
+  "lost_reason": null,
+  "reheat_at": null,
+  "archived": false,
+  "import_batch_id": null,
+  "possible_dup": false,
+  "snooze_until": null,
+  "campanha_id": null,
+  "form_answer": null,
+  "is_test": false,
+  "events_count": 1,
+  "vagas_count": 0
+}
+```
+
+`LeadView` = `LeadListView` + a ficha inteira:
+
+```json
+{
+  "events": [
+    { "id": "uuid", "at": "2026-09-06T14:30:00.000Z", "author_id": "uuid", "author_label": null, "kind": "msg_out", "text": "Primeira mensagem enviada no WhatsApp.", "stage_to": null }
+  ],
+  "vagas": [{ "id": "uuid", "date": "2026-08-20", "funcao": "Garçom", "filled": true, "hours": 3 }]
+}
+```
+
+Campos calculados (regras puras em `src/domain/lead-rules.ts`, portadas do
+protótipo):
+
+- `last_contact_date`: dia (Brasília) do último evento de contato
+  (`msg_out`, `msg_in`, `call`, `visit`) ou, na falta dele, de
+  `last_contact_at`. Nota e mudança de etapa **não** contam como contato.
+- `stalled_days`: dias desde `last_contact_date`; sem contato nenhum, cai para
+  `stage_since`. Parado = mais de 7 dias; crítico = mais de 15.
+- `est_value`: `4500` (casa grande), `2200` (alvo), `900` (depois).
+- `author_label` é o nome de quem escreveu quando o evento não veio de uma
+  pessoa do time (importação, robô); com `author_id` preenchido, vem `null`.
+
+| Método | Rota | Quem | Corpo | Observação |
+|---|---|---|---|---|
+| GET | `/?praca_id&q&owner_id&classe&stage&archived&campanha_id` | autenticado | — | `LeadListView[]`, ordem `stage, entered_at` |
+| POST | `/` | autenticado | `{praca_id?, name, city?, address?, phone, cnpj?, instagram?, site?, decisor?, decisor_role?, classe, origem, owner_id, stage?, campanha_id?}` | `LeadView` |
+| GET | `/queue?person=all\|<uuid>` | autenticado | — | fila do dia |
+| GET | `/metrics?praca_id` | autenticado | — | painel do funil |
+| GET | `/orphans` | autenticado | — | `LeadListView[]` sem praça |
+| GET | `/:id` | autenticado | — | `LeadView` |
+| PATCH | `/:id` | autenticado | mesmos campos do POST, opcionais (menos `stage`) | `LeadView` |
+| POST | `/:id/move` | autenticado | `{stage, next_step?, lost_reason?}` | muda de etapa |
+| POST | `/:id/events` | autenticado | `{kind, text}` | `kind` ∈ `msg_out\|msg_in\|call\|visit\|note` |
+| PUT | `/:id/next-step` | autenticado | `{what, date}` | troca o próximo passo |
+| POST | `/:id/archive` | autenticado | — | arquiva (histórico fica) |
+| POST | `/:id/snooze` | autenticado | `{until}` | tira da fila do dia até a data |
+| POST | `/:id/vagas` | autenticado | `{date, funcao, filled, hours?}` | vaga rodada pela casa |
+| DELETE | `/:id` | **admin** | — | `{ok:true}` — apaga de vez |
+
+Toda rota devolve o `LeadView` inteiro depois de escrever (o front repinta a
+ficha sem um segundo GET).
+
+- **GET `/`**: `archived` é `"true"` ou `"false"` (texto, é query string);
+  o padrão esconde os arquivados e `archived=true` traz os dois. `q` busca em
+  `name`, `city` e `decisor`, sem diferenciar maiúsculas de minúsculas.
+- **POST**: `entered_at` e `stage_since` nascem com hoje (Brasília) e o
+  `phone_key` (últimos 9 dígitos) é derivado do `phone`. `stage` padrão é `1`.
+  `owner_id`, `praca_id` e `campanha_id` que não existem → `404 NOT_FOUND`.
+- **PATCH** não aceita `stage`: etapa muda só pelo `/move`, que grava o evento
+  e reinicia o `stage_since`. Mandar `stage` no PATCH →
+  `400 VALIDATION_ERROR` (`forbidNonWhitelisted`).
+- **move**: `stage` é 1..8 e precisa ser diferente da atual
+  (`400 SAME_STAGE`). Etapa 8 exige `lost_reason` do catálogo
+  (`400 LOST_REASON_REQUIRED`); as outras exigem `next_step`
+  (`400 NEXT_STEP_REQUIRED`). Grava `stage_since = hoje` e um evento
+  `kind: "stage"` com `stage_to`, texto
+  `Mudou de etapa: <de> → <para>` (ou `Voltou etapa: …` quando volta) mais
+  ` · motivo: <motivo>` quando há motivo. `lost_reason === "não respondeu"`
+  agenda `reheat_at = hoje + 30`; sair da etapa 8 limpa `lost_reason` e
+  `reheat_at`.
+- **events**: `kind: "stage"` é recusado (`400 VALIDATION_ERROR`) — etapa só
+  pelo `/move`. Evento de contato (`msg_out`, `msg_in`, `call`, `visit`)
+  carimba `last_contact_at = agora`; `note` não.
+- **archive** não apaga nada: marca `archived` e deixa a nota
+  `Lead arquivado (histórico mantido).` no histórico. **DELETE** é o oposto —
+  apaga o lead e, por cascata, eventos, vagas, envios e inscrições; existe
+  para limpar lead de teste e importação errada, e por isso é só de admin.
+- `:id` malformado → `404 NOT_FOUND` (nunca 500).
+
+### Fila do dia — `GET /queue?person=all|<uuid>`
+
+```json
+{ "total": 5, "grandes": 1, "quota": 20, "items": [{ "…LeadListView": "…", "is_reheat": false }] }
+```
+
+Quem entra: lead **não arquivado**, sem soneca vigente
+(`snooze_until` nulo ou já vencida) e que seja lead novo (`stage 1`) **ou**
+perdido com reaquecimento vencido (`stage 8` e `reheat_at <= hoje`). Ordem:
+casa grande, alvo, depois — e, dentro da classe, os mais antigos na frente
+(`entered_at`).
+
+- `quota` vem de `app_settings.daily_quota` (20 enquanto ninguém salvou os
+  ajustes) e corta `items`; `total` é a fila inteira, para a tela avisar
+  quantos ficaram de fora. `grandes` conta as casas grandes da fila inteira.
+- `is_reheat` marca o lead que voltou por reaquecimento (`stage 8`).
+- `person` é `"all"` (padrão) ou o id de uma pessoa; qualquer outra coisa →
+  `400 VALIDATION_ERROR`.
+
+### Painel do funil — `GET /metrics?praca_id`
+
+```json
+{ "total": 25, "conv_contact": 43, "conv_active": 33, "avg_days": 9, "stalled": 4, "critical": 2, "lost": 2, "pipeline": 52700 }
+```
+
+Sempre só sobre os **não arquivados** da praça (sem `praca_id`, sobre a base
+inteira). `conv_contact` = cadastrados (`stage >= 5`) sobre contatados
+(`stage >= 2`), em %; `conv_active` = clientes ativos (`stage 7`) sobre
+cadastrados; `avg_days` = média de dias da entrada até o último toque dos
+cadastrados (descontado o tempo parado); `stalled`/`critical` = parados há
+mais de 7 e de 15 dias; `lost` = etapa 8; `pipeline` = soma de `est_value`
+das etapas 1 a 6.
+
+> POST sem corpo (`archive`) precisa ser enviado **sem**
+> `Content-Type: application/json` — o Fastify recusa corpo vazio com esse
+> cabeçalho antes de a requisição chegar no Nest.

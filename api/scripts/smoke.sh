@@ -238,6 +238,120 @@ check "admin apaga a ação-modelo (sem resíduo)" "true" \
   "$(curl -s -X DELETE $API/v1/template-actions/$MODELO_ID -H "$HD" | jq -r .ok)"
 check "roteiro-modelo voltou às 84" "84" "$(curl -s $API/v1/template-actions -H "$HD" | jq 'length')"
 
+echo "── Funil ──"
+# "Hoje" do servidor é Brasília: as contas de data do funil (reaquecimento,
+# soneca, dias parado) precisam bater com o mesmo fuso.
+HOJE=$(TZ=America/Sao_Paulo date +%F)
+HOJE3=$(TZ=America/Sao_Paulo date -d '+3 days' +%F)
+HOJE30=$(TZ=America/Sao_Paulo date -d '+30 days' +%F)
+
+check "funil da praça seed tem os 25 leads do protótipo" "true" \
+  "$(curl -s "$API/v1/leads?praca_id=$PRACA_SEED" -H "$HD" | jq 'length >= 25')"
+check "busca por texto ignora maiúsculas" "Bar do Mercado" \
+  "$(curl -s "$API/v1/leads?praca_id=$PRACA_SEED&q=bar%20do%20mercado" -H "$HD" | jq -r '.[0].name')"
+check "casa grande vale R$ 4.500 estimados" "true" \
+  "$(curl -s "$API/v1/leads?praca_id=$PRACA_SEED&classe=grande" -H "$HD" | jq '[.[] | select(.est_value != 4500)] | length == 0')"
+check "lead parado no seed conta os dias sem contato" "true" \
+  "$(curl -s "$API/v1/leads?praca_id=$PRACA_SEED&q=Casa%20de%20Eventos%20Aurora" -H "$HD" | jq '.[0].stalled_days >= 17')"
+
+LEAD=$(curl -s -X POST $API/v1/leads -H "$J" -H "$HD" \
+  -d "{\"praca_id\":\"$PRACA_SEED\",\"name\":\"Bar $SUF\",\"city\":\"Belo Horizonte\",\"phone\":\"(31) 98888-7777\",\"decisor\":\"Fulano de Teste\",\"classe\":\"alvo\",\"origem\":\"prospecção\",\"owner_id\":\"$DIEGO_ID\"}")
+LEAD_ID=$(echo "$LEAD" | jq -r .id)
+check "lead novo nasce na etapa 1" "1" "$(echo "$LEAD" | jq '.stage')"
+check "lead novo entra hoje" "$HOJE" "$(echo "$LEAD" | jq -r '.entered_at')"
+check "lead novo sem contato tem 0 dia parado" "0" "$(echo "$LEAD" | jq '.stalled_days')"
+check "lead com dono inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/leads -H "$J" -H "$HD" -d "{\"name\":\"X\",\"phone\":\"31999999999\",\"classe\":\"alvo\",\"origem\":\"prospecção\",\"owner_id\":\"00000000-0000-4000-8000-00000000dead\"}" | jq -r .error.code)"
+
+FILA=$(curl -s "$API/v1/leads/queue" -H "$HD")
+check "fila do dia traz o lead novo" "1" \
+  "$(echo "$FILA" | jq --arg i "$LEAD_ID" '[.items[] | select(.id==$i)] | length')"
+check "fila do dia usa a cota de app_settings" "20" "$(echo "$FILA" | jq '.quota')"
+check "fila do dia nunca passa da cota" "true" "$(echo "$FILA" | jq '(.items | length) <= .quota')"
+check "casa grande vem na frente da fila" "grande" "$(echo "$FILA" | jq -r '.items[0].classe')"
+check "fila conta as casas grandes" "true" "$(echo "$FILA" | jq '.grandes >= 1')"
+check "fila de uma pessoa só traz os leads dela" "0" \
+  "$(curl -s "$API/v1/leads/queue?person=$DIEGO_ID" -H "$HD" | jq --arg i "$DANIEL_ID" '[.items[] | select(.owner_id==$i)] | length')"
+check "person inválido na fila = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s "$API/v1/leads/queue?person=fulano" -H "$HD" | jq -r .error.code)"
+
+check "soneca marca a data" "$HOJE3" \
+  "$(curl -s -X POST $API/v1/leads/$LEAD_ID/snooze -H "$J" -H "$HD" -d "{\"until\":\"$HOJE3\"}" | jq -r .snooze_until)"
+check "soneca tira o lead da fila do dia" "0" \
+  "$(curl -s "$API/v1/leads/queue" -H "$HD" | jq --arg i "$LEAD_ID" '[.items[] | select(.id==$i)] | length')"
+
+check "mover sem próximo passo = NEXT_STEP_REQUIRED" "NEXT_STEP_REQUIRED" \
+  "$(curl -s -X POST $API/v1/leads/$LEAD_ID/move -H "$J" -H "$HD" -d '{"stage":2}' | jq -r .error.code)"
+MOVIDO=$(curl -s -X POST $API/v1/leads/$LEAD_ID/move -H "$J" -H "$HD" \
+  -d "{\"stage\":2,\"next_step\":{\"what\":\"Novo toque no WhatsApp\",\"date\":\"$HOJE3\"}}")
+check "mover grava o evento de etapa" "2" "$(echo "$MOVIDO" | jq '.events[-1].stage_to')"
+check "texto da mudança de etapa" "Mudou de etapa: Lead novo → Contatado" \
+  "$(echo "$MOVIDO" | jq -r '.events[-1].text')"
+check "mover reinicia o relógio da etapa" "$HOJE" "$(echo "$MOVIDO" | jq -r '.stage_since')"
+check "próximo passo fica no lead" "Novo toque no WhatsApp" "$(echo "$MOVIDO" | jq -r '.next_step.what')"
+check "mover para a mesma etapa = SAME_STAGE" "SAME_STAGE" \
+  "$(curl -s -X POST $API/v1/leads/$LEAD_ID/move -H "$J" -H "$HD" -d "{\"stage\":2,\"next_step\":{\"what\":\"x\",\"date\":\"$HOJE3\"}}" | jq -r .error.code)"
+check "voltar de etapa é registrado como volta" "Voltou etapa: Contatado → Lead novo" \
+  "$(curl -s -X POST $API/v1/leads/$LEAD_ID/move -H "$J" -H "$HD" -d "{\"stage\":1,\"next_step\":{\"what\":\"x\",\"date\":\"$HOJE3\"}}" | jq -r '.events[-1].text')"
+
+EVENTO=$(curl -s -X POST $API/v1/leads/$LEAD_ID/events -H "$J" -H "$HD" -d '{"kind":"call","text":"Liguei, falei com o gerente."}')
+check "ligação preenche o último contato" "true" "$(echo "$EVENTO" | jq '.last_contact_at != null')"
+check "último contato é hoje (Brasília)" "$HOJE" "$(echo "$EVENTO" | jq -r '.last_contact_date')"
+check "contato zera os dias parado" "0" "$(echo "$EVENTO" | jq '.stalled_days')"
+check "nota não conta como contato" "note" \
+  "$(curl -s -X POST $API/v1/leads/$LEAD_ID/events -H "$J" -H "$HD" -d '{"kind":"note","text":"Anotação do smoke."}' | jq -r '.events[-1].kind')"
+check "etapa não entra por /events" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/leads/$LEAD_ID/events -H "$J" -H "$HD" -d '{"kind":"stage","text":"não deve entrar"}' | jq -r .error.code)"
+
+check "perder sem motivo = LOST_REASON_REQUIRED" "LOST_REASON_REQUIRED" \
+  "$(curl -s -X POST $API/v1/leads/$LEAD_ID/move -H "$J" -H "$HD" -d '{"stage":8}' | jq -r .error.code)"
+check "motivo fora da lista = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/leads/$LEAD_ID/move -H "$J" -H "$HD" -d '{"stage":8,"lost_reason":"cansei"}' | jq -r .error.code)"
+PERDIDO=$(curl -s -X POST $API/v1/leads/$LEAD_ID/move -H "$J" -H "$HD" -d '{"stage":8,"lost_reason":"não respondeu"}')
+check "'não respondeu' agenda o reaquecimento para daqui a 30 dias" "$HOJE30" \
+  "$(echo "$PERDIDO" | jq -r '.reheat_at')"
+check "motivo entra no texto do evento" "true" \
+  "$(echo "$PERDIDO" | jq '.events[-1].text | endswith(" · motivo: não respondeu")')"
+check "sair da etapa 8 limpa motivo e reaquecimento" "null" \
+  "$(curl -s -X POST $API/v1/leads/$LEAD_ID/move -H "$J" -H "$HD" -d "{\"stage\":3,\"next_step\":{\"what\":\"Retomar\",\"date\":\"$HOJE3\"}}" | jq -r '.reheat_at')"
+
+check "PUT next-step troca o próximo passo" "Mandar a proposta" \
+  "$(curl -s -X PUT $API/v1/leads/$LEAD_ID/next-step -H "$J" -H "$HD" -d "{\"what\":\"Mandar a proposta\",\"date\":\"$HOJE3\"}" | jq -r '.next_step.what')"
+check "PATCH edita o decisor" "Beltrana de Teste" \
+  "$(curl -s -X PATCH $API/v1/leads/$LEAD_ID -H "$J" -H "$HD" -d '{"decisor":"Beltrana de Teste"}' | jq -r .decisor)"
+check "PATCH não mexe em etapa" "400" \
+  "$(curl -s -o /dev/null -w '%{http_code}' -X PATCH $API/v1/leads/$LEAD_ID -H "$J" -H "$HD" -d '{"stage":5}')"
+check "vaga entra na ficha do lead" "1" \
+  "$(curl -s -X POST $API/v1/leads/$LEAD_ID/vagas -H "$J" -H "$HD" -d "{\"date\":\"$HOJE\",\"funcao\":\"Garçom\",\"filled\":true,\"hours\":6}" | jq '.vagas_count')"
+
+MET=$(curl -s "$API/v1/leads/metrics?praca_id=$PRACA_SEED" -H "$HD")
+check "métricas contam o funil inteiro" "true" "$(echo "$MET" | jq '.total >= 26')"
+check "métricas somam o valor do pipeline" "true" "$(echo "$MET" | jq '.pipeline > 0')"
+check "métricas trazem as conversões em %" "true" \
+  "$(echo "$MET" | jq '(.conv_contact >= 0 and .conv_contact <= 100) and (.conv_active >= 0 and .conv_active <= 100)')"
+check "lead com praça não é órfão" "0" \
+  "$(curl -s $API/v1/leads/orphans -H "$HD" | jq --arg i "$LEAD_ID" '[.[] | select(.id==$i)] | length')"
+
+check "arquivar deixa a nota no histórico" "Lead arquivado (histórico mantido)." \
+  "$(curl -s -X POST $API/v1/leads/$LEAD_ID/archive -H "$HD" | jq -r '.events[-1].text')"
+check "arquivado some da lista" "0" \
+  "$(curl -s "$API/v1/leads?praca_id=$PRACA_SEED" -H "$HD" | jq --arg i "$LEAD_ID" '[.[] | select(.id==$i)] | length')"
+check "archived=true traz o arquivado de volta" "1" \
+  "$(curl -s "$API/v1/leads?praca_id=$PRACA_SEED&archived=true" -H "$HD" | jq --arg i "$LEAD_ID" '[.[] | select(.id==$i)] | length')"
+
+check "id malformado = NOT_FOUND (não 500)" "NOT_FOUND" "$(curl -s $API/v1/leads/abc -H "$HD" | jq -r .error.code)"
+check "lead que não existe = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s $API/v1/leads/00000000-0000-4000-8000-00000000beef -H "$HD" | jq -r .error.code)"
+
+echo "── Limpeza do lead de teste ──"
+check "daniel (não admin) não apaga lead" "FORBIDDEN" \
+  "$(curl -s -X DELETE $API/v1/leads/$LEAD_ID -H "$HN" | jq -r .error.code)"
+check "admin apaga o lead de teste (sem resíduo)" "true" \
+  "$(curl -s -X DELETE $API/v1/leads/$LEAD_ID -H "$HD" | jq -r .ok)"
+check "lead de teste sumiu" "NOT_FOUND" "$(curl -s $API/v1/leads/$LEAD_ID -H "$HD" | jq -r .error.code)"
+check "funil voltou aos 25 leads do seed" "25" \
+  "$(curl -s "$API/v1/leads?praca_id=$PRACA_SEED&archived=true" -H "$HD" | jq 'length')"
+
 echo "── Limpeza da praça de teste ──"
 check "admin apaga a praça de teste" "true" "$(curl -s -X DELETE $API/v1/pracas/$NOVA_ID -H "$HD" | jq -r .ok)"
 check "praça de teste sumiu" "NOT_FOUND" "$(curl -s $API/v1/pracas/$NOVA_ID -H "$HD" | jq -r .error.code)"

@@ -8,10 +8,12 @@
  *
  * `main()` chama `seedUsers`, depois o roteiro-modelo (`seedTemplateActions`)
  * e a praça de demonstração (`seedPraca`, que instancia o roteiro como ações)
- * — sempre nesta ordem, porque cada uma depende da anterior.
+ * e por fim o funil de leads dessa praça (`seedLeads`) — sempre nesta ordem,
+ * porque cada uma depende da anterior.
  */
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { seedLeads } from './seed-data/leads';
 import { seedPraca } from './seed-data/praca';
 import { seedTemplateActions } from './seed-data/template-actions';
 
@@ -81,6 +83,7 @@ async function main() {
     await seedUsers(prisma);
     await seedTemplateActions(prisma);
     await seedPraca(prisma);
+    await seedLeads(prisma);
   } finally {
     await prisma.$disconnect();
   }
