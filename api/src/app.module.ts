@@ -12,6 +12,7 @@ import { ActionsModule } from './modules/actions/actions.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { GeoModule } from './modules/geo/geo.module';
+import { ImportsModule } from './modules/imports/imports.module';
 import { LeadsModule } from './modules/leads/leads.module';
 import { PracasModule } from './modules/pracas/pracas.module';
 import { UsersModule } from './modules/users/users.module';
@@ -30,6 +31,7 @@ import { UsersModule } from './modules/users/users.module';
     PracasModule,
     ActionsModule,
     LeadsModule,
+    ImportsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

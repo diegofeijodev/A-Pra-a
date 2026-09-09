@@ -360,6 +360,147 @@ check "lead de teste sumiu" "NOT_FOUND" "$(curl -s $API/v1/leads/$LEAD_ID -H "$H
 check "funil voltou aos 25 leads do seed" "25" \
   "$(curl -s "$API/v1/leads?praca_id=$PRACA_SEED&archived=true" -H "$HD" | jq 'length')"
 
+echo "── Entrada de leads ──"
+# Telefone de um lead do seed com OUTRA máscara: a duplicidade olha os últimos
+# 9 dígitos, não o texto.
+DUP_DIG=$(curl -s "$API/v1/leads?praca_id=$PRACA_SEED&q=Bar%20do%20Mercado" -H "$HD" | jq -r '.[0].phone' | tr -cd '0-9')
+COLS='["Nome","Telefone","Cidade"]'
+MAPA='{"name":"Nome","phone":"Telefone","city":"Cidade"}'
+LINHAS3="[{\"Nome\":\"Importado A $SUF\",\"Telefone\":\"(31) 97000-1234\",\"Cidade\":\"Belo Horizonte\"},{\"Nome\":\"Importado B $SUF\",\"Telefone\":\"\",\"Cidade\":\"Belo Horizonte\"},{\"Nome\":\"Duplicado $SUF\",\"Telefone\":\"+55 $DUP_DIG\",\"Cidade\":\"Belo Horizonte\"}]"
+
+cat > /tmp/praca-smoke-import.json <<EOF
+{"columns":$COLS,"rows":$LINHAS3,"map":$MAPA,"origem":"importação","dup_action":"ignorar","praca_mode":"lote","lote_praca_id":"$PRACA_SEED"}
+EOF
+AVAL=$(curl -s -X POST $API/v1/imports/evaluate -H "$J" -H "$HD" -d @/tmp/praca-smoke-import.json)
+check "avaliação conta as 3 linhas do arquivo" "3" "$(echo "$AVAL" | jq '.total')"
+check "telefone do seed com outra máscara é duplicidade" "1" "$(echo "$AVAL" | jq '.dups')"
+check "linha sem telefone é contada" "1" "$(echo "$AVAL" | jq '.no_phone')"
+check "só uma linha entra de verdade" "1" "$(echo "$AVAL" | jq '.will_import')"
+check "avaliação diz qual lead duplicou" "Bar do Mercado" "$(echo "$AVAL" | jq -r '.rows[2].dup.lead_name')"
+check "avaliação diz por qual regra duplicou" "telefone" "$(echo "$AVAL" | jq -r '.rows[2].dup.by')"
+check "modo lote joga o arquivo inteiro na praça escolhida" "$PRACA_SEED" \
+  "$(echo "$AVAL" | jq -r '.rows[0].praca_id')"
+check "avaliação devolve o mapeamento adivinhado" "Nome" "$(echo "$AVAL" | jq -r '.guessed_map.name')"
+
+# Modo "praça pela cidade do arquivo": linha de cidade sem praça vira órfã.
+cat > /tmp/praca-smoke-import.json <<EOF
+{"columns":$COLS,"rows":[{"Nome":"Cidade certa $SUF","Telefone":"(31) 97001-0001","Cidade":"Belo Horizonte"},{"Nome":"Cidade sem praça $SUF","Telefone":"(41) 97001-0002","Cidade":"Curitiba"}],"map":$MAPA,"origem":"importação","dup_action":"ignorar","praca_mode":"arquivo"}
+EOF
+ARQ=$(curl -s -X POST $API/v1/imports/evaluate -H "$J" -H "$HD" -d @/tmp/praca-smoke-import.json)
+check "cidade do arquivo acha a praça" "true" "$(echo "$ARQ" | jq '.rows[0].praca_id != null')"
+check "cidade sem praça fica sem praça" "null" "$(echo "$ARQ" | jq -r '.rows[1].praca_id')"
+check "as duas entram, uma como órfã" "true" "$(echo "$ARQ" | jq '.will_import == 2 and .sem_praca == 1')"
+
+check "modo lote sem praça = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/imports/evaluate -H "$J" -H "$HD" -d "{\"columns\":$COLS,\"rows\":[],\"map\":$MAPA,\"origem\":\"importação\",\"dup_action\":\"ignorar\",\"praca_mode\":\"lote\"}" | jq -r .error.code)"
+check "praça inexistente na importação = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/imports/evaluate -H "$J" -H "$HD" -d "{\"columns\":$COLS,\"rows\":[],\"map\":$MAPA,\"origem\":\"importação\",\"dup_action\":\"ignorar\",\"praca_mode\":\"lote\",\"lote_praca_id\":\"00000000-0000-4000-8000-00000000beef\"}" | jq -r .error.code)"
+check "campo fora do catálogo no mapa = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/imports/evaluate -H "$J" -H "$HD" -d "{\"columns\":$COLS,\"rows\":[],\"map\":{\"telefone\":\"Telefone\"},\"origem\":\"importação\",\"dup_action\":\"ignorar\",\"praca_mode\":\"lote\",\"lote_praca_id\":\"$PRACA_SEED\"}" | jq -r .error.code)"
+check "linha que não é objeto de texto = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/imports/evaluate -H "$J" -H "$HD" -d "{\"columns\":$COLS,\"rows\":[\"linha\"],\"map\":$MAPA,\"origem\":\"importação\",\"dup_action\":\"ignorar\",\"praca_mode\":\"lote\",\"lote_praca_id\":\"$PRACA_SEED\"}" | jq -r .error.code)"
+
+echo "── Mapeamentos salvos ──"
+MAPEAMENTO=$(curl -s -X POST $API/v1/imports/mappings -H "$J" -H "$HD" -d "{\"name\":\"Mapa $SUF\",\"map\":$MAPA}")
+MAPA_ID=$(echo "$MAPEAMENTO" | jq -r .id)
+check "mapeamento salvo guarda o mapa" "Nome" "$(echo "$MAPEAMENTO" | jq -r '.map.name')"
+check "mapeamento aparece na lista" "1" \
+  "$(curl -s $API/v1/imports/mappings -H "$HD" | jq --arg i "$MAPA_ID" '[.[] | select(.id==$i)] | length')"
+check "salvar com o mesmo nome substitui, não duplica" "$MAPA_ID" \
+  "$(curl -s -X POST $API/v1/imports/mappings -H "$J" -H "$HD" -d "{\"name\":\"Mapa $SUF\",\"map\":{\"name\":\"Título\"}}" | jq -r .id)"
+check "substituição trocou mesmo o mapa" "Título" \
+  "$(curl -s $API/v1/imports/mappings -H "$HD" | jq -r --arg i "$MAPA_ID" '[.[] | select(.id==$i)][0].map.name')"
+check "apaga o mapeamento (sem resíduo)" "true" \
+  "$(curl -s -X DELETE $API/v1/imports/mappings/$MAPA_ID -H "$HD" | jq -r .ok)"
+check "apagar mapeamento que não existe = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X DELETE $API/v1/imports/mappings/$MAPA_ID -H "$HD" | jq -r .error.code)"
+
+echo "── Importar, completar e desfazer ──"
+cat > /tmp/praca-smoke-import.json <<EOF
+{"file_name":"leads-$SUF.csv","columns":$COLS,"rows":$LINHAS3,"map":$MAPA,"origem":"importação","dup_action":"ignorar","praca_mode":"lote","lote_praca_id":"$PRACA_SEED","owner_mode":"lote","lote_owner_id":"$DIEGO_ID"}
+EOF
+RUN=$(curl -s -X POST $API/v1/imports/run -H "$J" -H "$HD" -d @/tmp/praca-smoke-import.json)
+LOTE_A=$(echo "$RUN" | jq -r .batch_id)
+check "importação grava só a linha boa" "1" "$(echo "$RUN" | jq '.imported')"
+check "duplicada e sem telefone ficam de fora" "2" "$(echo "$RUN" | jq '.ignored')"
+check "relatório explica a duplicada" "1 duplicadas (ignoradas)" "$(echo "$RUN" | jq -r '.reasons[0]')"
+check "relatório explica a linha sem telefone" "1 sem telefone" "$(echo "$RUN" | jq -r '.reasons[1]')"
+
+IMPORTADO=$(curl -s "$API/v1/leads?q=Importado%20A%20$SUF" -H "$HD" | jq -r '.[0].id')
+FICHA=$(curl -s $API/v1/leads/$IMPORTADO -H "$HD")
+check "lead importado nasce na etapa 1" "1" "$(echo "$FICHA" | jq '.stage')"
+check "lead importado entra hoje (Brasília)" "$HOJE" "$(echo "$FICHA" | jq -r '.entered_at')"
+check "lead importado guarda o lote" "$LOTE_A" "$(echo "$FICHA" | jq -r '.import_batch_id')"
+check "lead importado sem decisor vira travessão" "—" "$(echo "$FICHA" | jq -r '.decisor')"
+check "lead importado vai para o dono escolhido" "$DIEGO_ID" "$(echo "$FICHA" | jq -r '.owner_id')"
+check "importação deixa a nota na ficha" "Lead importado de leads-$SUF.csv · origem importação." \
+  "$(echo "$FICHA" | jq -r '.events[-1].text')"
+check "lead importado sem duplicidade não é 'possível duplicado'" "false" "$(echo "$FICHA" | jq '.possible_dup')"
+
+LOTES=$(curl -s $API/v1/imports -H "$HD")
+check "lista de importações começa pela mais nova" "$LOTE_A" "$(echo "$LOTES" | jq -r '.[0].id')"
+check "importação de agora pode ser desfeita" "true" "$(echo "$LOTES" | jq '.[0].can_undo')"
+check "lista traz o arquivo e quem importou" "true" \
+  "$(echo "$LOTES" | jq --arg b "$DIEGO_ID" '.[0].file_name != "" and .[0].by == $b')"
+
+# Lead tocado não some no desfazer — desfazer importação não apaga conversa.
+curl -s -X POST $API/v1/leads/$IMPORTADO/events -H "$J" -H "$HD" -d '{"kind":"call","text":"Liguei antes de desfazer."}' > /dev/null
+DESFAZ_A=$(curl -s -X POST $API/v1/imports/$LOTE_A/undo -H "$HD")
+check "desfazer não apaga lead já trabalhado" "0" "$(echo "$DESFAZ_A" | jq '.removed')"
+check "lead trabalhado fica no lugar" "1" "$(echo "$DESFAZ_A" | jq '.kept')"
+check "desfazer deixa o motivo no lote" "true" \
+  "$(curl -s $API/v1/imports -H "$HD" | jq '[.[0].reasons[] | select(. == "0 leads removidos por desfazer importação")] | length == 1')"
+curl -s -X DELETE $API/v1/leads/$IMPORTADO -H "$HD" > /dev/null
+
+# dup_action "criar": entra mesmo duplicado, marcado para conferência.
+cat > /tmp/praca-smoke-import.json <<EOF
+{"file_name":"duplicados-$SUF.csv","columns":$COLS,"rows":[{"Nome":"Duplicado $SUF","Telefone":"+55 $DUP_DIG","Cidade":"Belo Horizonte"}],"map":$MAPA,"origem":"importação","dup_action":"criar","praca_mode":"lote","lote_praca_id":"$PRACA_SEED","owner_mode":"rodizio","rodizio_ids":["$DIEGO_ID","$DANIEL_ID"]}
+EOF
+RUN_DUP=$(curl -s -X POST $API/v1/imports/run -H "$J" -H "$HD" -d @/tmp/praca-smoke-import.json)
+LOTE_DUP=$(echo "$RUN_DUP" | jq -r .batch_id)
+check "com 'criar', a duplicada entra" "1" "$(echo "$RUN_DUP" | jq '.imported')"
+check "relatório diz que entrou como possível duplicado" "1 duplicadas (criadas como possível duplicado)" \
+  "$(echo "$RUN_DUP" | jq -r '.reasons[0]')"
+DUPLICADO=$(curl -s "$API/v1/leads?q=Duplicado%20$SUF" -H "$HD")
+check "lead criado assim fica marcado como possível duplicado" "true" \
+  "$(echo "$DUPLICADO" | jq '.[0].possible_dup')"
+check "rodízio começa pelo primeiro da fila" "$DIEGO_ID" "$(echo "$DUPLICADO" | jq -r '.[0].owner_id')"
+DESFAZ_DUP=$(curl -s -X POST $API/v1/imports/$LOTE_DUP/undo -H "$HD")
+check "desfazer remove o lead importado intocado" "1" "$(echo "$DESFAZ_DUP" | jq '.removed')"
+check "desfazer não deixa nada para trás" "0" "$(echo "$DESFAZ_DUP" | jq '.kept')"
+check "lead desfeito sumiu da lista" "0" "$(curl -s "$API/v1/leads?q=Duplicado%20$SUF" -H "$HD" | jq 'length')"
+
+# dup_action "completar": não cria nada, só preenche o que estava vazio.
+VAZIO=$(curl -s -X POST $API/v1/leads -H "$J" -H "$HD" \
+  -d "{\"praca_id\":\"$PRACA_SEED\",\"name\":\"Completar $SUF\",\"phone\":\"(31) 96000-0001\",\"classe\":\"alvo\",\"origem\":\"prospecção\",\"owner_id\":\"$DIEGO_ID\"}")
+VAZIO_ID=$(echo "$VAZIO" | jq -r .id)
+cat > /tmp/praca-smoke-import.json <<EOF
+{"file_name":"completar-$SUF.csv","columns":["Nome","Telefone","Endereço","CNPJ","Decisor"],"rows":[{"Nome":"Completar $SUF","Telefone":"+55 31960000001","Endereço":"Rua Nova 10","CNPJ":"12.345.678/0001-90","Decisor":"Fulano Completo"}],"map":{"name":"Nome","phone":"Telefone","address":"Endereço","cnpj":"CNPJ","decisor":"Decisor"},"origem":"importação","dup_action":"completar","praca_mode":"lote","lote_praca_id":"$PRACA_SEED","owner_mode":"lote","lote_owner_id":"$DIEGO_ID"}
+EOF
+RUN_COMP=$(curl -s -X POST $API/v1/imports/run -H "$J" -H "$HD" -d @/tmp/praca-smoke-import.json)
+LOTE_COMP=$(echo "$RUN_COMP" | jq -r .batch_id)
+check "completar não cria lead novo" "0" "$(echo "$RUN_COMP" | jq '.imported')"
+check "completar atualiza o lead que já existia" "1" "$(echo "$RUN_COMP" | jq '.updated')"
+check "relatório diz que completou campos vazios" "1 duplicadas (campos vazios completados)" \
+  "$(echo "$RUN_COMP" | jq -r '.reasons[0]')"
+COMPLETADO=$(curl -s $API/v1/leads/$VAZIO_ID -H "$HD")
+check "endereço vazio foi completado" "Rua Nova 10" "$(echo "$COMPLETADO" | jq -r '.address')"
+check "CNPJ vazio foi completado" "12.345.678/0001-90" "$(echo "$COMPLETADO" | jq -r '.cnpj')"
+check "decisor '—' foi completado" "Fulano Completo" "$(echo "$COMPLETADO" | jq -r '.decisor')"
+check "completar deixa a nota na ficha" "Campos vazios completados pela importação completar-$SUF.csv." \
+  "$(echo "$COMPLETADO" | jq -r '.events[-1].text')"
+check "desfazer não apaga lead que só foi completado" "0" \
+  "$(curl -s -X POST $API/v1/imports/$LOTE_COMP/undo -H "$HD" | jq '.removed')"
+check "admin apaga o lead do teste de completar (sem resíduo)" "true" \
+  "$(curl -s -X DELETE $API/v1/leads/$VAZIO_ID -H "$HD" | jq -r .ok)"
+
+check "desfazer importação que não existe = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/imports/00000000-0000-4000-8000-00000000beef/undo -H "$HD" | jq -r .error.code)"
+check "id malformado no desfazer = NOT_FOUND (não 500)" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/imports/abc/undo -H "$HD" | jq -r .error.code)"
+check "funil segue com os 25 leads do seed (sem resíduo)" "25" \
+  "$(curl -s "$API/v1/leads?praca_id=$PRACA_SEED&archived=true" -H "$HD" | jq 'length')"
+
 echo "── Limpeza da praça de teste ──"
 check "admin apaga a praça de teste" "true" "$(curl -s -X DELETE $API/v1/pracas/$NOVA_ID -H "$HD" | jq -r .ok)"
 check "praça de teste sumiu" "NOT_FOUND" "$(curl -s $API/v1/pracas/$NOVA_ID -H "$HD" | jq -r .error.code)"

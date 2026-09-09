@@ -600,3 +600,149 @@ das etapas 1 a 6.
 > POST sem corpo (`archive`) precisa ser enviado **sem**
 > `Content-Type: application/json` — o Fastify recusa corpo vazio com esse
 > cabeçalho antes de a requisição chegar no Nest.
+
+---
+
+## 10. Entrada de leads — `/v1/imports`
+
+Importação de arquivo (CSV/XML lido no navegador — a API recebe as linhas já
+parseadas), com duplicidade conferida **no servidor**, mapeamentos salvos e
+desfazer em até 24 h. Regras puras em `src/domain/dedup.ts`, portadas do
+protótipo (`lib/praca/intake.ts`).
+
+### Conceitos
+
+- **Mapeamento** (`map`): `campo do lead → coluna do arquivo`. Os campos são os
+  do catálogo (§4 `lead_fields`): `name`, `address`, `city`, `phone`,
+  `instagram`, `decisor`, `classe`, `origem`, `cnpj`. Campo fora dessa lista →
+  `400 VALIDATION_ERROR`.
+- **Duplicidade**, em três degraus, nesta ordem: **telefone** (últimos 9
+  dígitos, ignorando máscara e DDI) → **CNPJ** (14 dígitos) → **nome +
+  endereço** (sem acento, caixa nem pontuação). Vale contra **todos os leads
+  não arquivados** e também **entre as linhas do próprio arquivo** — a segunda
+  linha igual do arquivo é duplicata da primeira (nesse caso `dup.lead_id` vem
+  `null`, porque ainda não existe lead no banco).
+- **`dup_action`**: `ignorar` (não entra), `completar` (preenche só os campos
+  vazios do lead que já existe) ou `criar` (entra marcado com
+  `possible_dup: true`).
+- **`praca_mode`**: `lote` (a praça de `lote_praca_id` vale para o arquivo
+  inteiro) ou `arquivo` (a praça sai da cidade de cada linha — a primeira praça
+  cuja cidade **ou** nome contém a cidade da linha). Sem casar, o lead entra
+  **sem praça** e aparece em `GET /v1/leads/orphans`.
+- **`owner_mode`**: `lote` (todos para `lote_owner_id`) ou `rodizio`
+  (distribui em ordem entre `rodizio_ids`; vazio = todo mundo ativo).
+- Linha **sem nome** ou **sem telefone** (menos de 8 dígitos) nunca entra.
+
+`classe` é adivinhada do texto da planilha: "grande"/"alta" → `grande`;
+"depois"/"baixa"/"frio" → `depois`; vazio ou desconhecido → `alvo`.
+
+### Avaliar — `POST /evaluate`
+
+Corpo:
+
+```json
+{
+  "columns": ["Nome", "Telefone", "Cidade"],
+  "rows": [{ "Nome": "Bar Novo", "Telefone": "(31) 97000-1234", "Cidade": "Belo Horizonte" }],
+  "map": { "name": "Nome", "phone": "Telefone", "city": "Cidade" },
+  "origem": "importação",
+  "dup_action": "ignorar",
+  "praca_mode": "lote",
+  "lote_praca_id": "uuid"
+}
+```
+
+Resposta:
+
+```json
+{
+  "total": 3,
+  "dups": 1,
+  "no_phone": 1,
+  "no_name": 0,
+  "will_import": 1,
+  "sem_praca": 0,
+  "guessed_map": { "name": "Nome", "phone": "Telefone", "city": "Cidade" },
+  "rows": [
+    {
+      "draft": { "name": "Bar Novo", "address": "", "city": "Belo Horizonte", "phone": "(31) 97000-1234", "instagram": "", "decisor": "", "classe": "alvo", "origem": "importação", "cnpj": "" },
+      "dup": { "lead_id": "uuid", "lead_name": "Bar do Mercado", "by": "telefone" },
+      "no_phone": false,
+      "no_name": false,
+      "praca_id": "uuid"
+    }
+  ]
+}
+```
+
+- `rows` traz só as **10 primeiras** linhas avaliadas (pré-visualização); as
+  contagens são do arquivo inteiro.
+- `guessed_map` vem **sempre**, calculado das `columns` pelas dicas do
+  catálogo — a tela usa quando o `map` do usuário ainda está vazio.
+- `will_import` usa exatamente o mesmo critério do `run`
+  (`tem nome && tem telefone && (não é duplicata || dup_action = criar)`), para
+  o relatório nunca prometer mais do que a importação grava. `sem_praca` conta,
+  dessas, as que ficariam sem praça.
+- `dup.by` ∈ `telefone | cnpj | nome+endereço`.
+- Tetos: 5.000 linhas, 60 colunas, 500 caracteres por célula. `praca_mode`
+  `lote` **exige** `lote_praca_id` (`400 VALIDATION_ERROR`), e a praça precisa
+  existir (`404 NOT_FOUND`).
+
+### Importar — `POST /run`
+
+Mesmo corpo de `/evaluate` mais `file_name`, `owner_mode`, `lote_owner_id?` e
+`rodizio_ids?`. Avalia **de novo** e aplica na mesma transação: a decisão nunca
+é tomada num retrato e gravada em outro.
+
+```json
+{ "batch_id": "uuid", "imported": 1, "updated": 0, "ignored": 2, "reasons": ["1 duplicadas (ignoradas)", "1 sem telefone"] }
+```
+
+- Lead criado: `stage 1`, `entered_at`/`stage_since` = hoje (Brasília),
+  `import_batch_id` = `batch_id`, `decisor` = `"—"` quando o arquivo não traz,
+  `origem` = a da linha ou a do lote, `possible_dup` quando é duplicata que
+  entrou por `criar`. Ganha o evento
+  `"Lead importado de <arquivo> · origem <origem>."`.
+- Lead completado (`dup_action: completar`) ganha
+  `"Campos vazios completados pela importação <arquivo>."`; só campos vazios
+  são tocados (`decisor` conta como vazio quando é `"—"`), e `phone` completado
+  atualiza a chave de comparação junto.
+- `ignored` = linhas do arquivo que não viraram lead novo (inclui as
+  completadas). `reasons` traz, nesta ordem: duplicadas (com o que foi feito
+  com elas), sem telefone, sem nome, sem praça.
+
+### Lotes — `GET /` e `POST /:id/undo`
+
+```json
+[{ "id": "uuid", "at": "2026-09-09T18:20:00.000Z", "file_name": "leads.csv", "by": "uuid", "origem": "importação", "imported": 12, "ignored": 3, "reasons": ["..."], "can_undo": true }]
+```
+
+Mais novo primeiro. `can_undo` = importado há menos de 24 h.
+
+`POST /:id/undo` → `{ "removed": 1, "kept": 0 }`. Remove **só** o lead do lote
+que ninguém tocou (etapa 1 e nenhum evento de contato) — lead já trabalhado
+fica. O lote continua na lista, com `imported` abatido e o motivo
+`"N leads removidos por desfazer importação"` anexado. Depois de 24 h →
+`400 UNDO_EXPIRED`; lote inexistente ou id malformado → `404 NOT_FOUND`.
+
+### Mapeamentos salvos — `/mappings`
+
+```json
+[{ "id": "uuid", "name": "Planilha do Google Maps", "map": { "name": "Nome" }, "created_at": "2026-09-09T18:20:00.000Z" }]
+```
+
+| Método | Rota | Quem | Corpo | Observação |
+|---|---|---|---|---|
+| GET | `/` | autenticado | — | lotes, do mais novo para o mais velho |
+| POST | `/evaluate` | autenticado | ver acima | não grava nada |
+| POST | `/run` | autenticado | ver acima | avalia e grava, em transação |
+| GET | `/mappings` | autenticado | — | mapeamentos salvos |
+| POST | `/mappings` | autenticado | `{name, map}` | nome é único: salvar de novo **substitui** o mapa |
+| DELETE | `/mappings/:id` | autenticado | — | `{ok: true}`; inexistente → `404 NOT_FOUND` |
+| POST | `/:id/undo` | autenticado | — | `{removed, kept}` |
+
+> A duplicidade carrega todos os leads não arquivados numa consulta só
+> (`id, nome, endereço, cidade, telefone, CNPJ, instagram, decisor`) e compara
+> em memória: telefone/CNPJ/nome+endereço normalizados não viram índice em SQL.
+> Numa base de dezenas de milhares de leads é uma varredura barata; se um dia
+> crescer para centenas de milhares, o caminho é pré-filtrar por `phone_key`.
