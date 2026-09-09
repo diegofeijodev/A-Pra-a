@@ -32,7 +32,8 @@ export function campanhaName(
     .trim()
     .split(/\s+/)
     .filter((w) => w.length > 2);
-  const sigla = words.length > 1 ? words.map((w) => w[0]!.toUpperCase()).join('') : city.slice(0, 3).toUpperCase();
+  const sigla =
+    words.length > 1 ? words.map((w) => w[0]!.toUpperCase()).join('') : city.slice(0, 3).toUpperCase();
   // Meio-dia UTC (`dateFromString`) e não hora local: dia 1º do mês não pode
   // escorregar para o mês anterior por causa de fuso.
   const d = dateFromString(start);

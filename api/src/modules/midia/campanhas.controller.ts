@@ -40,6 +40,11 @@ export class CampanhasController {
     return this.midia.fillBrake(query.praca_id);
   }
 
+  @Get(':id')
+  get(@Param('id') id: string) {
+    return this.midia.getCampanha(id);
+  }
+
   @Put(':id')
   replace(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: CampanhaBodyDto) {
     return this.midia.replaceCampanha(id, dto, user);

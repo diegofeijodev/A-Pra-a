@@ -1364,6 +1364,13 @@ check "o portão diz que falta a etapa 2 (22 de 40)" "Etapa 2 — 40 garçons co
 check "o portão também cobra a etapa 6" "Etapa 6 — 5 clientes com segunda vaga (hoje: 0)" \
   "$(echo "$CS1" | jq -r '.gate.falta[1]')"
 check "GET /v1/campanhas sem praca_id lista todas" "true" "$(curl -s $API/v1/campanhas -H "$HD" | jq 'length >= 2')"
+CS1_UMA=$(curl -s $API/v1/campanhas/$(echo "$CS1" | jq -r .id) -H "$HD")
+check "GET /v1/campanhas/:id devolve a mesma view da lista" "true" \
+  "$(jq -n --argjson a "$CS1" --argjson b "$CS1_UMA" '$a == $b')"
+check "GET de campanha inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s $API/v1/campanhas/$BEEF -H "$HD" | jq -r .error.code)"
+check "GET de campanha com id malformado = NOT_FOUND (não 500)" "NOT_FOUND" \
+  "$(curl -s $API/v1/campanhas/nao-e-uuid -H "$HD" | jq -r .error.code)"
 CS1_ID=$(echo "$CS1" | jq -r .id)
 CS2_ID=$(echo "$CS2" | jq -r .id)
 check "os 5 criativos do seed estão nas 2 campanhas" "3 2" \
@@ -1371,6 +1378,15 @@ check "os 5 criativos do seed estão nas 2 campanhas" "3 2" \
 TR_SEED=$(curl -s "$API/v1/traffic?campanha_id=$CS1_ID" -H "$HD")
 check "a entrada do seed é do Meta com 6 dias" "meta 6" "$(echo "$TR_SEED" | jq -r '"\(.[0].plataforma) \(.[0].days | length)"')"
 check "a entrada do seed leva os 3 criativos da campanha" "3" "$(echo "$TR_SEED" | jq '.[0].criativos | length')"
+# Os 3 criativos do seed estão em `aprovado`, `producao` e `a_fazer`: devolver a
+# própria entrada num PUT tem de passar. Filtrar por status aqui derrubaria o
+# salvamento da tela assim que alguém pedisse ajuste numa peça que já está no ar.
+TR_SEED_ID=$(echo "$TR_SEED" | jq -r '.[0].id')
+check "PUT devolvendo a própria entrada do seed passa (criativo não aprovado inclusive)" "3" \
+  "$(curl -s -X PUT $API/v1/traffic/$TR_SEED_ID -H "$J" -H "$HD" \
+    -d "$(echo "$TR_SEED" | jq -c '.[0] | {campanha_id, plataforma, nome_la, publico, geo, verba_diaria, criativos, manager_url, api_connected}')" \
+    | jq '.criativos | length')"
+CR_SEED=$(curl -s "$API/v1/creatives?campanha_id=$CS1_ID" -H "$HD" | jq -r '.[0].id')
 
 FILL=$(curl -s "$API/v1/campanhas/fill-hours?praca_id=$PRACA_SEED" -H "$HD")
 check "o freio de mídia usa o teto de 4 horas" "4" "$(echo "$FILL" | jq '.limit_h')"
@@ -1449,6 +1465,14 @@ PUTC=$(curl -s -X PUT $API/v1/campanhas/$CAMP_ID -H "$J" -H "$HD" \
 check "o PUT recalcula o nome pelo público e pelo objetivo" "BH-Contratante-Cadastro-$MESANO" "$(echo "$PUTC" | jq -r .name)"
 check "o PUT mantém a justificativa já gravada" "Diego" "$(echo "$PUTC" | jq -r .gate_justification.by)"
 check "reeditar o briefing sem mexer no status passa" "pausada" "$(echo "$PUTC" | jq -r .status)"
+# `corpo_camp` não manda `status` quando o extra é vazio: a campanha está
+# "pausada" e tem de continuar pausada depois do PUT.
+check "PUT sem status mantém o status atual (não rebaixa a rascunho)" "pausada" \
+  "$(curl -s -X PUT $API/v1/campanhas/$CAMP_ID -H "$J" -H "$HD" \
+    -d "$(corpo_camp "$PRACA_SEED" contratante cadastro_contratante "Dono perde o sábado." "[\"$PROVA_SEED\"]" "")" | jq -r .status)"
+check "status nulo no corpo é barrado (não vira 500)" "VALIDATION_ERROR" \
+  "$(curl -s -X PUT $API/v1/campanhas/$CAMP_ID -H "$J" -H "$HD" \
+    -d "$(corpo_camp "$PRACA_SEED" contratante cadastro_contratante "Dono perde o sábado." "[]" ",\"status\":null")" | jq -r .error.code)"
 check "prova repetida no corpo entra uma vez (não estoura a chave)" "1" \
   "$(curl -s -X PUT $API/v1/campanhas/$CAMP_ID -H "$J" -H "$HD" \
     -d "$(corpo_camp "$PRACA_SEED" contratante cadastro_contratante "Dono perde o sábado." "[\"$PROVA_SEED\",\"$PROVA_SEED\"]" ",\"status\":\"pausada\"")" | jq '.provas | length')"
@@ -1480,6 +1504,8 @@ check "pedir ajuste volta o criativo para produção" "producao" "$(echo "$AJUST
 check "pedir ajuste apaga a aprovação anterior" "null" "$(echo "$AJUSTE" | jq -r '.approved_at')"
 check "pedir ajuste sem texto é barrado" "VALIDATION_ERROR" \
   "$(curl -s -X POST $API/v1/creatives/$CR_ID/review -H "$J" -H "$HD" -d '{"kind":"ajuste"}' | jq -r .error.code)"
+check "texto nulo na revisão é barrado (não vira 500)" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/creatives/$CR_ID/review -H "$J" -H "$HD" -d '{"kind":"aprovacao","text":null}' | jq -r .error.code)"
 PUB=$(curl -s -X POST $API/v1/creatives/$CR_ID/publish-date -H "$J" -H "$HD" -d "{\"date\":\"$HOJE30\"}")
 check "mover a publicação muda a data" "$HOJE30" "$(echo "$PUB" | jq -r .publish_at)"
 check "mover a publicação deixa nota no criativo" "Data de publicação movida para $HOJE30_BR." \
@@ -1487,26 +1513,32 @@ check "mover a publicação deixa nota no criativo" "Data de publicação movida
 check "a nota da publicação entra como 'nota'" "nota" "$(echo "$PUB" | jq -r '.comments[-1].kind')"
 check "trocar só o status não deixa comentário" "producao 3" \
   "$(curl -s -X POST $API/v1/creatives/$CR_ID/status -H "$J" -H "$HD" -d '{"status":"producao"}' | jq -r '"\(.status) \(.comments | length)"')"
-# Volta para aprovado: só criativo aprovado entra no gerenciador de tráfego.
+# Volta para aprovado — é o estado normal de uma peça que já foi revisada.
 curl -s -X POST $API/v1/creatives/$CR_ID/review -H "$J" -H "$HD" -d '{"kind":"aprovacao","text":"Capa refeita."}' > /dev/null
 CR2=$(curl -s -X POST $API/v1/creatives -H "$J" -H "$HD" -d "{$CR_CORPO,\"status\":\"a_fazer\",\"titulo\":\"Story da vaga\"}")
 CR2_ID=$(echo "$CR2" | jq -r .id)
+check "o PUT do criativo não muda de campanha" "campanha_id não pode ser alterado" \
+  "$(curl -s -X PUT $API/v1/creatives/$CR_ID -H "$J" -H "$HD" \
+    -d "{$CR_CORPO,\"status\":\"aprovado\",\"campanha_id\":\"$CS1_ID\"}" | jq -r .error.message)"
+check "o PUT do criativo na própria campanha passa" "Reels do sábado (revisado)" \
+  "$(curl -s -X PUT $API/v1/creatives/$CR_ID -H "$J" -H "$HD" \
+    -d "{$CR_CORPO,\"status\":\"aprovado\",\"titulo\":\"Reels do sábado (revisado)\"}" | jq -r .titulo)"
 check "os 2 criativos aparecem na campanha" "2" \
   "$(curl -s "$API/v1/creatives?campanha_id=$CAMP_ID" -H "$HD" | jq 'length')"
 
 # --- tráfego ---
 TR_CORPO="\"campanha_id\":\"$CAMP_ID\",\"plataforma\":\"meta\",\"nome_la\":\"BH-Contratante-Teste\",\"publico\":\"Donos de bar, 25–55\",\"geo\":\"Belo Horizonte + 50 km\",\"verba_diaria\":120"
-check "criativo que não foi aprovado não entra no gerenciador" "VALIDATION_ERROR" \
-  "$(curl -s -X POST $API/v1/traffic -H "$J" -H "$HD" -d "{$TR_CORPO,\"criativos\":[\"$CR2_ID\"]}" | jq -r .error.code)"
+check "criativo de outra campanha não entra no gerenciador" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/traffic -H "$J" -H "$HD" -d "{$TR_CORPO,\"criativos\":[\"$CR_SEED\"]}" | jq -r .error.code)"
 check "endereço de gerenciador inválido é barrado" "VALIDATION_ERROR" \
   "$(curl -s -X POST $API/v1/traffic -H "$J" -H "$HD" -d "{$TR_CORPO,\"criativos\":[],\"manager_url\":\"nao-e-url\"}" | jq -r .error.code)"
 TR=$(curl -s -X POST $API/v1/traffic -H "$J" -H "$HD" -d "{$TR_CORPO,\"criativos\":[\"$CR_ID\"]}")
 TR_ID=$(echo "$TR" | jq -r .id)
 check "entrada de tráfego nasce sem dia lançado e no manual" "0 false" \
   "$(echo "$TR" | jq -r '"\(.days | length) \(.api_connected)"')"
-# Aprovado o segundo criativo, o gerenciador aceita os dois.
-curl -s -X POST $API/v1/creatives/$CR2_ID/review -H "$J" -H "$HD" -d '{"kind":"aprovacao"}' > /dev/null
-check "o gerenciador aceita os 2 criativos aprovados" "2" \
+# O segundo criativo está em "a fazer": o gerenciador aceita mesmo assim (quem
+# oferece só os aprovados é a tela, não a API).
+check "o gerenciador aceita criativo da campanha ainda não aprovado" "2" \
   "$(curl -s -X PUT $API/v1/traffic/$TR_ID -H "$J" -H "$HD" \
     -d "{$TR_CORPO,\"criativos\":[\"$CR_ID\",\"$CR2_ID\"]}" | jq '.criativos | length')"
 curl -s -X PUT $API/v1/traffic/$TR_ID/days -H "$J" -H "$HD" \

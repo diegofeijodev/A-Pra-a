@@ -133,9 +133,6 @@ export interface FillBrakeView {
 /** Ordem estável das provas — `proofs` não tem `created_at` para ordenar. */
 const PROOF_ORDER = [{ kind: 'asc' as const }, { title: 'asc' as const }];
 
-/** Criativo só entra numa entrada de tráfego depois de aprovado. */
-const CRIATIVO_NO_AR = ['aprovado', 'publicado'];
-
 /** Texto do comentário quando a aprovação vem sem palavra nenhuma. */
 const APROVADO_SECO = 'Aprovado.';
 
@@ -200,6 +197,11 @@ export class MidiaService {
     return this.toViews(rows);
   }
 
+  async getCampanha(id: string): Promise<CampanhaView> {
+    const row = await this.campanhaRow(id);
+    return (await this.toViews([row]))[0]!;
+  }
+
   suggestName(dto: SuggestNameDto): Promise<{ name: string }> {
     return this.pracaOrFail(dto.praca_id).then((praca) => ({
       name: campanhaName(praca, dto.publico, dto.objetivo, dto.start),
@@ -221,13 +223,15 @@ export class MidiaService {
     const praca = await this.pracaOrFail(dto.praca_id);
     await this.provasOrFail(dto.praca_id, dto.provas);
     const gate = await this.gateOf(dto.praca_id);
+    // Sem `status` no corpo, campanha nova nasce rascunho.
+    const status = dto.status ?? 'rascunho';
     // Campanha nova nunca tem justificativa gravada: se ela já nasce fora do
     // rascunho com o portão fechado, a justificativa vem no mesmo corpo.
-    const just = this.justOrFail(dto.status, gate, null, dto.justification, user);
+    const just = this.justOrFail(status, gate, null, dto.justification, user);
 
     const criada = await this.prisma.campanhas.create({
       data: {
-        ...this.campanhaData(dto, praca),
+        ...this.campanhaData(dto, praca, status),
         ...just,
         provas: { create: this.provasRows(dto.provas) },
       },
@@ -241,19 +245,22 @@ export class MidiaService {
     const praca = await this.pracaOrFail(dto.praca_id);
     await this.provasOrFail(dto.praca_id, dto.provas);
     const gate = await this.gateOf(dto.praca_id);
+    // `status` ausente MANTÉM o que a campanha já tem: o briefing é uma tela de
+    // texto, não pode rebaixar uma campanha ativa a rascunho por omissão.
+    const status = dto.status ?? atual.status;
     // Só a MUDANÇA de status passa pelo portão: reeditar o briefing de uma
     // campanha que já saiu do rascunho não pede a justificativa outra vez.
     const just =
-      dto.status === atual.status
+      status === atual.status
         ? {}
-        : this.justOrFail(dto.status, gate, this.justificationOf(atual), dto.justification, user);
+        : this.justOrFail(status, gate, this.justificationOf(atual), dto.justification, user);
 
     const salva = await this.prisma.$transaction(async (tx) => {
       await tx.campanha_provas.deleteMany({ where: { campanha_id: id } });
       return tx.campanhas.update({
         where: { id },
         data: {
-          ...this.campanhaData(dto, praca),
+          ...this.campanhaData(dto, praca, status),
           ...just,
           provas: { create: this.provasRows(dto.provas) },
         },
@@ -380,8 +387,16 @@ export class MidiaService {
   }
 
   async replaceCreative(id: string, dto: CreativeBodyDto): Promise<CreativeView> {
-    await this.creativeRow(id);
-    await this.campanhaRow(dto.campanha_id);
+    const atual = await this.creativeRow(id);
+    // Mudar de campanha pelo PUT deixaria o id do criativo pendurado nas
+    // entradas de tráfego da campanha antiga. Quem troca de campanha apaga e
+    // recria (ou duplica a campanha).
+    if (dto.campanha_id !== atual.campanha_id) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'campanha_id não pode ser alterado',
+      });
+    }
     await this.ownerOrFail(dto.owner_id);
     const row = await this.prisma.creatives.update({
       where: { id },
@@ -485,7 +500,10 @@ export class MidiaService {
   async createTraffic(dto: TrafficBodyDto): Promise<TrafficEntryView> {
     await this.campanhaRow(dto.campanha_id);
     await this.criativosOrFail(dto.campanha_id, dto.criativos);
-    const row = await this.prisma.traffic_entries.create({ data: this.trafficData(dto), include: { days: true } });
+    const row = await this.prisma.traffic_entries.create({
+      data: this.trafficData(dto),
+      include: { days: true },
+    });
     return this.toTrafficView(row);
   }
 
@@ -730,8 +748,11 @@ export class MidiaService {
   }
 
   // ── colunas ──────────────────────────────────────────────────
-  /** `name` NUNCA vem do cliente: quem monta é o servidor. */
-  private campanhaData(dto: CampanhaBodyDto, praca: { name: string; city: string }) {
+  /**
+   * `name` NUNCA vem do cliente: quem monta é o servidor. `status` chega já
+   * resolvido (rascunho no `POST`, o atual no `PUT` que omitiu o campo).
+   */
+  private campanhaData(dto: CampanhaBodyDto, praca: { name: string; city: string }, status: string) {
     return {
       name: campanhaName(praca, dto.publico, dto.objetivo, dto.start),
       praca_id: dto.praca_id,
@@ -749,7 +770,7 @@ export class MidiaService {
       kpi_meta: dto.kpi_meta,
       kpi_custo: dto.kpi_custo,
       cac_teto: dto.cac_teto,
-      status: dto.status,
+      status,
     };
   }
 
@@ -839,17 +860,21 @@ export class MidiaService {
     }
   }
 
-  /** No gerenciador só entra criativo aprovado (ou já publicado) da campanha. */
+  /**
+   * No gerenciador só entra criativo DESTA campanha — o status não filtra.
+   * No protótipo o filtro de "aprovado" era só a lista de caixas da tela; o que
+   * já estava salvo na entrada continuava salvo. Filtrar aqui derrubaria um
+   * `PUT` que devolve a própria entrada assim que alguém pedisse ajuste numa
+   * peça que já estava no ar.
+   */
   private async criativosOrFail(campanha_id: string, criativos: string[]): Promise<void> {
     const ids = [...new Set(criativos)];
     if (!ids.length) return;
-    const achados = await this.prisma.creatives.count({
-      where: { id: { in: ids }, campanha_id, status: { in: CRIATIVO_NO_AR } },
-    });
+    const achados = await this.prisma.creatives.count({ where: { id: { in: ids }, campanha_id } });
     if (achados !== ids.length) {
       throw new BadRequestException({
         code: 'VALIDATION_ERROR',
-        message: 'criativos: só criativo aprovado ou publicado desta campanha entra no gerenciador.',
+        message: 'criativos: só criativo desta campanha entra no gerenciador.',
       });
     }
   }
@@ -858,7 +883,10 @@ export class MidiaService {
     if (!owner_id) return;
     const achado = await this.prisma.users.count({ where: { id: owner_id } });
     if (!achado) {
-      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'owner_id: pessoa não encontrada.' });
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'owner_id: pessoa não encontrada.',
+      });
     }
   }
 

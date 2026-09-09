@@ -1451,6 +1451,7 @@ Porta de `.prototype/src/lib/praca/campanhas.ts` e dos componentes
 | POST | `/v1/campanhas` | `CampanhaBody` | `CampanhaView` |
 | POST | `/v1/campanhas/suggest-name` | `{praca_id, publico, objetivo, start}` | `{name}` |
 | GET | `/v1/campanhas/fill-hours` | `?praca_id` (obrigatório) | `FillBrakeView` |
+| GET | `/v1/campanhas/:id` | — | `CampanhaView` (a mesma da lista) |
 | PUT | `/v1/campanhas/:id` | `CampanhaBody` | `CampanhaView` |
 | DELETE | `/v1/campanhas/:id` | — | `{ok: true}` |
 | POST | `/v1/campanhas/:id/duplicate` | `{praca_id}` | `CampanhaView` (a cópia) |
@@ -1473,6 +1474,12 @@ Todas exigem JWT e nenhuma é só de admin (quem monta a campanha é a agência)
 `:id` malformado → `404 NOT_FOUND` (nunca 500); `?praca_id`/`?campanha_id`
 malformado ou ausente onde é obrigatório → `400 VALIDATION_ERROR` (é filtro, não
 caminho). Conjuntos fechados vêm do catálogo de mídia (`src/domain/catalog/midia.ts`).
+
+Campo opcional deste bloco aceita ser **omitido**, não aceita vir `null`
+explícito: `null` em `status`, `justification`, `file_url`, `text`,
+`manager_url`, `api_connected` ou `auto` é `400 VALIDATION_ERROR` (a coluna é
+`NOT NULL`; deixar passar viraria 500). Os três campos que o banco aceita nulo
+de verdade — `owner_id`, `publish_at` e `ia` — aceitam `null` normalmente.
 
 ### `ProofView`
 
@@ -1509,9 +1516,12 @@ outra praça na campanha → `400 VALIDATION_ERROR`.
 `CampanhaBody` = `{praca_id, publico ∈ contratante|freelancer,
 objetivo ∈ catalog.objetivos, start, end, verba, gasto, dor (1..400),
 oferta (≤400), mensagem_chave (1..400), provas: uuid[], destino ∈ catalog.destinos,
-kpi_name (≤120), kpi_meta, kpi_custo, cac_teto, status? (padrão `rascunho`),
-justification?}`. Todos obrigatórios no `POST` e no `PUT`, menos `status` e
-`justification`.
+kpi_name (≤120), kpi_meta, kpi_custo, cac_teto, status?, justification?}`. Todos
+obrigatórios no `POST` e no `PUT`, menos `status` e `justification`.
+
+`status` **omitido** = `rascunho` no `POST` e **o status que a campanha já tem**
+no `PUT`: o briefing é uma tela de texto e não pode rebaixar campanha ativa a
+rascunho por omissão.
 
 **`name` não entra no corpo** — quem monta é o servidor (`campanhaName`), a partir
 da sigla da cidade da praça, do público, do objetivo e do mês do `start`
@@ -1596,6 +1606,11 @@ status ∈ catalog.creative_status, file_url (≤500), ia {tool ∈ catalog.ia_t
 prompt (≤2000)} | null}`. `owner_id` de pessoa que não existe →
 `400 VALIDATION_ERROR`. Os roteiros-modelo prontos vêm em `catalog.script_models` (§4).
 
+No `PUT` o `campanha_id` tem de ser o mesmo do criativo →
+`400 VALIDATION_ERROR` (`campanha_id não pode ser alterado`). Mudar de campanha
+deixaria o id pendurado nas entradas de tráfego da campanha antiga; quem troca
+apaga e recria (ou duplica a campanha).
+
 `POST /:id/review` é a revisão da agência:
 
 - `{kind: "aprovacao", text?}` → `status: "aprovado"` e `approved_at` = agora;
@@ -1631,8 +1646,11 @@ isso o id órfão travaria o próximo `PUT` da entrada.
 `TrafficBody` = `{campanha_id, plataforma ∈ meta|google, nome_la (≤120),
 publico (≤300), geo (≤200), verba_diaria ≥ 0, criativos: uuid[], manager_url
 (http(s) ou vazio, ≤500), api_connected}`. `criativos` só aceita criativo **desta
-campanha** com status `aprovado` ou `publicado` → senão `400 VALIDATION_ERROR`:
-no gerenciador não entra peça que ninguém aprovou.
+campanha** → senão `400 VALIDATION_ERROR`. **O status não filtra**: no protótipo
+o "só aprovados" era a lista de caixas da tela, e o que já estava salvo na
+entrada continuava salvo. Filtrar aqui derrubaria um `PUT` que devolve a própria
+entrada assim que alguém pedisse ajuste numa peça que já está no ar — quem
+oferece só os aprovados é a tela.
 
 `PUT /v1/traffic/:id/days` é **upsert por data** (`traffic_days` é único em
 `entry_id + date`): mandar o mesmo dia duas vezes **corrige** a linha, não cria

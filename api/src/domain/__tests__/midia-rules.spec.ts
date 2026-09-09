@@ -45,14 +45,24 @@ const entries: TrafficEntryRow[] = [
 describe('campanhaName', () => {
   it('a praça de duas palavras vira a sigla das iniciais', () => {
     expect(
-      campanhaName({ name: 'Belo Horizonte + Contagem', city: 'Belo Horizonte · MG' }, 'contratante', 'cadastro_contratante', '2026-09-01'),
+      campanhaName(
+        { name: 'Belo Horizonte + Contagem', city: 'Belo Horizonte · MG' },
+        'contratante',
+        'cadastro_contratante',
+        '2026-09-01',
+      ),
     ).toBe('BH-Contratante-Cadastro-Set26');
   });
 
   it('o "+ cidade vizinha" do nome não entra na sigla', () => {
-    expect(campanhaName({ name: 'Belo Horizonte + Contagem' }, 'contratante', 'cadastro_contratante', '2026-09-01')).toBe(
-      'BH-Contratante-Cadastro-Set26',
-    );
+    expect(
+      campanhaName(
+        { name: 'Belo Horizonte + Contagem' },
+        'contratante',
+        'cadastro_contratante',
+        '2026-09-01',
+      ),
+    ).toBe('BH-Contratante-Cadastro-Set26');
   });
 
   it('cidade de uma palavra vira as 3 primeiras letras em maiúsculas', () => {
@@ -68,7 +78,9 @@ describe('campanhaName', () => {
   });
 
   it('sem praça o nome não quebra', () => {
-    expect(campanhaName(undefined, 'freelancer', 'primeira_vaga', '2026-09-01')).toBe('PRA-Freelancer-PrimeiraVaga-Set26');
+    expect(campanhaName(undefined, 'freelancer', 'primeira_vaga', '2026-09-01')).toBe(
+      'PRA-Freelancer-PrimeiraVaga-Set26',
+    );
   });
 
   it('a data é lida ao meio-dia UTC — 1º do mês não escorrega para o mês anterior', () => {
@@ -107,7 +119,10 @@ describe('gatesOk', () => {
   });
 
   it('liberar só a etapa 3 não abre o portão da etapa 6', () => {
-    const g = gatesOk([step(2, { actual: 0 }), step(3, { unlocked_at: new Date('2026-09-09T12:00:00.000Z') })]);
+    const g = gatesOk([
+      step(2, { actual: 0 }),
+      step(3, { unlocked_at: new Date('2026-09-09T12:00:00.000Z') }),
+    ]);
     expect(g.ok).toBe(false);
     expect(g.falta).toEqual(['Etapa 6 — 5 clientes com segunda vaga (hoje: 0)']);
   });
@@ -159,7 +174,12 @@ describe('campMetrics', () => {
   });
 
   it('sem ativo nenhum o alerta fica desligado (não divide por zero)', () => {
-    const m = campMetrics({ id: CAMP, gasto: 0, cac_teto: 1 }, entries, [day({ investido: 600 })], [lead({ stage: 4 })]);
+    const m = campMetrics(
+      { id: CAMP, gasto: 0, cac_teto: 1 },
+      entries,
+      [day({ investido: 600 })],
+      [lead({ stage: 4 })],
+    );
     expect(m.ativos).toBe(0);
     expect(m.cp_ativo).toBe(0);
     expect(m.acima_teto).toBe(false);
@@ -182,7 +202,10 @@ describe('campMetrics', () => {
     const m = campMetrics(
       { id: CAMP, gasto: 0, cac_teto: 130 },
       entries,
-      [day({ investido: 100, alcance: 1000, cliques: 10, conversoes: 2 }), day({ entry_id: ENTRY_OUTRA, investido: 999 })],
+      [
+        day({ investido: 100, alcance: 1000, cliques: 10, conversoes: 2 }),
+        day({ entry_id: ENTRY_OUTRA, investido: 999 }),
+      ],
       [lead({ stage: 7 }), lead({ campanha_id: OUTRA, stage: 7 }), lead({ campanha_id: null, stage: 7 })],
     );
     expect(m.investido).toBe(100);

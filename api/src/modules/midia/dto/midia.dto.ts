@@ -15,6 +15,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { IsDayString } from '../../../common/validation/is-day.decorator';
@@ -29,6 +30,18 @@ import {
 } from '../../../domain/catalog/midia';
 
 const aparado = () => Transform(({ value }) => (typeof value === 'string' ? value.trim() : value));
+
+/**
+ * Campo que pode ser OMITIDO mas **não** pode vir `null`.
+ *
+ * `@IsOptional()` pula a validação em `undefined` E em `null` — o `null` passaria
+ * batido até o Prisma (coluna `NOT NULL` ⇒ 500) ou até um `.trim()` de `null`.
+ * Neste módulo a regra é: `@IsOptional()` só em campo que o banco aceita nulo
+ * (`owner_id`, `publish_at`, `ia`) e em filtro de query (onde `null` não existe);
+ * todo o resto usa `@Opcional()`, que valida o valor sempre que ele vem —
+ * inclusive `null`, virando 400 em vez de 500.
+ */
+const Opcional = () => ValidateIf((_o, value) => value !== undefined);
 
 const OBJETIVO_IDS = OBJETIVOS.map((o) => o.id);
 const DESTINO_IDS = DESTINOS.map((d) => d.id);
@@ -166,11 +179,13 @@ export class CampanhaBodyDto {
   @Max(10_000_000)
   cac_teto!: number;
 
-  @IsOptional()
+  // Sem default: ausente = "rascunho" no `POST` e "mantém o que já era" no
+  // `PUT`. Um default aqui rebaixaria campanha ativa a rascunho por omissão.
+  @Opcional()
   @IsIn(CAMPANHA_STATUS, umDe(CAMPANHA_STATUS))
-  status: string = 'rascunho';
+  status?: string;
 
-  @IsOptional()
+  @Opcional()
   @aparado()
   @IsString()
   @MinLength(JUST_MIN)
@@ -182,7 +197,7 @@ export class CampanhaStatusDto {
   @IsIn(CAMPANHA_STATUS, umDe(CAMPANHA_STATUS))
   status!: string;
 
-  @IsOptional()
+  @Opcional()
   @aparado()
   @IsString()
   @MinLength(JUST_MIN)
@@ -295,7 +310,7 @@ export class CreativeBodyDto {
   @IsIn(CREATIVE_STATUS_IDS, umDe(CREATIVE_STATUS_IDS))
   status!: string;
 
-  @IsOptional()
+  @Opcional()
   @aparado()
   @IsString()
   @MaxLength(500)
@@ -326,7 +341,7 @@ export class ReviewCreativeDto {
   @IsIn(REVIEW_KINDS, umDe(REVIEW_KINDS))
   kind!: string;
 
-  @IsOptional()
+  @Opcional()
   @aparado()
   @IsString()
   @MaxLength(1000)
@@ -372,14 +387,14 @@ export class TrafficBodyDto {
   criativos!: string[];
 
   // Link do gerenciador (Meta/Google) ou vazio.
-  @IsOptional()
+  @Opcional()
   @aparado()
   @IsString()
   @MaxLength(500)
   @Matches(/^(https?:\/\/\S+)?$/, { message: 'deve ser um endereço http(s) ou vazio' })
   manager_url: string = '';
 
-  @IsOptional()
+  @Opcional()
   @IsBoolean()
   api_connected: boolean = false;
 }
@@ -409,7 +424,7 @@ export class TrafficDayDto {
   conversoes!: number;
 
   // `true` = veio da API da plataforma, não do lançamento na mão.
-  @IsOptional()
+  @Opcional()
   @IsBoolean()
   auto: boolean = false;
 }
