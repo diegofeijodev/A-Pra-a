@@ -42,6 +42,13 @@ export class ImportsController {
     return this.imports.deleteMapping(id);
   }
 
+  /**
+   * Sem `@AdminOnly()` de propósito: no protótipo "desfazer importação" é um
+   * botão da tela de Entrada, usado por quem acabou de importar (vendedor, não
+   * admin). Ele só apaga leads DAQUELE lote que ninguém tocou, dentro de 24 h
+   * — não é o mesmo que o `DELETE /v1/leads/:id`, que apaga um lead qualquer
+   * com histórico e por isso é ferramenta de limpeza do admin.
+   */
   @Post(':id/undo')
   undo(@Param('id') id: string) {
     return this.imports.undo(id);

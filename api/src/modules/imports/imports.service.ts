@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { AuthUser } from '../../common/auth/auth-user';
 import { PrismaService } from '../../common/database/prisma.service';
 import { isUuid } from '../../common/ids/uuid';
@@ -12,10 +13,17 @@ import {
   matchPraca,
   rowToDraft,
   type DraftLead,
+  dupKeys,
   type DupCandidate,
   type DupKind,
 } from '../../domain/dedup';
 import { EvaluateImportDto, RunImportDto, SaveMappingDto } from './dto/imports.dto';
+
+/**
+ * Cliente do Prisma: o de fora (leitura solta) ou o da transação. Toda leitura
+ * que decide uma escrita recebe o da transação — ver `run`/`undo`.
+ */
+type Db = PrismaService | Prisma.TransactionClient;
 
 /** Janela para desfazer uma importação. Passou disso, o lote virou base viva. */
 const UNDO_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -93,7 +101,8 @@ export class ImportsService {
 
   // ── avaliação ───────────────────────────────────────────────
   async evaluate(dto: EvaluateImportDto): Promise<EvaluateView> {
-    const { linhas, resumo } = await this.avaliar(dto);
+    // Pré-visualização: leitura solta, não decide escrita nenhuma.
+    const { linhas, resumo } = await this.avaliar(dto, this.prisma);
     return {
       ...resumo,
       guessed_map: guessMapping(dto.columns),
@@ -103,12 +112,25 @@ export class ImportsService {
 
   // ── importação ──────────────────────────────────────────────
   /**
-   * Avalia e aplica de uma vez, numa transação só: o cliente não pode decidir
-   * com um resultado e gravar outro (a base muda entre as duas chamadas).
+   * Avalia e aplica de uma vez, numa transação só — a varredura da
+   * duplicidade INCLUSIVE. Se a leitura ficasse fora, duas importações ao
+   * mesmo tempo (ou um `POST /v1/leads` no meio) decidiriam sobre um retrato
+   * velho da base e criariam o "mesmo" lead duas vezes.
    */
   async run(dto: RunImportDto, user: AuthUser): Promise<RunView> {
-    const { linhas, resumo } = await this.avaliar(dto);
-    const pool = await this.poolDeDonos(dto);
+    return this.prisma.$transaction(
+      async (tx) => this.aplicar(dto, user, tx),
+      { timeout: 60_000, maxWait: 20_000 },
+    );
+  }
+
+  private async aplicar(
+    dto: RunImportDto,
+    user: AuthUser,
+    tx: Prisma.TransactionClient,
+  ): Promise<RunView> {
+    const { linhas, resumo } = await this.avaliar(dto, tx);
+    const pool = await this.poolDeDonos(dto, tx);
 
     const at = new Date();
     const hoje = todaySp();
@@ -196,28 +218,23 @@ export class ImportsService {
     const ignored = resumo.total - criados.length;
     const reasons = this.motivos(resumo, dto.dup_action);
 
-    await this.prisma.$transaction(
-      async (tx) => {
-        await tx.import_batches.create({
-          data: {
-            id: batchId,
-            at,
-            file_name: dto.file_name,
-            by: user.id,
-            origem: dto.origem,
-            imported: criados.length,
-            ignored,
-            reasons,
-          },
-        });
-        if (criados.length) await tx.leads.createMany({ data: criados });
-        // Um UPDATE por lead completado — são só os duplicados do arquivo,
-        // não a planilha inteira.
-        for (const p of patches) await tx.leads.update({ where: { id: p.id }, data: p.data });
-        if (eventos.length) await tx.lead_events.createMany({ data: eventos });
+    await tx.import_batches.create({
+      data: {
+        id: batchId,
+        at,
+        file_name: dto.file_name,
+        by: user.id,
+        origem: dto.origem,
+        imported: criados.length,
+        ignored,
+        reasons,
       },
-      { timeout: 60_000, maxWait: 20_000 },
-    );
+    });
+    if (criados.length) await tx.leads.createMany({ data: criados });
+    // Um UPDATE por lead completado — são só os duplicados do arquivo, não a
+    // planilha inteira.
+    for (const p of patches) await tx.leads.update({ where: { id: p.id }, data: p.data });
+    if (eventos.length) await tx.lead_events.createMany({ data: eventos });
 
     return { batch_id: batchId, imported: criados.length, updated: patches.length, ignored, reasons };
   }
@@ -245,38 +262,38 @@ export class ImportsService {
    * conversa.
    */
   async undo(id: string): Promise<{ removed: number; kept: number }> {
-    const batch = await this.batchOrFail(id);
-    if (Date.now() - batch.at.getTime() >= UNDO_WINDOW_MS) {
-      throw new BadRequestException({
-        code: 'UNDO_EXPIRED',
-        message: 'Passaram-se mais de 24 horas: esta importação não pode mais ser desfeita.',
-      });
-    }
-    const meus = await this.prisma.leads.findMany({
-      where: { import_batch_id: id },
-      select: {
-        id: true,
-        stage: true,
-        events: {
-          where: { kind: { in: CONTACT_KINDS as string[] } },
-          select: { id: true },
-          take: 1,
-        },
+    if (!isUuid(id)) throw this.batchNotFound();
+    return this.prisma.$transaction(
+      async (tx) => {
+        const batch = await tx.import_batches.findUnique({ where: { id } });
+        if (!batch) throw this.batchNotFound();
+        if (Date.now() - batch.at.getTime() >= UNDO_WINDOW_MS) {
+          throw new BadRequestException({
+            code: 'UNDO_EXPIRED',
+            message: 'Passaram-se mais de 24 horas: esta importação não pode mais ser desfeita.',
+          });
+        }
+        const total = await tx.leads.count({ where: { import_batch_id: id } });
+        // O critério vai DENTRO do DELETE: entre ler a lista e apagar, um
+        // lead pode receber um contato — e aí ele não pode mais sumir.
+        const { count } = await tx.leads.deleteMany({
+          where: {
+            import_batch_id: id,
+            stage: 1,
+            events: { none: { kind: { in: CONTACT_KINDS as string[] } } },
+          },
+        });
+        await tx.import_batches.update({
+          where: { id },
+          data: {
+            imported: { decrement: count },
+            reasons: { push: `${count} leads removidos por desfazer importação` },
+          },
+        });
+        return { removed: count, kept: total - count };
       },
-    });
-    const remover = meus.filter((l) => l.stage === 1 && l.events.length === 0).map((l) => l.id);
-
-    await this.prisma.$transaction([
-      this.prisma.leads.deleteMany({ where: { id: { in: remover } } }),
-      this.prisma.import_batches.update({
-        where: { id },
-        data: {
-          imported: { decrement: remover.length },
-          reasons: { push: `${remover.length} leads removidos por desfazer importação` },
-        },
-      }),
-    ]);
-    return { removed: remover.length, kept: meus.length - remover.length };
+      { timeout: 30_000, maxWait: 10_000 },
+    );
   }
 
   // ── mapeamentos salvos ──────────────────────────────────────
@@ -312,11 +329,11 @@ export class ImportsService {
    * ainda é barato; se um dia crescer para centenas de milhares, o caminho é
    * pré-filtrar por `phone_key`.
    */
-  private async avaliar(dto: EvaluateImportDto) {
-    if (dto.praca_mode === 'lote') await this.assertPraca(dto.lote_praca_id);
+  private async avaliar(dto: EvaluateImportDto, db: Db) {
+    if (dto.praca_mode === 'lote') await this.assertPraca(dto.lote_praca_id, db);
 
     const [candidatos, pracas] = await Promise.all([
-      this.prisma.leads.findMany({
+      db.leads.findMany({
         where: { archived: false },
         select: {
           id: true,
@@ -330,7 +347,7 @@ export class ImportsService {
         },
       }),
       dto.praca_mode === 'arquivo'
-        ? this.prisma.pracas.findMany({ select: { id: true, name: true, city: true } })
+        ? db.pracas.findMany({ select: { id: true, name: true, city: true } })
         : Promise.resolve([]),
     ]);
 
@@ -343,6 +360,8 @@ export class ImportsService {
       address: c.address,
       phone: c.phone,
       cnpj: c.cnpj,
+      // Normaliza uma vez por lead, não uma vez por lead POR linha do arquivo.
+      keys: dupKeys(c),
     }));
 
     const linhas: LinhaAvaliada[] = dto.rows.map((row) => {
@@ -357,6 +376,7 @@ export class ImportsService {
           address: draft.address,
           phone: draft.phone,
           cnpj: draft.cnpj,
+          keys: dupKeys(draft),
         });
       }
       return {
@@ -371,8 +391,7 @@ export class ImportsService {
 
     // "Vai entrar" é exatamente o que o `run` cria — as duas contas usam o
     // mesmo predicado para o relatório nunca prometer mais do que grava.
-    const entra = (l: LinhaAvaliada) =>
-      !l.no_name && !l.no_phone && (!l.dup || dto.dup_action === 'criar');
+    const entra = (l: LinhaAvaliada) => !l.no_name && !l.no_phone && (!l.dup || dto.dup_action === 'criar');
 
     return {
       linhas,
@@ -431,16 +450,16 @@ export class ImportsService {
   }
 
   /** Donos dos leads criados: uma pessoa só, ou o rodízio (padrão = time ativo). */
-  private async poolDeDonos(dto: RunImportDto): Promise<string[]> {
+  private async poolDeDonos(dto: RunImportDto, db: Db): Promise<string[]> {
     if (dto.owner_mode === 'lote') {
-      await this.assertPessoas([dto.lote_owner_id!]);
+      await this.assertPessoas([dto.lote_owner_id!], db);
       return [dto.lote_owner_id!];
     }
     if (dto.rodizio_ids?.length) {
-      await this.assertPessoas(dto.rodizio_ids);
+      await this.assertPessoas(dto.rodizio_ids, db);
       return dto.rodizio_ids;
     }
-    const ativos = await this.prisma.users.findMany({
+    const ativos = await db.users.findMany({
       where: { active: true },
       orderBy: [{ sort: 'asc' }, { created_at: 'asc' }],
       select: { id: true },
@@ -454,26 +473,19 @@ export class ImportsService {
     return ativos.map((u) => u.id);
   }
 
-  private async assertPessoas(ids: string[]) {
-    const achou = await this.prisma.users.count({ where: { id: { in: ids }, active: true } });
+  private async assertPessoas(ids: string[], db: Db) {
+    const achou = await db.users.count({ where: { id: { in: ids }, active: true } });
     if (achou !== new Set(ids).size) {
       throw new NotFoundException({ code: 'NOT_FOUND', message: 'Pessoa não encontrada.' });
     }
   }
 
-  private async assertPraca(id: string | undefined) {
+  private async assertPraca(id: string | undefined, db: Db) {
     if (!id || !isUuid(id)) {
       throw new NotFoundException({ code: 'NOT_FOUND', message: 'Praça não encontrada.' });
     }
-    const achou = await this.prisma.pracas.count({ where: { id } });
+    const achou = await db.pracas.count({ where: { id } });
     if (!achou) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Praça não encontrada.' });
-  }
-
-  private async batchOrFail(id: string) {
-    if (!isUuid(id)) throw this.batchNotFound();
-    const batch = await this.prisma.import_batches.findUnique({ where: { id } });
-    if (!batch) throw this.batchNotFound();
-    return batch;
   }
 
   private batchNotFound() {
@@ -484,12 +496,7 @@ export class ImportsService {
     return new NotFoundException({ code: 'NOT_FOUND', message: 'Mapeamento não encontrado.' });
   }
 
-  private toMappingView(m: {
-    id: string;
-    name: string;
-    map: unknown;
-    created_at: Date;
-  }): ImportMappingView {
+  private toMappingView(m: { id: string; name: string; map: unknown; created_at: Date }): ImportMappingView {
     return {
       id: m.id,
       name: m.name,

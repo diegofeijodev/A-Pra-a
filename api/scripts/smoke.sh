@@ -465,8 +465,9 @@ DUPLICADO=$(curl -s "$API/v1/leads?q=Duplicado%20$SUF" -H "$HD")
 check "lead criado assim fica marcado como possível duplicado" "true" \
   "$(echo "$DUPLICADO" | jq '.[0].possible_dup')"
 check "rodízio começa pelo primeiro da fila" "$DIEGO_ID" "$(echo "$DUPLICADO" | jq -r '.[0].owner_id')"
-DESFAZ_DUP=$(curl -s -X POST $API/v1/imports/$LOTE_DUP/undo -H "$HD")
-check "desfazer remove o lead importado intocado" "1" "$(echo "$DESFAZ_DUP" | jq '.removed')"
+# Desfazer não é ferramenta de admin: é o botão de quem importou (§10).
+DESFAZ_DUP=$(curl -s -X POST $API/v1/imports/$LOTE_DUP/undo -H "$HN")
+check "vendedor (não admin) desfaz a importação" "1" "$(echo "$DESFAZ_DUP" | jq '.removed')"
 check "desfazer não deixa nada para trás" "0" "$(echo "$DESFAZ_DUP" | jq '.kept')"
 check "lead desfeito sumiu da lista" "0" "$(curl -s "$API/v1/leads?q=Duplicado%20$SUF" -H "$HD" | jq 'length')"
 

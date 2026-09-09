@@ -60,7 +60,8 @@ function IsFieldMap(validationOptions?: ValidationOptions) {
       options: validationOptions,
       validator: {
         validate: (value: unknown) => ehMapaDeTexto(value, CAMPOS.length, MAX_COLUMN_NAME, CAMPOS),
-        defaultMessage: () => `deve ser um objeto de campos do lead (${CAMPOS.join(', ')}) para colunas do arquivo`,
+        defaultMessage: () =>
+          `deve ser um objeto de campos do lead (${CAMPOS.join(', ')}) para colunas do arquivo`,
       },
     });
   };

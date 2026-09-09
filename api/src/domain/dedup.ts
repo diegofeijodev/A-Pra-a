@@ -53,6 +53,9 @@ export function guessMapping(columns: string[]): Record<string, string> {
     const hit = columns.find((c) => {
       if (used.has(c)) return false;
       const n = norm(c);
+      // Diverge do protótipo: lá, coluna de cabeçalho vazio (ou só
+      // pontuação) normalizava para "" e casava com QUALQUER dica por
+      // `h.includes("")`, prendendo a primeira coluna sem nome no `name`.
       if (!n) return false;
       return f.hints.some((h) => n === h || n.includes(h) || h.includes(n));
     });
@@ -102,10 +105,22 @@ export function rowToDraft(
 
 export type DupKind = 'telefone' | 'cnpj' | 'nome+endereço';
 
+/** Forma comparável de um candidato — o que os três degraus olham de fato. */
+export interface DupKeys {
+  /** Últimos 9 dígitos do telefone (a mesma chave de `phoneKey`). */
+  phone: string;
+  /** Só os dígitos do CNPJ. */
+  cnpj: string;
+  name: string;
+  address: string;
+}
+
 /**
  * O recorte do lead que a duplicidade enxerga. `id` é `null` quando o
  * candidato é uma linha anterior do próprio arquivo (ainda não existe no
- * banco).
+ * banco). `keys` é opcional: preenchido uma vez por candidato na carga (é o
+ * que o serviço faz), a varredura de cada linha do arquivo deixa de
+ * renormalizar a base inteira de novo.
  */
 export interface DupCandidate {
   id: string | null;
@@ -113,7 +128,23 @@ export interface DupCandidate {
   address: string;
   phone: string;
   cnpj: string | null;
+  keys?: DupKeys;
 }
+
+/** Chaves normalizadas de um candidato — ou de um rascunho de linha. */
+export const dupKeys = (c: {
+  name: string;
+  address: string;
+  phone: string;
+  cnpj: string | null;
+}): DupKeys => ({
+  phone: digits(c.phone).slice(-9),
+  cnpj: digits(c.cnpj),
+  name: norm(c.name),
+  address: norm(c.address),
+});
+
+const keysOf = (c: DupCandidate): DupKeys => c.keys ?? dupKeys(c);
 
 export interface DupHit {
   lead: DupCandidate;
@@ -126,18 +157,23 @@ export interface DupHit {
  * nome+endereço só entra quando os dois vieram preenchidos.
  */
 export function findDuplicate(d: DraftLead, existing: DupCandidate[]): DupHit | null {
-  if (digits(d.phone).length >= 8) {
-    const hit = existing.find((l) => samePhone(l.phone, d.phone));
+  // As chaves do rascunho saem UMA vez, não uma por candidato.
+  const k = dupKeys(d);
+  if (k.phone.length >= 8) {
+    // Com o telefone do rascunho em 8+ dígitos, igualdade de chave é
+    // exatamente o que `samePhone` diz: mesmos últimos 9 dígitos.
+    const hit = existing.find((l) => keysOf(l).phone === k.phone);
     if (hit) return { lead: hit, by: 'telefone' };
   }
-  if (digits(d.cnpj).length === 14) {
-    const hit = existing.find((l) => digits(l.cnpj) === digits(d.cnpj));
+  if (k.cnpj.length === 14) {
+    const hit = existing.find((l) => keysOf(l).cnpj === k.cnpj);
     if (hit) return { lead: hit, by: 'cnpj' };
   }
   if (d.name && d.address) {
-    const hit = existing.find(
-      (l) => norm(l.name) === norm(d.name) && norm(l.address) === norm(d.address),
-    );
+    const hit = existing.find((l) => {
+      const lk = keysOf(l);
+      return lk.name === k.name && lk.address === k.address;
+    });
     if (hit) return { lead: hit, by: 'nome+endereço' };
   }
   return null;

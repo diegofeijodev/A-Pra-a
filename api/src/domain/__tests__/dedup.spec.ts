@@ -1,4 +1,5 @@
 import {
+  dupKeys,
   findDuplicate,
   guessClasse,
   guessMapping,
@@ -138,34 +139,38 @@ describe('findDuplicate', () => {
   });
 
   it('CNPJ igual (com e sem pontuação) é duplicado', () => {
-    const hit = findDuplicate(
-      draft({ phone: '', cnpj: '12.345.678/0001-90' }),
-      [lead({ phone: '', cnpj: '12345678000190' })],
-    );
+    const hit = findDuplicate(draft({ phone: '', cnpj: '12.345.678/0001-90' }), [
+      lead({ phone: '', cnpj: '12345678000190' }),
+    ]);
     expect(hit?.by).toBe('cnpj');
   });
 
   it('CNPJ incompleto não vale como duplicidade', () => {
-    expect(findDuplicate(draft({ phone: '', name: '', cnpj: '12345' }), [lead({ phone: '', cnpj: '12345' })])).toBeNull();
+    expect(
+      findDuplicate(draft({ phone: '', name: '', cnpj: '12345' }), [lead({ phone: '', cnpj: '12345' })]),
+    ).toBeNull();
   });
 
   it('nome + endereço normalizados são duplicados', () => {
-    const hit = findDuplicate(
-      draft({ phone: '', name: 'BAR DO MERCADO', address: 'rua  100' }),
-      [lead({ phone: '', name: 'Bar do Mercado', address: 'Rua 100' })],
-    );
+    const hit = findDuplicate(draft({ phone: '', name: 'BAR DO MERCADO', address: 'rua  100' }), [
+      lead({ phone: '', name: 'Bar do Mercado', address: 'Rua 100' }),
+    ]);
     expect(hit?.by).toBe('nome+endereço');
   });
 
   it('só o nome igual, com endereço diferente, não é duplicado', () => {
-    expect(
-      findDuplicate(draft({ phone: '', address: 'Avenida 9' }), [lead({ phone: '' })]),
-    ).toBeNull();
+    expect(findDuplicate(draft({ phone: '', address: 'Avenida 9' }), [lead({ phone: '' })])).toBeNull();
   });
 
   it('telefone vence CNPJ, que vence nome+endereço', () => {
     const porTelefone = lead({ id: 'tel', name: 'Outro nome', address: 'Outro', cnpj: null });
-    const porCnpj = lead({ id: 'cnpj', name: 'Outro nome', address: 'Outro', phone: '', cnpj: '12345678000190' });
+    const porCnpj = lead({
+      id: 'cnpj',
+      name: 'Outro nome',
+      address: 'Outro',
+      phone: '',
+      cnpj: '12345678000190',
+    });
     const porNome = lead({ id: 'nome', phone: '', cnpj: null });
     const d = draft({ cnpj: '12.345.678/0001-90' });
     expect(findDuplicate(d, [porNome, porCnpj, porTelefone])?.lead.id).toBe('tel');
@@ -175,6 +180,18 @@ describe('findDuplicate', () => {
 
   it('base vazia nunca acusa duplicidade', () => {
     expect(findDuplicate(draft(), [])).toBeNull();
+  });
+
+  it('candidato com chaves pré-calculadas dá o mesmo resultado', () => {
+    const cru = lead({ phone: '', name: 'BAR DO MERCADO', address: 'rua  100' });
+    const pronto = { ...cru, keys: dupKeys(cru) };
+    const d = draft({ phone: '', cnpj: '' });
+    const comChave = findDuplicate(d, [pronto]);
+    const semChave = findDuplicate(d, [cru]);
+    expect(comChave?.by).toBe(semChave?.by);
+    expect(comChave?.lead.id).toBe(semChave?.lead.id);
+    expect(comChave?.by).toBe('nome+endereço');
+    expect(findDuplicate(draft(), [{ ...lead(), keys: dupKeys(lead()) }])?.by).toBe('telefone');
   });
 });
 

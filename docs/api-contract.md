@@ -684,15 +684,20 @@ Resposta:
   o relatório nunca prometer mais do que a importação grava. `sem_praca` conta,
   dessas, as que ficariam sem praça.
 - `dup.by` ∈ `telefone | cnpj | nome+endereço`.
-- Tetos: 5.000 linhas, 60 colunas, 500 caracteres por célula. `praca_mode`
-  `lote` **exige** `lote_praca_id` (`400 VALIDATION_ERROR`), e a praça precisa
-  existir (`404 NOT_FOUND`).
+- Tetos: 5.000 linhas, 60 colunas, 500 caracteres por célula — **e o corpo
+  inteiro precisa caber em 8 MB** (`bodyLimit` do Fastify em `main.ts`). Acima
+  disso o Fastify corta antes do Nest: vem um `413` cru, sem
+  `{error:{code,message}}`. Planilha grande demais → mandar em partes.
+  `praca_mode` `lote` **exige** `lote_praca_id` (`400 VALIDATION_ERROR`), e a
+  praça precisa existir (`404 NOT_FOUND`).
 
 ### Importar — `POST /run`
 
 Mesmo corpo de `/evaluate` mais `file_name`, `owner_mode`, `lote_owner_id?` e
-`rodizio_ids?`. Avalia **de novo** e aplica na mesma transação: a decisão nunca
-é tomada num retrato e gravada em outro.
+`rodizio_ids?`. Avalia **de novo** e aplica na mesma transação — a varredura da
+duplicidade inclusive: a decisão nunca é tomada num retrato da base e gravada
+em outro. Duas importações ao mesmo tempo, ou um `POST /v1/leads` no meio, não
+criam o "mesmo" lead duas vezes.
 
 ```json
 { "batch_id": "uuid", "imported": 1, "updated": 0, "ignored": 2, "reasons": ["1 duplicadas (ignoradas)", "1 sem telefone"] }
@@ -721,7 +726,14 @@ Mais novo primeiro. `can_undo` = importado há menos de 24 h.
 
 `POST /:id/undo` → `{ "removed": 1, "kept": 0 }`. Remove **só** o lead do lote
 que ninguém tocou (etapa 1 e nenhum evento de contato) — lead já trabalhado
-fica. O lote continua na lista, com `imported` abatido e o motivo
+fica. O critério vai dentro do próprio `DELETE`, na mesma transação da
+leitura: lead que recebe um contato durante o desfazer não some.
+
+Desfazer **não exige admin**: é o botão da tela de Entrada, usado por quem
+acabou de importar (vendedor, não administrador), e só alcança leads daquele
+lote que ninguém tocou, dentro de 24 h. Diferente do `DELETE /v1/leads/:id`
+(§9), que apaga um lead qualquer com histórico e por isso é ferramenta de
+limpeza do admin. O lote continua na lista, com `imported` abatido e o motivo
 `"N leads removidos por desfazer importação"` anexado. Depois de 24 h →
 `400 UNDO_EXPIRED`; lote inexistente ou id malformado → `404 NOT_FOUND`.
 
