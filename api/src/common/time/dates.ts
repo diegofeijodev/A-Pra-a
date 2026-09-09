@@ -15,8 +15,17 @@ export function todaySp(date: Date = new Date()): string {
   }).format(date);
 }
 
-export const isDateString = (value: unknown): value is string =>
-  typeof value === 'string' && DATE_RE.test(value);
+/**
+ * Data "só dia" válida: formato "YYYY-MM-DD" E dia que existe no calendário.
+ * O ida-e-volta por `dateFromString`/`dateToString` derruba "2026-02-31" e
+ * "2026-13-45", que a regex sozinha deixaria passar (e que viram
+ * `Invalid Date` — e 500 — na primeira conta de data).
+ */
+export const isDateString = (value: unknown): value is string => {
+  if (typeof value !== 'string' || !DATE_RE.test(value)) return false;
+  const d = dateFromString(value);
+  return !Number.isNaN(d.getTime()) && dateToString(d) === value;
+};
 
 /** Converte "YYYY-MM-DD" em Date ao MEIO-DIA UTC — imune a virada de fuso. */
 export function dateFromString(dateStr: string): Date {

@@ -148,6 +148,12 @@ check "quem abre a praça entra nela (active_praca_id)" "$NOVA_ID" \
   "$(curl -s $API/v1/auth/me -H "$HD" | jq -r .user.active_praca_id)"
 check "praça nova: fim antes do começo barrado" "VALIDATION_ERROR" \
   "$(curl -s -X POST $API/v1/pracas -H "$J" -H "$HD" -d '{"name":"X","city":"Y","start_date":"2026-09-10","end_date":"2026-09-01"}' | jq -r .error.code)"
+check "data que não existe no calendário barrada (2026-02-31)" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/pracas -H "$J" -H "$HD" -d '{"name":"X","city":"Y","start_date":"2026-02-31","end_date":"2026-12-08"}' | jq -r .error.code)"
+check "agenda: from com mês/dia impossível barrado" "VALIDATION_ERROR" \
+  "$(curl -s "$API/v1/pracas/$NOVA_ID/agenda?from=2026-13-45&to=2026-13-46" -H "$HD" | jq -r .error.code)"
+check "adiar para data que não existe barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/actions/00000000-0000-4000-8000-00000000beef/postpone -H "$J" -H "$HD" -d '{"new_date":"2026-02-31","reason":"não vale"}' | jq -r .error.code)"
 
 check "etapa 3 da praça nova nasce travada" "locked" \
   "$(curl -s $API/v1/pracas/$NOVA_ID/steps -H "$HD" | jq -r '[.[] | select(.n==3)][0].status')"
@@ -170,6 +176,19 @@ check "concluir ação recorrente registra a ocorrência do dia" "1" \
   "$(curl -s -X POST $API/v1/actions/$F1/complete -H "$J" -H "$HD" -d '{"date":"2026-09-07"}' | jq '.completions | length')"
 check "desfazer a ocorrência do dia" "0" \
   "$(curl -s -X POST $API/v1/actions/$F1/uncomplete -H "$J" -H "$HD" -d '{"date":"2026-09-07"}' | jq '.completions | length')"
+
+S2A7=$(echo "$ACOES" | jq -r '[.[] | select(.template_key=="s2a7")][0].id')
+check "concluir com resultado grava o número" "42" \
+  "$(curl -s -X POST $API/v1/actions/$S2A7/complete -H "$J" -H "$HD" -d '{"result":42}' | jq '.result')"
+check "reconcluir sem resultado mantém o número" "42" \
+  "$(curl -s -X POST $API/v1/actions/$S2A7/complete -H "$J" -H "$HD" -d '{}' | jq '.result')"
+check "concluir com outro resultado sobrescreve" "7" \
+  "$(curl -s -X POST $API/v1/actions/$S2A7/complete -H "$J" -H "$HD" -d '{"result":7}' | jq '.result')"
+check "desfazer limpa o resultado" "null" \
+  "$(curl -s -X POST $API/v1/actions/$S2A7/uncomplete -H "$J" -H "$HD" -d '{}' | jq -r '.result')"
+check "ocorrência recorrente também mantém o resultado" "9" \
+  "$(curl -s -X POST $API/v1/actions/$F1/complete -H "$J" -H "$HD" -d '{"date":"2026-09-07","result":9}' > /dev/null; curl -s -X POST $API/v1/actions/$F1/complete -H "$J" -H "$HD" -d '{"date":"2026-09-07"}' | jq '.completions["2026-09-07"].result')"
+curl -s -X POST $API/v1/actions/$F1/uncomplete -H "$J" -H "$HD" -d '{"date":"2026-09-07"}' > /dev/null
 
 ADIADA=$(curl -s -X POST $API/v1/actions/$S1A2/postpone -H "$J" -H "$HD" -d '{"new_date":"2026-09-30","reason":"dono viajou"}')
 check "adiar conta o adiamento" "1" "$(echo "$ADIADA" | jq '.postpone_count')"

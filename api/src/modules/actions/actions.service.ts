@@ -120,19 +120,23 @@ export class ActionsService {
    * Conclui: ação `once` marca `completed_at/by/result`; recorrente registra a
    * ocorrência do dia em `action_completions` (padrão: hoje em Brasília).
    * Idempotente — concluir de novo só atualiza quem/quando.
+   *
+   * `result` só é escrito quando vem no corpo: reconcluir sem `result` NÃO
+   * apaga o número já lançado (quem quer zerar usa `uncomplete`).
    */
   async complete(id: string, dto: CompleteActionDto, user: AuthUser): Promise<ActionView> {
     const acao = await this.findOrFail(id);
+    const result = dto.result === undefined ? {} : { result: dto.result };
     if (recFromRow(acao).kind === 'once') {
       await this.prisma.actions.update({
         where: { id },
-        data: { completed_at: new Date(), completed_by: user.id, result: dto.result ?? null },
+        data: { completed_at: new Date(), completed_by: user.id, ...result },
       });
     } else {
       const date = dto.date ?? todaySp();
       await this.prisma.action_completions.upsert({
         where: { action_id_date: { action_id: id, date } },
-        update: { by: user.id, at: new Date(), result: dto.result ?? null },
+        update: { by: user.id, at: new Date(), ...result },
         create: { action_id: id, date, by: user.id, result: dto.result ?? null },
       });
     }

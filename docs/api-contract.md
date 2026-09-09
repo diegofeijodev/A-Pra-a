@@ -6,7 +6,10 @@ aqui primeiro. Swagger interativo em `/docs` (fora de produção).
 ## 1. Convenções
 
 - Wire **snake_case**, espelhando o banco.
-- Data "só dia": string `"YYYY-MM-DD"`. Timestamp: ISO UTC. "Hoje" vem de
+- Data "só dia": string `"YYYY-MM-DD"` — validada por `@IsDayString()`
+  (`src/common/validation/is-day.decorator.ts`), que confere formato **e**
+  existência no calendário: `"2026-02-31"` responde `400 VALIDATION_ERROR`,
+  não vira 500 na primeira conta de data. Timestamp: ISO UTC. "Hoje" vem de
   `todaySp()` (`src/common/time/dates.ts`), nunca de `new Date().toISOString()`.
 - Erro **sempre** `{ "error": { "code": "CODIGO", "message": "texto" } }`.
 - Autenticação: `Authorization: Bearer <jwt>` (HS256, 12h). Rotas públicas
@@ -383,7 +386,9 @@ pessoa do time mexe em qualquer ação.
 - **complete**: ação `once` grava `completed_at`, `completed_by` e `result`
   (o `date` do corpo é ignorado). Ação recorrente grava a ocorrência do dia em
   `completions[date]` — `date` padrão é hoje em Brasília. Repetir só atualiza
-  quem/quando (idempotente).
+  quem/quando (idempotente). `result` só é escrito quando vem no corpo:
+  concluir de novo sem `result` **mantém** o número já lançado — para zerar,
+  use `uncomplete`.
 - **uncomplete**: `once` limpa `completed_at/by/result`; recorrente apaga a
   ocorrência de `date` (padrão hoje).
 - **postpone**: só faz sentido com data marcada — ação recorrente responde

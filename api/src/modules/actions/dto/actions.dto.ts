@@ -9,17 +9,14 @@ import {
   IsOptional,
   IsString,
   IsUUID,
-  Matches,
   Max,
   MaxLength,
   Min,
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { IsDayString } from '../../../common/validation/is-day.decorator';
 import { REC_KINDS } from '../../../domain/recurrence';
-
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const DATE_MSG = { message: '$property: use uma data no formato YYYY-MM-DD.' };
 
 /** Recorrência no wire — os campos exigidos dependem do `kind` (conferido no serviço). */
 export class RecDto {
@@ -77,7 +74,7 @@ export class CreateActionDto {
   @IsUUID(undefined, { each: true })
   owners!: string[];
 
-  @Matches(DATE_RE, DATE_MSG)
+  @IsDayString()
   due_date!: string;
 }
 
@@ -99,7 +96,7 @@ export class UpdateActionDto {
 export class CompleteActionDto {
   // Só vale para ação recorrente: diz QUAL ocorrência foi feita (padrão: hoje).
   @IsOptional()
-  @Matches(DATE_RE, DATE_MSG)
+  @IsDayString()
   date?: string;
 
   @IsOptional()
@@ -109,12 +106,12 @@ export class CompleteActionDto {
 
 export class UncompleteActionDto {
   @IsOptional()
-  @Matches(DATE_RE, DATE_MSG)
+  @IsDayString()
   date?: string;
 }
 
 export class PostponeActionDto {
-  @Matches(DATE_RE, DATE_MSG)
+  @IsDayString()
   new_date!: string;
 
   @IsString()

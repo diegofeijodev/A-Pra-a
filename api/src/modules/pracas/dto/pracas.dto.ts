@@ -11,10 +11,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
-
-/** Data só-dia no wire — "YYYY-MM-DD" (contrato §1). */
-export const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const DATE_MSG = { message: '$property: use uma data no formato YYYY-MM-DD.' };
+import { IsDayString } from '../../../common/validation/is-day.decorator';
 
 export class CoberturaDto {
   // A cobertura entra por código do IBGE: UF, cidade, lat/lon e vizinhas saem
@@ -42,10 +39,10 @@ export class CreatePracaDto {
   @MaxLength(120)
   city!: string;
 
-  @Matches(DATE_RE, DATE_MSG)
+  @IsDayString()
   start_date!: string;
 
-  @Matches(DATE_RE, DATE_MSG)
+  @IsDayString()
   end_date!: string;
 
   @IsOptional()
@@ -68,11 +65,11 @@ export class UpdatePracaDto {
   city?: string;
 
   @IsOptional()
-  @Matches(DATE_RE, DATE_MSG)
+  @IsDayString()
   start_date?: string;
 
   @IsOptional()
-  @Matches(DATE_RE, DATE_MSG)
+  @IsDayString()
   end_date?: string;
 }
 
@@ -91,11 +88,11 @@ export class StepUnlockDto {
 
 export class AgendaQueryDto {
   @IsOptional()
-  @Matches(DATE_RE, DATE_MSG)
+  @IsDayString()
   from?: string;
 
   @IsOptional()
-  @Matches(DATE_RE, DATE_MSG)
+  @IsDayString()
   to?: string;
 
   // "all" (padrão) ou o uuid de uma pessoa — conferido no serviço, que
