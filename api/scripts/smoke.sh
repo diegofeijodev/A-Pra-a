@@ -998,6 +998,283 @@ check "apaga as 5 casas de teste do disparo (sem resíduo)" "5" "$DISP_APAGADOS"
 check "praça do smoke ficou sem lead nenhum" "0" \
   "$(curl -s "$API/v1/leads?praca_id=$NOVA_ID&archived=true" -H "$HD" | jq 'length')"
 
+echo "── Cadências ──"
+# --- as 5 cadências-modelo do seed: só leitura ---
+CADS=$(curl -s $API/v1/cadences -H "$HD")
+check "seed traz as 5 cadências prontas" "5" "$(echo "$CADS" | jq 'length')"
+# Nascem PAUSADAS de propósito: despausar é ato de gente. Ligadas, o relógio
+# matricularia toda a base na primeira rodada (ver §14 do contrato).
+check "as cadências-modelo nascem pausadas" "5" "$(echo "$CADS" | jq '[.[] | select(.paused)] | length')"
+CAD_PROSP=$(echo "$CADS" | jq -r '[.[] | select(.name == "Prospecção de contratante — 3 toques")][0].id')
+PROSP=$(echo "$CADS" | jq --arg i "$CAD_PROSP" '[.[] | select(.id==$i)][0]')
+check "a prospecção entra por lead novo" "stage_novo" "$(echo "$PROSP" | jq -r '.entry')"
+check "a prospecção é de contratante" "contratante" "$(echo "$PROSP" | jq -r '.audience')"
+check "a trilha da prospecção tem os 7 nós do protótipo" "7" "$(echo "$PROSP" | jq '.nodes | length')"
+check "os nós vêm na ordem da trilha (sort 0..6)" "true" \
+  "$(echo "$PROSP" | jq '[.nodes[].sort] == [0,1,2,3,4,5,6]')"
+check "o toque 1 é o modelo de mensagem do seed" "$TPL_F001" "$(echo "$PROSP" | jq -r '.nodes[0].template_id')"
+check "o toque 3 é tarefa de ligação, não mensagem" "task" "$(echo "$PROSP" | jq -r '.nodes[4].kind')"
+check "a tarefa do toque 3 tem o texto do protótipo" "Ligar para o dono do lead — toque 3 é ligação, não mensagem" \
+  "$(echo "$PROSP" | jq -r '.nodes[4].task')"
+check "quem responde sai para a Conversa aberta" "respondeu sai_conversa" \
+  "$(echo "$PROSP" | jq -r '"\(.nodes[1].rule) \(.nodes[1].action)"')"
+check "quem chega ao fim vai para reaquecimento em 30 dias" "reaquecer_30" "$(echo "$PROSP" | jq -r '.exit.action')"
+check "a saída da prospecção guarda a explicação do protótipo" "true" \
+  "$(echo "$PROSP" | jq '.exit.note | startswith("Quem chegou ao fim sem responder sai com despedida educada")')"
+check "restore-seed não recria o que já existe" "0" \
+  "$(curl -s -X POST $API/v1/cadences/restore-seed -H "$HD" | jq '.created')"
+check "restore-seed não duplica cadência" "5" "$(curl -s $API/v1/cadences -H "$HD" | jq 'length')"
+check "cadência inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s $API/v1/cadences/00000000-0000-4000-8000-00000000beef -H "$HD" | jq -r .error.code)"
+check "cadência com id malformado = NOT_FOUND (não 500)" "NOT_FOUND" \
+  "$(curl -s $API/v1/cadences/nao-e-uuid -H "$HD" | jq -r .error.code)"
+
+# --- cadência de teste: criada, editada e apagada aqui mesmo (fica pausada) ---
+EDIT_BODY=$(cat <<JSON
+{"name":"Cadência editável $SUF","audience":"freelancer","entry":"praca_mapeamento","paused":true,
+ "exit":{"action":"fila_confirmacao","note":"Fim do teste do smoke."},
+ "nodes":[{"kind":"msg","day":0,"channel":"interno","text":"  Oi {{nome}}, teste $SUF.  "},
+          {"kind":"cond","day":9,"rule":"sem_resposta","action":"continua","note":"segue"},
+          {"kind":"task","day":4,"task":"Ligar para confirmar"},
+          {"kind":"msg","day":7,"template_id":"$TPL_F007","text":"texto que o modelo vence"}]}
+JSON
+)
+CAD_EDIT=$(curl -s -X POST $API/v1/cadences -H "$J" -H "$HD" -d "$EDIT_BODY")
+CAD_EDIT_ID=$(echo "$CAD_EDIT" | jq -r .id)
+check "cadência nova nasce com os 4 nós na ordem recebida" "true" \
+  "$(echo "$CAD_EDIT" | jq '[.nodes[].kind] == ["msg","cond","task","msg"] and ([.nodes[].sort] == [0,1,2,3])')"
+check "o texto próprio entra aparado" "Oi {{nome}}, teste $SUF." "$(echo "$CAD_EDIT" | jq -r '.nodes[0].text')"
+check "o nó de mensagem guarda o canal escolhido" "interno" "$(echo "$CAD_EDIT" | jq -r '.nodes[0].channel')"
+check "condição não tem dia próprio (roda junto do passo)" "0" "$(echo "$CAD_EDIT" | jq '.nodes[1].day')"
+check "modelo vence texto próprio no mesmo nó" "null" "$(echo "$CAD_EDIT" | jq -r '.nodes[3].text')"
+check "nó de tarefa não guarda canal nem modelo" "null null" \
+  "$(echo "$CAD_EDIT" | jq -r '"\(.nodes[2].channel) \(.nodes[2].template_id)"')"
+check "6 cadências com a de teste" "6" "$(curl -s $API/v1/cadences -H "$HD" | jq 'length')"
+
+# PUT preserva o id dos nós que voltam com id — é o que mantém o log das
+# inscrições válido (quem está no passo 3 não volta para o passo 1).
+NO0=$(echo "$CAD_EDIT" | jq -r '.nodes[0].id'); NO3=$(echo "$CAD_EDIT" | jq -r '.nodes[3].id')
+PUT_BODY=$(echo "$CAD_EDIT" | jq -c '{name, audience, entry, paused, exit,
+  nodes: [(.nodes[0] | {id, kind, day, channel, text}),
+          (.nodes[1] | {id, kind, rule, action}),
+          {kind:"task", day:3, task:"Tarefa nova do smoke"}]}')
+EDITADA=$(curl -s -X PUT $API/v1/cadences/$CAD_EDIT_ID -H "$J" -H "$HD" -d "$PUT_BODY")
+check "PUT deixa a trilha com os 3 nós mandados" "3" "$(echo "$EDITADA" | jq '.nodes | length')"
+check "PUT preserva o id do nó que voltou com id" "$NO0" "$(echo "$EDITADA" | jq -r '.nodes[0].id')"
+check "PUT apaga o nó que não voltou no corpo" "true" \
+  "$(echo "$EDITADA" | jq --arg i "$NO3" '[.nodes[].id] | index($i) == null')"
+check "PUT cria o nó novo com id próprio" "true" \
+  "$(echo "$EDITADA" | jq --arg i "$NO0" '.nodes[2].kind == "task" and .nodes[2].id != $i')"
+check "PUT reordena o sort pela ordem recebida" "true" "$(echo "$EDITADA" | jq '[.nodes[].sort] == [0,1,2]')"
+
+check "mensagem sem modelo e sem texto barrada" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/cadences -H "$J" -H "$HD" \
+    -d "{\"name\":\"X\",\"audience\":\"contratante\",\"entry\":\"manual\",\"exit\":{\"action\":\"sai\"},\"nodes\":[{\"kind\":\"msg\",\"day\":0}]}" | jq -r .error.code)"
+check "condição sem regra barrada" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/cadences -H "$J" -H "$HD" \
+    -d "{\"name\":\"X\",\"audience\":\"contratante\",\"entry\":\"manual\",\"exit\":{\"action\":\"sai\"},\"nodes\":[{\"kind\":\"cond\",\"action\":\"sai\"}]}" | jq -r .error.code)"
+check "tarefa sem descrição barrada" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/cadences -H "$J" -H "$HD" \
+    -d "{\"name\":\"X\",\"audience\":\"contratante\",\"entry\":\"manual\",\"exit\":{\"action\":\"sai\"},\"nodes\":[{\"kind\":\"task\",\"day\":1}]}" | jq -r .error.code)"
+check "tipo de nó fora do catálogo barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/cadences -H "$J" -H "$HD" \
+    -d "{\"name\":\"X\",\"audience\":\"contratante\",\"entry\":\"manual\",\"exit\":{\"action\":\"sai\"},\"nodes\":[{\"kind\":\"ligacao\"}]}" | jq -r .error.code)"
+check "regra de entrada fora do catálogo barrada" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/cadences -H "$J" -H "$HD" \
+    -d "{\"name\":\"X\",\"audience\":\"contratante\",\"entry\":\"lua_cheia\",\"exit\":{\"action\":\"sai\"},\"nodes\":[]}" | jq -r .error.code)"
+check "público fora do catálogo barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/cadences -H "$J" -H "$HD" \
+    -d "{\"name\":\"X\",\"audience\":\"dono\",\"entry\":\"manual\",\"exit\":{\"action\":\"sai\"},\"nodes\":[]}" | jq -r .error.code)"
+check "'segue na cadência' não serve de saída da trilha" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/cadences -H "$J" -H "$HD" \
+    -d "{\"name\":\"X\",\"audience\":\"contratante\",\"entry\":\"manual\",\"exit\":{\"action\":\"continua\"},\"nodes\":[]}" | jq -r .error.code)"
+check "campo desconhecido no corpo barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/cadences -H "$J" -H "$HD" \
+    -d "{\"name\":\"X\",\"audience\":\"contratante\",\"entry\":\"manual\",\"exit\":{\"action\":\"sai\"},\"nodes\":[],\"cor\":\"azul\"}" | jq -r .error.code)"
+check "nó que cita modelo inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/cadences -H "$J" -H "$HD" \
+    -d "{\"name\":\"X\",\"audience\":\"contratante\",\"entry\":\"manual\",\"exit\":{\"action\":\"sai\"},\"nodes\":[{\"kind\":\"msg\",\"day\":0,\"template_id\":\"00000000-0000-4000-8000-00000000beef\"}]}" | jq -r .error.code)"
+check "PUT em cadência inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X PUT $API/v1/cadences/00000000-0000-4000-8000-00000000beef -H "$J" -H "$HD" -d "$PUT_BODY" | jq -r .error.code)"
+
+check "toggle-pause despausa a cadência de teste" "false" \
+  "$(curl -s -X POST $API/v1/cadences/$CAD_EDIT_ID/toggle-pause -H "$HD" | jq '.paused')"
+check "toggle-pause pausa de volta" "true" \
+  "$(curl -s -X POST $API/v1/cadences/$CAD_EDIT_ID/toggle-pause -H "$HD" | jq '.paused')"
+check "apaga a cadência editável (sem resíduo)" "true" \
+  "$(curl -s -X DELETE $API/v1/cadences/$CAD_EDIT_ID -H "$HD" | jq -r .ok)"
+check "cadência apagada sumiu da lista" "5" "$(curl -s $API/v1/cadences -H "$HD" | jq 'length')"
+check "DELETE de cadência inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X DELETE $API/v1/cadences/00000000-0000-4000-8000-00000000beef -H "$HD" | jq -r .error.code)"
+
+# --- inscrição na mão, na cadência-modelo (pausada: o relógio não mexe) ---
+CAD_LEAD=$(curl -s -X POST $API/v1/leads -H "$J" -H "$HD" \
+  -d "{\"praca_id\":\"$PRACA_SEED\",\"name\":\"Bar $SUF\",\"city\":\"Cidade Cad $SUF\",\"phone\":\"(31) 98777-${SUF: -4}\",\"decisor\":\"Fulano de Teste\",\"classe\":\"alvo\",\"origem\":\"prospecção\",\"owner_id\":\"$DIEGO_ID\",\"stage\":2}")
+CAD_LEAD_ID=$(echo "$CAD_LEAD" | jq -r .id)
+check "o lead do teste de cadência nasce na etapa 2 (fora da entrada automática)" "2" \
+  "$(echo "$CAD_LEAD" | jq '.stage')"
+INSC=$(curl -s -X POST $API/v1/cadences/$CAD_PROSP/enroll -H "$J" -H "$HD" -d "{\"lead_id\":\"$CAD_LEAD_ID\"}")
+check "entrada manual coloca o lead na cadência" "true false" \
+  "$(echo "$INSC" | jq -r '"\(.ok) \(.waiting)"')"
+check "entrar duas vezes na mesma cadência não duplica" "false false" \
+  "$(curl -s -X POST $API/v1/cadences/$CAD_PROSP/enroll -H "$J" -H "$HD" \
+    -d "{\"lead_id\":\"$CAD_LEAD_ID\"}" | jq -r '"\(.ok) \(.waiting)"')"
+
+# Corrida: dois cliques em "colocar na cadência" ao mesmo tempo. Sem o lock por
+# pessoa os dois leriam "não está dentro" antes de qualquer um gravar e a trilha
+# entraria duas vezes para o mesmo lead.
+CAD_LEAD2=$(curl -s -X POST $API/v1/leads -H "$J" -H "$HD" \
+  -d "{\"praca_id\":\"$PRACA_SEED\",\"name\":\"Casa Cadência $SUF\",\"city\":\"Cidade Cad $SUF\",\"phone\":\"(31) 98666-${SUF: -4}\",\"decisor\":\"Beltrano de Teste\",\"classe\":\"alvo\",\"origem\":\"prospecção\",\"owner_id\":\"$DIEGO_ID\",\"stage\":2}")
+CAD_LEAD2_ID=$(echo "$CAD_LEAD2" | jq -r .id)
+curl -s -X POST $API/v1/cadences/$CAD_PROSP/enroll -H "$J" -H "$HD" -d "{\"lead_id\":\"$CAD_LEAD2_ID\"}" > /tmp/praca-smoke-enr-a.json &
+curl -s -X POST $API/v1/cadences/$CAD_PROSP/enroll -H "$J" -H "$HD" -d "{\"lead_id\":\"$CAD_LEAD2_ID\"}" > /tmp/praca-smoke-enr-b.json &
+wait
+check "dois cliques ao mesmo tempo colocam a pessoa UMA vez" "1" \
+  "$(jq -s '[.[] | select(.ok == true)] | length' /tmp/praca-smoke-enr-a.json /tmp/praca-smoke-enr-b.json)"
+rm -f /tmp/praca-smoke-enr-a.json /tmp/praca-smoke-enr-b.json
+check "só uma inscrição da corrida ficou no banco" "1" \
+  "$(curl -s "$API/v1/enrollments?cadence_id=$CAD_PROSP" -H "$HD" | jq --arg l "$CAD_LEAD2_ID" '[.[] | select(.lead_id==$l)] | length')"
+INSCS=$(curl -s "$API/v1/enrollments?cadence_id=$CAD_PROSP" -H "$HD")
+INSC_ID=$(echo "$INSCS" | jq -r --arg l "$CAD_LEAD_ID" '[.[] | select(.lead_id==$l)][0].id')
+INSC_VIEW=$(echo "$INSCS" | jq --arg i "$INSC_ID" '[.[] | select(.id==$i)][0]')
+check "a inscrição nasce ativa" "ativo" "$(echo "$INSC_VIEW" | jq -r '.status')"
+check "a inscrição guarda a etapa de quando entrou" "2" "$(echo "$INSC_VIEW" | jq '.stage_at_start')"
+check "a inscrição da mão não é de teste" "false" "$(echo "$INSC_VIEW" | jq '.is_test')"
+check "cadência pausada não avança ninguém" "0" "$(echo "$INSC_VIEW" | jq '.logs | length')"
+check "o primeiro passo da prospecção vence no dia da entrada (dia 0)" "true" \
+  "$(echo "$INSC_VIEW" | jq '.next_at == .started_at')"
+check "entrar com lead inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/cadences/$CAD_PROSP/enroll -H "$J" -H "$HD" \
+    -d '{"lead_id":"00000000-0000-4000-8000-00000000beef"}' | jq -r .error.code)"
+check "entrar em cadência inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/cadences/00000000-0000-4000-8000-00000000beef/enroll -H "$J" -H "$HD" \
+    -d "{\"lead_id\":\"$CAD_LEAD_ID\"}" | jq -r .error.code)"
+check "inscrição com cadence_id malformado = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s "$API/v1/enrollments?cadence_id=nao-e-uuid" -H "$HD" | jq -r .error.code)"
+check "inscrição de cadência inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s "$API/v1/enrollments?cadence_id=00000000-0000-4000-8000-00000000beef" -H "$HD" | jq -r .error.code)"
+
+# --- cadência do motor: ligada, entrada manual (nenhum lead do seed entra sozinho) ---
+ENG_BODY=$(cat <<JSON
+{"name":"Cadência do relógio $SUF","audience":"contratante","entry":"manual","paused":false,
+ "exit":{"action":"sai","note":"Fim do teste do motor."},
+ "nodes":[{"kind":"msg","day":0,"text":"Oi {{primeiro_nome_dono}}, relógio $SUF em {{cidade}}."},
+          {"kind":"cond","rule":"respondeu","action":"sai_conversa"},
+          {"kind":"task","day":0,"task":"Ligar para o lead — teste do relógio"},
+          {"kind":"msg","day":5,"template_id":"$TPL_F007"}]}
+JSON
+)
+CAD_ENG=$(curl -s -X POST $API/v1/cadences -H "$J" -H "$HD" -d "$ENG_BODY")
+CAD_ENG_ID=$(echo "$CAD_ENG" | jq -r .id)
+check "a cadência do relógio nasce ligada" "false" "$(echo "$CAD_ENG" | jq '.paused')"
+
+# O lead já roda a prospecção: uma cadência por pessoa, então esta fica esperando.
+ESPERA=$(curl -s -X POST $API/v1/cadences/$CAD_ENG_ID/enroll -H "$J" -H "$HD" -d "{\"lead_id\":\"$CAD_LEAD_ID\"}")
+check "quem já roda outra cadência entra na fila de espera" "true true" \
+  "$(echo "$ESPERA" | jq -r '"\(.ok) \(.waiting)"')"
+check "a inscrição em espera nasce aguardando" "aguardando" \
+  "$(curl -s "$API/v1/enrollments?cadence_id=$CAD_ENG_ID" -H "$HD" | jq -r '.[0].status')"
+
+# Tira o lead da prospecção na mão: agora a fila de espera pode liberar a outra.
+SAIDA=$(curl -s -X POST $API/v1/enrollments/$INSC_ID/exit -H "$J" -H "$HD" -d '{}')
+check "sair na mão marca saiu com motivo manual" "saiu manual" \
+  "$(echo "$SAIDA" | jq -r '"\(.status) \(.exit_reason)"')"
+check "motivo de saída fora do catálogo barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/enrollments/$INSC_ID/exit -H "$J" -H "$HD" -d '{"reason":"cansei"}' | jq -r .error.code)"
+check "sair de inscrição inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/enrollments/00000000-0000-4000-8000-00000000beef/exit -H "$J" -H "$HD" -d '{}' | jq -r .error.code)"
+check "inscrição com id malformado = NOT_FOUND (não 500)" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/enrollments/nao-e-uuid/exit -H "$J" -H "$HD" -d '{}' | jq -r .error.code)"
+
+# "Testar comigo": o próprio número entra com o tempo comprimido (1 dia = 5 s).
+TESTE_CAD=$(curl -s -X POST $API/v1/cadences/$CAD_ENG_ID/test -H "$J" -H "$HD" \
+  -d "{\"phone\":\"(31) 90000-${SUF: -4}\"}")
+TESTE_LEAD_ID=$(echo "$TESTE_CAD" | jq -r .lead_id)
+TESTE_INSC_ID=$(echo "$TESTE_CAD" | jq -r .enrollment_id)
+check "o teste devolve a inscrição e o lead de teste" "true" \
+  "$(echo "$TESTE_CAD" | jq '(.enrollment_id != null) and (.lead_id != null)')"
+TESTE_LEAD=$(curl -s $API/v1/leads/$TESTE_LEAD_ID -H "$HD")
+check "o lead do teste tem o nome do protótipo" "Teste — Cadência" "$(echo "$TESTE_LEAD" | jq -r '.name')"
+check "o lead do teste guarda o telefone informado" "(31) 90000-${SUF: -4}" "$(echo "$TESTE_LEAD" | jq -r '.phone')"
+check "a inscrição do teste é marcada como de teste" "true" \
+  "$(curl -s "$API/v1/enrollments?cadence_id=$CAD_ENG_ID" -H "$HD" \
+    | jq --arg i "$TESTE_INSC_ID" '[.[] | select(.id==$i)][0].is_test')"
+check "o teste vence agora (não espera a janela)" "true" \
+  "$(curl -s "$API/v1/enrollments?cadence_id=$CAD_ENG_ID" -H "$HD" \
+    | jq --arg i "$TESTE_INSC_ID" '[.[] | select(.id==$i)][0] | .next_at == .started_at')"
+check "telefone curto no teste barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/cadences/$CAD_ENG_ID/test -H "$J" -H "$HD" -d '{"phone":"31"}' | jq -r .error.code)"
+
+# O relógio roda a cada 15 s: uma espera para ver a trilha andar de verdade.
+sleep 20
+
+ENG_INSCS=$(curl -s "$API/v1/enrollments?cadence_id=$CAD_ENG_ID" -H "$HD")
+TESTE_VIEW=$(echo "$ENG_INSCS" | jq --arg i "$TESTE_INSC_ID" '[.[] | select(.id==$i)][0]')
+check "o relógio andou na inscrição de teste" "true" "$(echo "$TESTE_VIEW" | jq '(.logs | length) >= 1')"
+check "o log guarda a mensagem que saiu (com o id do envio)" "true" \
+  "$(echo "$TESTE_VIEW" | jq '[.logs[] | select(.kind=="msg" and .send_id != null)] | length >= 1')"
+check "a condição também vai para o log (não é reavaliada para sempre)" "true" \
+  "$(echo "$TESTE_VIEW" | jq '[.logs[] | select(.kind=="cond")] | length >= 1')"
+check "a tarefa da trilha também vai para o log" "true" \
+  "$(echo "$TESTE_VIEW" | jq '[.logs[] | select(.kind=="task")] | length >= 1')"
+check "a tarefa da cadência virou próximo passo do lead" "Ligar para o lead — teste do relógio" \
+  "$(curl -s $API/v1/leads/$TESTE_LEAD_ID -H "$HD" | jq -r '.next_step.what')"
+# Prova da compressão: o passo do dia 5 é esperado para HOJE (5 × 5 s), não para
+# a semana que vem — sem compressão `next_at` cairia cinco dias à frente.
+check "no teste cada dia da cadência virou segundos" "true" \
+  "$(echo "$TESTE_VIEW" | jq '.next_at[0:10] == .started_at[0:10]')"
+TESTE_LEAD2=$(curl -s $API/v1/leads/$TESTE_LEAD_ID -H "$HD")
+check "a mensagem da cadência virou evento na timeline do lead" "true" \
+  "$(echo "$TESTE_LEAD2" | jq --arg n "Cadência “Cadência do relógio $SUF” · dia 0: " \
+    '[.events[] | select(.kind=="msg_out" and (.text | startswith($n)))] | length == 1')"
+check "o texto do envio foi renderizado (sem variável crua)" "false" \
+  "$(echo "$TESTE_LEAD2" | jq '[.events[] | select(.kind=="msg_out")] | any(.text | contains("{{"))')"
+check "quem grava é a cadência, não uma pessoa" "Cadência" \
+  "$(echo "$TESTE_LEAD2" | jq -r '[.events[] | select(.kind=="msg_out")][0].author_label')"
+check "o toque da cadência conta como último contato" "$HOJE" "$(echo "$TESTE_LEAD2" | jq -r '.last_contact_date')"
+ESPERA_VIEW=$(echo "$ENG_INSCS" | jq --arg l "$CAD_LEAD_ID" '[.[] | select(.lead_id==$l)][0]')
+check "quem estava esperando entrou quando a pessoa ficou livre" "ativo" "$(echo "$ESPERA_VIEW" | jq -r '.status')"
+# Cadência pausada continua parada: a inscrição da prospecção passou a rodada
+# inteira sem um único passo (e saiu na mão, não pelo relógio).
+check "cadência pausada não mandou nada nem avançou" "saiu 0" \
+  "$(curl -s "$API/v1/enrollments?cadence_id=$CAD_PROSP" -H "$HD" \
+    | jq -r --arg i "$INSC_ID" '[.[] | select(.id==$i)][0] | "\(.status) \(.logs | length)"')"
+
+STATS=$(curl -s $API/v1/cadences/$CAD_ENG_ID/stats -H "$HD")
+check "o painel conta as duas inscrições" "true" "$(echo "$STATS" | jq '.entered >= 2')"
+check "o painel conta quem está rodando agora" "true" "$(echo "$STATS" | jq '.active >= 1')"
+check "o painel mede só os passos (condição não é passo)" "3" "$(echo "$STATS" | jq '.per_step | length')"
+check "o primeiro passo já alcançou quem entrou" "true" "$(echo "$STATS" | jq '.per_step[0].reached >= 1')"
+check "sem resposta, a taxa do passo é zero" "0" "$(echo "$STATS" | jq '.per_step[0].replied')"
+check "quem está dentro aparece com o passo e a hora do próximo" "true" \
+  "$(echo "$STATS" | jq '[.inside[] | select(.step_index >= 1 and .next_at != null)] | length >= 1')"
+check "quem está dentro vem com o nome do lead" "true" \
+  "$(echo "$STATS" | jq '(.inside | map(select(.lead_name != "")) | length) == (.inside | length)')"
+check "ninguém saiu desta cadência ainda" "0" "$(echo "$STATS" | jq '.exits | length')"
+PROSP_STATS=$(curl -s $API/v1/cadences/$CAD_PROSP/stats -H "$HD")
+check "a saída manual entra na conta dos motivos" "manual 1" \
+  "$(echo "$PROSP_STATS" | jq -r '.exits[0] | "\(.reason) \(.count)"')"
+check "a prospecção conta as duas inscrições que passaram por ela" "true" \
+  "$(echo "$PROSP_STATS" | jq '.entered >= 2')"
+check "stats de cadência inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s $API/v1/cadences/00000000-0000-4000-8000-00000000beef/stats -H "$HD" | jq -r .error.code)"
+
+# --- limpeza: leads (levam inscrições, envios e eventos por cascata) e a cadência ---
+check "apaga o lead de teste da cadência (sem resíduo)" "true" \
+  "$(curl -s -X DELETE $API/v1/leads/$TESTE_LEAD_ID -H "$HD" | jq -r .ok)"
+check "apaga o lead Bar $SUF (sem resíduo)" "true" \
+  "$(curl -s -X DELETE $API/v1/leads/$CAD_LEAD_ID -H "$HD" | jq -r .ok)"
+check "apaga o lead da corrida de inscrição (sem resíduo)" "true" \
+  "$(curl -s -X DELETE $API/v1/leads/$CAD_LEAD2_ID -H "$HD" | jq -r .ok)"
+check "as inscrições foram junto com os leads (cascata)" "0" \
+  "$(curl -s "$API/v1/enrollments?cadence_id=$CAD_ENG_ID" -H "$HD" | jq 'length')"
+check "apaga a cadência do relógio (sem resíduo)" "true" \
+  "$(curl -s -X DELETE $API/v1/cadences/$CAD_ENG_ID -H "$HD" | jq -r .ok)"
+check "voltou às 5 cadências do seed" "5" "$(curl -s $API/v1/cadences -H "$HD" | jq 'length')"
+check "não sobrou inscrição nenhuma no banco" "0" "$(curl -s $API/v1/enrollments -H "$HD" | jq 'length')"
+check "funil da praça seed voltou aos 25 leads" "25" \
+  "$(curl -s "$API/v1/leads?praca_id=$PRACA_SEED&archived=true" -H "$HD" | jq 'length')"
+
 echo "── Limpeza da praça de teste ──"
 check "admin apaga a praça de teste" "true" "$(curl -s -X DELETE $API/v1/pracas/$NOVA_ID -H "$HD" | jq -r .ok)"
 check "praça de teste sumiu" "NOT_FOUND" "$(curl -s $API/v1/pracas/$NOVA_ID -H "$HD" | jq -r .error.code)"

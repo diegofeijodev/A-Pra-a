@@ -11,6 +11,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { HealthModule } from './common/health/health.module';
 import { ActionsModule } from './modules/actions/actions.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { CadencesModule } from './modules/cadences/cadences.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { DisparosModule } from './modules/disparos/disparos.module';
 import { GeoModule } from './modules/geo/geo.module';
@@ -39,6 +40,7 @@ import { UsersModule } from './modules/users/users.module';
     PublicModule,
     MessagesModule,
     DisparosModule,
+    CadencesModule,
   ],
   providers: [
     // Subclasse do ThrottlerGuard: o teto do formulário público vem do

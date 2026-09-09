@@ -12,19 +12,14 @@
  * a linha 1 nasce com `DEFAULT_TEMPLATE_DEFAULTS` e nunca é reescrita.
  */
 import { PrismaClient } from '@prisma/client';
-import { DEFAULT_TEMPLATE_DEFAULTS } from '../../src/domain/catalog/messages';
+import { DEFAULT_TEMPLATE_DEFAULTS, SEED_TEMPLATE_IDS } from '../../src/domain/catalog/messages';
 
-/** `tpl-1`…`tpl-8` do protótipo, na mesma ordem. Task 11 (cadências) usa isto. */
-export const SEED_TEMPLATE_IDS = [
-  '00000000-0000-4000-8000-00000000f001',
-  '00000000-0000-4000-8000-00000000f002',
-  '00000000-0000-4000-8000-00000000f003',
-  '00000000-0000-4000-8000-00000000f004',
-  '00000000-0000-4000-8000-00000000f005',
-  '00000000-0000-4000-8000-00000000f006',
-  '00000000-0000-4000-8000-00000000f007',
-  '00000000-0000-4000-8000-00000000f008',
-] as const;
+/**
+ * `tpl-1`…`tpl-8` do protótipo, na mesma ordem. A lista mora no catálogo
+ * (`src/domain/catalog/messages.ts`) porque as cadências-modelo referenciam
+ * modelo por id; aqui fica só o reexporte, para quem já importava deste arquivo.
+ */
+export { SEED_TEMPLATE_IDS };
 
 interface TemplateSeedRow {
   name: string;

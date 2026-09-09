@@ -11,10 +11,12 @@
  * e o funil de leads dessa praça (`seedLeads`) — sempre nesta ordem, porque
  * cada uma depende da anterior. Por último, os modelos de mensagem e a linha
  * de configurações de envio (`seedMsgTemplates`/`seedAppSettings`), que não
- * dependem de nada acima.
+ * dependem de nada acima, e as cadências-modelo (`seedCadences`), que dependem
+ * dos modelos de mensagem (os nós apontam para `SEED_TEMPLATE_IDS`).
  */
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { seedCadences } from './seed-data/cadences';
 import { seedLeads } from './seed-data/leads';
 import { seedAppSettings, seedMsgTemplates } from './seed-data/msg-templates';
 import { seedPraca } from './seed-data/praca';
@@ -89,6 +91,7 @@ async function main() {
     await seedLeads(prisma);
     await seedMsgTemplates(prisma);
     await seedAppSettings(prisma);
+    await seedCadences(prisma);
   } finally {
     await prisma.$disconnect();
   }

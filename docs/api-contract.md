@@ -1198,3 +1198,228 @@ Nada de "pediu para parar" registrado sem o número bloqueado, nem lote com a fi
 zerada preso em `agendado`.
 
 Envio inexistente → `404 NOT_FOUND`.
+
+---
+
+## 14. Cadências — `/v1/cadences`, `/v1/enrollments`
+
+Uma cadência é **uma trilha de toques, para uma pessoa por vez, no tempo**: o
+lead entra (na mão ou pela regra de entrada), o relógio do servidor caminha pelos
+nós da trilha e a pessoa sai quando responde, quando a condição manda ou quando a
+trilha acaba. Porta de `.prototype/src/components/praca/Cadencias.tsx`,
+`lib/praca/cadencias.ts` e `lib/praca/cadencias-engine.ts`.
+
+| Método | Rota | Corpo | Resposta |
+|---|---|---|---|
+| GET | `/v1/cadences` | — | `CadenceView[]` (ordem de criação) |
+| POST | `/v1/cadences` | `CadenceBody` | `CadenceView` |
+| POST | `/v1/cadences/restore-seed` | — | `{created}` |
+| GET | `/v1/cadences/:id` | — | `CadenceView` |
+| GET | `/v1/cadences/:id/stats` | — | `CadenceStats` |
+| PUT | `/v1/cadences/:id` | `CadenceBody` | `CadenceView` |
+| DELETE | `/v1/cadences/:id` | — | `{ok: true}` |
+| POST | `/v1/cadences/:id/toggle-pause` | — | `CadenceView` |
+| POST | `/v1/cadences/:id/enroll` | `{lead_id}` | `{ok, waiting}` |
+| POST | `/v1/cadences/:id/test` | `{phone}` | `{enrollment_id, lead_id}` |
+| GET | `/v1/enrollments` | `?cadence_id` | `EnrollmentView[]` (200 mais recentes) |
+| POST | `/v1/enrollments/:id/exit` | `{reason?}` | `EnrollmentView` |
+
+Todas exigem JWT. `:id` malformado → `404 NOT_FOUND` (nunca 500);
+`?cadence_id` malformado → `400 VALIDATION_ERROR` (é filtro, não caminho).
+`DELETE` leva as inscrições e os logs por cascata — o que já foi enviado
+(`msg_sends`) fica, é histórico do lead. Não é só de admin: no protótipo quem
+monta a cadência apaga a cadência.
+
+### `CadenceView`
+
+```json
+{
+  "id": "uuid", "name": "Prospecção de contratante — 3 toques",
+  "audience": "contratante", "entry": "stage_novo",
+  "exit": { "action": "reaquecer_30", "note": "Quem chegou ao fim sem responder…" },
+  "paused": true, "created_at": "2026-09-09T12:00:00.000Z",
+  "nodes": [
+    { "id": "uuid", "sort": 0, "kind": "msg", "day": 0, "channel": "whatsapp",
+      "template_id": "uuid", "text": null, "task": null, "rule": null, "action": null, "note": null }
+  ]
+}
+```
+
+`audience ∈ catalog.audiences` (§12), `entry ∈ catalog.entry_rules`,
+`exit.action ∈ catalog.cond_actions` **menos `continua`** (o fim da trilha tem de
+sair de algum jeito), `exit.note` até 400.
+
+Nós (`nodes`, até 40, na ordem recebida — o `sort` é o índice):
+
+- `kind: "msg"` — precisa de `template_id` **ou** `text` (até 2000, aparado);
+  mandar os dois grava só o `template_id` (o texto seria um segundo texto
+  possível para a mesma mensagem). `channel ∈ catalog.channels`, padrão
+  `whatsapp`. `template_id` que não existe → `404 NOT_FOUND`.
+- `kind: "task"` — precisa de `task` (até 300). Não é mensagem: vira nota e
+  próximo passo na ficha do lead.
+- `kind: "cond"` — precisa de `rule ∈ catalog.cond_rules` e
+  `action ∈ catalog.cond_actions`. `day` é sempre gravado como `0`: a condição
+  roda junto do passo seguinte, não tem dia próprio.
+
+Combinação errada (mensagem sem texto nem modelo, tarefa sem `task`, condição sem
+`rule`) → `400 VALIDATION_ERROR` com o índice do nó (`nodes[2]: …`).
+
+### `PUT /v1/cadences/:id`
+
+Mesmo corpo do `POST` e substitui a cadência inteira, com uma regra que importa:
+**nó que volta com o `id` que já tinha é atualizado no lugar**; nó sem `id` (ou
+com id de outra cadência) é criado; nó que não veio no corpo é apagado. É o que
+mantém `enrollment_logs.node_id` válido — recriar todos os nós faria quem está no
+passo 3 voltar para o passo 1 e receber a trilha de novo.
+
+### `POST /v1/cadences/:id/enroll`
+
+`{ok: true, waiting: false}` = entrou e já está rodando. `{ok: true, waiting:
+true}` = entrou, mas fica `aguardando` porque a pessoa já roda outra cadência
+(**uma cadência por pessoa de cada vez**); o relógio a solta quando a outra
+terminar. `{ok: false, waiting: false}` = a pessoa já está nesta cadência (ativa
+ou esperando) ou a cadência não tem passo nenhum. Lead ou cadência inexistente →
+`404 NOT_FOUND`. Entrada manual **não** olha `paused`: a cadência pausada aceita
+gente, só não anda.
+
+### `POST /v1/cadences/:id/test` — "Testar comigo"
+
+Põe **o seu número** na trilha com o tempo comprimido: cada dia da cadência vira
+**5 segundos**, então dá para ver os toques chegarem na tela. Cria (ou
+reaproveita) um lead único chamado `Teste — Cadência` com `is_test: true`, na
+praça ativa de quem chamou, etapa 1, `classe: "alvo"`, `origem: "manual"`; em
+reaproveitamento só o telefone e a praça são atualizados. As inscrições de teste
+que estavam rodando (qualquer cadência) saem com `saiu`/`manual` — duas trilhas
+comprimidas no mesmo número viram bagunça. A inscrição nasce `ativo` com
+`next_at = started_at` (vence agora) e `is_test`.
+
+Lead de teste é ignorado por disparo, público e prova social (§13), e a inscrição
+de teste ignora **lista de bloqueio** e **limite diário** — é o seu próprio
+número. Cadência sem passo nenhum → `400 NO_STEPS`.
+
+### `EnrollmentView`
+
+```json
+{
+  "id": "uuid", "cadence_id": "uuid", "lead_id": "uuid",
+  "started_at": "2026-09-09T12:00:00.000Z", "next_at": "2026-09-11T12:00:00.000Z",
+  "status": "ativo", "exit_reason": null, "stage_at_start": 1, "is_test": false,
+  "logs": [{ "node_id": "uuid", "at": "2026-09-09T12:00:00.000Z", "send_id": "uuid", "kind": "msg" }]
+}
+```
+
+`status ∈ ativo | aguardando | saiu | concluido`. `exit_reason` é, no caminho
+normal, um motivo de `catalog.exit_reason_label` (`respondeu`, `abriu_vaga`,
+`reaquecer_30`, `reaquecer_60`, `fila_confirmacao`, `fecha_conta`, `fim`,
+`bloqueio`, `manual`); a saída disparada por uma **condição** grava o motivo da
+regra (`abriu_vaga`) ou, nas outras regras, o **id da ação** (`sai`,
+`reaquecer_30`…) — é o que o protótipo faz, e a tela cai no id quando não há
+rótulo. `POST /v1/enrollments/:id/exit` só aceita os motivos do catálogo.
+`logs` é o rastro do que já foi cumprido, um por nó (`kind ∈ msg |
+task | cond`; `send_id` só na mensagem). `next_at` é quando o próximo nó vence.
+
+`POST /v1/enrollments/:id/exit` marca `saiu` com `exit_reason = reason ?? manual`
+— tirada na mão, sem os efeitos das saídas do motor (não mexe em etapa,
+reaquecimento nem próximo passo).
+
+### `GET /v1/cadences/:id/stats`
+
+```json
+{
+  "entered": 12, "active": 3,
+  "per_step": [{ "node": { "id": "uuid", "kind": "msg", "day": 0, "…": "…" },
+                 "here": 1, "reached": 12, "replied": 4, "resp_rate": 0.3333 }],
+  "exits": [{ "reason": "respondeu", "count": 5 }],
+  "advanced": 6,
+  "inside": [{ "enrollment_id": "uuid", "lead_id": "uuid", "lead_name": "Bar do Mercado",
+               "status": "ativo", "step_index": 1, "next_at": "2026-09-11T12:00:00.000Z" }]
+}
+```
+
+`per_step` só tem **passos** (`msg`/`task`; condição não é passo): `reached` = já
+cumpriram o nó, `here` = estão ativos esperando exatamente este passo, `replied` =
+responderam **depois** deste nó, `resp_rate` = `replied/reached` (fração 0..1, como
+em §12). `exits` conta os motivos (maior primeiro), `advanced` = a etapa do lead
+subiu em relação a `stage_at_start`, `inside` = quem está `ativo` ou `aguardando`
+(**20 primeiros**, como no protótipo).
+
+### O relógio (motor) — `CADENCE_ENGINE_ENABLED`
+
+`@Cron('*/15 * * * * *')` com trava de reentrância; `CADENCE_ENGINE_ENABLED`
+(padrão `true`) desliga tudo sem mexer no código. Erro nunca sai do cron: cada
+rodada registra a falha e segue. Cada inscrição avança na **sua própria
+transação** — envio, evento, log e `next_at` num commit só, e o tombo de uma não
+para as outras.
+
+Três fases por rodada, na ordem do protótipo:
+
+1. **Entrada automática** — só cadências **não pausadas** com
+   `entry ∈ catalog.auto_entries` (`stage_novo` = etapa 1, `reheat_due` =
+   `reheat_at <= hoje`, `first_vaga` = etapa 6). As outras regras
+   (`praca_mapeamento`, `freela_first_turn`, `manual`) entram só pelo `enroll`.
+   Fora: arquivado, `is_test` e quem **já teve** inscrição naquela cadência (em
+   qualquer estado — senão quem saiu voltaria na rodada seguinte, para sempre).
+   Teto de 30 por rodada e por cadência (`catalog.max_enroll_per_tick`), mais
+   antigos primeiro. Quem já roda outra cadência entra `aguardando`.
+2. **Avanço** de quem está `ativo` com `next_at <= agora` (cadência pausada não
+   anda). Caminha pelos nós enquanto vencerem:
+   - trilha acabou → sai com a ação de `exit` e motivo `fim`;
+   - **respondeu depois de entrar** (`lead_events.kind = msg_in` com
+     `at >= started_at`) → sai como `sai_conversa`/`respondeu`, sempre, antes de
+     qualquer nó;
+   - `cond` → vai para o log e é avaliada (`respondeu`, `abriu_vaga` = vaga com
+     `date >= dia da entrada` ou etapa ≥ 6, `sem_resposta`); batendo, aplica a
+     ação (menos `continua`, que segue a trilha);
+   - nó que ainda não venceu (`started_at + day`, ou `day × 5 s` no teste) →
+     grava `next_at` e para;
+   - `task` → nota `Tarefa da cadência “X”: <task>` na timeline e próximo passo
+     do lead (`what` = a tarefa, `date` = hoje);
+   - `msg` → telefone na lista de bloqueio sai como `sai`/`bloqueio`; limite
+     diário estourado (mensagens com `sent_at` **hoje em Brasília**, qualquer
+     modo, ≥ `settings.daily_limit`) adia `next_at` para o próximo slot 12 h à
+     frente; senão grava `msg_sends` com `cadence_id`/`node_id`/`enrollment_id` e
+     o texto **já renderizado** (mesmo render do §12: praça e vaga do lead,
+     vizinho da mesma cidade, valores-padrão; sem `me` — quem manda é o relógio).
+3. **Fila de espera** — quem está `aguardando` e ficou livre volta a `ativo` com
+   `started_at` de agora (a trilha de 9 dias conta de quando ela começou de
+   verdade, não de quando entrou na fila).
+
+Os dois modos de envio (`app_settings.mode`, §12):
+
+- `fila` — a mensagem já nasce `enviada` com `sent_at` (`scheduled_at` =
+  próximo slot da janela, ou agora no teste), grava evento `msg_out`
+  `Cadência “X” · dia N: <texto>` na timeline e atualiza `last_contact_at` (zera
+  os dias parados). É o protótipo: a fila é o operador.
+- `freela` — a mensagem fica `fila`, `scheduled_at` agora, `sent_at: null` e
+  **sem evento**: quem entrega é a campanha do Freela (Task 15) e é o retorno
+  dela que escreve o evento. Mensagem sem `sent_at` não conta no limite diário —
+  o ritmo é o da campanha.
+
+As saídas deixam rastro diferente na ficha do lead (`author_label: "Cadência"`,
+sem autor humano):
+
+| Ação | Evento | Efeito no lead |
+|---|---|---|
+| `sai_conversa` | `Saiu da cadência “X” (respondeu) → etapa Conversa aberta.` | etapa 3, `stage_since` hoje |
+| `reaquecer_30` / `reaquecer_60` | `Saiu da cadência “X” → fila de reaquecimento em N dias.` | `reheat_at` = hoje + N |
+| `fila_confirmacao` | `Saiu da cadência “X” → fila de ligação de confirmação.` | próximo passo `Ligar para confirmar presença` hoje |
+| `fecha_conta` | `Cadência “X” encerrada — conta fechada e resultado registrado.` | — |
+| `sai` (e qualquer outra) | `Saiu da cadência “X”.` | — |
+
+`fim` e `fecha_conta` fecham a inscrição como `concluido`; o resto é `saiu`.
+
+### Seed e `restore-seed`
+
+O seed planta as **5 cadências-modelo** do protótipo (nomes, trilhas e textos
+iguais), idempotente **por nome** — id é gerado, então renomear, editar e apagar
+é livre e rodar o seed de novo não desfaz nada.
+
+`POST /v1/cadences/restore-seed` recria só as que faltam (também por nome) e
+responde `{created}` — é o "restaurar as 5 cadências prontas" da tela.
+
+**Uma diferença deliberada em relação ao protótipo:** elas nascem
+**`paused: true`**. No protótipo o relógio rodava na aba aberta de uma demo com
+25 leads; aqui é um `@Cron` no servidor sobre a base de verdade, e ligadas a
+primeira rodada matricularia todo lead na etapa 1 e todo lead que rodou a
+primeira vaga, marcando mensagem como enviada na ficha de gente real sem ninguém
+ter pedido. Ligar cada uma é ato de gente (o botão play da tela).

@@ -113,3 +113,20 @@ export const DEFAULT_TEMPLATE_DEFAULTS: TemplateDefaults = {
   dia_forte: 'sábado',
   turno: '18h às 00h',
 };
+
+/**
+ * Ids FIXOS dos 8 modelos que já vêm criados (`tpl-1`…`tpl-8` do protótipo, na
+ * mesma ordem). Ficam no catálogo, e não no seed, porque as cadências-modelo
+ * (`SEED_CADENCES`) referenciam modelo por id — as duas listas precisam de uma
+ * única fonte da verdade. `prisma/seed-data/msg-templates.ts` reexporta daqui.
+ */
+export const SEED_TEMPLATE_IDS = [
+  '00000000-0000-4000-8000-00000000f001',
+  '00000000-0000-4000-8000-00000000f002',
+  '00000000-0000-4000-8000-00000000f003',
+  '00000000-0000-4000-8000-00000000f004',
+  '00000000-0000-4000-8000-00000000f005',
+  '00000000-0000-4000-8000-00000000f006',
+  '00000000-0000-4000-8000-00000000f007',
+  '00000000-0000-4000-8000-00000000f008',
+] as const;
