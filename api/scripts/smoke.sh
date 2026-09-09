@@ -523,6 +523,66 @@ check "id malformado no desfazer = NOT_FOUND (não 500)" "NOT_FOUND" \
 check "funil segue com os 25 leads do seed (sem resíduo)" "25" \
   "$(curl -s "$API/v1/leads?praca_id=$PRACA_SEED&archived=true" -H "$HD" | jq 'length')"
 
+echo "── Formulário público ──"
+# Tudo aqui SEM Authorization: é a rota que roda embutida num anúncio, sem login.
+FORM_TEL="(31) 99777-8888"
+
+check "GET /v1/public/pracas/:id sem token = dados básicos" "$PRACA_SEED" \
+  "$(curl -s $API/v1/public/pracas/$PRACA_SEED | jq -r .id)"
+PUB_PRACA=$(curl -s $API/v1/public/pracas/$PRACA_SEED)
+ADMIN_PRACA=$(curl -s $API/v1/pracas/$PRACA_SEED -H "$HD")
+check "nome público bate com o cadastro" "$(echo "$ADMIN_PRACA" | jq -r .name)" "$(echo "$PUB_PRACA" | jq -r .name)"
+check "cidade pública bate com o cadastro" "$(echo "$ADMIN_PRACA" | jq -r .city)" "$(echo "$PUB_PRACA" | jq -r .city)"
+check "público da praça não vaza outros campos (steps)" "false" "$(echo "$PUB_PRACA" | jq 'has("steps")')"
+check "praça pública inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s $API/v1/public/pracas/00000000-0000-4000-8000-00000000fea1 | jq -r .error.code)"
+check "id malformado na praça pública = NOT_FOUND (não 500)" "NOT_FOUND" \
+  "$(curl -s $API/v1/public/pracas/nao-e-uuid | jq -r .error.code)"
+
+check "POST /v1/public/leads com praça inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/public/leads -H "$J" \
+    -d "{\"praca_id\":\"00000000-0000-4000-8000-00000000fea1\",\"name\":\"Bar Fantasma $SUF\",\"city\":\"Belo Horizonte\",\"phone\":\"$FORM_TEL\",\"origem\":\"organico\"}" \
+    | jq -r .error.code)"
+check "origem fora de pago/organico = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/public/leads -H "$J" \
+    -d "{\"praca_id\":\"$PRACA_SEED\",\"name\":\"Inválido $SUF\",\"city\":\"BH\",\"phone\":\"31999990000\",\"origem\":\"direto\"}" \
+    | jq -r .error.code)"
+
+FORM1=$(curl -s -X POST $API/v1/public/leads -H "$J" \
+  -d "{\"praca_id\":\"$PRACA_SEED\",\"name\":\"Formulário $SUF\",\"city\":\"Belo Horizonte\",\"phone\":\"$FORM_TEL\",\"freq\":\"5\",\"origem\":\"pago\",\"camp\":\"nao-e-uuid\"}")
+check "POST /v1/public/leads sem token responde ok:true" "true" "$(echo "$FORM1" | jq -r .ok)"
+check "primeiro envio não vem marcado como duplicado" "null" "$(echo "$FORM1" | jq -r '.duplicate')"
+
+FORM_ID=$(curl -s "$API/v1/leads?praca_id=$PRACA_SEED&q=Formul%C3%A1rio%20$SUF" -H "$HD" | jq -r '.[0].id')
+FORM_LEAD=$(curl -s $API/v1/leads/$FORM_ID -H "$HD")
+check "lead do formulário aparece no funil da praça" "1" \
+  "$(curl -s "$API/v1/leads?praca_id=$PRACA_SEED&q=Formul%C3%A1rio%20$SUF" -H "$HD" | jq 'length')"
+check "lead do formulário nasce na etapa 1" "1" "$(echo "$FORM_LEAD" | jq '.stage')"
+check "classe do formulário é 'alvo'" "alvo" "$(echo "$FORM_LEAD" | jq -r '.classe')"
+check "origem 'pago' vira 'tráfego pago'" "tráfego pago" "$(echo "$FORM_LEAD" | jq -r '.origem')"
+check "form_answer grava a frequência escolhida" "Fica sem gente 5x por mês" "$(echo "$FORM_LEAD" | jq -r '.form_answer')"
+check "decisor não preenchido vira travessão" "—" "$(echo "$FORM_LEAD" | jq -r '.decisor')"
+check "campanha inválida (não uuid) é ignorada, sem quebrar" "null" "$(echo "$FORM_LEAD" | jq -r '.campanha_id')"
+check "dono do lead é o primeiro ativo por sort (Diego)" "$DIEGO_ID" "$(echo "$FORM_LEAD" | jq -r '.owner_id')"
+check "evento de entrada vem com o rótulo Formulário" "Formulário" "$(echo "$FORM_LEAD" | jq -r '.events[-1].author_label')"
+check "evento de entrada não tem autor logado" "null" "$(echo "$FORM_LEAD" | jq -r '.events[-1].author_id')"
+check "texto do evento de entrada" "Lead entrou pelo formulário de captura." "$(echo "$FORM_LEAD" | jq -r '.events[-1].text')"
+
+FORM2=$(curl -s -X POST $API/v1/public/leads -H "$J" \
+  -d "{\"praca_id\":\"$PRACA_SEED\",\"name\":\"Formulário $SUF\",\"city\":\"Belo Horizonte\",\"phone\":\"$FORM_TEL\",\"origem\":\"organico\"}")
+check "segundo envio com o mesmo telefone volta duplicate:true" "true" "$(echo "$FORM2" | jq -r .duplicate)"
+check "segundo envio ainda responde ok:true" "true" "$(echo "$FORM2" | jq -r .ok)"
+check "telefone repetido não cria um segundo lead" "1" \
+  "$(curl -s "$API/v1/leads?praca_id=$PRACA_SEED&q=Formul%C3%A1rio%20$SUF" -H "$HD" | jq 'length')"
+check "reenvio deixa a nota na ficha, sem trocar a origem" "Preencheu o formulário de novo." \
+  "$(curl -s $API/v1/leads/$FORM_ID -H "$HD" | jq -r '.events[-1].text')"
+check "reenvio não mexe na etapa" "1" "$(curl -s $API/v1/leads/$FORM_ID -H "$HD" | jq '.stage')"
+check "reenvio não troca a origem do lead" "tráfego pago" "$(curl -s $API/v1/leads/$FORM_ID -H "$HD" | jq -r '.origem')"
+
+check "admin apaga o lead do formulário (sem resíduo)" "true" \
+  "$(curl -s -X DELETE $API/v1/leads/$FORM_ID -H "$HD" | jq -r .ok)"
+check "lead do formulário sumiu" "NOT_FOUND" "$(curl -s $API/v1/leads/$FORM_ID -H "$HD" | jq -r .error.code)"
+
 echo "── Limpeza da praça de teste ──"
 check "admin apaga a praça de teste" "true" "$(curl -s -X DELETE $API/v1/pracas/$NOVA_ID -H "$HD" | jq -r .ok)"
 check "praça de teste sumiu" "NOT_FOUND" "$(curl -s $API/v1/pracas/$NOVA_ID -H "$HD" | jq -r .error.code)"

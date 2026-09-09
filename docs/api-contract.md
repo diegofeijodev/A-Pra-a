@@ -13,9 +13,9 @@ aqui primeiro. Swagger interativo em `/docs` (fora de produção).
   `todaySp()` (`src/common/time/dates.ts`), nunca de `new Date().toISOString()`.
 - Erro **sempre** `{ "error": { "code": "CODIGO", "message": "texto" } }`.
 - Autenticação: `Authorization: Bearer <jwt>` (HS256, 12h). Rotas públicas
-  (`@Public()`): `GET /health`, `POST /v1/auth/login`, `GET /v1/catalog` e
-  todo o `GET /v1/geo/*` (§5). Todas as demais exigem token — `JwtAuthGuard`
-  é global.
+  (`@Public()`): `GET /health`, `POST /v1/auth/login`, `GET /v1/catalog`,
+  todo o `GET /v1/geo/*` (§5) e todo o `/v1/public/*` (§11 — formulário de
+  captura). Todas as demais exigem token — `JwtAuthGuard` é global.
 - `ValidationPipe` global com `whitelist + forbidNonWhitelisted + transform`:
   campo sem decorator no DTO derruba a requisição com `VALIDATION_ERROR`.
   PATCH aceita apenas os campos declarados — mandar o objeto inteiro que veio
@@ -759,3 +759,65 @@ limpeza do admin. O lote continua na lista, com `imported` abatido e o motivo
 > em memória: telefone/CNPJ/nome+endereço normalizados não viram índice em SQL.
 > Numa base de dezenas de milhares de leads é uma varredura barata; se um dia
 > crescer para centenas de milhares, o caminho é pré-filtrar por `phone_key`.
+
+---
+
+## 11. Formulário público — `/v1/public`
+
+Porta pública do formulário de captura (`.prototype/src/routes/formulario.$pracaId.tsx`):
+embutido em landing page/anúncio, sem login. As duas rotas são `@Public()` e
+**não** entram no throttle de 300 req/min — o `POST` tem o seu próprio, bem
+mais apertado.
+
+| Método | Rota | Corpo | Resposta |
+|---|---|---|---|
+| GET | `/pracas/:id` | — | `{id, name, city}` |
+| POST | `/leads` | ver abaixo | `{ok: true, duplicate?: true}` |
+
+### `GET /pracas/:id`
+
+Só o que a tela precisa mostrar antes de enviar o formulário — não vaza
+`steps`, `cobertura` nem o resto do `PracaView` (§6). Praça inexistente ou
+`:id` malformado → `404 NOT_FOUND` (mesmo `isUuid()` das rotas autenticadas).
+
+### `POST /leads` — `@Throttle({default:{limit:10, ttl:60000}})`
+
+Corpo:
+
+```json
+{
+  "praca_id": "uuid",
+  "name": "Bar do Mercado",
+  "city": "Belo Horizonte",
+  "phone": "(31) 98000-1000",
+  "decisor": "Marcos Vieira",
+  "freq": "5",
+  "origem": "pago",
+  "camp": "uuid"
+}
+```
+
+- `praca_id`, `name`, `city`, `phone`, `origem` são obrigatórios; `decisor`,
+  `freq` e `camp` são opcionais. `origem` só aceita `"pago"` ou `"organico"`
+  (grava `"tráfego pago"` / `"orgânico"`, os mesmos rótulos do protótipo) —
+  qualquer outro valor é `400 VALIDATION_ERROR`. `freq` só aceita
+  `"0"|"2"|"5"|"10"` e vira `form_answer = "Fica sem gente <freq>x por mês"`;
+  sem `freq`, `form_answer` fica `null`.
+- `praca_id` que não existe → `404 NOT_FOUND` (`praca_id` malformado, por não
+  ser UUID, → `400 VALIDATION_ERROR`, igual a qualquer outro `@IsUUID()` de
+  corpo). `camp` **não** é validado como UUID: se vier e não for um UUID
+  válido, ou não existir em `campanhas`, é **ignorado em silêncio**
+  (`campanha_id` grava `null`) — o link de um anúncio não pode quebrar o
+  formulário por causa do parâmetro de rastreio.
+- Lead criado: `stage 1`, `classe "alvo"`, `decisor` vazio vira `"—"`,
+  `entered_at`/`stage_since` = hoje (Brasília), dono = a primeira pessoa
+  **ativa** por `sort, created_at` (rodízio simples — o mesmo critério do
+  protótipo, `s.people[0]`). Evento `note` com `author_id: null`,
+  `author_label: "Formulário"` e texto
+  `"Lead entrou pelo formulário de captura."`.
+- **Telefone duplicado**: mesma `phone_key` (últimos 9 dígitos, ver §10) já
+  cadastrada, **não arquivada**, na **mesma praça** → não cria lead novo, só
+  acrescenta ao lead existente o evento `note`
+  `"Preencheu o formulário de novo."` (mesmo `author_label`) e a resposta
+  vem `{"ok": true, "duplicate": true}` em vez de criar um segundo registro.
+  Telefone vazio nunca casa como duplicata.

@@ -15,6 +15,7 @@ import { GeoModule } from './modules/geo/geo.module';
 import { ImportsModule } from './modules/imports/imports.module';
 import { LeadsModule } from './modules/leads/leads.module';
 import { PracasModule } from './modules/pracas/pracas.module';
+import { PublicModule } from './modules/public/public.module';
 import { UsersModule } from './modules/users/users.module';
 
 @Module({
@@ -32,6 +33,7 @@ import { UsersModule } from './modules/users/users.module';
     ActionsModule,
     LeadsModule,
     ImportsModule,
+    PublicModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
