@@ -758,6 +758,208 @@ check "apaga o bloqueio de teste (sem resíduo)" "true" \
 check "bloqueio apagado sumiu da lista" "false" \
   "$(curl -s $API/v1/blocklist -H "$HD" | jq --arg i "$BLOQ_ID" 'any(.id==$i)')"
 
+echo "── Disparos ──"
+# Público controlado: 5 casas de teste na praça de teste, todas na etapa 1. Sem
+# elas o disparo cairia nos leads do seed e deixaria evento, `last_contact_at` e
+# `msg_send` de resíduo — aqui o DELETE do lead leva envios e eventos por
+# cascata, e a segunda rodada do smoke encontra a base como estava.
+DISP_LEADS=()
+for i in 1 2 3 4 5; do
+  DISP_LEADS+=("$(curl -s -X POST $API/v1/leads -H "$J" -H "$HD" \
+    -d "{\"praca_id\":\"$NOVA_ID\",\"name\":\"Casa Disparo $i · $SUF\",\"city\":\"Cidade $SUF\",\"phone\":\"(31) 9${SUF: -7}$i\",\"decisor\":\"Chefe$i Teste\",\"classe\":\"alvo\",\"origem\":\"prospecção\",\"owner_id\":\"$DIEGO_ID\",\"stage\":1}" | jq -r .id)")
+done
+check "5 casas de teste na praça do smoke" "5" \
+  "$(curl -s "$API/v1/leads?praca_id=$NOVA_ID" -H "$HD" | jq 'length')"
+
+FILTRO="{\"praca_id\":\"$NOVA_ID\",\"stage\":1}"
+PRV=$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
+  -d "{\"filters\":$FILTRO,\"template_id\":\"$TPL_F001\",\"split\":true,\"mode\":\"fila\"}")
+check "prévia acha as 5 casas da etapa 1" "5" "$(echo "$PRV" | jq '.audience')"
+check "todas podem receber" "5" "$(echo "$PRV" | jq '.sendable')"
+check "ninguém na lista de bloqueio" "0" "$(echo "$PRV" | jq '.blocked')"
+check "ninguém na trava de 30 dias" "0" "$(echo "$PRV" | jq '.dupes')"
+check "a prévia mostra 5 mensagens reais" "5" "$(echo "$PRV" | jq '.previews | length')"
+check "divisão A/B alterna por índice" "A B A B A" "$(echo "$PRV" | jq -r '[.previews[].variant] | join(" ")')"
+check "a variante B usa o outro texto do modelo" "true" \
+  "$(echo "$PRV" | jq '.previews[0].text != .previews[1].text')"
+check "prévia usa o primeiro nome do decisor e de quem está logado" "true" \
+  "$(echo "$PRV" | jq '.previews[0].text | startswith("Oi Chefe1, tudo bem? Sou Diego, do Freela.")')"
+check "o vizinho do texto é outra casa da mesma cidade" "true" \
+  "$(echo "$PRV" | jq --arg n "Casa Disparo 2 · $SUF" '.previews[0].text | contains($n)')"
+check "nenhuma variável ficou em ⟨⟩ na prévia" "false" \
+  "$(echo "$PRV" | jq '[.previews[].text] | join(" ") | contains("⟨")')"
+check "a prévia diz quando a primeira mensagem sai" "true" "$(echo "$PRV" | jq '.first_at != null')"
+check "a prévia estima quando o lote termina" "true" "$(echo "$PRV" | jq '.eta != ""')"
+check "no modo fila a integração com o Freela não entra" "null" "$(echo "$PRV" | jq -r '.freela')"
+
+check "modelo sem variante B não divide nada" "A A A A A" \
+  "$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
+    -d "{\"filters\":$FILTRO,\"template_id\":\"$TPL_F007\",\"split\":true,\"mode\":\"fila\"}" \
+    | jq -r '[.previews[].variant] | join(" ")')"
+check "filtro de dias parado tira quem não está parado" "0" \
+  "$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
+    -d "{\"filters\":{\"praca_id\":\"$NOVA_ID\",\"stage\":1,\"min_stalled\":1},\"template_id\":\"$TPL_F001\",\"mode\":\"fila\"}" | jq '.audience')"
+check "filtro de dono tira quem é de outra pessoa" "0" \
+  "$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
+    -d "{\"filters\":{\"praca_id\":\"$NOVA_ID\",\"owner_id\":\"$DANIEL_ID\"},\"template_id\":\"$TPL_F001\",\"mode\":\"fila\"}" | jq '.audience')"
+check "filtro de origem tira quem veio por outro caminho" "0" \
+  "$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
+    -d "{\"filters\":{\"praca_id\":\"$NOVA_ID\",\"origem\":\"importação\"},\"template_id\":\"$TPL_F001\",\"mode\":\"fila\"}" | jq '.audience')"
+
+# Modo `freela`: a prévia funciona (é a tela mostrando o público), mas criar
+# ainda não — quem envia é a campanha do Freela, que a Task 15 liga.
+PRV_FREELA=$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
+  -d "{\"filters\":$FILTRO,\"template_id\":\"$TPL_F001\",\"mode\":\"freela\"}")
+check "prévia no modo freela ainda não descreve a campanha" "null" "$(echo "$PRV_FREELA" | jq -r '.freela')"
+check "no modo freela sem hora marcada o lote sai imediato" "imediato" "$(echo "$PRV_FREELA" | jq -r '.eta')"
+FREELA_HTTP=$(curl -s -o /tmp/praca-smoke-freela.json -w '%{http_code}' -X POST $API/v1/disparos -H "$J" -H "$HD" \
+  -d "{\"filters\":$FILTRO,\"template_id\":\"$TPL_F001\",\"mode\":\"freela\"}")
+check "criar no modo freela sem conexão = 503" "503" "$FREELA_HTTP"
+check "criar no modo freela sem conexão = FREELA_NOT_CONFIGURED" "FREELA_NOT_CONFIGURED" \
+  "$(jq -r .error.code /tmp/praca-smoke-freela.json)"
+
+NOVO_DISP=$(curl -s -X POST $API/v1/disparos -H "$J" -H "$HD" \
+  -d "{\"filters\":$FILTRO,\"template_id\":\"$TPL_F001\",\"split\":true,\"mode\":\"fila\"}")
+DISP_ID=$(echo "$NOVO_DISP" | jq -r .id)
+check "criou uma mensagem por lead que podia receber" "5" "$(echo "$NOVO_DISP" | jq '.created')"
+check "nada pulado pela lista de bloqueio" "0" "$(echo "$NOVO_DISP" | jq '.skipped_block')"
+check "nada pulado pela trava de 30 dias" "0" "$(echo "$NOVO_DISP" | jq '.skipped_dup')"
+
+PAINEL=$(curl -s $API/v1/disparos/$DISP_ID -H "$HD")
+HOJE_BR=$(TZ=America/Sao_Paulo date +%d/%m/%Y)
+check "nome padrão é modelo · data de Brasília" "Contratante · toque 1 (lead novo) · $HOJE_BR" \
+  "$(echo "$PAINEL" | jq -r '.disparo.name')"
+check "o painel traz o nome do modelo" "Contratante · toque 1 (lead novo)" \
+  "$(echo "$PAINEL" | jq -r '.disparo.template_name')"
+check "canal e divisão vêm do modelo" "whatsapp true" \
+  "$(echo "$PAINEL" | jq -r '"\(.disparo.channel) \(.disparo.split)"')"
+check "o disparo nasce agendado" "agendado" "$(echo "$PAINEL" | jq -r '.disparo.status')"
+check "o disparo guarda o filtro do público" "$NOVA_ID" "$(echo "$PAINEL" | jq -r '.disparo.filters.praca_id')"
+check "o filtro guarda as 6 chaves, mesmo as não mandadas" "6" "$(echo "$PAINEL" | jq '.disparo.filters | length')"
+check "todas as mensagens nascem na fila" "5" "$(echo "$PAINEL" | jq '.stats.queued')"
+check "nada enviado ainda" "0" "$(echo "$PAINEL" | jq '.stats.sent')"
+check "contagem do lote bate com a fila" "5 5 0" \
+  "$(echo "$PAINEL" | jq -r '"\(.disparo.counts.total) \(.disparo.counts.queued) \(.disparo.counts.sent)"')"
+check "respostas por hora tem 24 posições" "24" "$(echo "$PAINEL" | jq '.by_hour | length')"
+check "sem resposta, o gráfico está zerado" "0" "$(echo "$PAINEL" | jq '.by_hour | add')"
+check "a fila sai na ordem do agendamento" "true" \
+  "$(echo "$PAINEL" | jq '[.sends[].scheduled_at] == ([.sends[].scheduled_at] | sort)')"
+check "cada envio guarda o texto já renderizado" "0" \
+  "$(echo "$PAINEL" | jq '[.sends[] | select(.text == "")] | length')"
+check "o envio guarda a etapa do lead na hora do envio" "1" "$(echo "$PAINEL" | jq '.sends[0].stage_at_send')"
+check "o envio traz o lead com telefone (é o link do WhatsApp)" "true" \
+  "$(echo "$PAINEL" | jq '.sends[0].lead.phone != ""')"
+check "o disparo novo aparece no topo da lista" "$DISP_ID" \
+  "$(curl -s $API/v1/disparos -H "$HD" | jq -r '.[0].id')"
+check "a lista conta a fila de cada lote" "5" \
+  "$(curl -s $API/v1/disparos -H "$HD" | jq --arg i "$DISP_ID" '[.[] | select(.id==$i)][0].counts.queued')"
+
+SEND1=$(echo "$PAINEL" | jq -r '.sends[0].id'); LEAD1=$(echo "$PAINEL" | jq -r '.sends[0].lead.id')
+SEND2=$(echo "$PAINEL" | jq -r '.sends[1].id'); LEAD2=$(echo "$PAINEL" | jq -r '.sends[1].lead.id')
+SEND3=$(echo "$PAINEL" | jq -r '.sends[2].id'); LEAD3=$(echo "$PAINEL" | jq -r '.sends[2].lead.id')
+SEND4=$(echo "$PAINEL" | jq -r '.sends[3].id')
+SEND5=$(echo "$PAINEL" | jq -r '.sends[4].id')
+
+MARCA=$(curl -s -X POST $API/v1/sends/$SEND1/mark -H "$J" -H "$HD" -d '{"status":"enviada"}')
+check "marcar enviada grava a hora em que a mensagem saiu" "true" "$(echo "$MARCA" | jq '.sent_at != null')"
+check "o envio virou enviada" "enviada" "$(echo "$MARCA" | jq -r '.status')"
+check "o painel conta 1 enviada" "1" "$(curl -s $API/v1/disparos/$DISP_ID -H "$HD" | jq '.stats.sent')"
+LEAD1_VIEW=$(curl -s $API/v1/leads/$LEAD1 -H "$HD")
+check "o lead ganhou o evento de mensagem enviada" "Contratante · toque 1 (lead novo) (variação A) enviada por WhatsApp." \
+  "$(echo "$LEAD1_VIEW" | jq -r '[.events[] | select(.kind=="msg_out")][-1].text')"
+check "o toque virou último contato do lead" "$HOJE" "$(echo "$LEAD1_VIEW" | jq -r '.last_contact_date')"
+check "marcar entregue depois mantém a hora em que saiu" "$(echo "$MARCA" | jq -r '.sent_at')" \
+  "$(curl -s -X POST $API/v1/sends/$SEND1/mark -H "$J" -H "$HD" -d '{"status":"entregue"}' | jq -r '.sent_at')"
+ENT3=$(curl -s -X POST $API/v1/sends/$SEND3/mark -H "$J" -H "$HD" -d '{"status":"entregue"}')
+check "marcar entregue direto na fila também grava a hora de saída" "true" "$(echo "$ENT3" | jq '.sent_at != null')"
+check "entregue não inventa evento de mensagem enviada no lead" "0" \
+  "$(curl -s $API/v1/leads/$LEAD3 -H "$HD" | jq '[.events[] | select(.kind=="msg_out")] | length')"
+
+RESP=$(curl -s -X POST $API/v1/sends/$SEND2/reply -H "$J" -H "$HD" -d '{"text":"pare"}')
+HORA_BR=$(TZ=America/Sao_Paulo date +%-H)
+check "resposta que pede para parar bloqueia o número" "true" "$(echo "$RESP" | jq '.blocked')"
+LEAD2_VIEW=$(curl -s $API/v1/leads/$LEAD2 -H "$HD")
+check "o lead ganhou o evento da resposta com o texto dela" "pare" \
+  "$(echo "$LEAD2_VIEW" | jq -r '[.events[] | select(.kind=="msg_in")][-1].text')"
+BLOQ_OPTOUT=$(curl -s $API/v1/blocklist -H "$HD" | jq --arg l "$LEAD2" '[.[] | select(.lead_id==$l)][0]')
+check "o bloqueio automático guarda o motivo do protótipo" "pediu para não receber: “pare”" \
+  "$(echo "$BLOQ_OPTOUT" | jq -r '.reason')"
+check "o bloqueio automático guarda o nome do lead" "Casa Disparo 2 · $SUF" \
+  "$(echo "$BLOQ_OPTOUT" | jq -r '.name')"
+PAINEL2=$(curl -s $API/v1/disparos/$DISP_ID -H "$HD")
+# Entregues = as duas marcadas na mão + a que respondeu (respondida conta como
+# entregue: se o lead respondeu, a mensagem chegou).
+check "respondida também conta como entregue" "3 1" \
+  "$(echo "$PAINEL2" | jq -r '"\(.stats.delivered) \(.stats.replied)"')"
+check "o painel mostra quem entrou no bloqueio depois do lote" "1" "$(echo "$PAINEL2" | jq '.stats.blocked_after')"
+check "a resposta entrou na hora de Brasília" "1" "$(echo "$PAINEL2" | jq --argjson h "$HORA_BR" '.by_hour[$h]')"
+check "o disparo continua agendado enquanto há fila" "agendado" "$(echo "$PAINEL2" | jq -r '.disparo.status')"
+
+curl -s -X POST $API/v1/sends/$SEND4/mark -H "$J" -H "$HD" -d '{"status":"enviada"}' > /dev/null
+curl -s -X POST $API/v1/sends/$SEND5/mark -H "$J" -H "$HD" -d '{"status":"enviada"}' > /dev/null
+check "o disparo fecha quando a fila zera" "concluido" \
+  "$(curl -s $API/v1/disparos/$DISP_ID -H "$HD" | jq -r '.disparo.status')"
+
+PRV2=$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
+  -d "{\"filters\":$FILTRO,\"template_id\":\"$TPL_F001\",\"split\":true,\"mode\":\"fila\"}")
+check "quem já recebeu este modelo cai na trava de 30 dias" "5" "$(echo "$PRV2" | jq '.dupes')"
+check "quem pediu para não receber cai no bloqueio" "1" "$(echo "$PRV2" | jq '.blocked')"
+check "com todos travados, ninguém pode receber" "0" "$(echo "$PRV2" | jq '.sendable')"
+check "sem ninguém para receber, criar disparo é NO_RECIPIENTS" "NO_RECIPIENTS" \
+  "$(curl -s -X POST $API/v1/disparos -H "$J" -H "$HD" \
+    -d "{\"filters\":$FILTRO,\"template_id\":\"$TPL_F001\",\"mode\":\"fila\"}" | jq -r .error.code)"
+check "a trava é por modelo: outro modelo não foi travado" "0" \
+  "$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
+    -d "{\"filters\":$FILTRO,\"template_id\":\"$TPL_F007\",\"mode\":\"fila\"}" | jq '.dupes')"
+
+check "prévia com modelo inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
+    -d "{\"filters\":$FILTRO,\"template_id\":\"00000000-0000-4000-8000-00000000beef\",\"mode\":\"fila\"}" | jq -r .error.code)"
+check "praça no filtro que não é uuid nem 'all' barrada" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
+    -d "{\"filters\":{\"praca_id\":\"a-praca-de-bh\"},\"template_id\":\"$TPL_F001\",\"mode\":\"fila\"}" | jq -r .error.code)"
+check "etapa fora do funil no filtro barrada" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
+    -d "{\"filters\":{\"stage\":9},\"template_id\":\"$TPL_F001\",\"mode\":\"fila\"}" | jq -r .error.code)"
+check "campo desconhecido no filtro barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
+    -d "{\"filters\":{\"cidade\":\"Belo Horizonte\"},\"template_id\":\"$TPL_F001\",\"mode\":\"fila\"}" | jq -r .error.code)"
+check "modo de envio fora do catálogo barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
+    -d "{\"filters\":$FILTRO,\"template_id\":\"$TPL_F001\",\"mode\":\"provedor\"}" | jq -r .error.code)"
+check "status de marcação fora de enviada/entregue barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/sends/$SEND1/mark -H "$J" -H "$HD" -d '{"status":"falhou"}' | jq -r .error.code)"
+check "resposta sem texto barrada" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/sends/$SEND1/reply -H "$J" -H "$HD" -d '{"text":""}' | jq -r .error.code)"
+check "disparo inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s $API/v1/disparos/00000000-0000-4000-8000-00000000beef -H "$HD" | jq -r .error.code)"
+check "disparo com id malformado = NOT_FOUND (não 500)" "NOT_FOUND" \
+  "$(curl -s $API/v1/disparos/nao-e-uuid -H "$HD" | jq -r .error.code)"
+check "envio inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/sends/00000000-0000-4000-8000-00000000beef/mark -H "$J" -H "$HD" \
+    -d '{"status":"enviada"}' | jq -r .error.code)"
+check "envio com id malformado = NOT_FOUND (não 500)" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/sends/nao-e-uuid/reply -H "$J" -H "$HD" -d '{"text":"oi"}' | jq -r .error.code)"
+
+# --- limpeza: disparo (cascata na fila), bloqueio automático e casas de teste ---
+check "daniel (não admin) não apaga disparo" "FORBIDDEN" \
+  "$(curl -s -X DELETE $API/v1/disparos/$DISP_ID -H "$HN" | jq -r .error.code)"
+check "admin apaga o disparo de teste (sem resíduo)" "true" \
+  "$(curl -s -X DELETE $API/v1/disparos/$DISP_ID -H "$HD" | jq -r .ok)"
+check "disparo apagado sumiu da lista" "false" \
+  "$(curl -s $API/v1/disparos -H "$HD" | jq --arg i "$DISP_ID" 'any(.id==$i)')"
+check "a fila do disparo foi junto (cascata)" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/sends/$SEND1/mark -H "$J" -H "$HD" -d '{"status":"enviada"}' | jq -r .error.code)"
+check "remove o bloqueio do opt-out (sem resíduo)" "true" \
+  "$(curl -s -X DELETE $API/v1/blocklist/$(echo "$BLOQ_OPTOUT" | jq -r .id) -H "$HD" | jq -r .ok)"
+DISP_APAGADOS=0
+for id in "${DISP_LEADS[@]}"; do
+  [ "$(curl -s -X DELETE $API/v1/leads/$id -H "$HD" | jq -r .ok)" = "true" ] && DISP_APAGADOS=$((DISP_APAGADOS+1))
+done
+check "apaga as 5 casas de teste do disparo (sem resíduo)" "5" "$DISP_APAGADOS"
+check "praça do smoke ficou sem lead nenhum" "0" \
+  "$(curl -s "$API/v1/leads?praca_id=$NOVA_ID&archived=true" -H "$HD" | jq 'length')"
+
 echo "── Limpeza da praça de teste ──"
 check "admin apaga a praça de teste" "true" "$(curl -s -X DELETE $API/v1/pracas/$NOVA_ID -H "$HD" | jq -r .ok)"
 check "praça de teste sumiu" "NOT_FOUND" "$(curl -s $API/v1/pracas/$NOVA_ID -H "$HD" | jq -r .error.code)"

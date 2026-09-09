@@ -11,6 +11,7 @@ import { HealthModule } from './common/health/health.module';
 import { ActionsModule } from './modules/actions/actions.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
+import { DisparosModule } from './modules/disparos/disparos.module';
 import { GeoModule } from './modules/geo/geo.module';
 import { ImportsModule } from './modules/imports/imports.module';
 import { LeadsModule } from './modules/leads/leads.module';
@@ -36,6 +37,7 @@ import { UsersModule } from './modules/users/users.module';
     ImportsModule,
     PublicModule,
     MessagesModule,
+    DisparosModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

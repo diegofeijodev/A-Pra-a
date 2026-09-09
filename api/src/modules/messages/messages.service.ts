@@ -259,6 +259,51 @@ export class MessagesService {
     }
   }
 
+  /**
+   * Bloqueia o número se ele ainda não estiver bloqueado; `false` = já estava.
+   *
+   * É o caminho do opt-out automático (resposta "pare" na fila de envios), que
+   * não pode virar `409 ALREADY_BLOCKED` na cara de quem só registrou a
+   * resposta do lead — diferente do `POST /v1/blocklist`, que é ato manual e
+   * avisa quando o número já está lá.
+   */
+  async blockIfNew(input: {
+    phone: string;
+    name: string;
+    lead_id: string | null;
+    reason: string;
+  }): Promise<boolean> {
+    const key = phoneKey(input.phone);
+    if (!key) return false;
+    const ja = await this.prisma.blocklist.count({ where: { phone_key: key } });
+    if (ja) return false;
+    try {
+      await this.prisma.blocklist.create({
+        data: {
+          phone: input.phone,
+          phone_key: key,
+          name: input.name.trim() || NOME_PADRAO_BLOQUEIO,
+          reason: input.reason.trim() || MOTIVO_PADRAO_BLOQUEIO,
+          lead_id: input.lead_id,
+        },
+      });
+      return true;
+    } catch (e) {
+      // Duas respostas de opt-out ao mesmo tempo: a unique decide, sem 500.
+      if ((e as { code?: string }).code === 'P2002') return false;
+      throw e;
+    }
+  }
+
+  /**
+   * Todas as chaves bloqueadas. Uma consulta só: o público de um disparo é
+   * filtrado por ela em memória, em vez de uma consulta por lead.
+   */
+  async blockedKeys(): Promise<Set<string>> {
+    const rows = await this.prisma.blocklist.findMany({ select: { phone_key: true } });
+    return new Set(rows.map((r) => r.phone_key));
+  }
+
   async removeBlock(id: string): Promise<{ ok: true }> {
     if (!isUuid(id)) throw this.bloqueioNaoAchado();
     const row = await this.prisma.blocklist.findUnique({ where: { id } });
@@ -357,13 +402,30 @@ export class MessagesService {
    * real recebe, e "Bar de Teste QA" numa mensagem fria queima o contato.
    */
   private async neighborOf(leadId: string, city: string): Promise<string | undefined> {
-    if (!city.trim()) return undefined;
-    const n = await this.prisma.leads.findFirst({
-      where: { archived: false, is_test: false, city, id: { not: leadId } },
-      orderBy: [{ name: 'asc' }],
-      select: { name: true },
-    });
-    return n?.name;
+    const candidatos = (await this.neighborsByCity([city])).get(city) ?? [];
+    return candidatos.find((c) => c.id !== leadId)?.name;
+  }
+
+  /**
+   * Os DOIS primeiros leads (por nome) de cada cidade — a fonte do
+   * `{{estabelecimento_vizinho}}`. Dois, e não um, porque o vizinho de um lead
+   * é o primeiro que não seja ele mesmo: com dois, um disparo de 2.000
+   * mensagens resolve a prova social com uma consulta por cidade, em vez de
+   * uma por lead. Cidade vazia não tem vizinho.
+   */
+  async neighborsByCity(cities: string[]): Promise<Map<string, { id: string; name: string }[]>> {
+    const out = new Map<string, { id: string; name: string }[]>();
+    for (const city of new Set(cities.filter((c) => c.trim()))) {
+      // Uma consulta por vez (a máquina do dono não gosta de rajada).
+      const rows = await this.prisma.leads.findMany({
+        where: { archived: false, is_test: false, city },
+        orderBy: [{ name: 'asc' }],
+        take: 2,
+        select: { id: true, name: true },
+      });
+      out.set(city, rows);
+    }
+    return out;
   }
 
   private async templateOrFail(id: string) {

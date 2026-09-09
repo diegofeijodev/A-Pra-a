@@ -998,3 +998,180 @@ sábado 21h BRT com `sunday: false` e janela 9–19 cai na segunda às 9h BRT.
   ALREADY_BLOCKED` (o mesmo número escrito de outro jeito é o mesmo bloqueio).
 - `name` vazio vira `"adicionado na mão"`; `reason` vazio vira
   `"pedido manual"`. `lead_id` é opcional e guardado como veio.
+
+## 13. Disparos — `/v1/disparos`, `/v1/sends`
+
+Um disparo é **uma mensagem, para um grupo de pessoas, uma vez**: o filtro do
+funil vira público, o modelo vira texto renderizado lead a lead e cada mensagem
+vira uma linha em `msg_sends`. Porta de
+`.prototype/src/components/praca/Disparos.tsx` e de `store.tsx:588-710`.
+
+| Método | Rota | Corpo | Resposta |
+|---|---|---|---|
+| POST | `/v1/disparos/preview` | `{filters, template_id, split?, mode, scheduled_at?}` | `DisparoPreview` |
+| POST | `/v1/disparos` | o mesmo + `name?` | `{id, created, skipped_block, skipped_dup}` |
+| GET | `/v1/disparos` | — | `DisparoView[]` (mais novo primeiro) |
+| GET | `/v1/disparos/:id` | — | `{disparo, stats, by_hour, sends}` |
+| DELETE | `/v1/disparos/:id` | — | `{ok: true}` — **só admin** |
+| POST | `/v1/sends/:id/mark` | `{status}` | `SendView` |
+| POST | `/v1/sends/:id/reply` | `{text}` | `{blocked}` |
+
+Todas exigem JWT. `:id` malformado → `404 NOT_FOUND` (nunca 500). `DELETE` leva a
+fila do lote por cascata (`msg_sends.disparo_id`), por isso é só de admin — o
+caminho normal é deixar o histórico.
+
+### `DisparoFilters`
+
+```json
+{ "praca_id": "all", "stage": 0, "classe": "all", "origem": "all", "owner_id": "all", "min_stalled": 0 }
+```
+
+Todo campo é opcional e o padrão é "sem filtro" (`all` / `0`) — `filters: {}` é o
+público inteiro. `praca_id`/`owner_id` aceitam `all` ou UUID (outra coisa é `400
+VALIDATION_ERROR`); `stage` de 0 a 8 (0 = todas as etapas); `classe ∈ all |
+grande | alvo | depois`; `origem` é texto livre até 60 (o lead grava origem fora
+da lista curta do catálogo); `min_stalled` é inteiro ≥ 0.
+
+**Público** = leads **não arquivados** e **não de teste** (`is_test`) que casam
+com todos os filtros. `min_stalled` compara com `stalled_days` do funil (§9) —
+regra pura (`stalledDays`, olha o último evento de contato), decidida no
+servidor e não no SQL. A ordem do público é a da tela do funil (`stage`,
+`entered_at`, `created_at`) e **é ela que decide quem recebe A e quem recebe B**:
+prévia e fila usam o mesmo plano, então o que foi revisado é o que sai.
+
+Quem sai do envio:
+
+- **lista de bloqueio** — `phone_key` do lead (últimos 9 dígitos, §12) na
+  `blocklist`;
+- **trava de 30 dias** — já existe `msg_send` do **mesmo modelo** para o lead com
+  `scheduled_at` nos últimos 30 dias, em **qualquer status** (inclusive `fila`):
+  o que a trava evita é montar a mesma mensagem duas vezes.
+
+Os dois números são contados de forma independente (o mesmo lead pode aparecer
+nos dois), então `sendable + blocked + dupes` não fecha necessariamente com
+`audience`.
+
+### `POST /v1/disparos/preview`
+
+```json
+{
+  "audience": 5, "sendable": 4, "blocked": 1, "dupes": 0,
+  "first_at": "2026-09-10T12:00:00.000Z", "eta": "3 min",
+  "previews": [{ "lead_id": "uuid", "name": "Bar do Mercado", "city": "Belo Horizonte", "variant": "A", "text": "Oi Marcos…" }],
+  "freela": null
+}
+```
+
+Não grava nada. `previews` traz as **5 primeiras** mensagens de verdade, com
+`variant` alternando A/B por índice (ímpar = B) quando o disparo pede divisão e
+o modelo tem `text_b` — sem variante B todo mundo recebe A, mesmo com
+`split: true`.
+
+O texto passa pelo mesmo render do §12, com uma diferença: `praca` é a praça **do
+lead** (não a praça ativa de quem dispara), `me` é quem está logado,
+`estabelecimento_vizinho` é outro lead da mesma cidade (o primeiro por nome que
+não seja ele) e `data_vaga` é a primeira vaga do lead. Variável sem valor
+continua visível como `⟨variavel⟩`.
+
+`first_at`/`eta` (`src/domain/send-schedule.ts`):
+
+- modo `fila` — `scheduleTimes` sorteia o intervalo de cada mensagem dentro da
+  janela de `GET /v1/settings` (horário de Brasília, limite diário, domingo);
+  `eta` é o texto do lote (`3 min`, `4,2 h`, `2 dias úteis`).
+- modo `freela` — todos saem no mesmo instante (a campanha do Freela tem ritmo
+  próprio): `eta` é `"imediato"` sem hora marcada, ou a espera até a hora
+  marcada.
+
+`freela` é sempre `null` até a Task 15 (é onde vai o texto convertido para o
+formato de campanha do Freela e as variáveis que ele não suporta). Modelo
+inexistente → `404 NOT_FOUND`.
+
+### `POST /v1/disparos`
+
+Mesmo corpo da prévia, mais `name?` (até 160). Cria a linha de `disparos` e a
+fila de `msg_sends` na **mesma transação**, com `status: "fila"`, o `mode` do
+disparo, a `variant` e o **texto já renderizado** — mudar o modelo depois não
+reescreve o que está na fila. `stage_at_send` guarda a etapa do lead na hora
+(é o que mede "avançou de etapa"), `channel` vem do modelo e `scheduled_at` de
+cada mensagem vem do agendamento acima.
+
+- `name` vazio → `"<modelo> · dd/mm/aaaa"` (data de Brasília).
+- `split` gravado é `split && text_b` — pedir divisão num modelo sem variante B
+  grava `false`.
+- `sendable == 0` → `400 NO_RECIPIENTS`.
+- `mode: "freela"` sem conexão com o Freela → `503 FREELA_NOT_CONFIGURED`
+  (`src/modules/disparos/freela-gate.ts`; hoje é **sempre** — a Task 15 troca a
+  porteira por `FreelaClient.isConfigured()`).
+
+### `DisparoView`
+
+```json
+{
+  "id": "uuid", "name": "Contratante · toque 1 (lead novo) · 09/09/2026",
+  "at": "2026-09-09T12:00:00.000Z", "scheduled_at": "2026-09-10T12:00:00.000Z",
+  "mode": "fila", "template_id": "uuid", "template_name": "Contratante · toque 1 (lead novo)",
+  "split": true, "channel": "whatsapp", "by": "uuid",
+  "filters": { "praca_id": "all", "stage": 1, "classe": "all", "origem": "all", "owner_id": "all", "min_stalled": 0 },
+  "skipped_block": 1, "skipped_dup": 0, "status": "agendado", "freela_campaign_id": null,
+  "counts": { "total": 4, "queued": 3, "sent": 1 }
+}
+```
+
+- `scheduled_at` do disparo é o horário da **primeira** mensagem.
+- `status ∈ agendado | concluido`: fecha em `concluido` quando **nenhum envio do
+  lote está em `fila`** (vale para `mark` e para `reply`).
+- `counts.sent` é tudo que saiu da fila (`status != "fila"`).
+- Modelo apagado depois do disparo: `template_name` vira `"—"` e o histórico do
+  lote continua.
+- `filters` é o Json gravado na criação, sempre com as 6 chaves.
+
+### `GET /v1/disparos/:id`
+
+```json
+{
+  "disparo": { "…": "DisparoView" },
+  "stats": { "queued": 3, "sent": 1, "delivered": 1, "replied": 1, "advanced": 0, "blocked_after": 1 },
+  "by_hour": [0, 0, "…24 posições"],
+  "sends": [{
+    "id": "uuid",
+    "lead": { "id": "uuid", "name": "Bar do Mercado", "city": "Belo Horizonte", "phone": "(31) 98000-1000" },
+    "variant": "A", "text": "Oi Marcos…", "status": "fila",
+    "scheduled_at": "2026-09-10T12:00:00.000Z", "sent_at": null, "replied_at": null,
+    "failure_reason": null, "stage_at_send": 1
+  }]
+}
+```
+
+- `delivered` conta `entregue` **e** `respondida` (se o lead respondeu, chegou);
+  `replied` conta `respondida`.
+- `advanced` = envios em que o lead **está hoje** numa etapa maior que
+  `stage_at_send`.
+- `blocked_after` = quantos leads deste lote estão na lista de bloqueio hoje — é
+  o preço que o lote cobrou.
+- `by_hour` são as respostas por **hora de Brasília** de `replied_at`, 24
+  posições (o gráfico do painel).
+- `sends` sai ordenado por `scheduled_at` (`id` desempata) e traz o telefone
+  porque é ele que monta o link da conversa. O painel do protótipo mostra os 60
+  primeiros.
+
+### `POST /v1/sends/:id/mark` e `POST /v1/sends/:id/reply`
+
+Fila manual: a tela copia o texto, abre a conversa e volta para dizer o que
+aconteceu. Rota por **envio** (não por disparo) porque envio também nasce de
+cadência.
+
+`mark` — `{status}` com `status ∈ enviada | entregue` (`falhou` é do motor, não
+da tela). Grava `sent_at` se ainda estiver vazio e **não reescreve** o que já
+existe. `enviada` é o toque de verdade: grava evento `msg_out` na timeline do
+lead — `"<modelo> (variação A) enviada por WhatsApp."` (rótulo do canal, §4) — e
+atualiza `last_contact_at`, o que zera os dias parados do funil. `entregue` só
+confirma a entrega, sem evento novo. Responde o `SendView` atualizado.
+
+`reply` — `{text}` (1 a 2000). Marca `respondida`, grava `replied_at`
+(e `sent_at` se estiver vazio), grava evento `msg_in` com o texto e atualiza
+`last_contact_at`. Resposta que pede para parar (`catalog.optout_words`) entra na
+`blocklist` na hora, com `name` do lead, `lead_id` e motivo
+`pediu para não receber: “<texto>”` — número já bloqueado não vira erro. Responde
+`{blocked}` (`true` = o texto é um pedido de opt-out).
+
+Envio inexistente → `404 NOT_FOUND`.
