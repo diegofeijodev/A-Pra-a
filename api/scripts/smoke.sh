@@ -579,6 +579,27 @@ check "reenvio deixa a nota na ficha, sem trocar a origem" "Preencheu o formulá
 check "reenvio não mexe na etapa" "1" "$(curl -s $API/v1/leads/$FORM_ID -H "$HD" | jq '.stage')"
 check "reenvio não troca a origem do lead" "tráfego pago" "$(curl -s $API/v1/leads/$FORM_ID -H "$HD" | jq -r '.origem')"
 
+# Corrida: dois envios do MESMO telefone quase ao mesmo tempo (duplo toque em
+# "Enviar", retry de rede) não podem virar dois leads — advisory lock por
+# (praca_id, phone_key) serializa a decisão dentro da transação.
+RACE_TEL="(31) 99777-4321"
+curl -s -X POST $API/v1/public/leads -H "$J" \
+  -d "{\"praca_id\":\"$PRACA_SEED\",\"name\":\"Corrida $SUF A\",\"city\":\"Belo Horizonte\",\"phone\":\"$RACE_TEL\",\"origem\":\"organico\"}" \
+  -o /tmp/praca-smoke-race-a.json &
+curl -s -X POST $API/v1/public/leads -H "$J" \
+  -d "{\"praca_id\":\"$PRACA_SEED\",\"name\":\"Corrida $SUF B\",\"city\":\"Belo Horizonte\",\"phone\":\"$RACE_TEL\",\"origem\":\"organico\"}" \
+  -o /tmp/praca-smoke-race-b.json &
+wait
+check "as duas respostas da corrida voltam ok:true" "2" \
+  "$(jq -r .ok /tmp/praca-smoke-race-a.json /tmp/praca-smoke-race-b.json | grep -c true)"
+RACE_ACHADOS=$(curl -s "$API/v1/leads?praca_id=$PRACA_SEED&q=Corrida%20$SUF" -H "$HD")
+check "dois envios simultâneos do mesmo telefone criam só 1 lead" "1" "$(echo "$RACE_ACHADOS" | jq 'length')"
+RACE_ID=$(echo "$RACE_ACHADOS" | jq -r '.[0].id')
+check "lead da corrida fica com 1 evento de entrada + 1 de reenvio" "2" \
+  "$(curl -s $API/v1/leads/$RACE_ID -H "$HD" | jq '.events | length')"
+check "admin apaga o lead da corrida (sem resíduo)" "true" \
+  "$(curl -s -X DELETE $API/v1/leads/$RACE_ID -H "$HD" | jq -r .ok)"
+
 check "admin apaga o lead do formulário (sem resíduo)" "true" \
   "$(curl -s -X DELETE $API/v1/leads/$FORM_ID -H "$HD" | jq -r .ok)"
 check "lead do formulário sumiu" "NOT_FOUND" "$(curl -s $API/v1/leads/$FORM_ID -H "$HD" | jq -r .error.code)"

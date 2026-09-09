@@ -820,4 +820,5 @@ Corpo:
   acrescenta ao lead existente o evento `note`
   `"Preencheu o formulário de novo."` (mesmo `author_label`) e a resposta
   vem `{"ok": true, "duplicate": true}` em vez de criar um segundo registro.
-  Telefone vazio nunca casa como duplicata.
+  Telefone vazio nunca casa como duplicata. Envios simultâneos do mesmo
+  telefone são serializados no servidor; só um lead nasce.

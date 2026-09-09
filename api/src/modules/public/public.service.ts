@@ -37,73 +37,96 @@ export class PublicService {
    * `POST /v1/public/leads` — `formulario.$pracaId.tsx:35-52` portado para o
    * servidor. Telefone repetido na mesma praça não cria lead de novo: só
    * deixa rastro de que a pessoa preencheu outra vez.
+   *
+   * Checagem de duplicidade + criação vivem dentro de UMA transação
+   * interativa, com um `pg_advisory_xact_lock` na chave `(praca_id, phone_key)`
+   * logo no início: sem ele, dois envios quase simultâneos do mesmo telefone
+   * (duplo toque em "Enviar", retry de rede no celular) podiam os dois ler
+   * `duplicado === null` antes de qualquer um gravar (TOCTOU) e criar dois
+   * leads. Não dá para resolver com índice único em `(praca_id, phone_key)`
+   * porque a importação (`dup_action: 'criar'`, §10) cria leads com telefone
+   * repetido de propósito, marcados `possible_dup: true` — um índice único
+   * quebraria esse caminho. O advisory lock é por transação (libera sozinho
+   * no commit/rollback) e só serializa quem disputa a MESMA chave; não trava
+   * o resto da tabela.
    */
   async createLead(dto: CreatePublicLeadDto): Promise<PublicLeadResult> {
     const praca = await this.prisma.pracas.findUnique({ where: { id: dto.praca_id }, select: { id: true } });
     if (!praca) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Praça não encontrada.' });
 
     const key = phoneKey(dto.phone);
-    const duplicado = key
-      ? await this.prisma.leads.findFirst({
-          where: { praca_id: dto.praca_id, phone_key: key, archived: false },
-          select: { id: true },
-        })
-      : null;
-
-    if (duplicado) {
-      await this.prisma.lead_events.create({
-        data: {
-          lead_id: duplicado.id,
-          author_id: null,
-          author_label: AUTOR_FORMULARIO,
-          kind: 'note',
-          text: 'Preencheu o formulário de novo.',
-        },
-      });
-      return { ok: true, duplicate: true };
-    }
-
+    // Não dependem da corrida de duplicidade — resolvidos fora do lock para
+    // não segurar a transação mais que o necessário.
     const owner = await this.prisma.users.findFirst({
       where: { active: true },
       orderBy: [{ sort: 'asc' }, { created_at: 'asc' }],
       select: { id: true },
     });
-
     const campanhaId = dto.camp && isUuid(dto.camp) ? await this.campanhaIdOrNull(dto.camp) : null;
 
     const hoje = todaySp();
     const origemLabel = dto.origem === 'pago' ? 'tráfego pago' : 'orgânico';
-    await this.prisma.$transaction(async (tx) => {
-      const lead = await tx.leads.create({
-        data: {
-          praca_id: dto.praca_id,
-          name: dto.name.trim(),
-          city: dto.city.trim(),
-          phone: dto.phone.trim(),
-          phone_key: key,
-          decisor: dto.decisor?.trim() || '—',
-          classe: 'alvo',
-          origem: origemLabel,
-          owner_id: owner?.id ?? null,
-          stage: 1,
-          entered_at: hoje,
-          stage_since: hoje,
-          campanha_id: campanhaId,
-          form_answer: dto.freq ? `Fica sem gente ${dto.freq}x por mês` : null,
-        },
-      });
-      await tx.lead_events.create({
-        data: {
-          lead_id: lead.id,
-          author_id: null,
-          author_label: AUTOR_FORMULARIO,
-          kind: 'note',
-          text: 'Lead entrou pelo formulário de captura.',
-        },
-      });
-    });
 
-    return { ok: true };
+    return this.prisma.$transaction<PublicLeadResult>(
+      async (tx) => {
+        // Telefone vazio (sem dígito nenhum) nunca casa como duplicata — nada
+        // para serializar.
+        if (key) {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${dto.praca_id}:${key}`}))`;
+        }
+
+        const duplicado = key
+          ? await tx.leads.findFirst({
+              where: { praca_id: dto.praca_id, phone_key: key, archived: false },
+              select: { id: true },
+            })
+          : null;
+
+        if (duplicado) {
+          await tx.lead_events.create({
+            data: {
+              lead_id: duplicado.id,
+              author_id: null,
+              author_label: AUTOR_FORMULARIO,
+              kind: 'note',
+              text: 'Preencheu o formulário de novo.',
+            },
+          });
+          return { ok: true, duplicate: true };
+        }
+
+        const lead = await tx.leads.create({
+          data: {
+            praca_id: dto.praca_id,
+            name: dto.name.trim(),
+            city: dto.city.trim(),
+            phone: dto.phone.trim(),
+            phone_key: key,
+            decisor: dto.decisor?.trim() || '—',
+            classe: 'alvo',
+            origem: origemLabel,
+            owner_id: owner?.id ?? null,
+            stage: 1,
+            entered_at: hoje,
+            stage_since: hoje,
+            campanha_id: campanhaId,
+            form_answer: dto.freq ? `Fica sem gente ${dto.freq}x por mês` : null,
+          },
+        });
+        await tx.lead_events.create({
+          data: {
+            lead_id: lead.id,
+            author_id: null,
+            author_label: AUTOR_FORMULARIO,
+            kind: 'note',
+            text: 'Lead entrou pelo formulário de captura.',
+          },
+        });
+
+        return { ok: true };
+      },
+      { timeout: 10_000, maxWait: 5_000 },
+    );
   }
 
   private async campanhaIdOrNull(id: string): Promise<string | null> {
