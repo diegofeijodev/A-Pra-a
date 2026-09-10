@@ -53,13 +53,15 @@ verificações em `api/`:
 2. `jest.config.js` tem `maxWorkers: 1` — não reverta. Rode `npm test` só
    quando nenhum outro processo Node nosso (API, outro jest, etc.) estiver de
    pé.
-3. Para smoke test, use `npm run start:smoke` (`ts-node --transpile-only`,
+3. Só UM de {jest, tsc, API, `next dev`, `browser-check`} de pé por vez.
+   Para smoke test e browser-check, use `npm run start:smoke` (`ts-node --transpile-only`,
    sem `--watch`) em vez de `start:dev` — sobe uma vez, sem o watcher do
    Nest recompilando em segundo plano. Suba em background, espere
    `curl -s localhost:3014/health` responder, rode `npm run smoke`, e
    **mate o processo** em seguida (confira com
-   `ss -ltn | grep 3014` que a porta ficou livre) antes de rodar qualquer
-   outra coisa.
+   `ss -ltn | grep -E ':(3014|3024) '` que as portas ficaram livres) antes de
+   rodar qualquer outra coisa. O web do browser-check sobe com `yarn dev` —
+   nunca `next build`/`next start`.
 4. `npm run typecheck` (`tsc --noEmit`) roda **uma vez, sozinho**, no fim da
    tarefa. Nunca dois de {jest, tsc, API} ao mesmo tempo.
 
@@ -69,13 +71,21 @@ verificações em `api/`:
 # api/
 npm run start:dev | build | typecheck | lint | test | seed
 npm run start:smoke                # sobe sem watcher (ts-node --transpile-only), pra smoke
-npm run smoke                      # scripts/smoke.sh contra a API viva — 747 checks, repetível sem resíduo
+npm run smoke                      # scripts/smoke.sh contra a API viva — 758 checagens, repetível sem resíduo
+npm test                           # jest maxWorkers 1 — 22 suítes, 422 testes
 npm run prisma:migrate:dev | prisma:generate | prisma:studio
 
 # web/
-yarn dev | build | typecheck | lint
-node scripts/browser-check.mjs     # precisa da API na 3014 e do web na 3024
+yarn dev | typecheck | lint        # `build` só se o dono pedir (ver abaixo)
+yarn browser-check                 # scripts/browser-check.mjs — 87 checagens
+                                   # precisa da API na 3014 (start:smoke) e do web na 3024 (yarn dev)
 ```
+
+O `browser-check` cria coisas de verdade (ação concluída, lead, disparo,
+lançamento de indicador) e **apaga tudo no fim** — o banco volta ao seed e o
+script pode rodar de novo em seguida. Ele falha em qualquer erro de console ou
+resposta HTTP ≥ 400: sem o Freela configurado a tela do Freela só chama
+`GET /v1/freela/status`, que responde 200.
 
 ## Onde fica o conteúdo
 

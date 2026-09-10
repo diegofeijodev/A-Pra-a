@@ -18,8 +18,10 @@ stack do Freela: **NestJS 11 + Fastify + Prisma + PostgreSQL** na API e
 Novo em relação ao protótipo: integração com o sistema de campanhas do Freela
 (`api-freela`) — campanhas normais e automáticas (§ Integração com o Freela).
 
-**Status:** API completa (17 módulos, contrato em `docs/api-contract.md`).
-Web: **em construção** (Task 18 em diante) — por enquanto só a API sobe.
+**Status:** port **concluído**. API com 17 módulos (contrato em
+`docs/api-contract.md`) e web com as 10 telas do protótipo mais o formulário
+público. Verificação de ponta a ponta: 422 testes de unidade, 758 checagens de
+smoke contra a API viva e 87 checagens de navegador (§ Verificação).
 
 ## Como subir
 
@@ -37,12 +39,15 @@ npm run start:dev                      # http://localhost:3014 · Swagger em /do
 ```
 
 ```bash
-# 3. web — em construção (Task 18+), ainda não existe neste repo
+# 3. web (usa yarn — nunca npm neste diretório)
 cd web
 yarn install
 echo 'NEXT_PUBLIC_API_URL=http://localhost:3014' > .env.local
 yarn dev                               # http://localhost:3024
 ```
+
+Com os dois de pé, `http://localhost:3024/entrar?demo=1` já entra com a conta
+semeada (o formulário nasce preenchido; basta clicar em **Entrar**).
 
 **Portas**
 
@@ -62,6 +67,27 @@ yarn dev                               # http://localhost:3024
 | `diego@praca.local` | admin — CEO, visitas às casas grandes |
 | `daniel@praca.local` | operação |
 | `mkt@praca.local` | marketing externo |
+
+## Telas
+
+Todas as telas do app exigem sessão (a guarda vive em
+`web/src/app/(app)/layout.tsx`); `/entrar` e `/formulario/[pracaId]` são
+públicas. Os textos são os do protótipo Lovable, portados 1:1.
+
+| Rota | Tela | O que faz |
+|---|---|---|
+| `/entrar` | Entrada | login por e-mail e senha; `?demo=1` preenche a conta semeada |
+| `/hoje` | Ações | agenda do dia: atrasadas, para hoje, próximos 7 dias, carga por pessoa e os leads do funil que precisam de toque hoje. Concluir/desfazer direto na linha |
+| `/praca` | Praça | as 11 etapas do roteiro de abertura com portão por resultado, cobertura geográfica e progresso por etapa |
+| `/funil` | Funil | quadro de 8 etapas com os contratantes: métricas do topo, filtros, cartão arrastável, ficha lateral (linha do tempo, próximo passo, mudança de etapa) |
+| `/entrada` | Entrada de leads | importar planilha/XML com mapeamento de campos e regra de duplicidade, endereço do formulário público, fila "para tocar hoje" e desfazer importação |
+| `/mensagens` | Mensagens | modelos com variação A/B e prévia real, disparos em lote (público, prévia, agendamento, fila manual) e cadências que rodam sozinhas |
+| `/campanhas` | Campanhas | mídia paga: briefing com portão, quadro de criativos, tráfego dia a dia e calendário de publicação |
+| `/calendario` | Calendário | mês/semana das ações, com marcos das etapas e remanejamento por arrastar |
+| `/indicadores` | Indicadores | os 12 indicadores nas visões empresa / praça / pessoa / canal, metas por horizonte e lançamento à mão |
+| `/configuracoes` | Configurações | pessoas e acessos, dados da praça, variáveis padrão das mensagens e roteiro-modelo das próximas praças |
+| `/freela` | Freela | campanhas de WhatsApp no Freela (normais e automáticas) e o estado da conexão |
+| `/formulario/[pracaId]` | Formulário público | captura sem login por praça (`?origem=` e `?camp=`), com limite por IP |
 
 ## API — rotas por área
 
@@ -126,21 +152,40 @@ famílias de campanha: [`docs/api-contract.md` §18](docs/api-contract.md#18-fre
 
 ## Verificação
 
+**Um de cada vez** — esta máquina trava com dois processos pesados juntos (ver
+[`CLAUDE.md`](CLAUDE.md), "Regras de baixo consumo"). Nunca rode `nest build`
+nem `next build` numa tarefa comum.
+
 ```bash
 cd api
-npm test                # jest, maxWorkers 1 — 402 testes
+npm test                 # jest, maxWorkers 1 — 22 suítes, 422 testes
 npm run typecheck        # tsc --noEmit, sozinho
+npm run lint
 
-# smoke (sobe a API sem watcher, roda os checks, mata o processo)
-npm run start:smoke &    # espera responder em :3014, mata depois
-npm run smoke             # 747 checks, repetível sem resíduo
-
-npm run build             # UMA vez, sozinho, sem outro processo Node de pé
+# smoke: sobe a API sem watcher, roda os checks contra ela e mata o processo
+npm run start:smoke &    # espere `curl -s localhost:3014/health` responder
+npm run smoke            # 758 checagens, repetível sem resíduo
 ```
 
-Regras de baixo consumo desta máquina (RAM limitada, trava com build/teste em
-paralelo) estão em [`CLAUDE.md`](CLAUDE.md) — leia antes de rodar verificações
-em lote.
+```bash
+cd web
+yarn typecheck
+yarn lint
+
+# navegador: precisa da API na 3014 (start:smoke) e do web na 3024 (yarn dev)
+yarn dev &
+yarn browser-check       # 87 checagens; limpa o que cria e pode repetir
+```
+
+`browser-check` entra por `/entrar?demo=1`, abre as 10 telas e o formulário
+público (num contexto sem sessão), faz ações de verdade — concluir e desfazer
+uma ação, criar um lead e movê-lo de etapa, montar um disparo em fila e marcar
+enviada, lançar um indicador à mão — e **apaga tudo o que criou** no fim, de
+modo que o banco termina igual ao seed. Qualquer erro de console ou resposta
+HTTP ≥ 400 derruba a rodada.
+
+Depois, mate os dois processos e confirme que as portas ficaram livres:
+`ss -ltn | grep -E ':(3014|3024) '` tem que voltar vazio.
 
 ## Documentos
 
@@ -148,6 +193,11 @@ em lote.
   topo).
 - **`docs/superpowers/specs/2026-09-09-praca-port-design.md`** — spec de
   design do port.
+- **`docs/api-contract.md` §19** — **desvios propositais** em relação ao
+  protótipo Lovable: a lista fechada do que é diferente de propósito (motor de
+  cadências no servidor, dois modos de envio, pessoas com login, `text` na
+  prévia do disparo, cadência nova nascendo pausada, etc.). Antes de reportar
+  "isso não é igual ao protótipo", confira lá.
 - **`docs/superpowers/plans/2026-09-09-praca-port.md`** — plano de
   implementação.
 - **`CLAUDE.md`** — regras rápidas para trabalhar neste repo.

@@ -2420,9 +2420,10 @@ Ao rodar, registre aqui o resultado dos passos 4 a 8.
 
 Lista fechada: o spec do port (`docs/superpowers/specs/2026-09-09-praca-port-design.md`
 §9) definiu os itens 1–12 antes de começar a implementação; os itens 13–23
-foram decisões tomadas durante a implementação, registradas aqui no fechamento
-(Task 17). Nenhum é bug — é comportamento deliberado, diferente do protótipo
-Lovable de referência (`.prototype/`).
+foram decisões tomadas durante a implementação da API (Task 17) e os 24–29
+durante a implementação do web e no fechamento (Task 25). Nenhum é bug — é
+comportamento deliberado, diferente do protótipo Lovable de referência
+(`.prototype/`).
 
 1. Motor de cadências roda no servidor (`@Cron` a cada 15 s) — no protótipo só
    rodava com a aba Mensagens aberta. Ver [§14](#14-cadencias).
@@ -2506,3 +2507,31 @@ Lovable de referência (`.prototype/`).
     inteira antes de a pessoa terminar de montar os passos — quem liga é gente,
     pelo "Retomar" do cartão. Mesma razão do seed pausado (item 16). Ver
     [§14](#14-cadencias).
+25. Motivo da perda (`lost_reason`) é **texto livre** de 1 a 120 caracteres: o
+    `catalog.lost_reasons` é só a lista sugerida do diálogo de mudança de etapa,
+    e escolher "outro" grava o texto digitado — não a palavra "outro". Mesma
+    razão do item 14 (`origem`): lista fechada no servidor engessaria o que o
+    time escreve na rua. Ver [§9](#9-funil).
+26. `POST /v1/sends/:id/mark` num envio em modo `freela` é recusado com
+    `409 FREELA_SEND`. Lá a fila não é do Praça: o outbox garimpa exatamente
+    `mode: 'freela'` + `status: 'fila'` e a sincronização escreve
+    `enviada`/`entregue` de lá para cá — marcar à mão tiraria o envio da
+    garimpagem e ele nunca chegaria à campanha. `POST /v1/sends/:id/reply`
+    continua liberado nos dois modos (a resposta do lead chega no WhatsApp de
+    quem operou, não pelo Freela). No protótipo havia um botão só, sem modo.
+    Ver [§13](#13-disparos) e [§18](#18-freela).
+27. `POST /v1/disparos/preview` aceita **`text`** (texto escrito na mão, com
+    variantes separadas por `---`) no lugar de `template_id` — exatamente um dos
+    dois. É o que faz a caixa de campanha do Freela contar o mesmo público nos
+    seus dois modos sem inventar um modelo. Com `text` **não há trava de 30
+    dias** (ela é por modelo) e a criação do disparo continua exigindo
+    `template_id`. Ver [§13](#13-disparos).
+28. O **e-mail** de uma pessoa é só leitura depois de criada: nenhum `PATCH` do
+    contrato troca e-mail (é a credencial de login, que o protótipo não tinha).
+    Trocar de e-mail = criar outra conta e desativar a antiga. Ver
+    [§3](#3-pessoas).
+29. `template_defaults` (item 8) é um **bloco parcial de chaves fechadas**:
+    `PATCH /v1/settings` aceita só as 6 chaves conhecidas — qualquer outra é
+    `400 VALIDATION_ERROR` —, funde com o que já estava gravado (manda-se só a
+    que mudou) e responde sempre as 6, caindo no padrão do catálogo no que
+    estiver vazio. Ver [§12](#12-mensagens).
