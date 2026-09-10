@@ -2181,6 +2181,10 @@ push**: `feat/activation-campaigns-contact-message`, commit
 `activation_campaign_recipients.custom_message` (migração
 `20260909220000_activation_recipients_custom_message`) e faz o despachante
 mandar o texto do destinatário — com o rodapé de opt-out — em vez do template.
+Nesse caminho o rodapé é colado **sempre**, a não ser que o texto já traga a
+instrução inteira (`responda`/`responder SAIR`) — então não precisamos escrever
+opt-out no modelo do Praça, e um "sair" solto no meio da frase não some com o
+rodapé.
 Só o canal WhatsApp usa esse texto, e ele sai **como está** (nenhum `{{...}}` é
 substituído lá; quem renderiza é o Praça). `FREELA_PER_CONTACT_MESSAGE=true`
 somente **depois** que essa branch for mesclada e deployada em produção — o
