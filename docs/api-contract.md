@@ -2173,6 +2173,19 @@ aceitar um texto **por contato**. Isso depende da extensão opcional descrita em
 `forbidNonWhitelisted` de lá devolve `400` no lote inteiro por causa do campo a
 mais.
 
+A extensão já está escrita e testada no api-freela, em branch **local, sem
+push**: `feat/activation-campaigns-contact-message`, commit
+`d30bff00365000d523f9e71b8618245752816d9a` (worktree
+`/home/doutor/coding/freela/.wt/api-contact-message`). Ela adiciona
+`ExternalContactDto.message` (opcional, ≤ 4000), a coluna
+`activation_campaign_recipients.custom_message` (migração
+`20260909220000_activation_recipients_custom_message`) e faz o despachante
+mandar o texto do destinatário — com o rodapé de opt-out — em vez do template.
+Só o canal WhatsApp usa esse texto, e ele sai **como está** (nenhum `{{...}}` é
+substituído lá; quem renderiza é o Praça). `FREELA_PER_CONTACT_MESSAGE=true`
+somente **depois** que essa branch for mesclada e deployada em produção — o
+dono decide o merge.
+
 ### 18.5 Outbox: disparo e cadência em modo `freela`
 
 No modo `freela` ninguém envia pelo Praça. O disparo (§13) e o motor de
