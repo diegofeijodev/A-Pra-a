@@ -19,9 +19,10 @@ Novo em relação ao protótipo: integração com o sistema de campanhas do Free
 (`api-freela`) — campanhas normais e automáticas (§ Integração com o Freela).
 
 **Status:** port **concluído**. API com 17 módulos (contrato em
-`docs/api-contract.md`) e web com as 10 telas do protótipo mais o formulário
-público. Verificação de ponta a ponta: 422 testes de unidade, 758 checagens de
-smoke contra a API viva e 87 checagens de navegador (§ Verificação).
+`docs/api-contract.md`) e web com as **9 telas** do protótipo mais três coisas
+que ele não tinha — `/freela`, `/entrar` e o formulário público. Verificação de
+ponta a ponta: 457 testes de unidade, 770 checagens de smoke contra a API viva e
+97 checagens de navegador (§ Verificação).
 
 ## Como subir
 
@@ -46,8 +47,11 @@ echo 'NEXT_PUBLIC_API_URL=http://localhost:3014' > .env.local
 yarn dev                               # http://localhost:3024
 ```
 
-Com os dois de pé, `http://localhost:3024/entrar?demo=1` já entra com a conta
-semeada (o formulário nasce preenchido; basta clicar em **Entrar**).
+Com os dois de pé, `http://localhost:3024/entrar` pede e-mail e senha (a conta
+semeada abaixo). O atalho `?demo=1`, que nasce com o formulário preenchido, só
+existe com as três linhas de `web/.env.example` no `.env.local`
+(`NEXT_PUBLIC_DEMO_LOGIN=1` + e-mail + senha): a senha de um **admin** não fica
+no pacote do navegador de graça.
 
 **Portas**
 
@@ -60,13 +64,17 @@ semeada (o formulário nasce preenchido; basta clicar em **Entrar**).
 | pedidos-online | 3012 | 3022 | 5435 |
 | meu-par | 3013 | 3023 | 5436 |
 
-**Logins de demonstração** (seed): senha `praca123` para os três.
+**Logins de demonstração** (seed em desenvolvimento): senha `praca123` para os
+três.
 
 | E-mail | Papel |
 |---|---|
 | `diego@praca.local` | admin — CEO, visitas às casas grandes |
 | `daniel@praca.local` | operação |
 | `mkt@praca.local` | marketing externo |
+
+Em `NODE_ENV=production` o seed **não** usa essa senha e **não** cria as duas
+contas de demonstração — ver § Produção.
 
 ## Telas
 
@@ -76,7 +84,8 @@ públicas. Os textos são os do protótipo Lovable, portados 1:1.
 
 | Rota | Tela | O que faz |
 |---|---|---|
-| `/entrar` | Entrada | login por e-mail e senha; `?demo=1` preenche a conta semeada |
+| `/` | — | redireciona para `/hoje` |
+| `/entrar` | Entrada | login por e-mail e senha; `?demo=1` preenche a conta de demonstração **só** com `NEXT_PUBLIC_DEMO_LOGIN=1` |
 | `/hoje` | Ações | agenda do dia: atrasadas, para hoje, próximos 7 dias, carga por pessoa e os leads do funil que precisam de toque hoje. Concluir/desfazer direto na linha |
 | `/praca` | Praça | as 11 etapas do roteiro de abertura com portão por resultado, cobertura geográfica e progresso por etapa |
 | `/funil` | Funil | quadro de 8 etapas com os contratantes: métricas do topo, filtros, cartão arrastável, ficha lateral (linha do tempo, próximo passo, mudança de etapa) |
@@ -126,6 +135,7 @@ permissão `REFERRALS`) — sem chave de API nem conta de serviço própria.
 | `FREELA_ADMIN_EMAIL` | login do admin dedicado ao Praça |
 | `FREELA_ADMIN_PASSWORD` | senha desse admin |
 | `FREELA_PER_CONTACT_MESSAGE` | `true` só depois que a extensão abaixo estiver em produção no Freela (default `false`) |
+| `FREELA_SYNC_ENABLED` | relógio de 2 min do outbox + sincronização (default **`true`**; ausente = ligado) |
 
 Sem as três primeiras, toda rota `/v1/freela/*` e o modo de envio `freela`
 respondem `503 FREELA_NOT_CONFIGURED` — o resto do Praça funciona normal
@@ -150,6 +160,50 @@ que o Freela já conhece. O dono decide se/quando mescla; até lá,
 Detalhe de como o Praça converte modelo, sincroniza status e lida com as duas
 famílias de campanha: [`docs/api-contract.md` §18](docs/api-contract.md#18-freela).
 
+## Produção
+
+Todo o resto das variáveis do `api/.env` está em
+[`api/.env.example`](api/.env.example) e é validado por zod na largada
+(`src/common/config/env.validation.ts`) — a API **não sobe** com configuração
+inválida. Cinco delas mudam comportamento e valem uma linha aqui:
+
+| Variável | Default | Para quê |
+|---|---|---|
+| `TRUST_PROXY` | `false` | **ligue (`true`) atrás de nginx.** Sem ela o `req.ip` do Fastify é o IP do proxy: todo visitante vira um IP só e o teto por IP (300/min por rota; 10/min no formulário público) passa a valer para o mundo inteiro junto — é a forma do incidente `throttler-global-bucket-429-outage` do api-freela. Sem proxy na frente, deixe `false`: confiar no `X-Forwarded-For` ali deixaria qualquer um forjar o próprio IP |
+| `PUBLIC_LEADS_PER_MINUTE` | `10` | teto do formulário público por minuto e por IP (é o único ponto que a internet escreve sem login) |
+| `CADENCE_ENGINE_ENABLED` | `true` | relógio de 15 s do motor de cadências |
+| `FREELA_SYNC_ENABLED` | `true` | relógio de 2 min do outbox/sincronização do Freela |
+| `SEED_ADMIN_PASSWORD` | — | **obrigatória** para rodar `npm run seed` com `NODE_ENV=production` |
+
+Flag nova precisa estar declarada no `docker-compose.yml`/`.prod` (regra de ops
+do workspace) — mesmo quando o default do zod já resolve.
+
+**A API roda em UMA instância.** Os dois relógios (`@Cron`) assumem processo
+único: a garimpagem do outbox solta o lock consultivo antes da chamada HTTP e
+não marca as linhas, e o avanço da cadência relê a inscrição sem `FOR UPDATE`.
+Com duas réplicas, o mesmo lote vira duas campanhas (o lead recebe duas vezes) e
+a mesma inscrição avança duas vezes. Se um dia precisar de duas, o caminho é
+marcar as linhas na garimpagem (`UPDATE … SET claimed_at`) e ler com
+`SELECT … FOR UPDATE SKIP LOCKED` — ver `docs/api-contract.md` §14, §18.5 e
+§18.6.
+
+**Seed em produção.** O formulário público precisa estar na internet (ele é
+embutido em anúncio e landing), então a API inteira fica exposta —
+`POST /v1/auth/login` incluído. Por isso `npm run seed` com
+`NODE_ENV=production`:
+
+- **exige** `SEED_ADMIN_PASSWORD` (mínimo 8 caracteres) e falha com mensagem
+  clara sem ela;
+- cria **só** a conta admin (`diego@praca.local`) com essa senha — as duas
+  contas de demonstração ficam de fora.
+
+Em desenvolvimento nada muda: as três contas nascem com `praca123`. Troque as
+senhas (e o e-mail do admin, criando outra conta) antes de expor a API.
+
+**Web.** Nunca ligue `NEXT_PUBLIC_DEMO_LOGIN` num host de verdade: com ela, as
+credenciais de demonstração vão para o JS estático e `/entrar?demo=1` entrega o
+formulário preenchido.
+
 ## Verificação
 
 **Um de cada vez** — esta máquina trava com dois processos pesados juntos (ver
@@ -158,13 +212,15 @@ nem `next build` numa tarefa comum.
 
 ```bash
 cd api
-npm test                 # jest, maxWorkers 1 — 22 suítes, 422 testes
+npm test                 # jest, maxWorkers 1 — 27 suítes, 457 testes
 npm run typecheck        # tsc --noEmit, sozinho
 npm run lint
 
 # smoke: sobe a API sem watcher, roda os checks contra ela e mata o processo
 npm run start:smoke &    # espere `curl -s localhost:3014/health` responder
-npm run smoke            # 758 checagens, repetível sem resíduo
+npm run smoke            # 770 checagens, repetível sem resíduo
+                         # (769 sem o container `praca-postgres` de pé: a última
+                         #  limpeza das contas de teste é por psql)
 ```
 
 ```bash
@@ -174,15 +230,24 @@ yarn lint
 
 # navegador: precisa da API na 3014 (start:smoke) e do web na 3024 (yarn dev)
 yarn dev &
-yarn browser-check       # 87 checagens; limpa o que cria e pode repetir
+yarn browser-check       # 97 checagens; limpa o que cria e pode repetir
 ```
 
-`browser-check` entra por `/entrar?demo=1`, abre as 10 telas e o formulário
-público (num contexto sem sessão), faz ações de verdade — concluir e desfazer
+`browser-check` entra **pelo formulário** (conta em `PRACA_CHECK_EMAIL` /
+`PRACA_CHECK_PASSWORD`, padrão a do seed), abre as telas do app e o formulário
+público (num contexto sem sessão) e faz ações de verdade: concluir e desfazer
 uma ação, criar um lead e movê-lo de etapa, montar um disparo em fila e marcar
-enviada, lançar um indicador à mão — e **apaga tudo o que criou** no fim, de
-modo que o banco termina igual ao seed. Qualquer erro de console ou resposta
-HTTP ≥ 400 derruba a rodada.
+enviada, lançar um indicador à mão.
+
+Ele começa afirmando as **pré-condições do seed** de que depende (a praça, o
+dono sem lead nenhum, a tabela de disparos vazia, o indicador `falta` sem
+histórico) e faz uma **faxina de entrada** do que uma rodada interrompida possa
+ter deixado; no fim **apaga tudo o que criou**, cada passo com tratamento de
+erro próprio — inclusive desfazendo a conclusão da ação pela API
+(`POST /v1/actions/:id/uncomplete`) —, de modo que o banco termina igual ao
+seed e a rodada seguinte passa. Qualquer erro de console, `pageerror`, falha de
+rede ou resposta HTTP ≥ 400 derruba a rodada (a única exceção é o 404 do
+`hot-update.json` do `next dev`, com motivo escrito no script).
 
 Depois, mate os dois processos e confirme que as portas ficaram livres:
 `ss -ltn | grep -E ':(3014|3024) '` tem que voltar vazio.

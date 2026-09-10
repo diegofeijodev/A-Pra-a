@@ -46,7 +46,14 @@ aqui primeiro. Swagger interativo em `/docs` (fora de produção).
   do GET quebra.
 - Id vindo da URL passa por `isUuid()` antes do Prisma: id malformado responde
   `404 NOT_FOUND`, nunca `500`.
-- Throttle: 300 req/min por IP.
+- Throttle: 300 req/min **por rota** e por IP — o `@nestjs/throttler` monta a
+  chave com classe + handler, então cada rota tem o seu balde. O formulário
+  público tem teto próprio (§11).
+- O IP é o `req.ip` do Fastify. Atrás de proxy reverso (nginx) isso é o IP do
+  proxy — e aí o mundo inteiro divide um balde só. Por isso existe
+  `TRUST_PROXY=true` (ver README, "Produção"), que faz o Fastify ler
+  `X-Forwarded-For`. Sem proxy na frente ela fica **desligada**: confiar no
+  cabeçalho ali deixaria qualquer um forjar o próprio IP.
 
 <a id="2-auth"></a>
 
@@ -102,6 +109,13 @@ Regras de desativação (`active:false`, via `PATCH /:id` ou `DELETE /:id`):
 `theme` ∈ `dark`, `light`. `color` é hex (`#RRGGBB`). `active_praca_id`
 referencia `pracas.id` (§6; sem FK no banco — quando a praça é apagada, o
 campo é limpo à mão pelo `DELETE /v1/pracas/:id`); `null` desvincula.
+
+`PATCH /me` com `active_praca_id` **confere a praça** (uuid e existência) e
+responde `404 NOT_FOUND` quando ela não existe. Sem essa conferência, um uuid
+bem-formado e inexistente entrava com `200` e estourava depois: `POST
+/v1/cadences/:id/test` grava essa praça em `leads.praca_id`, que **tem** FK, e o
+erro do Prisma virava `500 INTERNAL_ERROR`. Id malformado é
+`400 VALIDATION_ERROR` (o `@IsUUID()` do DTO).
 
 <a id="4-catalogo"></a>
 
@@ -678,7 +692,10 @@ protótipo (`lib/praca/intake.ts`).
   antiga**, que é a ordem em que as praças são lidas). Sem casar, o lead entra
   **sem praça** e aparece em `GET /v1/leads/orphans`.
 - **`owner_mode`**: `lote` (todos para `lote_owner_id`) ou `rodizio`
-  (distribui em ordem entre `rodizio_ids`; vazio = todo mundo ativo).
+  (distribui em ordem entre `rodizio_ids`; vazio = todo mundo ativo). Rodízio
+  que não encontra ninguém ativo → `400 NO_OWNERS`
+  (`"Não há ninguém ativo para receber os leads."`); acontece com
+  `rodizio_ids` vazio numa base onde todas as contas foram desativadas.
 - Linha **sem nome** ou **sem telefone** (menos de 8 dígitos) nunca entra.
 
 `classe` é adivinhada do texto da planilha: "grande"/"alta" → `grande`;
@@ -814,11 +831,15 @@ limpeza do admin. O lote continua na lista, com `imported` abatido e o motivo
 ## 11. Formulário público — `/v1/public`
 
 Porta pública do formulário de captura (`.prototype/src/routes/formulario.$pracaId.tsx`):
-embutido em landing page/anúncio, sem login. As duas rotas são `@Public()` e
-**não** entram no throttle de 300 req/min — o `POST` tem o seu próprio, bem
-mais apertado: **`PUBLIC_LEADS_PER_MINUTE` por minuto e por IP** (padrão 10, o
-valor de produção; em desenvolvimento sobe para o smoke rodar duas vezes
-seguidas). Estourar responde `429 TOO_MANY_REQUESTS`.
+embutido em landing page/anúncio, sem login. As duas rotas são `@Public()`
+(sem JWT). O throttle: o `POST` tem balde **próprio**, bem mais apertado —
+**`PUBLIC_LEADS_PER_MINUTE` por minuto e por IP** (padrão 10, o valor de
+produção; em desenvolvimento sobe para o smoke rodar duas vezes seguidas); o
+`GET /pracas/:id` cai no balde global de 300/min por rota (§1). Estourar
+responde `429 TOO_MANY_REQUESTS`.
+
+> Sem `TRUST_PROXY=true` atrás de nginx, "por IP" vira "por proxy" e o teto de
+> 10/min passa a valer para o mundo inteiro junto — ver §1 e o README.
 
 | Método | Rota | Corpo | Resposta |
 |---|---|---|---|
@@ -889,7 +910,7 @@ lista de bloqueio. Porta de `.prototype/src/lib/praca/mensagens.ts`.
 | POST | `/v1/msg-templates` | `TemplateBody` | `TemplateView` |
 | POST | `/v1/msg-templates/render` | `{text, lead_id?}` | `{text, missing}` |
 | PUT | `/v1/msg-templates/:id` | `TemplateBody` | `TemplateView` |
-| DELETE | `/v1/msg-templates/:id` | — | `{ok: true}` |
+| DELETE | `/v1/msg-templates/:id` | — | `{ok: true}`; `409 TEMPLATE_IN_USE` |
 | GET | `/v1/settings` | — | `SettingsView` |
 | PATCH | `/v1/settings` | campos opcionais | `SettingsView` |
 | GET | `/v1/blocklist` | — | `BlockView[]` |
@@ -897,6 +918,15 @@ lista de bloqueio. Porta de `.prototype/src/lib/praca/mensagens.ts`.
 | DELETE | `/v1/blocklist/:id` | — | `{ok: true}` |
 
 Todas exigem JWT. `:id` malformado → `404 NOT_FOUND` (nunca 500).
+
+`DELETE /v1/msg-templates/:id` recusa com **`409 TEMPLATE_IN_USE`** (a mensagem
+diz quais cadências) quando algum `cadence_nodes.template_id` aponta para o
+modelo. `cadence_nodes` **não** tem FK para `msg_templates` (o nó guarda o id
+solto, por desenho — §14): sem a guarda, o nó ficava apontando para o nada e o
+motor gravava `msg_sends` com texto **vazio** — mensagem em branco no modo
+`fila`, `whatsappTemplate: ""` no modo `freela`. Silencioso nos dois casos, e as
+5 cadências-modelo citam os 8 modelos semeados, então era o caminho normal.
+Troque o passo (ou apague a cadência) antes de apagar o modelo.
 
 ### `TemplateView`
 
@@ -1265,10 +1295,16 @@ confirma a entrega, sem evento novo. Responde o `SendView` atualizado.
 
 `reply` — `{text}` (1 a 2000). Marca `respondida`, grava `replied_at`
 (e `sent_at` se estiver vazio), grava evento `msg_in` com o texto e atualiza
-`last_contact_at`. Resposta que pede para parar (`catalog.optout_words`) entra na
+`last_contact_at`. Resposta que pede para parar entra na
 `blocklist` na hora, com `name` do lead, `lead_id` e motivo
 `pediu para não receber: “<texto>”` — número já bloqueado não vira erro. Responde
 `{blocked}` (`true` = o texto é um pedido de opt-out).
+
+As palavras de opt-out (`sair`, `pare`, `remove`…) vivem **só no servidor**
+(`src/domain/catalog/messages.ts`, `OPTOUT_WORDS`) e **não** são devolvidas por
+`GET /v1/catalog`: publicá-las ensinaria a burlar a lista. A comparação casa a
+palavra inteira **ou** contida no texto ("me remove por favor" sai), igual ao
+protótipo.
 
 `reply` apara o texto antes de validar: corpo só com espaço é `400
 VALIDATION_ERROR`.
@@ -1332,6 +1368,24 @@ monta a cadência apaga a cadência.
 `exit.action ∈ catalog.cond_actions` **menos `continua`** (o fim da trilha tem de
 sair de algum jeito), `exit.note` até 400.
 
+`paused` (booleano, opcional) faz parte do `CadenceBody` e tem tratamento
+próprio, porque é a trava contra "matricular a base inteira":
+
+| | `paused` ausente | `paused` no corpo |
+|---|---|---|
+| `POST` | nasce **pausada** (`true`) | vale o que veio |
+| `PUT` | **mantém** o valor atual | vale o que veio |
+
+Cadência não nasce rodando de propósito: com entrada automática
+(`stage_novo`/`reheat_due`/`first_vaga`) o relógio de 15 s matricularia até 30
+leads por rodada e começaria a gravar mensagens — em modo `fila` isso queima a
+contabilidade (marca `enviada`, grava evento, mexe em `last_contact_at`, consome
+a trava de 30 dias); em modo `freela` são WhatsApp de verdade saindo. E o `PUT`
+mantendo o valor atual é o que impede que **editar o texto de um passo** de uma
+das 5 cadências-modelo (3 têm entrada automática, todas nascem pausadas)
+despause a trilha em silêncio. Quem liga e desliga na tela é
+`POST /v1/cadences/:id/toggle-pause`.
+
 Nós (`nodes`, até 40, na ordem recebida — o `sort` é o índice):
 
 - `kind: "msg"` — precisa de `template_id` **ou** `text` (até 2000, aparado);
@@ -1343,13 +1397,16 @@ Nós (`nodes`, até 40, na ordem recebida — o `sort` é o índice):
 - `kind: "cond"` — precisa de `rule ∈ catalog.cond_rules` e
   `action ∈ catalog.cond_actions`. `day` é sempre gravado como `0`: a condição
   roda junto do passo seguinte, não tem dia próprio.
+- `note` (opcional, até 400) vale para qualquer tipo de nó: é a anotação de quem
+  montou a trilha ("aqui é só se o dono não respondeu"), não vai para o lead.
 
 Combinação errada (mensagem sem texto nem modelo, tarefa sem `task`, condição sem
 `rule`) → `400 VALIDATION_ERROR` com o índice do nó (`nodes[2]: …`).
 
 ### `PUT /v1/cadences/:id`
 
-Mesmo corpo do `POST` e substitui a cadência inteira, com uma regra que importa:
+Mesmo corpo do `POST` (com a diferença do `paused` acima) e substitui a cadência
+inteira, com uma regra que importa:
 **nó que volta com o `id` que já tinha é atualizado no lugar**; nó sem `id` (ou
 com id de outra cadência) é criado; nó que não veio no corpo é apagado. É o que
 mantém `enrollment_logs.node_id` válido — recriar todos os nós faria quem está no
@@ -1500,6 +1557,13 @@ sem autor humano):
 
 `fim` e `fecha_conta` fecham a inscrição como `concluido`; o resto é `saiu`.
 
+> **A API roda em UMA instância.** O avanço relê a inscrição dentro da
+> transação, mas **sem** `FOR UPDATE`, e a transação tem teto explícito
+> (`timeout: 30 s`) para a trilha longa não morrer com `P2028`. Com duas
+> réplicas, os dois relógios de 15 s pegariam a mesma inscrição e ela avançaria
+> duas vezes (o lead receberia o passo duas vezes). Mesma premissa do §18.5/§18.6
+> — ver README, "Produção".
+
 ### Seed e `restore-seed`
 
 O seed planta as **5 cadências-modelo** do protótipo (nomes, trilhas e textos
@@ -1537,7 +1601,7 @@ Porta de `.prototype/src/lib/praca/campanhas.ts` e dos componentes
 | POST | `/v1/campanhas/suggest-name` | `{praca_id, publico, objetivo, start}` | `{name}` |
 | GET | `/v1/campanhas/fill-hours` | `?praca_id` (obrigatório) | `FillBrakeView` |
 | GET | `/v1/campanhas/:id` | — | `CampanhaView` (a mesma da lista) |
-| PUT | `/v1/campanhas/:id` | `CampanhaBody` | `CampanhaView` |
+| PUT | `/v1/campanhas/:id` | `CampanhaBody` | `CampanhaView`; `409 CAMPANHA_HAS_CHILDREN` |
 | DELETE | `/v1/campanhas/:id` | — | `{ok: true}` |
 | POST | `/v1/campanhas/:id/duplicate` | `{praca_id}` | `CampanhaView` (a cópia) |
 | POST | `/v1/campanhas/:id/status` | `{status, justification?}` | `CampanhaView` |
@@ -1550,7 +1614,7 @@ Porta de `.prototype/src/lib/praca/campanhas.ts` e dos componentes
 | POST | `/v1/creatives/:id/review` | `{kind, text?}` | `CreativeView` |
 | GET | `/v1/traffic` | `?campanha_id` (obrigatório) | `TrafficEntryView[]` |
 | POST | `/v1/traffic` | `TrafficBody` | `TrafficEntryView` |
-| PUT | `/v1/traffic/:id` | `TrafficBody` | `TrafficEntryView` |
+| PUT | `/v1/traffic/:id` | `TrafficBody` | `TrafficEntryView`; `409 CAMPANHA_HAS_CHILDREN` |
 | DELETE | `/v1/traffic/:id` | — | `{ok: true}` |
 | PUT | `/v1/traffic/:id/days` | `{date, investido, alcance, cliques, conversoes, auto?}` | `TrafficDayView` |
 | POST | `/v1/traffic/:id/pull-api` | — | `TrafficDayView` (o dia de hoje) |
@@ -1559,6 +1623,28 @@ Todas exigem JWT e nenhuma é só de admin (quem monta a campanha é a agência)
 `:id` malformado → `404 NOT_FOUND` (nunca 500); `?praca_id`/`?campanha_id`
 malformado ou ausente onde é obrigatório → `400 VALIDATION_ERROR` (é filtro, não
 caminho). Conjuntos fechados vêm do catálogo de mídia (`src/domain/catalog/midia.ts`).
+
+`?praca_id` de praça **inexistente** é `404 NOT_FOUND` em
+`GET /v1/proofs` e `GET /v1/campanhas`, como em todo o resto da API (o
+`fill-hours`, que recebe o mesmo DTO, já era): lista vazia esconderia o id
+errado. `GET /v1/campanhas` **sem** `praca_id` continua listando todas.
+
+**Nem a campanha nem a entrada de tráfego trocam de pai pelo `PUT`:**
+
+- `PUT /v1/campanhas/:id` com outro `praca_id` → `409 CAMPANHA_HAS_CHILDREN`
+  quando a campanha já tem criativo ou entrada de tráfego. As provas são
+  revalidadas, mas `creatives` e `traffic_entries` (verba, gerenciador, dias já
+  investidos) iriam junto: o portão e o `fill-hours` passariam a ser avaliados
+  contra a praça de destino com o gasto da origem. É o vazamento que o
+  `/duplicate` evita de propósito ("Tráfego NÃO vai"). Campanha ainda **sem**
+  filho pode trocar: não há o que vazar.
+- `PUT /v1/traffic/:id` com outro `campanha_id` → `409 CAMPANHA_HAS_CHILDREN`
+  sempre: os dias já lançados são daquela campanha. Quem errou apaga a entrada e
+  cria na outra. (Simétrico ao `PUT /v1/creatives/:id`, que recusa a troca de
+  `campanha_id` com `400 VALIDATION_ERROR` — ali a entrada de tráfego guarda o
+  id do criativo num array sem FK.)
+
+Para mover campanha de praça de verdade existe `POST /v1/campanhas/:id/duplicate`.
 
 Campo opcional deste bloco aceita ser **omitido**, não aceita vir `null`
 explícito: `null` em `status`, `justification`, `file_url`, `text`,
@@ -2172,13 +2258,17 @@ e devolve `recipients_meta` em snake_case (`{total, page, page_size}`, do
   (o **mesmo** `DisparoFilters` do §13, com lista de bloqueio e trava de 30 dias
   quando há `template_id`) — sem ele, `400 LEAD_FILTERS_REQUIRED`; ninguém
   elegível → `400 NO_RECIPIENTS`; mais de 5.000 contatos (teto do Freela) →
-  `400 TOO_MANY_CONTACTS`. `kind` fica `manual`.
+  `400 TOO_MANY_CONTACTS`. `kind` fica `manual`, e os destinatários viram
+  `msg_sends` no Praça — é o **§18.7** (é ele que faz a trava de 30 dias
+  acumular de verdade e o toque aparecer na ficha do lead).
 - Os outros públicos são do Freela e usam `filters` (`audienceFilters` lá).
   `kind` fica `base`.
 - `pacing` ausente = o ritmo do Praça (`GET /v1/settings`) convertido pelo
   §18.3; o que vier preenche por cima, campo a campo.
-- `start_now: false` deixa a campanha em `DRAFT` no Freela (é o `PATCH
-  /:id/start` que solta).
+- `start_now` é **obrigatório** (booleano; não tem padrão — mandar campanha é
+  ato explícito). `true` cria e já inicia; `false` deixa a campanha em `DRAFT`
+  no Freela (é o `PATCH /:id/start` que solta), e a sincronização **não** a
+  inicia sozinha (§18.6, passo 0: só lote de `disparo`/`cadencia` é retomado).
 - Praça inexistente → `404 NOT_FOUND`.
 - **Telefone repetido** na lista é descartado (o Freela também descarta) e
   volta contado em `duplicate_phones`.
@@ -2224,9 +2314,11 @@ O Freela conhece **três** variáveis por destinatário; o Praça tem dezesseis
 A cidade-sede vem de `cobertura_cidade` da praça (ou do `city` da linha, antes
 do `·`) e entra quando a campanha é **de uma praça**: prévia/criação de disparo
 com `filters.praca_id` diferente de `all` e `POST /v1/freela/campaigns` (que
-sempre tem `praca_id`). Em lote de cadência e em filtro `all` a cidade não
-existe, então `{{cidade}}` fica no texto e entra em `unsupported_variables` —
-para não mandar frase pela metade.
+sempre tem `praca_id`). Em filtro `all` a cidade não existe, então `{{cidade}}`
+fica no texto e entra em `unsupported_variables` — para não mandar frase pela
+metade. No **lote de cadência** (§18.5) não há praça, mas há os leads: a cidade
+entra quando todos os do lote são da mesma (o valor é o mesmo que o render lead
+a lead daria); com cidades diferentes, fica avisada.
 
 Variante A e B viram `A\n---\nB` (o Freela alterna variantes por índice — é
 exatamente o teste A/B do Praça). Variável fixa sem valor continua visível como
@@ -2271,9 +2363,10 @@ aceitar um texto **por contato**. Isso depende da extensão opcional descrita em
 mais.
 
 A extensão já está escrita e testada no api-freela, em branch **local, sem
-push**: `feat/activation-campaigns-contact-message`, commit
-`d30bff00365000d523f9e71b8618245752816d9a` (worktree
-`/home/doutor/coding/freela/.wt/api-contact-message`). Ela adiciona
+push**: `feat/activation-campaigns-contact-message`, **dois** commits —
+`d30bff00365000d523f9e71b8618245752816d9a` (a extensão) e
+`34fe46f1` (o rodapé de opt-out forçado) — no worktree
+`/home/doutor/coding/freela/.wt/api-contact-message`. Ela adiciona
 `ExternalContactDto.message` (opcional, ≤ 4000), a coluna
 `activation_campaign_recipients.custom_message` (migração
 `20260909220000_activation_recipients_custom_message`) e faz o despachante
@@ -2296,10 +2389,33 @@ cadências (§14) gravam `msg_sends` em `fila` com `scheduled_at`; o
 - **um lote por disparo** — nome da campanha = nome do disparo, texto = modelo
   do disparo convertido (as duas variantes quando `split`), praça = a do filtro,
   autor = quem criou o disparo;
-- **um lote por rodada para as cadências** (`disparo_id` nulo) — nome
-  `Cadências — dd/mm HH:mm` (Brasília), texto = o do **primeiro** envio como
-  variante única (já renderizado; o Freela só manda um texto por campanha),
-  autor = o primeiro admin ativo (sem nenhum, o lote espera);
+- **um lote por NÓ de cadência** (`disparo_id` nulo, agrupado por `node_id`) —
+  nome `Cadências — dd/mm HH:mm · <cadência> · passo <n>` (Brasília), texto = o
+  **modelo do nó** (modelo salvo ou texto próprio do passo) convertido pelo
+  mesmo caminho do disparo (§18.3), autor = o primeiro admin ativo (sem nenhum,
+  o lote espera).
+
+  O nó é a unidade porque o Freela manda **um** `whatsappTemplate` por
+  campanha: agrupar a rodada inteira obrigaria a escolher o texto de um passo
+  para todos. E o texto que sobe é o MODELO, não o texto que o motor renderizou
+  para um lead — aquele já tem `{{primeiro_nome_dono}}`, `{{estabelecimento}}` e
+  `{{cidade}}` substituídos, e subi-lo faria os outros N contatos do lote serem
+  chamados pelo nome do dono do primeiro bar.
+
+  O que só existe lead a lead (`{{estabelecimento}}`, `{{bairro}}`,
+  `{{estabelecimento_vizinho}}`, `{{data_vaga}}`) fica no texto como `{{chave}}`
+  e sai num aviso no log — é a mesma regra do §18.3, e a tela de cadências não
+  tem prévia do Freela para avisar antes. `{{cidade}}` é resolvida quando todos
+  os leads do lote são da **mesma** cidade (o caso normal: a cadência corre por
+  praça), porque aí o valor é o mesmo que o render lead a lead daria; com
+  cidades diferentes ela fica no aviso. `{{praca}}` nunca é resolvida num lote
+  de cadência: ele atravessa praças.
+
+  Nó apagado (ou envio sem `node_id`) só sobe se **todos** os textos do lote
+  forem idênticos — aí não há nada de um lead no texto do outro; senão o lote
+  fica na fila com aviso no log. Nó sem texto nenhum (o modelo citado foi
+  apagado) também fica na fila, em vez de subir `whatsappTemplate: ""` — mas
+  esse caminho ficou raro depois do `409 TEMPLATE_IN_USE` do §12;
 - cada lote vira **uma** campanha `EXTERNAL_LIST` com `listFileName:
   "praca:<kind>"`, `skipRegistered: false` e `start` imediato;
 - lote acima de **5.000** contatos (teto do Freela) vira duas campanhas ou
@@ -2325,6 +2441,13 @@ A garimpagem da fila roda numa transação curta com
 `pg_advisory_xact_lock(hashtext('freela-outbox'))`; a chamada HTTP acontece
 **fora** de transação. Campanha recusada pelo Freela deixa os envios em `fila`
 para a próxima rodada — nada fica meio enviado.
+
+> **A API roda em UMA instância.** O lock consultivo da garimpagem é soltado no
+> fim da transação, **antes** da chamada HTTP, e os envios não recebem marca de
+> "garimpado". Com duas réplicas, os dois relógios rodam em paralelo e o mesmo
+> lote vira duas campanhas — o lead recebe duas vezes. Se um dia houver duas,
+> o caminho é marcar as linhas na garimpagem (`UPDATE … SET claimed_at`) e ler
+> com `SELECT … FOR UPDATE SKIP LOCKED`. Ver README, "Produção".
 
 Por isso `POST /v1/sends/:id/mark` num envio em modo `freela` é
 `409 FREELA_SEND` (§13): a garimpagem é exatamente `mode: 'freela'` +
@@ -2356,8 +2479,10 @@ espelho fora de `COMPLETED|CANCELLED`:
    lead, os dois normalizados para E.164:
    - `SENT` → envio vira `enviada` com `sent_at` do Freela, guarda
      `freela_recipient_id`, grava o evento `msg_out` na linha do tempo do lead
-     (`"<disparo ou Cadência “X”> enviada pelo Freela (WhatsApp)."`) e atualiza
-     `last_contact_at` — **uma vez só** (o passo só olha envio em `fila`);
+     (`"<disparo | Cadência “X” | Campanha “X”> enviada pelo Freela
+     (WhatsApp)."` — a campanha entra quando o envio não é de disparo nem de
+     cadência, que é o caso do §18.7) e atualiza `last_contact_at` — **uma vez
+     só** (o passo só olha envio em `fila`);
    - `FAILED`/`SKIPPED` → `falhou` com o motivo do Freela;
 3. disparo sem ninguém na fila vira `concluido` (mesma regra do §13).
 
@@ -2369,7 +2494,63 @@ ficaria em `fila` para sempre em silêncio.
 A **resposta** do lead continua sendo registrada à mão no Praça (`POST
 /v1/sends/:id/reply`): o Freela não devolve resposta.
 
-### 18.7 Teste manual contra um api-freela local
+> Mesma premissa de **instância única** do §18.5: o passo 2 lê e escreve envio
+> por envio, sem lock. Duas réplicas resolveriam o mesmo destinatário duas
+> vezes.
+
+### 18.7 Espelho dos envios da campanha criada pela tela (`EXTERNAL_LIST`)
+
+`POST /v1/freela/campaigns` com `audience: "EXTERNAL_LIST"` (a caixa
+**Freela → Campanhas → Nova**) monta a lista com os leads do funil — e grava
+**um `msg_sends` por destinatário**, como o disparo em modo `freela` (§18.5):
+
+| coluna | valor |
+|---|---|
+| `template_id` | o do corpo, ou `null` quando o texto foi escrito na mão |
+| `variant` | `"A"` |
+| `channel` | `"whatsapp"` |
+| `text` | o texto do lead quando `FREELA_PER_CONTACT_MESSAGE` está ligado (§18.4); senão o **modelo convertido** da campanha, que é o que o Freela vai personalizar e mandar |
+| `mode` / `status` | `"freela"` / `"fila"` |
+| `scheduled_at` | agora |
+| `stage_at_send` | a etapa do funil do lead no momento do envio |
+| `freela_campaign_id` | a campanha criada |
+| `disparo_id` / `cadence_id` / `node_id` | `null` — é campanha de tela |
+
+Por que existe: sem esses envios, a campanha da caixa não deixava rastro
+nenhum. Consequências que o operador via:
+
+1. a **trava de 30 dias por modelo** era LIDA (o público passa pelo mesmo plano
+   do disparo) e nunca escrita — mandar o mesmo modelo duas vezes por esta caixa
+   acertava as mesmas pessoas, e a frase da própria tela prometia o contrário;
+2. o lead continuava "parado há N dias", voltava para a fila do dia, entrava em
+   cadência e em disparo, e a ficha não mostrava que um WhatsApp saiu;
+3. `taxa_resposta` e as métricas de modelo (§12) ignoravam esses envios.
+
+Duas decisões de desenho:
+
+- as linhas nascem **depois** de a campanha existir e **já com**
+  `freela_campaign_id`. Criá-las antes (como o disparo faz, para o outbox
+  garimpar) deixaria envios em `fila` sem campanha se o Freela recusasse o lote
+  — e a rodada seguinte do outbox criaria uma **segunda** campanha para as
+  mesmas pessoas;
+- falhar ao espelhar **não** derruba a resposta (a campanha já está no Freela):
+  vai um aviso no log. Dizer "não deu" para uma campanha que vai enviar é pior
+  que o rastro faltando.
+
+Só entram os destinatários que realmente subiram: telefone inválido ou repetido
+no lote fica de fora (eles voltam contados em `invalid_phones` /
+`duplicate_phones`). Daí para frente é a sincronização do §18.6 que resolve
+`enviada`/`falhou`, grava o `msg_out` e o `last_contact_at` — mesmo caminho do
+disparo, sem código novo.
+
+Com **texto escrito na mão** (sem `template_id`) o envio é gravado igual, mas
+não acumula trava nenhuma: a trava é por modelo e ali não há modelo. É o que a
+própria caixa diz.
+
+Público que **não** é `EXTERNAL_LIST` (os quatro da base do Freela) não gera
+envio nenhum: aqueles destinatários não são leads do Praça.
+
+### 18.8 Teste manual contra um api-freela local
 
 O smoke (`scripts/smoke.sh`) roda com a conexão **desligada** — ele prova o 503
 e a conversão do modelo, não a integração de verdade. Para provar a integração:
@@ -2420,8 +2601,9 @@ Ao rodar, registre aqui o resultado dos passos 4 a 8.
 
 Lista fechada: o spec do port (`docs/superpowers/specs/2026-09-09-praca-port-design.md`
 §9) definiu os itens 1–12 antes de começar a implementação; os itens 13–23
-foram decisões tomadas durante a implementação da API (Task 17) e os 24–29
-durante a implementação do web e no fechamento (Task 25). Nenhum é bug — é
+foram decisões tomadas durante a implementação da API (Task 17), os 24–29
+durante a implementação do web e no fechamento (Task 25) e os 30–33 na revisão
+final da branch. Nenhum é bug — é
 comportamento deliberado, diferente do protótipo Lovable de referência
 (`.prototype/`).
 
@@ -2454,9 +2636,11 @@ comportamento deliberado, diferente do protótipo Lovable de referência
 9. Indicadores manuais na visão Empresa somam os últimos valores por praça
    (contagens) ou tiram a média (`%`/`h`/`R$`) — o protótipo só lia a primeira
    praça da lista. Ver [§16](#16-indicadores).
-10. O formulário público atribui o lead ao primeiro usuário ativo da praça (por
-    `sort`) — o protótipo pegava `people[0]` sem checar se estava ativo — e é
-    limitado por IP. Ver [§11](#11-formulario-publico).
+10. O formulário público atribui o lead ao **primeiro usuário ativo** (por
+    `sort`, `created_at`) — a consulta é global, não por praça: as contas são
+    poucas e do mesmo time, e "quem atende o lead novo" não é atributo da praça
+    (o protótipo pegava `people[0]` sem checar se estava ativo). E é limitado por
+    IP. Ver [§11](#11-formulario-publico).
 11. O JSON do IBGE (~500 KB) saiu do bundle do navegador e ficou na API,
     servido por UF (`GET /v1/geo/municipios?uf=`). Ver [§5](#5-geo).
 12. Tema (`dark`/`light`) e praça ativa (`active_praca_id`) são por usuário, no
@@ -2500,12 +2684,19 @@ comportamento deliberado, diferente do protótipo Lovable de referência
     (`PUBLIC_LEADS_PER_MINUTE`, env). Ver [§11](#11-formulario-publico).
 23. `GET /v1/freela/status` responde **200** mesmo com o Freela desconfigurado
     (`configured: false`, sem inventar conta nem flag de servidor) — é a única
-    rota de `/v1/freela/*` que não quebra: todas as demais respondem
-    `503 FREELA_NOT_CONFIGURED`. Ver [§18](#18-freela).
-24. Cadência criada pela tela nasce **pausada** (o protótipo criava
-    despausada): com entrada automática, o motor de 15 s matricularia a base
-    inteira antes de a pessoa terminar de montar os passos — quem liga é gente,
-    pelo "Retomar" do cartão. Mesma razão do seed pausado (item 16). Ver
+    rota de `/v1/freela/*` que **responde algo útil** sem conexão: as demais
+    respondem `503 FREELA_NOT_CONFIGURED`. Três caminhos, porém, morrem **antes**
+    de tocar o cliente do Freela, e por isso não dão 503: `POST
+    /v1/freela/templates/upload` sem arquivo (`400 FILE_REQUIRED`) ou com tipo
+    errado (`400 INVALID_FILE_TYPE`), e `POST /v1/freela/templates` com praça
+    inexistente (`404 NOT_FOUND`) — validação de corpo vem primeiro em toda a
+    API. Ver [§18](#18-freela).
+24. Cadência nasce **pausada** (o protótipo criava despausada): com entrada
+    automática, o motor de 15 s matricularia a base inteira antes de a pessoa
+    terminar de montar os passos — quem liga é gente, pelo "Retomar" do cartão.
+    Mesma razão do seed pausado (item 16). Quem garante é o **servidor**:
+    `paused` ausente é `true` no `POST` e "mantém o atual" no `PUT`, para que
+    editar o texto de um passo não despause a trilha. Ver
     [§14](#14-cadencias).
 25. Motivo da perda (`lost_reason`) é **texto livre** de 1 a 120 caracteres: o
     `catalog.lost_reasons` é só a lista sugerida do diálogo de mudança de etapa,
@@ -2535,3 +2726,24 @@ comportamento deliberado, diferente do protótipo Lovable de referência
     `400 VALIDATION_ERROR` —, funde com o que já estava gravado (manda-se só a
     que mudou) e responde sempre as 6, caindo no padrão do catálogo no que
     estiver vazio. Ver [§12](#12-mensagens).
+30. A campanha do Freela criada **pela tela** com `EXTERNAL_LIST` grava
+    `msg_sends` no Praça, como o disparo em modo `freela` — não existe no
+    protótipo (nem a tela do Freela existia), e é o que faz a trava de 30 dias
+    por modelo acumular de verdade e o toque aparecer na ficha do lead. Com
+    texto escrito na mão o envio é gravado igual, mas sem trava (ela é por
+    modelo). Ver [§18.7](#18-freela).
+31. O `<head>` por rota do protótipo (título, descrição e `og:` de cada tela)
+    **não** foi portado: todas as telas do app servem o título da raiz
+    (`PRAÇA — Freela Serviços`). O app é interno, atrás de login e sem
+    indexação, e todas as páginas são `'use client'` — o ganho não pagava um
+    `layout.tsx` por segmento. A única tela pública (o formulário) tem texto
+    próprio na página.
+32. `FreelaCampaign.stats` é **opaco**: é repasse cru do `counts` do Freela
+    (hoje `{total, pending, sent, failed, skipped, contacted, registered}`), não
+    um objeto do Praça. A tela lê as chaves com tolerância (minúsculas e
+    maiúsculas) porque o Freela já mudou essa forma antes. Ver
+    [§18.2](#18-freela).
+33. `PUT` não move filho de praça: campanha com criativo ou tráfego recusa a
+    troca de `praca_id` e entrada de tráfego recusa a troca de `campanha_id`
+    (`409 CAMPANHA_HAS_CHILDREN`) — no protótipo o objeto era um só em memória e
+    a questão não existia. Para mover, `/duplicate`. Ver [§15](#15-midia).

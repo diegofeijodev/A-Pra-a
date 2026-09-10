@@ -264,17 +264,18 @@ src/app/
   padrão, .light por usuário; fontes Montserrat/Inter via next/font)
   entrar/page.tsx
   formulario/[pracaId]/page.tsx              (público, sem shell)
+  page.tsx                                   (raiz: redirect('/hoje'))
   (app)/layout.tsx                           (guarda de sessão + AppShell)
-  (app)/page.tsx (Hoje) · praca · funil · entrada · mensagens · campanhas ·
+  (app)/hoje · praca · funil · entrada · mensagens · campanhas ·
   calendario · indicadores · configuracoes · freela
 src/modules/<feature>/infrastructure/*.api.ts   (axios + zod na borda)
 src/modules/<feature>/application/use-*.ts      (react-query)
 src/modules/shared/infrastructure/http.ts       (apiErrorMessage — nunca achatar)
 src/modules/auth/…                              (auth.storage.ts é o único localStorage)
-src/components/praca/*                          (Layout, ActionPanel, LeadPanel, Disparos,
+src/components/praca/*                          (AppShell, ActionPanel, LeadPanel, Disparos,
                                                  Cadencias, Camp*, AberturaPraca, bits, IndBits…)
 src/components/ui/*                             (kit shadcn do protótipo)
-src/lib/dates.ts · format.ts · utils.ts
+src/lib/dates.ts · format.ts · utils.ts · ui-store.ts (+ recurrence, indicators…)
 ```
 
 Telas portadas 1:1 (mesmo JSX/UX/textos) trocando `usePraca()` por hooks de
@@ -302,11 +303,17 @@ Leaflet (import dinâmico, só cliente). Impressão (`window.print()`) mantida.
    editáveis em Configurações, em vez de constantes no código.
 9. Indicadores manuais na visão Empresa: soma dos últimos valores por praça
    para contagens, média para `%`/`h`/`R$` (o protótipo pegava a primeira praça).
-10. Formulário público atribui o lead ao primeiro usuário ativo da praça (o
-    protótipo pegava `people[0]`) e é limitado por IP.
+10. Formulário público atribui o lead ao primeiro usuário ativo (consulta
+    global, não por praça — o protótipo pegava `people[0]` sem checar se estava
+    ativo) e é limitado por IP.
 11. Dados do IBGE (500 KB) saem do bundle do navegador e ficam na API,
     servidos por UF.
 12. Tema e praça ativa são por usuário, no banco.
+
+> Estes 12 foram os desvios previstos **antes** da implementação. A lista
+> fechada e atual (hoje 33 itens, com os que apareceram durante a
+> implementação e na revisão final) é a do contrato:
+> `docs/api-contract.md` §19.
 
 ## 10. Verificação
 
@@ -315,8 +322,11 @@ Leaflet (import dinâmico, só cliente). Impressão (`window.print()`) mantida.
   formulário público, modelos + disparo manual + reply/opt-out, cadência +
   teste comprimido, campanhas de mídia, indicadores, notificações, Freela
   desconfigurado = 503 e conversão de modelo) — repetível, sem resíduo;
-  `node web/scripts/browser-check.mjs` (login, 10 telas sem erro de console,
-  concluir ação, mover lead, criar disparo, abrir painel de campanha).
+  `node web/scripts/browser-check.mjs` (login pelo formulário, as telas sem erro
+  de console, concluir ação **e desfazer**, criar lead e mover de etapa, criar
+  disparo e abrir o painel **do disparo**, marcar envio como enviado, lançar e
+  apagar indicador à mão, e o formulário público + o portão de sessão em
+  contexto anônimo; a tela `/campanhas` só é conferida por texto).
 - Integração Freela: testes unitários do `FreelaClient` (login/refresh/503),
   do conversor de modelo e do outbox/sync com o Freela mockado; teste manual
   contra a API local do Freela (3000) documentado no `docs/api-contract.md`.

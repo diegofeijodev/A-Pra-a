@@ -31,6 +31,15 @@ Lovable "PRAÇA" para a stack do Freela.
   aceito precisa de decorator no DTO, e mandar a linha inteira de um GET num
   PATCH quebra com 400.
 - Rotas estáticas **antes** das `:id` no controller — a ordem importa.
+- Campo opcional que muda invariante NÃO leva default no DTO: `paused` da
+  cadência e `status` da campanha ficam sem inicializador, e o serviço aplica
+  "ausente = X no POST, mantém o atual no PUT". Com default no DTO, o
+  `class-transformer` preenche o campo e o `PUT` não distingue "omitido" de
+  "mandou o valor" — foi assim que o `PUT` de cadência despausava a trilha.
+- A API roda em **uma** instância: os dois `@Cron` (motor de cadências e outbox
+  do Freela) duplicariam mensagem com duas réplicas. Ver README, "Produção".
+- Throttle é por rota + IP, e `req.ip` atrás de nginx é o IP do proxy: flag
+  `TRUST_PROXY`.
 - Id que vem da URL passa por `isUuid()` antes do Prisma: sem isso, id
   malformado vira 500 em vez de 404.
 - Guarda de sessão do web vive em `app/(app)/layout.tsx`, não no `AppShell`:
@@ -71,20 +80,28 @@ verificações em `api/`:
 # api/
 npm run start:dev | build | typecheck | lint | test | seed
 npm run start:smoke                # sobe sem watcher (ts-node --transpile-only), pra smoke
-npm run smoke                      # scripts/smoke.sh contra a API viva — 758 checagens, repetível sem resíduo
-npm test                           # jest maxWorkers 1 — 22 suítes, 422 testes
+npm run smoke                      # scripts/smoke.sh contra a API viva — 770 checagens, repetível sem resíduo
+                                   # (769 sem o container `praca-postgres`: a limpeza final é por psql)
+npm test                           # jest maxWorkers 1 — 27 suítes, 457 testes
 npm run prisma:migrate:dev | prisma:generate | prisma:studio
 
 # web/
 yarn dev | typecheck | lint        # `build` só se o dono pedir (ver abaixo)
-yarn browser-check                 # scripts/browser-check.mjs — 87 checagens
+yarn browser-check                 # scripts/browser-check.mjs — 97 checagens
                                    # precisa da API na 3014 (start:smoke) e do web na 3024 (yarn dev)
+                                   # conta: PRACA_CHECK_EMAIL/PASSWORD (padrão = seed), login pelo formulário
 ```
 
 O `browser-check` cria coisas de verdade (ação concluída, lead, disparo,
-lançamento de indicador) e **apaga tudo no fim** — o banco volta ao seed e o
-script pode rodar de novo em seguida. Ele falha em qualquer erro de console ou
-resposta HTTP ≥ 400: sem o Freela configurado a tela do Freela só chama
+lançamento de indicador) e **apaga tudo no fim** — inclusive desfazendo a
+conclusão da ação pela API (`POST /v1/actions/:id/uncomplete`), cada passo do
+teardown no seu próprio `try`. Antes de começar ele afirma as pré-condições do
+seed de que depende e faz uma faxina do que uma rodada interrompida possa ter
+deixado. Resultado: o banco volta ao seed e o script roda de novo em seguida.
+Ele falha em qualquer erro de console, `pageerror`, falha de rede
+(`requestfailed`) ou resposta HTTP ≥ 400 — a única exceção é o 404 do
+`hot-update.json` do `next dev` (lista fechada `IGNORADAS`, com motivo no
+script). Sem o Freela configurado a tela do Freela só chama
 `GET /v1/freela/status`, que responde 200.
 
 ## Onde fica o conteúdo
