@@ -57,3 +57,9 @@ export async function setPassword(id: string, password: string): Promise<{ ok: b
   const { data } = await api.put(`/v1/users/${id}/password`, { password });
   return data as { ok: boolean };
 }
+
+/** `DELETE /v1/users/:id` (§3) — desativação (soft delete): `active = false`. */
+export async function deactivateUser(id: string): Promise<{ ok: boolean }> {
+  const { data } = await api.delete(`/v1/users/${id}`);
+  return data as { ok: boolean };
+}

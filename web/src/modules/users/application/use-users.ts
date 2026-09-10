@@ -6,6 +6,7 @@ import { useAuth } from '@/modules/auth/application/use-auth';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 import {
   createUser,
+  deactivateUser,
   listUsers,
   setPassword,
   updateMe,
@@ -57,11 +58,13 @@ export function useUpdateMe() {
   });
 }
 
+/** `409 EMAIL_IN_USE` é o erro esperado aqui — a mensagem vem da API. */
 export function useCreateUser() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateUserInput) => createUser(input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users'] }),
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível criar a pessoa.')),
   });
 }
 
@@ -70,11 +73,29 @@ export function useUpdateUser() {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateUserInput }) => updateUser(id, input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users'] }),
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível salvar a pessoa.')),
   });
 }
 
 export function useSetPassword() {
   return useMutation({
     mutationFn: ({ id, password }: { id: string; password: string }) => setPassword(id, password),
+    onSuccess: () => toast.success('Senha definida.'),
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível definir a senha.')),
+  });
+}
+
+/**
+ * Desativa a conta (soft delete — a linha fica, com `active: false`). A API
+ * recusa o autodesligamento (`CANNOT_DEACTIVATE_SELF`) e a última conta admin
+ * ativa (`LAST_ADMIN`): a mensagem dela é o que a tela mostra, sem inventar
+ * texto por cima.
+ */
+export function useDeactivateUser() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deactivateUser(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users'] }),
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível desativar a pessoa.')),
   });
 }
