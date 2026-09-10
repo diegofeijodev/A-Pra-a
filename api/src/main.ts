@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from '@fastify/helmet';
+import multipart from '@fastify/multipart';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
@@ -43,6 +44,12 @@ async function bootstrap() {
     },
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   });
+
+  // Só uma rota usa multipart: o repasse da imagem das campanhas automáticas
+  // do Freela (`POST /v1/freela/templates/upload`). O teto é o mesmo de lá —
+  // 5 MB, um arquivo — para o arquivo grande morrer aqui, e não depois de
+  // atravessar a internet duas vezes.
+  await app.register(multipart as never, { limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
 
   const config = app.get(ConfigService);
 

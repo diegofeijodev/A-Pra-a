@@ -1084,9 +1084,9 @@ continua visível como `⟨variavel⟩`.
   próprio): `eta` é `"imediato"` sem hora marcada, ou a espera até a hora
   marcada.
 
-`freela` é sempre `null` até a Task 15 (é onde vai o texto convertido para o
-formato de campanha do Freela e as variáveis que ele não suporta). Modelo
-inexistente → `404 NOT_FOUND`.
+`freela` é `null` no modo `fila` e, no modo `freela`, traz o modelo já
+convertido para o formato de campanha do Freela (§18.3):
+`{template, unsupported_variables}`. Modelo inexistente → `404 NOT_FOUND`.
 
 ### `POST /v1/disparos`
 
@@ -1108,8 +1108,9 @@ cada mensagem vem do agendamento acima.
   grava `false`.
 - `sendable == 0` → `400 NO_RECIPIENTS`.
 - `mode: "freela"` sem conexão com o Freela → `503 FREELA_NOT_CONFIGURED`
-  (`src/modules/disparos/freela-gate.ts`; hoje é **sempre** — a Task 15 troca a
-  porteira por `FreelaClient.isConfigured()`).
+  (`FreelaClient.isConfigured()`, §18.1). **Com** conexão, o lote nasce igual —
+  `msg_sends` em `fila` com a hora marcada — e quem entrega é o outbox (§18.5):
+  o `freela_campaign_id` só aparece depois que a campanha existe lá.
 - A criação é **serializada por modelo** (`pg_advisory_xact_lock` em
   `'disparo:' || template_id`) e relê a trava de 30 dias **dentro** da
   transação: dois cliques em "Confirmar" (ou duas abas) não montam a fila duas
@@ -1939,3 +1940,290 @@ nem duplica linha. `undismiss` apaga a dispensa; id nunca dispensado também
 responde `{ok: true}` (idempotente, igual ao `DELETE` de §16). Não existe
 "dispensar para todo mundo": a dispensa é sempre da conta logada, e a mesma
 `id` pode estar dispensada para um usuário e visível para outro.
+
+## 18. Freela — `/v1/freela`
+
+A ponte com o **api-freela**: as campanhas de WhatsApp (normais e automáticas)
+saem pelo chip de campanha do Freela, com ritmo anti-bloqueio, janela comercial
+e opt-out ("responda SAIR"). Desenho completo em §7 do
+`docs/superpowers/specs/2026-09-09-praca-port-design.md`; o código fica isolado
+em `src/modules/freela/`.
+
+### 18.1 Conexão
+
+O Freela **não tem chave de API nem conta de serviço**: a única porta é o JWT
+de um **admin** com a permissão `REFERRALS`. O Praça usa uma conta dedicada,
+criada pelo dono no painel do Freela, e três variáveis de ambiente:
+
+| Variável | O que é |
+|---|---|
+| `FREELA_API_URL` | base da API do Freela (ex.: `http://localhost:3000`) |
+| `FREELA_ADMIN_EMAIL` | e-mail da conta de serviço (papel `ADMIN` + `REFERRALS`) |
+| `FREELA_ADMIN_PASSWORD` | senha dessa conta |
+| `FREELA_PER_CONTACT_MESSAGE` | `true` liga o texto por contato (§18.4). Padrão `false` |
+| `FREELA_SYNC_ENABLED` | `false` desliga o relógio de 2 min sem mexer no código |
+
+`FreelaClient` faz `POST /v1/admins/login` na primeira chamada, guarda o
+`accessToken` **em memória** e refaz o login **uma vez** em `401` (sem fluxo de
+refresh: relogar é uma chamada só). Timeout de 15 s por chamada.
+
+Três erros, três códigos:
+
+| Código | HTTP | Quando |
+|---|---|---|
+| `FREELA_NOT_CONFIGURED` | 503 | falta uma das três variáveis |
+| `FREELA_ERROR` | 502 | o Freela respondeu e recusou — a mensagem é **a dele** (`error.message` → `message` → `HTTP <status>`) |
+| `FREELA_UNREACHABLE` | 502 | não deu para falar com ele (rede, DNS, 15 s) |
+
+Sem as três variáveis o resto do Praça funciona normal: só `/v1/freela/*` e o
+modo de envio `freela` (§13) param.
+
+### 18.2 Rotas
+
+| Método | Rota | Corpo / query | Resposta |
+|---|---|---|---|
+| GET | `/v1/freela/status` | — | `FreelaStatus` — **única** rota que responde 200 sem conexão |
+| GET | `/v1/freela/audience-options` | `?audience=` | opções de recorte do público (repasse) |
+| POST | `/v1/freela/audience-preview` | `{audience, filters?}` | contagem do público (repasse) |
+| GET | `/v1/freela/campaigns` | `?praca_id` | `FreelaCampaign[]` (espelho local) |
+| POST | `/v1/freela/campaigns` | `CreateCampaign` | `{campaign, recipients_count, invalid_phones, unsupported_variables}` |
+| GET | `/v1/freela/campaigns/:id` | — | `{campaign, freela, recipients, recipients_meta}` |
+| PATCH | `/v1/freela/campaigns/:id/start` | — | `FreelaCampaign` |
+| PATCH | `/v1/freela/campaigns/:id/pause` | — | `FreelaCampaign` |
+| PATCH | `/v1/freela/campaigns/:id/cancel` | — | `FreelaCampaign` |
+| GET | `/v1/freela/templates` | `?praca_id` | campanhas automáticas do Freela + `praca_id` |
+| POST | `/v1/freela/templates` | `CreateTemplate` | a campanha criada (nasce **desligada**) |
+| GET | `/v1/freela/templates/:id` | — | a campanha automática + `praca_id` |
+| PUT | `/v1/freela/templates/:id` | mesmo corpo, `praca_id?` | a campanha atualizada |
+| PATCH | `/v1/freela/templates/:id/enabled` | `{enabled}` | a campanha |
+| POST | `/v1/freela/templates/upload` | `multipart/form-data`, campo `file` | `{key, url}` |
+
+Todas exigem JWT; nenhuma é só de admin. **`:id` aqui é o id do Freela**
+(string livre, não UUID do Praça) — é o que a lista de lá devolve e o que o
+vínculo local guarda em `freela_id`. Id que não existe no espelho →
+`404 NOT_FOUND`.
+
+Corpos de entrada são **snake_case** (§1) e o serviço traduz para o camelCase do
+Freela. As **leituras** que só repassam o Freela (`GET /campaigns/:id` →
+`freela`/`recipients`, e as campanhas automáticas) devolvem o objeto **como ele
+veio, em camelCase**, com `praca_id` a mais: espelhar campo a campo criaria uma
+segunda definição para manter sincronizada a cada mudança do Freela.
+
+#### `FreelaStatus`
+
+```json
+{ "configured": true, "reachable": true, "admin_email": "praca@freela.app",
+  "scheduler_enabled": true, "per_contact_message": false,
+  "last_sync_at": "2026-09-09T18:40:00.000Z", "error": null }
+```
+
+`reachable` é um `GET` de verdade nas campanhas do Freela — nunca lança: se
+falhar, vem `reachable: false` e `error` com o motivo. `scheduler_enabled` é o
+`meta.schedulerEnabled` do Freela (as flags `ACTIVATION_CAMPAIGNS_ENABLED` /
+`CAMPAIGN_TEMPLATES_ENABLED` do servidor **dele**): com ele `false`, a campanha
+é criada mas **nada sai**. `last_sync_at` é o `last_synced_at` mais recente do
+espelho.
+
+#### `FreelaCampaign` (espelho local, `freela_campaigns`)
+
+```json
+{ "id": "uuid", "freela_id": "cmp_123", "name": "Toque 1 · 09/09/2026",
+  "kind": "disparo", "praca_id": "uuid", "disparo_id": "uuid",
+  "audience": "EXTERNAL_LIST", "audience_filters": null, "status": "RUNNING",
+  "stats": { "total": 25, "sent": 3, "failed": 0 },
+  "created_by": "uuid", "created_at": "…", "last_synced_at": "…" }
+```
+
+`kind ∈ disparo | cadencia | base | manual` — de onde a campanha saiu (disparo do
+funil, lote de cadências, público do Freela, lista montada na tela do Freela).
+`status` e `stats` são **do Freela**: o espelho nunca decide, só copia. `GET
+/v1/freela/campaigns` sincroniza antes as **5** campanhas mais velhas com mais
+de 60 s, em melhor esforço (Freela fora do ar abre a tela com o número de
+antes); o resto fica para o relógio de 2 min. `GET /v1/freela/campaigns/:id`
+atualiza `status`/`stats` com o que acabou de chegar, sem paginar destinatário.
+
+#### `CreateCampaign`
+
+```json
+{ "name": "Reativar bares de BH", "praca_id": "uuid",
+  "audience": "CONTRACTORS_DORMANT_90D",
+  "filters": { "cities": ["Belo Horizonte", "Contagem"], "ufs": ["MG"],
+               "modules": ["bars-restaurants"], "radius": { "city": "Belo Horizonte", "km": 50 } },
+  "lead_filters": { "praca_id": "uuid", "stage": 2 },
+  "template_id": "uuid", "whatsapp_template": "Oi {{nome}}!",
+  "pacing": { "messages_per_hour": 30, "daily_cap": 200,
+              "window_start_hour": 9, "window_end_hour": 19, "weekdays_only": true },
+  "start_now": true }
+```
+
+- `name` de 3 a 120; `audience ∈ CONTRACTORS_NEVER_PUBLISHED |
+  CONTRACTORS_DORMANT_90D | PROVIDERS_NEVER_APPLIED | PROVIDERS_DORMANT_90D |
+  EXTERNAL_LIST`.
+- **Texto:** `template_id` (modelo do Praça, convertido pelo §18.3) **ou**
+  `whatsapp_template` (até 4.000, até 3 variantes separadas por uma linha
+  `---`). Sem nenhum dos dois → `400 TEMPLATE_REQUIRED`.
+- **`EXTERNAL_LIST`** monta a lista com os leads do funil: exige `lead_filters`
+  (o **mesmo** `DisparoFilters` do §13, com lista de bloqueio e trava de 30 dias
+  quando há `template_id`) — sem ele, `400 LEAD_FILTERS_REQUIRED`; ninguém
+  elegível → `400 NO_RECIPIENTS`; mais de 5.000 contatos (teto do Freela) →
+  `400 TOO_MANY_CONTACTS`. `kind` fica `manual`.
+- Os outros públicos são do Freela e usam `filters` (`audienceFilters` lá).
+  `kind` fica `base`.
+- `pacing` ausente = o ritmo do Praça (`GET /v1/settings`) convertido pelo
+  §18.3; o que vier preenche por cima, campo a campo.
+- `start_now: false` deixa a campanha em `DRAFT` no Freela (é o `PATCH
+  /:id/start` que solta).
+- Praça inexistente → `404 NOT_FOUND`.
+
+#### `CreateTemplate` (campanha automática)
+
+`{praca_id, name, schedule_kind ∈ WEEKLY|DATED, weekdays?: 0..6 (0 = domingo),
+send_hour? 0..23, target_month? 1..12, target_day? 1..31, target_year?
+2020..2100, lead_days? 0..60, audience, filters? {cities, ufs, modules},
+channels: ("PUSH"|"WHATSAPP")[] (≥ 1), whatsapp_template?, push_title? (≤120),
+push_body? (≤500), image_key? (≤512), deep_link? (≤256), pacing?, max_per_run?}`.
+
+`audience` aqui aceita os quatro públicos acima **mais** `CONTRACTORS_ALL` e
+`CONTRACTORS_ACTIVE`, e `filters` **não** tem `radius` (o Freela não recorta
+campanha automática por raio). A campanha nasce `enabled: false`; quem liga é
+`PATCH /:id/enabled`. `PUT` substitui o corpo inteiro lá — `praca_id` é
+opcional e, quando vem, atualiza o vínculo local (`freela_templates`).
+
+`POST /v1/freela/templates/upload` repassa o arquivo (campo `file`, PNG/JPEG/
+WEBP, até 5 MB) para o Freela e devolve `{key, url}` — o `key` é o que vai em
+`image_key`. Sem arquivo → `400 FILE_REQUIRED`; tipo errado → `400
+INVALID_FILE_TYPE`; acima de 5 MB → `413 FILE_TOO_LARGE`. O arquivo passa **pelo
+Praça** porque a credencial de admin do Freela é da API, não da tela.
+
+### 18.3 Conversão Praça → Freela
+
+O Freela conhece **três** variáveis por destinatário; o Praça tem dezesseis
+(§12). `toFreelaTemplate` (`src/modules/freela/freela-template.ts`) faz a ponte:
+
+| Variável do Praça | Vira | Por quê |
+|---|---|---|
+| `{{primeiro_nome_dono}}` | `{{primeiro_nome}}` | mesma coisa, nome diferente |
+| `{{nome}}` | `{{nome}}` | existe nos dois |
+| `{{cidade}}` | `{{cidade}}` | existe nos dois |
+| `{{praca}}`, `{{meu_nome}}`, `{{link_video_caso}}`, `{{link_cadastro}}`, `{{funcao}}`, `{{valor}}`, `{{turno}}`, `{{dia_forte}}`, `{{data}}` | **texto resolvido agora** | são fixas por campanha (praça do filtro, quem dispara, `template_defaults`) |
+| `{{estabelecimento}}`, `{{bairro}}`, `{{estabelecimento_vizinho}}`, `{{data_vaga}}` | **ficam como estão** e entram em `unsupported_variables` | são por lead e o Freela não as tem |
+| qualquer outra | idem | variável desconhecida não vira buraco no texto |
+
+Variante A e B viram `A\n---\nB` (o Freela alterna variantes por índice — é
+exatamente o teste A/B do Praça). Variável fixa sem valor continua visível como
+`⟨praca⟩`, igual ao render do §12: é o que faz ver o buraco antes de disparar.
+
+Ritmo (`toFreelaPacing`, a partir de `GET /v1/settings`):
+
+| Praça | Freela | Conta |
+|---|---|---|
+| `gap_min` / `gap_max` (segundos entre mensagens) | `messagesPerHour` | `clamp(round(3600 / ((gap_min+gap_max)/2)), 1, 60)` |
+| `daily_limit` | `dailyCap` | `clamp(daily_limit, 1, 1000)` |
+| `window_start` | `windowStartHour` | igual (0..23) |
+| `window_end` | `windowEndHour` | igual — fim **exclusivo** nos dois (1..24) |
+| `sunday` | `weekdaysOnly` | `!sunday` |
+
+⚠️ **O Freela não distingue sábado.** `sunday: false` no Praça (não mandar no
+domingo) vira `weekdaysOnly: true` lá, que também corta o sábado. Quem precisa
+de sábado tem que ligar `sunday` no Praça — e aí o domingo entra junto.
+
+### 18.4 Flag `FREELA_PER_CONTACT_MESSAGE`
+
+As variáveis por lead (`{{estabelecimento}}` e companhia) só sobem se o Freela
+aceitar um texto **por contato**. Isso depende da extensão opcional descrita em
+§7.5 do desenho (`ExternalContactDto.message`, branch local
+`feat/activation-campaigns-contact-message`, ainda **não** mesclada).
+
+- `FREELA_PER_CONTACT_MESSAGE=false` (padrão): `contacts[]` vai só com
+  `{name, phone}` e todo mundo recebe o modelo convertido. As variáveis por
+  lead ficam visíveis no texto — é o que `unsupported_variables` avisa.
+- `=true`: cada contato leva `message` com o texto **já renderizado** para
+  aquele lead.
+
+**Não ligue a flag antes de o api-freela de produção ter a extensão**: o
+`forbidNonWhitelisted` de lá devolve `400` no lote inteiro por causa do campo a
+mais.
+
+### 18.5 Outbox: disparo e cadência em modo `freela`
+
+No modo `freela` ninguém envia pelo Praça. O disparo (§13) e o motor de
+cadências (§14) gravam `msg_sends` em `fila` com `scheduled_at`; o
+`FreelaOutboxService` roda a cada 2 min e entrega o que venceu:
+
+- **um lote por disparo** — nome da campanha = nome do disparo, texto = modelo
+  do disparo convertido (as duas variantes quando `split`), praça = a do filtro,
+  autor = quem criou o disparo;
+- **um lote por rodada para as cadências** (`disparo_id` nulo) — nome
+  `Cadências — dd/mm HH:mm` (Brasília), texto = o do **primeiro** envio como
+  variante única (já renderizado; o Freela só manda um texto por campanha),
+  autor = o primeiro admin ativo (sem nenhum, o lote espera);
+- cada lote vira **uma** campanha `EXTERNAL_LIST` com `listFileName:
+  "praca:<kind>"`, `skipRegistered: false` e `start` imediato;
+- lote acima de **5.000** contatos (teto do Freela) vira duas campanhas ou
+  mais, com `(parte n/total)` no nome — senão o lote gigante seria recusado a
+  cada 2 minutos para sempre;
+- telefone que não vira E.164 **não sobe**: o envio fica `falhou` com
+  `failure_reason: "Telefone inválido para WhatsApp."` (o Freela recusaria o
+  lote inteiro por causa de um número quebrado);
+- a campanha e o `freela_campaign_id` dos envios são gravados **no mesmo
+  commit** — campanha criada com envio solto faria a rodada seguinte criar tudo
+  de novo e o lead receber duas vezes.
+
+A garimpagem da fila roda numa transação curta com
+`pg_advisory_xact_lock(hashtext('freela-outbox'))`; a chamada HTTP acontece
+**fora** de transação. Campanha recusada pelo Freela deixa os envios em `fila`
+para a próxima rodada — nada fica meio enviado.
+
+### 18.6 Sincronização
+
+`FreelaSyncScheduler` (`@Cron('*/2 * * * *')`, travado por
+`FREELA_SYNC_ENABLED`, conexão configurada e reentrância; erro nunca sai do
+relógio) faz, nesta ordem: `outbox.flush()` e depois, para cada campanha do
+espelho fora de `COMPLETED|CANCELLED`:
+
+1. `GET /:id` → atualiza `status`, `stats` e `last_synced_at`;
+2. se há `msg_sends` pendurados, pagina `GET /:id/recipients?pageSize=200` e
+   casa `externalPhone` com o telefone E.164 do lead:
+   - `SENT` → envio vira `enviada` com `sent_at` do Freela, guarda
+     `freela_recipient_id`, grava o evento `msg_out` na linha do tempo do lead
+     (`"<disparo ou Cadência “X”> enviada pelo Freela (WhatsApp)."`) e atualiza
+     `last_contact_at` — **uma vez só** (o passo só olha envio em `fila`);
+   - `FAILED`/`SKIPPED` → `falhou` com o motivo do Freela;
+3. disparo sem ninguém na fila vira `concluido` (mesma regra do §13).
+
+A **resposta** do lead continua sendo registrada à mão no Praça (`POST
+/v1/sends/:id/reply`): o Freela não devolve resposta.
+
+### 18.7 Teste manual contra um api-freela local
+
+O smoke (`scripts/smoke.sh`) roda com a conexão **desligada** — ele prova o 503
+e a conversão do modelo, não a integração de verdade. Para provar a integração:
+
+1. no `api-freela`, suba a API (`npm run start:dev`, porta 3000) com
+   `ACTIVATION_CAMPAIGNS_ENABLED=true` e `CAMPAIGN_TEMPLATES_ENABLED=true`;
+2. crie/garanta um admin com permissão `REFERRALS`
+   (`POST /v1/admins/panel-users`);
+3. no `praca/api/.env`: `FREELA_API_URL=http://localhost:3000`,
+   `FREELA_ADMIN_EMAIL=<o admin>`, `FREELA_ADMIN_PASSWORD=<a senha>`; suba a API
+   do Praça (`npm run start:smoke`);
+4. `GET /v1/freela/status` → `configured: true`, `reachable: true`,
+   `scheduler_enabled: true`;
+5. crie uma campanha de teste com **um contato seu**:
+
+```bash
+curl -s -X POST localhost:3014/v1/freela/campaigns -H "Authorization: Bearer $T" \
+  -H 'Content-Type: application/json' -d '{
+    "name":"Teste Praça","praca_id":"<uuid da praça>","audience":"EXTERNAL_LIST",
+    "lead_filters":{"praca_id":"<uuid da praça>","stage":1},
+    "template_id":"<uuid do modelo>","start_now":true }'
+```
+
+6. `GET /v1/freela/campaigns/:id` → `freela.campaign.status: "RUNNING"` e o seu
+   número em `recipients`;
+7. espere até 2 min: o relógio sincroniza, o `msg_send` vira `enviada` e o
+   evento aparece na linha do tempo do lead (`GET /v1/leads/:id`);
+8. `PATCH /:id/cancel` no fim, para não deixar campanha viva no Freela.
+
+Para o caminho do disparo: `POST /v1/disparos` com `mode: "freela"` e espere a
+rodada do outbox — o `disparos.freela_campaign_id` aparece quando a campanha é
+criada.

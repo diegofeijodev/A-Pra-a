@@ -810,7 +810,12 @@ check "filtro de origem tira quem veio por outro caminho" "0" \
 # ainda não — quem envia é a campanha do Freela, que a Task 15 liga.
 PRV_FREELA=$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
   -d "{\"filters\":$FILTRO,\"template_id\":\"$TPL_F001\",\"mode\":\"freela\"}")
-check "prévia no modo freela ainda não descreve a campanha" "null" "$(echo "$PRV_FREELA" | jq -r '.freela')"
+check "prévia no modo freela descreve o modelo convertido" "true" \
+  "$(echo "$PRV_FREELA" | jq '.freela.template | contains("{{primeiro_nome}}")')"
+check "a conversão avisa as variáveis que o Freela não tem" "true" \
+  "$(echo "$PRV_FREELA" | jq '[.freela.unsupported_variables[]] | index("estabelecimento") != null')"
+check "a conversão resolve o nome de quem dispara" "true" \
+  "$(echo "$PRV_FREELA" | jq '.freela.template | contains("Sou Diego, do Freela.")')"
 check "no modo freela sem hora marcada o lote sai imediato" "imediato" "$(echo "$PRV_FREELA" | jq -r '.eta')"
 # Hora marcada é INSTANTE (ISO com fuso). O `datetime-local` cru do navegador
 # ("2026-09-14T12:00") é barrado: a API roda em UTC e o lote sairia 3h antes.
@@ -1820,6 +1825,71 @@ check "lock-3 volta a aparecer pro Diego (sem resíduo)" "1" \
   "$(curl -s "$API/v1/notifications?praca_id=$PRACA_SEED" -H "$HD" | jq --arg id "$LOCK3" '[.[] | select(.id == $id)] | length')"
 check "undismiss de id nunca dispensado também responde ok" "true" \
   "$(curl -s -X POST $API/v1/notifications/undismiss -H "$J" -H "$HD" -d '{"ids":["nunca-dispensado"]}' | jq -r .ok)"
+
+echo "── Freela: conexão desligada ──"
+# O `.env` do smoke não tem FREELA_API_URL/EMAIL/PASSWORD: é exatamente o estado
+# de quem ainda não ligou a integração. `GET /status` é a ÚNICA rota /v1/freela
+# que responde 200 assim — é ela que explica por que as outras não respondem.
+ST=$(curl -s $API/v1/freela/status -H "$HD")
+check "status responde sem a conexão configurada" "false false" \
+  "$(echo "$ST" | jq -r '"\(.configured) \(.reachable)"')"
+check "status não inventa conta nem flag do servidor" "null null null" \
+  "$(echo "$ST" | jq -r '"\(.admin_email) \(.scheduler_enabled) \(.last_sync_at)"')"
+check "status mostra a flag de mensagem por contato" "false" \
+  "$(echo "$ST" | jq -r '.per_contact_message')"
+check "status sem token = UNAUTHORIZED" "UNAUTHORIZED" "$(curl -s $API/v1/freela/status | jq -r .error.code)"
+
+FR_HTTP=$(curl -s -o /tmp/praca-smoke-fr.json -w '%{http_code}' -X POST $API/v1/freela/campaigns -H "$J" -H "$HD" \
+  -d "{\"name\":\"Campanha do smoke\",\"praca_id\":\"$PRACA_SEED\",\"audience\":\"CONTRACTORS_DORMANT_90D\",\"whatsapp_template\":\"Oi {{nome}}!\",\"start_now\":false}")
+check "criar campanha sem conexão = 503" "503" "$FR_HTTP"
+check "criar campanha sem conexão = FREELA_NOT_CONFIGURED" "FREELA_NOT_CONFIGURED" \
+  "$(jq -r .error.code /tmp/praca-smoke-fr.json)"
+check "a mensagem diz quais variáveis faltam" "true" \
+  "$(jq -r '.error.message | contains("FREELA_API_URL")' /tmp/praca-smoke-fr.json)"
+rm -f /tmp/praca-smoke-fr.json
+check "lista de campanhas sem conexão = 503" "FREELA_NOT_CONFIGURED" \
+  "$(curl -s "$API/v1/freela/campaigns?praca_id=$PRACA_SEED" -H "$HD" | jq -r .error.code)"
+check "campanhas automáticas sem conexão = 503" "FREELA_NOT_CONFIGURED" \
+  "$(curl -s $API/v1/freela/templates -H "$HD" | jq -r .error.code)"
+check "opções de público sem conexão = 503" "FREELA_NOT_CONFIGURED" \
+  "$(curl -s "$API/v1/freela/audience-options?audience=EXTERNAL_LIST" -H "$HD" | jq -r .error.code)"
+check "prévia de público sem conexão = 503" "FREELA_NOT_CONFIGURED" \
+  "$(curl -s -X POST $API/v1/freela/audience-preview -H "$J" -H "$HD" \
+    -d '{"audience":"PROVIDERS_DORMANT_90D"}' | jq -r .error.code)"
+check "painel de campanha sem conexão = 503" "FREELA_NOT_CONFIGURED" \
+  "$(curl -s $API/v1/freela/campaigns/nao-existe -H "$HD" | jq -r .error.code)"
+check "pausar campanha sem conexão = 503" "FREELA_NOT_CONFIGURED" \
+  "$(curl -s -X PATCH $API/v1/freela/campaigns/nao-existe/pause -H "$HD" | jq -r .error.code)"
+
+# Validação ANTES da porteira: corpo errado é 400, não 503.
+check "público fora da lista do Freela é barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/freela/audience-preview -H "$J" -H "$HD" \
+    -d '{"audience":"TODO MUNDO"}' | jq -r .error.code)"
+check "nome curto demais é barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/freela/campaigns -H "$J" -H "$HD" \
+    -d "{\"name\":\"ab\",\"praca_id\":\"$PRACA_SEED\",\"audience\":\"EXTERNAL_LIST\",\"start_now\":false}" | jq -r .error.code)"
+check "campo fora do DTO é barrado (whitelist)" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/freela/campaigns -H "$J" -H "$HD" \
+    -d "{\"name\":\"Campanha\",\"praca_id\":\"$PRACA_SEED\",\"audience\":\"EXTERNAL_LIST\",\"start_now\":false,\"contacts\":[]}" | jq -r .error.code)"
+check "agenda fora de WEEKLY|DATED é barrada" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/freela/templates -H "$J" -H "$HD" \
+    -d "{\"praca_id\":\"$PRACA_SEED\",\"name\":\"Automática\",\"schedule_kind\":\"MENSAL\",\"audience\":\"CONTRACTORS_ALL\",\"channels\":[\"PUSH\"]}" | jq -r .error.code)"
+check "campanha automática sem canal é barrada" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/freela/templates -H "$J" -H "$HD" \
+    -d "{\"praca_id\":\"$PRACA_SEED\",\"name\":\"Automática\",\"schedule_kind\":\"WEEKLY\",\"audience\":\"CONTRACTORS_ALL\",\"channels\":[]}" | jq -r .error.code)"
+
+# Upload da imagem do push: o arquivo passa PELO Praça (a credencial de admin do
+# Freela é da API, não da tela).
+check "upload sem arquivo = FILE_REQUIRED" "FILE_REQUIRED" \
+  "$(curl -s -X POST $API/v1/freela/templates/upload -H "$HD" | jq -r .error.code)"
+echo "nao e imagem" > /tmp/praca-smoke-freela.txt
+check "upload de arquivo que não é imagem = INVALID_FILE_TYPE" "INVALID_FILE_TYPE" \
+  "$(curl -s -X POST $API/v1/freela/templates/upload -H "$HD" \
+    -F "file=@/tmp/praca-smoke-freela.txt;type=text/plain" | jq -r .error.code)"
+check "upload de PNG sem conexão para no 503, não no 500" "FREELA_NOT_CONFIGURED" \
+  "$(curl -s -X POST $API/v1/freela/templates/upload -H "$HD" \
+    -F "file=@/tmp/praca-smoke-freela.txt;type=image/png" | jq -r .error.code)"
+rm -f /tmp/praca-smoke-freela.txt
 
 echo
 printf 'Resultado: \033[32m%d ok\033[0m, \033[31m%d falha(s)\033[0m\n' "$PASS" "$FAIL"

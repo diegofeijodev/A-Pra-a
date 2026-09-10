@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '../../common/auth/auth-user';
 import { PrismaService } from '../../common/database/prisma.service';
@@ -13,7 +8,15 @@ import { hourSp, todaySp } from '../../common/time/dates';
 import { CHANNELS, type SendMode } from '../../domain/catalog/messages';
 import { dupCutoff, isDupSend, partitionAudience, pickVariant } from '../../domain/disparo-rules';
 import { etaText, scheduleTimes, type SendSettings } from '../../domain/send-schedule';
-import { isOptOut, renderTemplate, type RenderPraca } from '../../domain/template-render';
+import {
+  isOptOut,
+  renderTemplate,
+  type RenderPraca,
+  type TemplateDefaults,
+} from '../../domain/template-render';
+import type { FreelaLeadContact } from '../freela/freela-campaigns.service';
+import { FreelaClient } from '../freela/freela-client';
+import { toFreelaTemplate, type FreelaTemplateOut } from '../freela/freela-template';
 import { LeadsService, PARA_LISTA, type LeadListView } from '../leads/leads.service';
 import { MessagesService, type SettingsView } from '../messages/messages.service';
 import {
@@ -23,7 +26,6 @@ import {
   PreviewDisparoDto,
   ReplySendDto,
 } from './dto/disparos.dto';
-import { FREELA_NOT_CONFIGURED_MESSAGE, isFreelaConfigured } from './freela-gate';
 
 // ── views ──────────────────────────────────────────────────────
 export interface DisparoFiltersView {
@@ -114,8 +116,8 @@ export interface DisparoPreviewView {
   first_at: string;
   eta: string;
   previews: PreviewItemView[];
-  /** Como o texto vai virar campanha no Freela — a Task 15 preenche. */
-  freela: null;
+  /** Como o texto vira campanha no Freela. `null` fora do modo `freela`. */
+  freela: FreelaTemplateOut | null;
 }
 
 export interface CreateDisparoResult {
@@ -149,6 +151,8 @@ interface Plano {
   sendable: PublicoLead[];
   /** Um horário por `sendable`, na mesma ordem. */
   times: string[];
+  /** Valores-padrão das variáveis (`app_settings.template_defaults`). */
+  defaults: TemplateDefaults;
   first_at: string;
   eta: string;
   split: boolean;
@@ -180,6 +184,7 @@ export class DisparosService {
     private readonly prisma: PrismaService,
     private readonly leads: LeadsService,
     private readonly messages: MessagesService,
+    private readonly freela: FreelaClient,
   ) {}
 
   // ── prévia e criação ────────────────────────────────────────
@@ -204,7 +209,7 @@ export class DisparosService {
         const { variant, text } = plano.render(item, i);
         return { lead_id: item.lead.id, name: item.lead.name, city: item.lead.city, variant, text };
       }),
-      freela: null,
+      freela: dto.mode === 'freela' ? await this.freelaTemplate(dto, tpl, plano, user) : null,
     };
   }
 
@@ -217,12 +222,7 @@ export class DisparosService {
     const tpl = await this.templateOrFail(dto.template_id);
     // Antes de qualquer consulta pesada: no modo `freela` quem envia é a
     // campanha do Freela, e sem conexão não há para onde mandar.
-    if (dto.mode === 'freela' && !isFreelaConfigured()) {
-      throw new ServiceUnavailableException({
-        code: 'FREELA_NOT_CONFIGURED',
-        message: FREELA_NOT_CONFIGURED_MESSAGE,
-      });
-    }
+    if (dto.mode === 'freela') this.freela.ensureConfigured();
 
     const plano = await this.plan(dto, tpl, user);
     if (plano.sendable.length === 0) throw this.semDestinatario();
@@ -289,6 +289,76 @@ export class DisparosService {
       skipped_block: plano.blocked,
       skipped_dup: feito.skipped_dup,
     };
+  }
+
+  /**
+   * O mesmo público do disparo, no formato de contato de campanha do Freela
+   * (Task 15). Com `templateId` passa pelo plano inteiro — lista de bloqueio,
+   * trava de 30 dias e texto renderizado lead a lead; sem ele (texto escrito na
+   * mão na tela do Freela) só a lista de bloqueio se aplica, porque a trava é
+   * por modelo e aqui não há modelo.
+   */
+  async audienceForFreela(
+    filters: DisparoFiltersDto,
+    templateId: string | null,
+    user: AuthUser,
+  ): Promise<{ leads: FreelaLeadContact[]; blocked: number; dupes: number }> {
+    if (templateId) {
+      const tpl = await this.templateOrFail(templateId);
+      const plano = await this.plan(
+        { filters, template_id: templateId, split: false, mode: 'freela' },
+        tpl,
+        user,
+      );
+      return {
+        leads: plano.sendable.map((item, i) => this.toContact(item, plano.render(item, i).text)),
+        blocked: plano.blocked,
+        dupes: plano.dupes,
+      };
+    }
+
+    const publico = await this.audience(filters);
+    const bloqueados = await this.messages.blockedKeys();
+    const sobrando = publico.filter((p) => {
+      const k = phoneKey(p.lead.phone);
+      return !k || !bloqueados.has(k);
+    });
+    return {
+      leads: sobrando.map((item) => this.toContact(item, '')),
+      blocked: publico.length - sobrando.length,
+      dupes: 0,
+    };
+  }
+
+  private toContact(item: PublicoLead, text: string): FreelaLeadContact {
+    return {
+      id: item.lead.id,
+      name: item.lead.name,
+      decisor: item.lead.decisor,
+      phone: item.lead.phone,
+      city: item.lead.city,
+      text,
+    };
+  }
+
+  /**
+   * A prévia do modo `freela`: como o modelo fica depois da conversão (§7.4) e
+   * o que o Freela não vai saber preencher. A praça é a do FILTRO (a campanha é
+   * uma só, não uma por lead) e `me` é quem está na tela.
+   */
+  private async freelaTemplate(
+    dto: PreviewDisparoDto,
+    tpl: TemplateRow,
+    plano: Plano,
+    user: AuthUser,
+  ): Promise<FreelaTemplateOut> {
+    const pracaId = dto.filters.praca_id !== 'all' ? dto.filters.praca_id : null;
+    const praca = pracaId ? (await this.pracasByIds([pracaId])).get(pracaId) : undefined;
+    return toFreelaTemplate(tpl.text_a, plano.split ? tpl.text_b : null, {
+      praca,
+      me: { name: user.name },
+      defaults: plano.defaults,
+    });
   }
 
   // ── leitura ─────────────────────────────────────────────────
@@ -484,8 +554,7 @@ export class DisparosService {
     const split = dto.split && hasB;
     // Só quem vai ser renderizado precisa de praça e de vizinho. `render` vale,
     // portanto, para os `renderLimit` primeiros (prévia) ou para todos (criação).
-    const aRenderizar =
-      renderLimit === undefined ? parte.sendable : parte.sendable.slice(0, renderLimit);
+    const aRenderizar = renderLimit === undefined ? parte.sendable : parte.sendable.slice(0, renderLimit);
     const pracas = await this.pracasByIds(aRenderizar.map((p) => p.lead.praca_id));
     const vizinhos = await this.messages.neighborsByCity(aRenderizar.map((p) => p.lead.city));
     const me = { name: user.name };
@@ -497,6 +566,7 @@ export class DisparosService {
       dupes: parte.dupes,
       sendable: parte.sendable,
       times,
+      defaults,
       first_at,
       eta,
       split,
