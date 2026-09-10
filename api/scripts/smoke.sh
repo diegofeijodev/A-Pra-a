@@ -1918,8 +1918,13 @@ echo "── Resíduo ──"
 # disparo, envio ou inscrição de teste esquecido para trás. Rodar o smoke duas
 # vezes seguidas tem que dar as mesmas contagens aqui, sempre.
 USERS_FINAL=$(curl -s $API/v1/users -H "$HD")
-check "os 3 usuários do seed continuam ativos (e só eles)" "3" \
-  "$(echo "$USERS_FINAL" | jq '[.[] | select(.active) | select(.email == "diego@praca.local" or .email == "daniel@praca.local" or .email == "mkt@praca.local")] | length')"
+# Duas checagens, não uma: contar DEPOIS de filtrar pelos 3 e-mails do seed não
+# provaria nada — um 4º usuário ativo residual, com outro e-mail, passaria
+# batido. A contagem tem que vir de TODOS os ativos, sem pré-filtro por e-mail.
+check "só 3 usuários ativos no total (sem resíduo de um 4º)" "3" \
+  "$(echo "$USERS_FINAL" | jq '[.[] | select(.active)] | length')"
+check "os 3 e-mails do seed estão entre os ativos" "true" \
+  "$(echo "$USERS_FINAL" | jq '[.[] | select(.active) | .email] as $ativos | ["diego@praca.local","daniel@praca.local","mkt@praca.local"] | all(. as $e | $ativos | index($e) != null)')"
 check "praça do seed continua lá" "$PRACA_SEED" "$(curl -s $API/v1/pracas/$PRACA_SEED -H "$HD" | jq -r .id)"
 
 LEADS_FINAL=$(curl -s "$API/v1/leads?praca_id=$PRACA_SEED&archived=true" -H "$HD")

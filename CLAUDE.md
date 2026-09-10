@@ -69,7 +69,7 @@ verificações em `api/`:
 # api/
 npm run start:dev | build | typecheck | lint | test | seed
 npm run start:smoke                # sobe sem watcher (ts-node --transpile-only), pra smoke
-npm run smoke                      # scripts/smoke.sh contra a API viva — 744 checks, repetível sem resíduo
+npm run smoke                      # scripts/smoke.sh contra a API viva — 745 checks, repetível sem resíduo
 npm run prisma:migrate:dev | prisma:generate | prisma:studio
 
 # web/
