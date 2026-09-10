@@ -21,6 +21,16 @@ const stageSchema = z
 /** Item de catálogo identificado por `id` + `label` (canais, formatos, modos…). */
 const optionSchema = z.object({ id: z.string(), label: z.string() }).passthrough();
 
+/**
+ * Modo de envio: o cartão da tela de Disparos mostra a descrição e a tonaliza
+ * (`ok`/`warn`/`danger`). Os dois campos são OPCIONAIS aqui de propósito — a
+ * borda continua conferindo forma, não conteúdo.
+ */
+const sendModeSchema = optionSchema.extend({
+  desc: z.string().optional(),
+  tone: z.string().optional(),
+});
+
 const indicatorSchema = z
   .object({ key: z.string(), name: z.string(), meta: z.number(), unit: z.string() })
   .passthrough();
@@ -42,7 +52,7 @@ export const catalogSchema = z
     classe_order: z.record(z.number()),
     channels: z.array(optionSchema),
     audiences: z.array(optionSchema),
-    send_modes: z.array(optionSchema),
+    send_modes: z.array(sendModeSchema),
     variables: z.array(z.string()),
     hard_min: z.number(),
     hard_max: z.number(),
@@ -73,6 +83,7 @@ export type Catalog = z.infer<typeof catalogSchema>;
 export type CatalogStep = z.infer<typeof stepSchema>;
 export type CatalogStage = z.infer<typeof stageSchema>;
 export type CatalogOption = z.infer<typeof optionSchema>;
+export type CatalogSendMode = z.infer<typeof sendModeSchema>;
 export type CatalogIndicator = z.infer<typeof indicatorSchema>;
 
 export async function fetchCatalog(): Promise<Catalog> {
