@@ -79,7 +79,12 @@ export function LeadPanel() {
       <aside className="no-print fixed right-0 top-0 z-50 h-full w-full max-w-md overflow-y-auto border-l border-border bg-popover p-4 shadow-2xl sm:max-w-lg">
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
-            <span className="tag rounded-sm px-1.5 py-0.5" style={{ backgroundColor: `${def?.color}33`, color: def?.color }}>
+            {/* Sem o catálogo ainda, `${def?.color}33` viraria "undefined33" — CSS
+                inválido que o navegador descarta. */}
+            <span
+              className="tag rounded-sm px-1.5 py-0.5"
+              style={def ? { backgroundColor: `${def.color}33`, color: def.color } : undefined}
+            >
               {lead.stage}. {def?.name}
             </span>
             <h2 className="mt-2 font-display text-lg font-extrabold leading-tight">{lead.name}</h2>

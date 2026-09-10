@@ -36,6 +36,8 @@ export function MoveLeadDialog({
   const def = catalog?.funnel_stages.find((s) => s.n === to);
   const lost = to === 8;
   const chosen = reason || lostReasons[0] || "";
+  // "outro" grava o TEXTO DIGITADO como motivo da perda: o `lost_reason` da API
+  // é texto livre de 1 a 120 caracteres e o catálogo é só a lista sugerida (§9).
   const finalReason = chosen === "outro" ? freeReason.trim() : chosen;
   const ok = lost ? finalReason.length > 0 : what.trim().length > 0;
 
@@ -75,6 +77,7 @@ export function MoveLeadDialog({
                 value={freeReason}
                 onChange={(e) => setFreeReason(e.target.value)}
                 placeholder="Descreva o motivo"
+                maxLength={120}
                 className="mt-2 w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none focus:border-primary"
               />
             )}

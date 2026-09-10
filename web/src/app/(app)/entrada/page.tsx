@@ -29,6 +29,7 @@ import {
   type QueueItemView,
 } from '@/modules/leads/application/use-leads';
 import { useSettings, useUpdateSettings } from '@/modules/messages/application/use-settings';
+import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 import { useActivePraca, usePracas } from '@/modules/pracas/application/use-pracas';
 import { useUsers } from '@/modules/users/application/use-users';
 import { Avatar } from '@/components/praca/bits';
@@ -96,7 +97,14 @@ function ImportSection() {
   const { data: mappings } = useMappings();
   const saveMapping = useSaveMapping();
   const deleteMapping = useDeleteMapping();
-  const { mutate: runEvaluate, data: evalRes, reset: resetEval } = useEvaluateImport();
+  const {
+    mutate: runEvaluate,
+    data: evalRes,
+    reset: resetEval,
+    isPending: avaliando,
+    isError: falhouAvaliar,
+    error: erroAvaliar,
+  } = useEvaluateImport();
   const runImport = useRunImport();
   const fileRef = useRef<HTMLInputElement>(null);
   const [parsed, setParsed] = useState<ParsedFile | null>(null);
@@ -113,6 +121,11 @@ function ImportSection() {
   const [mapName, setMapName] = useState("");
   const [dragging, setDragging] = useState(false);
   const [done, setDone] = useState("");
+  // Enquanto a prévia na tela não corresponde às opções atuais (espera dos
+  // 300 ms, avaliação no ar ou avaliação que falhou), o Confirmar fica travado:
+  // importar em lote sobre um retrato velho é o que vira "importei errado".
+  const [previaVelha, setPreviaVelha] = useState(false);
+  const evalSeq = useRef(0);
 
   const people = useMemo(() => (users ?? []).filter((u) => u.active), [users]);
   // Os padrões dependem de dados que chegam depois (catálogo, praças, pessoas):
@@ -129,6 +142,8 @@ function ImportSection() {
       const p = await readFile(file);
       if (!p.rows.length) { setErr("Não encontrei linhas no arquivo."); return; }
       resetEval();
+      evalSeq.current += 1;
+      setPreviaVelha(true);
       setParsed(p);
       setFileName(file.name);
       // O mapeamento adivinhado vem do servidor (`guessed_map`) na primeira
@@ -139,14 +154,22 @@ function ImportSection() {
     }
   };
 
-  const cancel = () => { setParsed(null); setMap({}); resetEval(); };
+  const cancel = () => {
+    setParsed(null); setFileName(""); setMap({}); resetEval();
+    evalSeq.current += 1;
+    setPreviaVelha(false);
+  };
 
   // Reavalia a cada mudança de mapeamento ou de opção do lote, com 300 ms de
   // espera para não mandar um POST por tecla.
   useEffect(() => {
     if (!parsed || !origemValue) return;
     if (pracaMode === "lote" && !lotePraca) return;
+    setPreviaVelha(true);
     const t = setTimeout(() => {
+      // Duas avaliações podem estar no ar (o corpo leva o arquivo inteiro):
+      // só a resposta da ÚLTIMA vale.
+      const seq = ++evalSeq.current;
       runEvaluate(
         {
           columns: parsed.columns,
@@ -159,6 +182,8 @@ function ImportSection() {
         },
         {
           onSuccess: (res) => {
+            if (seq !== evalSeq.current) return;
+            setPreviaVelha(false);
             if (!Object.keys(map).length && Object.keys(res.guessed_map).length) setMap(res.guessed_map);
           },
         },
@@ -168,10 +193,13 @@ function ImportSection() {
   }, [parsed, map, origemValue, dupAction, pracaMode, lotePraca, runEvaluate]);
 
   const importable = (r: EvalRowView) => !r.no_name && !r.no_phone && (!r.dup || dupAction === "criar");
+  // Sem ninguém ativo o `lote_owner_id` iria vazio e o `run` levaria 400 no
+  // `@IsUUID()`: melhor o botão dizer que não dá.
+  const donoOk = ownerMode === "lote" ? !!loteOwnerId : rodizioIds.length > 0;
   const classLabel = (id: string) => catalog?.classes.find((c) => c.id === id)?.label ?? id;
 
   const confirm = () => {
-    if (!parsed || !evalRes) return;
+    if (!parsed || !evalRes || previaVelha || avaliando || !donoOk) return;
     runImport.mutate(
       {
         columns: parsed.columns,
@@ -189,6 +217,8 @@ function ImportSection() {
         onSuccess: (res) => {
           setDone(`${res.imported} leads importados · ${res.updated} atualizados · ${res.ignored} ignorados`);
           setParsed(null); setFileName(""); setMap({}); resetEval();
+          evalSeq.current += 1;
+          setPreviaVelha(false);
         },
       },
     );
@@ -217,13 +247,41 @@ function ImportSection() {
         </div>
       )}
 
+      {/* Entre escolher o arquivo e a 1ª resposta — e quando a avaliação falha
+          (planilha larga demais, célula gigante, corpo acima de 8 MB, queda de
+          rede) — a seção não pode ficar vazia: o "trocar arquivo" mora aqui. */}
+      {parsed && !evalRes && (
+        <div className="flex flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border px-4 py-8 text-center">
+          <p className="text-xs text-muted-foreground">
+            <b className="text-foreground">{fileName}</b> · {parsed.kind.toUpperCase()} · {parsed.rows.length} linhas · {parsed.columns.length} colunas
+          </p>
+          <p className={falhouAvaliar && !avaliando ? "text-xs text-danger" : "text-xs text-muted-foreground"}>
+            {falhouAvaliar && !avaliando
+              ? apiErrorMessage(erroAvaliar, "Não foi possível avaliar o arquivo.")
+              : "Avaliando o arquivo…"}
+          </p>
+          <button onClick={cancel} className="rounded-md border border-border px-3 py-1.5 text-xs font-bold">
+            trocar arquivo
+          </button>
+        </div>
+      )}
+
       {parsed && evalRes && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-muted-foreground">
               <b className="text-foreground">{fileName}</b> · {parsed.kind.toUpperCase()} · {parsed.rows.length} linhas · {parsed.columns.length} colunas
             </p>
-            <button onClick={cancel} className="text-xs text-muted-foreground hover:text-danger">trocar arquivo</button>
+            <span className="ml-auto flex items-center gap-2">
+              {previaVelha && (
+                <span className={falhouAvaliar && !avaliando ? "text-[11px] text-danger" : "text-[11px] text-muted-foreground"}>
+                  {falhouAvaliar && !avaliando
+                    ? "Não consegui reavaliar — mude uma opção ou troque o arquivo."
+                    : "Avaliando…"}
+                </span>
+              )}
+              <button onClick={cancel} className="text-xs text-muted-foreground hover:text-danger">trocar arquivo</button>
+            </span>
           </div>
 
           {/* mapeamento */}
@@ -366,7 +424,13 @@ function ImportSection() {
           <div className="flex justify-end gap-2">
             <button onClick={cancel} className="rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground">Cancelar</button>
             <button
-              disabled={(!evalRes.will_import && dupAction !== "completar") || runImport.isPending}
+              disabled={
+                (!evalRes.will_import && dupAction !== "completar") ||
+                !donoOk ||
+                previaVelha ||
+                avaliando ||
+                runImport.isPending
+              }
               onClick={confirm}
               className="rounded-md bg-primary px-3 py-1.5 text-sm font-bold text-primary-foreground disabled:opacity-40"
             >
@@ -413,7 +477,7 @@ function SemPracaList() {
 
 // ══════════════ 2. Formulário de captura ══════════════
 function FormularioSection() {
-  const { praca } = useActivePraca();
+  const { praca, isPending: pracasPending } = useActivePraca();
   const { data: pracas } = usePracas();
   const [pracaId, setPracaId] = useState("");
   const [origem, setOrigem] = useState<"tráfego pago" | "orgânico">("tráfego pago");
@@ -421,6 +485,25 @@ function FormularioSection() {
   const id = pracaId || praca?.id || "";
   const base = typeof window !== "undefined" ? window.location.origin : "";
   const url = `${base}/formulario/${id}?origem=${origem === "tráfego pago" ? "pago" : "organico"}`;
+
+  // Sem praça o endereço viraria `/formulario/?origem=pago` (404) e o "copiar"
+  // copiaria um link quebrado — mesma guarda do funil e do Hoje.
+  if (pracasPending) {
+    return (
+      <Card title="2. Formulário de captura" sub="Endereço público por praça. Quem preencher entra direto na etapa Lead novo. É o destino dos anúncios do módulo de campanhas.">
+        <p className="text-sm text-muted-foreground">Carregando…</p>
+      </Card>
+    );
+  }
+  if (!praca) {
+    return (
+      <Card title="2. Formulário de captura" sub="Endereço público por praça. Quem preencher entra direto na etapa Lead novo. É o destino dos anúncios do módulo de campanhas.">
+        <p className="text-sm text-muted-foreground">
+          Nenhuma praça ainda — abra a primeira em <Link href="/praca" className="text-primary hover:underline">Praça</Link>.
+        </p>
+      </Card>
+    );
+  }
 
   return (
     <Card title="2. Formulário de captura" sub="Endereço público por praça. Quem preencher entra direto na etapa Lead novo. É o destino dos anúncios do módulo de campanhas.">
@@ -466,18 +549,31 @@ function FilaDoDia() {
   const { data: settings } = useSettings();
   const { mutate: saveSettings } = useUpdateSettings();
   const [who, setWho] = useState(hojePerson);
-  const [quotaInput, setQuotaInput] = useState<number | null>(null);
+  // O que está DIGITADO (pode estar vazio); `null` = mostrar o valor do servidor.
+  const [quotaInput, setQuotaInput] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { data: queue } = useLeadQueue(who);
 
   // A cota é do servidor (`app_settings.daily_quota`) e corta a fila lá; o
-  // estado local é só para digitar sem mandar um PATCH por tecla.
-  const quota = quotaInput ?? settings?.daily_quota ?? queue?.quota ?? 20;
-  const changeQuota = (v: number) => {
-    setQuotaInput(v);
+  // estado local é só para digitar sem mandar um PATCH por tecla. O DTO é
+  // `@Min(1) @Max(10_000)`: o que sai daqui já vai preso nessa faixa, e o campo
+  // volta a ler o servidor assim que o PATCH termina (dando certo ou não) —
+  // senão um valor recusado ficaria na tela mentindo no aviso de limite.
+  const quotaServidor = settings?.daily_quota ?? queue?.quota ?? 20;
+  const digitada = quotaInput === null ? NaN : Number(quotaInput);
+  const quota = quotaInput !== null && Number.isFinite(digitada) && digitada >= 1
+    ? Math.trunc(digitada)
+    : quotaServidor;
+  const changeQuota = (raw: string) => {
     if (timer.current) clearTimeout(timer.current);
-    if (!Number.isFinite(v) || v < 1) return;
-    timer.current = setTimeout(() => saveSettings({ daily_quota: Math.trunc(v) }), 400);
+    setQuotaInput(raw);
+    const v = Number(raw);
+    if (raw.trim() === "" || !Number.isFinite(v)) return;
+    const preso = Math.min(10000, Math.max(1, Math.trunc(v)));
+    timer.current = setTimeout(
+      () => saveSettings({ daily_quota: preso }, { onSettled: () => setQuotaInput(null) }),
+      400,
+    );
   };
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
@@ -499,8 +595,8 @@ function FilaDoDia() {
         <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
           leads por dia por pessoa
           <input
-            type="number" min={1} value={quota}
-            onChange={(e) => changeQuota(Number(e.target.value))}
+            type="number" min={1} max={10000} value={quotaInput ?? String(quotaServidor)}
+            onChange={(e) => changeQuota(e.target.value)}
             className={`${inputCls} w-16 py-1`}
           />
         </label>

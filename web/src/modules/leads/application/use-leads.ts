@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  keepPreviousData,
   useMutation,
   useQuery,
   useQueryClient,
@@ -88,6 +89,9 @@ export function useLeads(filters: LeadFilters = {}, options: { enabled?: boolean
     queryKey: ['leads', filters],
     queryFn: () => listLeads(filters),
     enabled: options.enabled ?? true,
+    // Marcar "mostrar arquivados" (ou trocar a praça ativa) muda a chave: sem
+    // isto o quadro esvazia e repinta a cada clique no filtro.
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -101,7 +105,12 @@ export function useLead(id: string | null | undefined) {
 
 /** Fila do dia. `person` é `'all'` ou o id de uma pessoa (§9). */
 export function useLeadQueue(person: string) {
-  return useQuery({ queryKey: ['lead-queue', person], queryFn: () => fetchLeadQueue(person) });
+  return useQuery({
+    queryKey: ['lead-queue', person],
+    queryFn: () => fetchLeadQueue(person),
+    // Trocar de dono muda a chave: sem isto a fila esvazia e repinta.
+    placeholderData: keepPreviousData,
+  });
 }
 
 export function useLeadMetrics(pracaId: string | null | undefined) {
