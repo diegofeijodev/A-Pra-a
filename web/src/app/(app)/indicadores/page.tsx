@@ -288,7 +288,9 @@ function PracaView({ params, onOpen }: { params: PeriodParams; onOpen: (id: stri
  * `IndPracaRowView` traz o número, não a cor.
  */
 function semaphore(value: number | null, meta: number, dir: "gte" | "lte") {
-  if (value == null) return "none" as const;
+  // `!Number.isFinite` junto com o `== null` porque a regra prometida é a do
+  // servidor (e a do protótipo): número quebrado não pinta semáforo.
+  if (value == null || !Number.isFinite(value)) return "none" as const;
   if (dir === "gte") return value >= meta ? "ok" : value >= meta * 0.85 ? "warn" : "bad";
   return value <= meta ? "ok" : value <= meta * 1.15 ? "warn" : "bad";
 }

@@ -10,9 +10,10 @@ import type { IndDir, IndReadingView, Sem } from '@/modules/indicators/applicati
  *
  * Único desvio: o semáforo e a leitura chegam PRONTOS do servidor (§16), então
  * `HeroCard` recebe o `IndReadingView` achatado no lugar do `IndReading` do
- * protótipo (que carregava um `def` aninhado). As cores continuam sendo dos
- * tokens do tema (`success`/`warning`/`danger`) — o protótipo usava
- * `var(--verde|--amarelo|--vermelho)`, que não existem nesta paleta.
+ * protótipo (que carregava um `def` aninhado). `SEM_DOT`/`SEM_TEXT` são cópia
+ * literal do protótipo (`lib/praca/indicadores.ts`) — que já pintava com os
+ * tokens do tema (`success`/`warning`/`danger`); moraram lá porque o cálculo
+ * era do navegador, e aqui vivem junto das peças que os usam.
  */
 
 export const SEM_DOT: Record<Sem, string> = {

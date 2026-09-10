@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { useRefreshSession } from '@/modules/auth/application/use-me';
@@ -81,11 +81,40 @@ export function useCreatePraca() {
   });
 }
 
+/**
+ * Mexer na praça mexe no PRAZO de todas as ações dela: o vencimento de uma
+ * ação `once` é derivado de `start_date`, e recalcular ainda zera adiamento e
+ * data manual (§6). Por isso a invalidação é por PREFIXO em todas as fotos que
+ * dependem de vencimento — a agenda (montada com uma janela diferente em cada
+ * tela), as etapas, os indicadores (atrasadas e playbook) e o sino —, não só
+ * `['pracas']`. Sem isso, com `staleTime: 10 s`, ir para "Hoje" logo depois de
+ * mudar a data mostra a lista pela data velha.
+ */
+function invalidatePracaDates(queryClient: QueryClient) {
+  for (const key of [
+    ['pracas'],
+    ['actions'],
+    ['agenda'],
+    ['steps'],
+    ['indicators'],
+    ['notifications'],
+  ]) {
+    void queryClient.invalidateQueries({ queryKey: key });
+  }
+}
+
+/**
+ * O `onError` não é enfeite: o contrato recusa `end_date < start_date` também
+ * no `PATCH` e limita o tamanho de `name`/`city`. Sem toast, a recusa não
+ * produzia sinal nenhum na tela (não há interceptor global de erro) e o valor
+ * recusado ficava no campo como se tivesse gravado.
+ */
 export function useUpdatePraca() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdatePracaInput }) => updatePraca(id, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pracas'] }),
+    onSuccess: () => invalidatePracaDates(queryClient),
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível salvar a praça.')),
   });
 }
 
@@ -94,9 +123,7 @@ export function useRecalcDates() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => recalcDates(id),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['pracas'] });
-      void queryClient.invalidateQueries({ queryKey: ['actions'] });
-    },
+    onSuccess: () => invalidatePracaDates(queryClient),
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível recalcular as datas.')),
   });
 }

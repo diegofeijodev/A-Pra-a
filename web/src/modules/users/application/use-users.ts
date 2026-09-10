@@ -68,11 +68,25 @@ export function useCreateUser() {
   });
 }
 
+/**
+ * Muda outra conta (ou a própria, pela tela de Pessoas). Quando a linha
+ * editada é a de quem está logado, a resposta é o `UserView` novo da SESSÃO:
+ * sem gravá-la, `authStore.user` (e com ele `is_admin`, cor e nome do shell)
+ * ficaria velho pelo resto da sessão — `['auth','me']` é montado uma vez só no
+ * `(app)/layout.tsx` e não relê sozinho (`refetchOnWindowFocus: false`).
+ */
 export function useUpdateUser() {
   const queryClient = useQueryClient();
+  const { user: sessao, setUser } = useAuth();
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateUserInput }) => updateUser(id, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users'] }),
+    onSuccess: (user) => {
+      if (user.id === sessao?.id) {
+        setUser(user);
+        queryClient.setQueryData(['auth', 'me'], { user });
+      }
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
     onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível salvar a pessoa.')),
   });
 }

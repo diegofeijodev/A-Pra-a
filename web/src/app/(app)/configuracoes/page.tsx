@@ -50,6 +50,10 @@ import {
  * do `ConfigEnvio` em `Disparos.tsx`): com `onChange` cada tecla viraria um
  * `PATCH`. O `key` amarrado ao valor do servidor remonta o campo quando a
  * gravação passa, para o que está na tela nunca mentir sobre o que está gravado.
+ * Quando a gravação NÃO passa, a linha do servidor não muda — e sem ajuda o
+ * `key` também não mudaria, deixando o valor recusado na tela. Daí o contador
+ * `resync` de cada bloco: ele entra no `key` e força a remontagem no `onError`,
+ * o mesmo "volta a ler o servidor" que a cota da Entrada faz no `onSettled`.
  */
 
 const inputCls = "rounded-md border border-input bg-background px-2 py-1.5 text-xs outline-none";
@@ -93,6 +97,11 @@ function Pessoas() {
   const desativar = useDeactivateUser();
   const [nova, setNova] = useState(NOVA_PESSOA);
   const [senhas, setSenhas] = useState<Record<string, string>>({});
+  const [resync, setResync] = useState(0);
+  // Nome vazio, função longa demais, última conta admin: a API recusa e o
+  // `useUpdateUser` toasta — este contador é o que tira o valor recusado do campo.
+  const gravar = (id: string, input: Parameters<typeof atualizar.mutate>[0]["input"]) =>
+    atualizar.mutate({ id, input }, { onError: () => setResync((n) => n + 1) });
   const admin = !!user?.is_admin;
   const lista = users ?? [];
 
@@ -103,25 +112,25 @@ function Pessoas() {
         {lista.map((p) => (
           <div key={p.id} className={`card-surface flex flex-wrap items-center gap-2 p-3 ${p.active ? "" : "opacity-60"}`}>
             <input
-              key={`cor-${p.id}-${p.color}`} type="color" defaultValue={p.color} disabled={!admin}
-              onBlur={(e) => { if (e.target.value !== p.color) atualizar.mutate({ id: p.id, input: { color: e.target.value } }); }}
+              key={`cor-${p.id}-${resync}-${p.color}`} type="color" defaultValue={p.color} disabled={!admin}
+              onBlur={(e) => { if (e.target.value !== p.color) gravar(p.id, { color: e.target.value }); }}
               className="h-8 w-10 cursor-pointer rounded-md border border-border bg-transparent"
             />
             <input
-              key={`nome-${p.id}-${p.name}`} defaultValue={p.name} disabled={!admin}
-              onBlur={(e) => { if (e.target.value !== p.name) atualizar.mutate({ id: p.id, input: { name: e.target.value } }); }}
+              key={`nome-${p.id}-${resync}-${p.name}`} defaultValue={p.name} disabled={!admin}
+              onBlur={(e) => { if (e.target.value !== p.name) gravar(p.id, { name: e.target.value }); }}
               className="w-32 rounded-md border border-input bg-background px-2 py-1.5 text-sm font-bold outline-none"
             />
             <input
-              key={`funcao-${p.id}-${p.role_label}`} defaultValue={p.role_label} placeholder="Função" disabled={!admin}
-              onBlur={(e) => { if (e.target.value !== p.role_label) atualizar.mutate({ id: p.id, input: { role_label: e.target.value } }); }}
+              key={`funcao-${p.id}-${resync}-${p.role_label}`} defaultValue={p.role_label} placeholder="Função" disabled={!admin}
+              onBlur={(e) => { if (e.target.value !== p.role_label) gravar(p.id, { role_label: e.target.value }); }}
               className={`min-w-40 flex-1 ${inputCls}`}
             />
             {/* Nenhum PATCH do contrato troca e-mail: o campo continua na linha, só leitura. */}
             <input value={p.email} readOnly className={`w-44 ${inputCls} text-muted-foreground`} />
             <input
-              key={`tel-${p.id}-${p.phone}`} defaultValue={p.phone} placeholder="telefone" disabled={!admin}
-              onBlur={(e) => { if (e.target.value !== p.phone) atualizar.mutate({ id: p.id, input: { phone: e.target.value } }); }}
+              key={`tel-${p.id}-${resync}-${p.phone}`} defaultValue={p.phone} placeholder="telefone" disabled={!admin}
+              onBlur={(e) => { if (e.target.value !== p.phone) gravar(p.id, { phone: e.target.value }); }}
               className={`w-32 ${inputCls}`}
             />
             {(admin || p.id === user?.id) && (
@@ -145,9 +154,11 @@ function Pessoas() {
             )}
             {admin && lista.length > 1 && (
               p.active ? (
-                <button onClick={() => desativar.mutate(p.id)} className="rounded-md border border-danger/50 px-2 py-1.5 text-xs text-danger">desativar</button>
+                // A API sempre recusa o autodesligamento (`CANNOT_DEACTIVATE_SELF`, §3):
+                // o botão fica na linha, desligado, em vez de existir só para falhar.
+                <button onClick={() => desativar.mutate(p.id)} disabled={p.id === user?.id} className="rounded-md border border-danger/50 px-2 py-1.5 text-xs text-danger disabled:opacity-40">desativar</button>
               ) : (
-                <button onClick={() => atualizar.mutate({ id: p.id, input: { active: true } })} className="rounded-md border border-border px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground">reativar</button>
+                <button onClick={() => gravar(p.id, { active: true })} className="rounded-md border border-border px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground">reativar</button>
               )
             )}
           </div>
@@ -185,10 +196,13 @@ function Pessoas() {
 function DadosDaPraca({ praca }: { praca: PracaView }) {
   const atualizar = useUpdatePraca();
   const recalcular = useRecalcDates();
+  const [resync, setResync] = useState(0);
   // `blur` não é mudança: entrar e sair de um campo gravava um `PATCH` à toa.
+  // No erro (o contrato recusa `end_date` antes de `start_date`, §6), o campo
+  // volta a ler a praça: sem isso a data recusada ficava na tela como gravada.
   const gravar = (atual: string, novo: string, input: UpdatePracaInput) => {
     if (novo === atual) return;
-    atualizar.mutate({ id: praca.id, input });
+    atualizar.mutate({ id: praca.id, input }, { onError: () => setResync((n) => n + 1) });
   };
 
   return (
@@ -196,13 +210,13 @@ function DadosDaPraca({ praca }: { praca: PracaView }) {
       <h2 className="tag text-muted-foreground">Dados da praça</h2>
       <div className="card-surface mt-2 grid gap-3 p-4 sm:grid-cols-2">
         <label className="text-xs text-muted-foreground">Nome
-          <input key={`nome-${praca.name}`} defaultValue={praca.name} onBlur={(e) => gravar(praca.name, e.target.value, { name: e.target.value })} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary" /></label>
+          <input key={`nome-${resync}-${praca.name}`} defaultValue={praca.name} onBlur={(e) => gravar(praca.name, e.target.value, { name: e.target.value })} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary" /></label>
         <label className="text-xs text-muted-foreground">Cidade
-          <input key={`cidade-${praca.city}`} defaultValue={praca.city} onBlur={(e) => gravar(praca.city, e.target.value, { city: e.target.value })} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary" /></label>
+          <input key={`cidade-${resync}-${praca.city}`} defaultValue={praca.city} onBlur={(e) => gravar(praca.city, e.target.value, { city: e.target.value })} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary" /></label>
         <label className="text-xs text-muted-foreground">Data de início
-          <input key={`inicio-${praca.start_date}`} type="date" defaultValue={praca.start_date} onBlur={(e) => gravar(praca.start_date, e.target.value, { start_date: e.target.value })} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" /></label>
+          <input key={`inicio-${resync}-${praca.start_date}`} type="date" defaultValue={praca.start_date} onBlur={(e) => gravar(praca.start_date, e.target.value, { start_date: e.target.value })} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" /></label>
         <label className="text-xs text-muted-foreground">Previsão de fim
-          <input key={`fim-${praca.end_date}`} type="date" defaultValue={praca.end_date} onBlur={(e) => gravar(praca.end_date, e.target.value, { end_date: e.target.value })} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" /></label>
+          <input key={`fim-${resync}-${praca.end_date}`} type="date" defaultValue={praca.end_date} onBlur={(e) => gravar(praca.end_date, e.target.value, { end_date: e.target.value })} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" /></label>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
         <button onClick={() => recalcular.mutate(praca.id)} className="rounded-md border border-primary px-4 py-2 text-sm font-bold text-primary">
@@ -230,6 +244,7 @@ const VARIAVEIS: { key: keyof TemplateDefaults; label: string }[] = [
 function VariaveisPadrao() {
   const { data: settings } = useSettings();
   const atualizar = useUpdateSettings();
+  const [resync, setResync] = useState(0);
 
   return (
     <section className="mt-8">
@@ -243,8 +258,14 @@ function VariaveisPadrao() {
             return (
               <label key={v.key} className="text-xs text-muted-foreground">{v.label}
                 <input
-                  key={`${v.key}-${atual}`} defaultValue={atual}
-                  onBlur={(e) => { if (e.target.value !== atual) atualizar.mutate({ template_defaults: { [v.key]: e.target.value } }); }}
+                  key={`${v.key}-${resync}-${atual}`} defaultValue={atual}
+                  onBlur={(e) => {
+                    if (e.target.value === atual) return;
+                    atualizar.mutate(
+                      { template_defaults: { [v.key]: e.target.value } },
+                      { onError: () => setResync((n) => n + 1) },
+                    );
+                  }}
                   className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary"
                 />
                 <span className="mt-0.5 block text-[10px] text-muted-foreground">{`{{${v.key}}}`}</span>
@@ -270,8 +291,15 @@ function RoteiroModelo({ praca }: { praca: PracaView }) {
   const atualizar = useUpdateTemplateAction();
   const apagar = useDeleteTemplateAction();
   const [editStep, setEditStep] = useState<number | null>(null);
+  const [resync, setResync] = useState(0);
   const admin = !!user?.is_admin;
   const lista = template ?? [];
+  // Conta desativada some da visão Pessoa dos indicadores e não trabalha mais:
+  // atribuir uma ação-modelo a ela seria dar dono a quem não existe. A API não
+  // barra (`assertPessoas` não olha `active`), então quem barra é a lista.
+  const people = (users ?? []).filter((u) => u.active);
+  const gravar = (id: string, input: Parameters<typeof atualizar.mutate>[0]["input"]) =>
+    atualizar.mutate({ id, input }, { onError: () => setResync((n) => n + 1) });
 
   return (
     <section className="mt-8">
@@ -288,28 +316,37 @@ function RoteiroModelo({ praca }: { praca: PracaView }) {
               </button>
               {open && (
                 <div className="space-y-1.5 border-t border-border p-3">
-                  {items.map((a) => (
+                  {items.map((a) => {
+                    const dono = a.owners[0];
+                    // Dono que já foi desativado continua na lista, desligado: sem a
+                    // opção o `<select>` "pularia" para a primeira pessoa e a tela
+                    // mostraria um dono que não é o que está gravado.
+                    const donoInativo = !!dono && !people.some((u) => u.id === dono);
+                    return (
                     <div key={a.id} className="flex flex-wrap items-center gap-2">
                       <input
-                        key={`titulo-${a.id}-${a.title}`} defaultValue={a.title} disabled={!admin}
-                        onBlur={(e) => { if (e.target.value.trim() && e.target.value !== a.title) atualizar.mutate({ id: a.id, input: { title: e.target.value } }); }}
+                        key={`titulo-${a.id}-${resync}-${a.title}`} defaultValue={a.title} disabled={!admin}
+                        onBlur={(e) => { if (e.target.value.trim() && e.target.value !== a.title) gravar(a.id, { title: e.target.value }); }}
                         className={`min-w-40 flex-1 ${inputCls}`}
                       />
                       <select
-                        value={a.owners[0]} disabled={!admin}
-                        onChange={(e) => atualizar.mutate({ id: a.id, input: { owners: [e.target.value] } })}
+                        value={dono} disabled={!admin}
+                        onChange={(e) => gravar(a.id, { owners: [e.target.value] })}
                         className="rounded-md border border-input bg-background px-2 py-1.5 text-xs"
                       >
-                        {(users ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        {donoInativo && (
+                          <option value={dono} disabled>{users?.find((u) => u.id === dono)?.name ?? dono}</option>
+                        )}
+                        {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                       {a.rec.kind === "once" ? (
                         <label className="text-[11px] text-muted-foreground">dia
                           <input
-                            key={`dia-${a.id}-${a.rec.day}`} type="number" defaultValue={a.rec.day} disabled={!admin}
+                            key={`dia-${a.id}-${resync}-${a.rec.day}`} type="number" defaultValue={a.rec.day} disabled={!admin}
                             onBlur={(e) => {
                               const dia = Number(e.target.value);
                               if (Number.isInteger(dia) && a.rec.kind === "once" && dia !== a.rec.day) {
-                                atualizar.mutate({ id: a.id, input: { rec: { kind: "once", day: dia } } });
+                                gravar(a.id, { rec: { kind: "once", day: dia } });
                               }
                             }}
                             className="ml-1 w-16 rounded-md border border-input bg-background px-2 py-1.5 text-xs"
@@ -319,11 +356,12 @@ function RoteiroModelo({ praca }: { praca: PracaView }) {
                       )}
                       {admin && <button onClick={() => apagar.mutate(a.id)} className="text-xs text-danger">✕</button>}
                     </div>
-                  ))}
+                    );
+                  })}
                   {admin && (
                     <button
                       onClick={() => {
-                        const dono = users?.[0]?.id;
+                        const dono = people[0]?.id;
                         if (!dono) return;
                         criar.mutate({ step: st.n, title: "Nova ação-modelo", owners: [dono], rec: { kind: "once", day: 1 } });
                       }}

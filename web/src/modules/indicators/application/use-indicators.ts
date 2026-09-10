@@ -62,6 +62,18 @@ export type {
  * `period=livre`, que é onde o contrato os cobra.
  */
 
+/**
+ * "Período livre" só vira requisição com as duas pontas preenchidas e na ordem
+ * certa: apagar um `<input type="date">` manda `from=`/`to=` vazio e o contrato
+ * responde 400 nas cinco consultas. Como leitura não toasta e há
+ * `keepPreviousData`, a tela seguiria mostrando os números da janela anterior
+ * sem nenhum sinal — melhor não perguntar.
+ */
+function periodoValido({ period, from, to }: PeriodParams): boolean {
+  if (period !== 'livre') return true;
+  return !!from && !!to && from <= to;
+}
+
 export function useIndicators(params: ReadingsParams) {
   const { scope, praca_id, period, from, to } = params;
   return useQuery({
@@ -69,7 +81,7 @@ export function useIndicators(params: ReadingsParams) {
     queryFn: () => fetchReadings(params),
     // Visão de praça sem praça ativa não tem o que pedir (o contrato exige o
     // `praca_id` e recusaria com 400).
-    enabled: scope !== 'praca' || !!praca_id,
+    enabled: (scope !== 'praca' || !!praca_id) && periodoValido(params),
     placeholderData: keepPreviousData,
   });
 }
@@ -79,6 +91,7 @@ export function useEmpresa(params: PeriodParams) {
   return useQuery({
     queryKey: ['indicators', 'empresa', period, from, to],
     queryFn: () => fetchEmpresa(params),
+    enabled: periodoValido(params),
     placeholderData: keepPreviousData,
   });
 }
@@ -88,6 +101,7 @@ export function usePracaRows(params: PeriodParams) {
   return useQuery({
     queryKey: ['indicators', 'pracas', period, from, to],
     queryFn: () => fetchPracaRows(params),
+    enabled: periodoValido(params),
     placeholderData: keepPreviousData,
   });
 }
@@ -97,6 +111,7 @@ export function usePessoaRows(params: PeriodParams) {
   return useQuery({
     queryKey: ['indicators', 'pessoas', period, from, to],
     queryFn: () => fetchPersonRows(params),
+    enabled: periodoValido(params),
     placeholderData: keepPreviousData,
   });
 }
@@ -107,7 +122,7 @@ export function useCanalRows(pracaId: string | null | undefined, params: PeriodP
   return useQuery({
     queryKey: ['indicators', 'canais', pracaId, period, from, to],
     queryFn: () => fetchCanalRows(pracaId as string, params),
-    enabled: !!pracaId,
+    enabled: !!pracaId && periodoValido(params),
     placeholderData: keepPreviousData,
   });
 }
