@@ -44,6 +44,13 @@ export const diffDays = (a: string, b: string) =>
 export const WD_LONG = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
 export const WD_SHORT = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
 
+// Título do calendário ("setembro 2026"). O `meses` do catálogo é a versão
+// curta da mídia ("Jan", "Fev"…) e não serve aqui — ver `routes/calendario.tsx`.
+export const MONTHS = [
+  "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+];
+
 export const wdOf = (s: string) => parse(s).getDay();
 
 const SP_DATETIME = new Intl.DateTimeFormat("pt-BR", {

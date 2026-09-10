@@ -56,11 +56,18 @@ export function useCreatePraca() {
   return useMutation({
     mutationFn: (input: CreatePracaInput) => createPraca(input),
     onSuccess: async () => {
+      // A praça nova precisa aparecer na lista mesmo que a releitura da sessão
+      // falhe — por isso a invalidação vem primeiro e o refresh vai protegido.
+      void queryClient.invalidateQueries({ queryKey: ['pracas'] });
       // Criar uma praça também grava `active_praca_id` de quem criou (§6), e
       // isso não volta na resposta: a sessão precisa reler o próprio usuário,
       // senão o shell continua apontando para a praça anterior.
-      await refreshSession();
-      void queryClient.invalidateQueries({ queryKey: ['pracas'] });
+      try {
+        await refreshSession();
+      } catch {
+        // O `useMe` do layout relê sozinho; o pior caso é o shell mostrar a
+        // praça anterior até a próxima navegação.
+      }
     },
     onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível criar a praça.')),
   });

@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
+import { ActionPanel } from '@/components/praca/ActionPanel';
 import { AppShell } from '@/components/praca/AppShell';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { useMe } from '@/modules/auth/application/use-me';
@@ -37,8 +38,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <>
       <ThemeSync />
       <AppShell>{children}</AppShell>
-      {/* <ActionPanel /> global entra na Task 19 e <LeadPanel /> na Task 20 —
-          os dois abrem por `openActionId` / `openLeadId` do `lib/ui-store.ts`. */}
+      {/* Painel global: abre por `openActionId` do `lib/ui-store.ts`, de
+          qualquer tela. Fica FORA do `AppShell` porque é sobreposição de tela
+          cheia. O <LeadPanel /> entra do mesmo jeito na Task 20. */}
+      <ActionPanel />
     </>
   );
 }
