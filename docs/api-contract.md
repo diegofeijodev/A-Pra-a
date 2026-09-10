@@ -3,6 +3,30 @@
 Base: `http://localhost:3014`. Documento **canônico**: mudou endpoint, atualize
 aqui primeiro. Swagger interativo em `/docs` (fora de produção).
 
+## Índice
+
+1. [Convenções](#1-convencoes)
+2. [Auth — `/v1/auth`](#2-auth)
+3. [Pessoas — `/v1/users`](#3-pessoas)
+4. [Catálogo — `/v1/catalog`](#4-catalogo)
+5. [Geo — `/v1/geo`](#5-geo)
+6. [Praças — `/v1/pracas`](#6-pracas)
+7. [Ações — `/v1/actions`](#7-acoes)
+8. [Roteiro-modelo — `/v1/template-actions`](#8-roteiro-modelo)
+9. [Funil de leads — `/v1/leads`](#9-funil)
+10. [Entrada de leads — `/v1/imports`](#10-entrada)
+11. [Formulário público — `/v1/public`](#11-formulario-publico)
+12. [Mensagens — `/v1/msg-templates`, `/v1/settings`, `/v1/blocklist`](#12-mensagens)
+13. [Disparos — `/v1/disparos`, `/v1/sends`](#13-disparos)
+14. [Cadências — `/v1/cadences`, `/v1/enrollments`](#14-cadencias)
+15. [Mídia — `/v1/campanhas`, `/v1/creatives`, `/v1/traffic`, `/v1/proofs`](#15-midia)
+16. [Indicadores — `/v1/indicators`](#16-indicadores)
+17. [Notificações — `/v1/notifications`](#17-notificacoes)
+18. [Freela — `/v1/freela`](#18-freela)
+19. [Desvios propositais em relação ao protótipo](#19-desvios)
+
+<a id="1-convencoes"></a>
+
 ## 1. Convenções
 
 - Wire **snake_case**, espelhando o banco.
@@ -24,6 +48,8 @@ aqui primeiro. Swagger interativo em `/docs` (fora de produção).
   `404 NOT_FOUND`, nunca `500`.
 - Throttle: 300 req/min por IP.
 
+<a id="2-auth"></a>
+
 ## 2. Auth — `/v1/auth`
 
 | Método | Rota | Corpo | Resposta |
@@ -34,6 +60,8 @@ aqui primeiro. Swagger interativo em `/docs` (fora de produção).
 `user` é sempre um `UserView` (ver §3). Erros: `INVALID_CREDENTIALS` (e-mail
 ou senha não batem), `UNAUTHORIZED` (senha certa, conta desativada — mesmo
 código que o guard usa quando a conta é desativada depois do token emitido).
+
+<a id="3-pessoas"></a>
 
 ## 3. Pessoas — `/v1/users`
 
@@ -74,6 +102,8 @@ Regras de desativação (`active:false`, via `PATCH /:id` ou `DELETE /:id`):
 `theme` ∈ `dark`, `light`. `color` é hex (`#RRGGBB`). `active_praca_id`
 referencia `pracas.id` (§6; sem FK no banco — quando a praça é apagada, o
 campo é limpo à mão pelo `DELETE /v1/pracas/:id`); `null` desvincula.
+
+<a id="4-catalogo"></a>
 
 ## 4. Catálogo — `/v1/catalog`
 
@@ -133,6 +163,8 @@ Campos da resposta:
 o serviço de indicadores (tarefa futura) resolve para `owner_id` procurando o
 usuário por e-mail, `null` se não existir.
 
+<a id="5-geo"></a>
+
 ## 5. Geo — `/v1/geo`
 
 Municípios do IBGE (coordenadas + população, Censo 2022) — dado estático em
@@ -185,6 +217,8 @@ carga do JSON, e vale para o módulo inteiro (inclusive `GET
 bLon)` — mesma fórmula de `geo.ts:41-57` (Haversine, raio da Terra = 6371 km);
 `cidadesNoRaio(ibge, km)`; `find(ibge)` (lookup simples, `undefined` se não
 existir); `municipiosPorUf(uf)`; `estados()`.
+
+<a id="6-pracas"></a>
 
 ## 6. Praças — `/v1/pracas`
 
@@ -332,6 +366,8 @@ Objeto usado nas ações (§7) e no roteiro-modelo (§8); no banco vira colunas
 Ação fixa (`step: 0`) roda todo dia, **inclusive antes** do `start_date` da
 praça (regra do protótipo) — mas ainda respeita o `end_day`.
 
+<a id="7-acoes"></a>
+
 ## 7. Ações — `/v1/actions`
 
 `ActionView`:
@@ -401,6 +437,8 @@ pessoa do time mexe em qualquer ação.
 > `Content-Type: application/json` — o Fastify recusa corpo vazio com esse
 > cabeçalho antes de a requisição chegar no Nest.
 
+<a id="8-roteiro-modelo"></a>
+
 ## 8. Roteiro-modelo — `/v1/template-actions`
 
 O playbook de abertura de praça: 84 ações-modelo (seed
@@ -441,6 +479,8 @@ Item:
   qualquer um, `400 VALIDATION_ERROR`.
 - `DELETE` só tira do roteiro-modelo: as ações já instanciadas nas praças
   continuam lá.
+
+<a id="9-funil"></a>
 
 ## 9. Funil de leads — `/v1/leads`
 
@@ -603,6 +643,8 @@ das etapas 1 a 6.
 
 ---
 
+<a id="10-entrada"></a>
+
 ## 10. Entrada de leads — `/v1/imports`
 
 Importação de arquivo (CSV/XML lido no navegador — a API recebe as linhas já
@@ -762,6 +804,8 @@ limpeza do admin. O lote continua na lista, com `imported` abatido e o motivo
 
 ---
 
+<a id="11-formulario-publico"></a>
+
 ## 11. Formulário público — `/v1/public`
 
 Porta pública do formulário de captura (`.prototype/src/routes/formulario.$pracaId.tsx`):
@@ -826,6 +870,8 @@ Corpo:
   telefone são serializados no servidor; só um lead nasce.
 
 ---
+
+<a id="12-mensagens"></a>
 
 ## 12. Mensagens — `/v1/msg-templates`, `/v1/settings`, `/v1/blocklist`
 
@@ -1001,6 +1047,8 @@ sábado 21h BRT com `sunday: false` e janela 9–19 cai na segunda às 9h BRT.
 - `name` vazio vira `"adicionado na mão"`; `reason` vazio vira
   `"pedido manual"`. `lead_id` é opcional e guardado como veio.
 
+<a id="13-disparos"></a>
+
 ## 13. Disparos — `/v1/disparos`, `/v1/sends`
 
 Um disparo é **uma mensagem, para um grupo de pessoas, uma vez**: o filtro do
@@ -1017,10 +1065,15 @@ vira uma linha em `msg_sends`. Porta de
 | DELETE | `/v1/disparos/:id` | — | `{ok: true}` — **só admin** |
 | POST | `/v1/sends/:id/mark` | `{status}` | `SendView` |
 | POST | `/v1/sends/:id/reply` | `{text}` | `{blocked}` |
+| GET | `/v1/sends/count` | — | `{total}` — **só admin** |
 
 Todas exigem JWT. `:id` malformado → `404 NOT_FOUND` (nunca 500). `DELETE` leva a
 fila do lote por cascata (`msg_sends.disparo_id`), por isso é só de admin — o
-caminho normal é deixar o histórico.
+caminho normal é deixar o histórico. `GET /v1/sends/count` não é tela: é a
+contagem crua de `msg_sends` (todo modo/status), usada só pelo smoke para
+fechar a conta de resíduo (§19) — como `msg_sends.lead_id` tem
+`onDelete: Cascade`, some sozinha quando o lead ou o disparo de teste é
+apagado.
 
 ### `DisparoFilters`
 
@@ -1201,6 +1254,8 @@ zerada preso em `agendado`.
 Envio inexistente → `404 NOT_FOUND`.
 
 ---
+
+<a id="14-cadencias"></a>
 
 ## 14. Cadências — `/v1/cadences`, `/v1/enrollments`
 
@@ -1435,6 +1490,8 @@ primeira vaga, marcando mensagem como enviada na ficha de gente real sem ningué
 ter pedido. Ligar cada uma é ato de gente (o botão play da tela).
 
 ---
+
+<a id="15-midia"></a>
 
 ## 15. Mídia — `/v1/campanhas`, `/v1/creatives`, `/v1/traffic`, `/v1/proofs`
 
@@ -1678,6 +1735,8 @@ não faz nada.
 
 ---
 
+<a id="16-indicadores"></a>
+
 ## 16. Indicadores — `/v1/indicators`
 
 Painel único de **Empresa, Praça, Pessoa e Canal**. Nada aqui é tabela de
@@ -1886,6 +1945,8 @@ muda o `value` daquele indicador — quem manda ali é o cálculo.
 responde `{ok: true}` mesmo quando o dia não tinha nada (idempotente). Não é
 rota de admin.
 
+<a id="17-notificacoes"></a>
+
 ## 17. Notificações — `/v1/notifications`
 
 Os avisos do sino — porta de `.prototype/src/components/praca/Layout.tsx:42-89`
@@ -1940,6 +2001,8 @@ nem duplica linha. `undismiss` apaga a dispensa; id nunca dispensado também
 responde `{ok: true}` (idempotente, igual ao `DELETE` de §16). Não existe
 "dispensar para todo mundo": a dispensa é sempre da conta logada, e a mesma
 `id` pode estar dispensada para um usuário e visível para outro.
+
+<a id="18-freela"></a>
 
 ## 18. Freela — `/v1/freela`
 
@@ -2299,3 +2362,91 @@ curl -s -X POST localhost:3014/v1/freela/campaigns -H "Authorization: Bearer $T"
 Para o caminho do disparo: `POST /v1/disparos` com `mode: "freela"` e espere a
 rodada do outbox — o `disparos.freela_campaign_id` aparece quando a campanha é
 criada.
+
+<a id="19-desvios"></a>
+
+## 19. Desvios propositais em relação ao protótipo
+
+Lista fechada: o spec do port (`docs/superpowers/specs/2026-09-09-praca-port-design.md`
+§9) definiu os itens 1–12 antes de começar a implementação; os itens 13–23
+foram decisões tomadas durante a implementação, registradas aqui no fechamento
+(Task 17). Nenhum é bug — é comportamento deliberado, diferente do protótipo
+Lovable de referência (`.prototype/`).
+
+1. Motor de cadências roda no servidor (`@Cron` a cada 15 s) — no protótipo só
+   rodava com a aba Mensagens aberta. Ver [§14](#14-cadencias).
+2. Regra de negócio (agenda, fila do dia, duplicidade de importação,
+   indicadores, métricas de campanha) mora no servidor — a tela só exibe o que
+   a API já calculou. Ver [§6](#6-pracas), [§9](#9-funil), [§10](#10-entrada),
+   [§16](#16-indicadores).
+3. Pessoas do protótipo (`people`) viraram contas (`users`) com login; o autor
+   de toda ação (conclusão, comentário, adiamento, evento, aprovação) é quem
+   está logado, não um seletor "agindo como". Ver [§3](#3-pessoas).
+4. Dois modos de envio: `fila` (manual) e `freela` (delega ao sistema de
+   campanhas do api-freela). Os modos "Meta oficial" e "provedor externo" do
+   protótipo eram só campos de configuração sem envio de verdade — não
+   entraram no port. Ver [§12](#12-mensagens), [§13](#13-disparos).
+5. `?camp=<id>` no formulário público: o protótipo citava o parâmetro e nunca
+   lia; aqui grava `leads.campanha_id` de verdade. Ver
+   [§11](#11-formulario-publico).
+6. O evento de mudança de etapa grava `stage_to` (inteiro) — o protótipo
+   descobria a etapa fazendo `text.includes("7")`, o que também casava com
+   "17". Ver [§9](#9-funil).
+7. O lead de teste da cadência ("Testar comigo") é um lead válido marcado
+   `is_test`, não um objeto com campos inexistentes via cast como no
+   protótipo. Ver [§14](#14-cadencias).
+8. Variáveis fixas do render (`link_video_caso`, `link_cadastro`, `funcao`,
+   `valor`, `turno`, `dia_forte`) viram `app_settings.template_defaults`,
+   editáveis em Configurações, em vez de constantes hardcoded no código. Ver
+   [§12](#12-mensagens).
+9. Indicadores manuais na visão Empresa somam os últimos valores por praça
+   (contagens) ou tiram a média (`%`/`h`/`R$`) — o protótipo só lia a primeira
+   praça da lista. Ver [§16](#16-indicadores).
+10. O formulário público atribui o lead ao primeiro usuário ativo da praça (por
+    `sort`) — o protótipo pegava `people[0]` sem checar se estava ativo — e é
+    limitado por IP. Ver [§11](#11-formulario-publico).
+11. O JSON do IBGE (~500 KB) saiu do bundle do navegador e ficou na API,
+    servido por UF (`GET /v1/geo/municipios?uf=`). Ver [§5](#5-geo).
+12. Tema (`dark`/`light`) e praça ativa (`active_praca_id`) são por usuário, no
+    banco — não mais estado solto de UI. Ver [§3](#3-pessoas).
+13. `late` da agenda mostra a ocorrência perdida **mais antiga** dos últimos 7
+    dias (é o comportamento real do código do protótipo, não o que a
+    descrição do produto sugeria). Ver [§6](#6-pracas).
+14. `origem` do lead é texto livre, 1 a 60 caracteres — o catálogo de origens é
+    só sugestão de UI (autocomplete), não uma lista fechada validada no
+    servidor. Ver [§9](#9-funil).
+15. Desfazer importação (`POST /v1/imports/:id/undo`) não exige admin: é o
+    botão de quem importou, na própria tela de Entrada. Ver
+    [§10](#10-entrada).
+16. As 5 cadências-modelo nascem **pausadas** no seed — o motor real, se
+    ligado de cara, matricularia a base inteira de leads na primeira rodada de
+    15 s. Ver [§14](#14-cadencias).
+17. `sai_conversa` só rebaixa quem está **antes** da etapa 3 (ainda não
+    avançou o funil de verdade); lead arquivado sai de qualquer cadência com
+    motivo `arquivado`. Ver [§14](#14-cadencias).
+18. `recontratacao` mantém a fórmula literal do protótipo (a base da etapa ≥ 6
+    inclui leads perdidos — dá 62,5% no seed) e a meta mensal de clientes
+    ativos é interpolada linearmente no dia do mês (1/dez/26 lê 430). Ver
+    [§16](#16-indicadores).
+19. `scheduled_at` do disparo exige ISO 8601 **com fuso** (`+00:00`/`Z`, nunca
+    hora "solta"); `POST /v1/sends/:id/mark` num envio já respondido é
+    recusado com `ALREADY_REPLIED`; duplo clique em "Confirmar" ao criar o
+    disparo é serializado (advisory lock), não gera duas filas. Ver
+    [§13](#13-disparos).
+20. `traffic.criativos` aceita qualquer criativo da **mesma campanha** — o
+    protótipo só filtrava a lista de checkboxes da tela, sem validar no
+    servidor. `PUT` de campanha sem `status` no corpo mantém o status atual
+    (não reseta para o default do DTO). Ver [§15](#15-midia).
+21. `{{cidade}}` numa campanha `EXTERNAL_LIST` disparada para o Freela vira a
+    cidade-sede da praça (é sempre uma cidade só, ao contrário de `{{nome}}` /
+    `{{primeiro_nome}}`, que são por contato) — fora de `EXTERNAL_LIST` a
+    variável não é suportada e cai em `unsupported_variables`. Ver
+    [§18](#18-freela).
+22. Formulário público: dois envios simultâneos do mesmo telefone são
+    serializados por advisory lock (`praca_id`, `phone_key`) dentro da
+    transação, nunca viram dois leads; o limite por IP é configurável
+    (`PUBLIC_LEADS_PER_MINUTE`, env). Ver [§11](#11-formulario-publico).
+23. `GET /v1/freela/status` responde **200** mesmo com o Freela desconfigurado
+    (`configured: false`, sem inventar conta nem flag de servidor) — é a única
+    rota de `/v1/freela/*` que não quebra: todas as demais respondem
+    `503 FREELA_NOT_CONFIGURED`. Ver [§18](#18-freela).

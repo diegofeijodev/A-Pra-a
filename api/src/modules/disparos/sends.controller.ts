@@ -1,6 +1,7 @@
-import { Body, Controller, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthUser } from '../../common/auth/auth-user';
+import { AdminOnly } from '../../common/decorators/admin-only.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { DisparosService } from './disparos.service';
 import { MarkSendDto, ReplySendDto } from './dto/disparos.dto';
@@ -13,6 +14,14 @@ import { MarkSendDto, ReplySendDto } from './dto/disparos.dto';
 @Controller('v1/sends')
 export class SendsController {
   constructor(private readonly disparos: DisparosService) {}
+
+  // Rota estática antes das de ':id' — a ordem importa (CLAUDE.md). Só admin:
+  // é contagem de diagnóstico (resíduo do smoke), não uma tela do produto.
+  @Get('count')
+  @AdminOnly()
+  count() {
+    return this.disparos.sendsCount();
+  }
 
   @Post(':id/mark')
   mark(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: MarkSendDto) {

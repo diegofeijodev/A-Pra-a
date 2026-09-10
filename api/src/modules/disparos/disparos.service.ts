@@ -379,6 +379,16 @@ export class DisparosService {
     });
   }
 
+  /**
+   * Contagem crua de `msg_sends` (todo modo, todo status) — só pra fechar a
+   * conta de resíduo do smoke (§19): não existe tela que precise disso, é
+   * `msg_sends.lead` com `onDelete: Cascade`, então some sozinho quando o
+   * lead/disparo de teste é apagado.
+   */
+  async sendsCount(): Promise<{ total: number }> {
+    return { total: await this.prisma.msg_sends.count() };
+  }
+
   // ── leitura ─────────────────────────────────────────────────
   async list(): Promise<DisparoView[]> {
     const rows = await this.prisma.disparos.findMany({

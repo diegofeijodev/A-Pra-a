@@ -1911,6 +1911,34 @@ check "upload de PNG sem conexão para no 503, não no 500" "FREELA_NOT_CONFIGUR
     -F "file=@/tmp/praca-smoke-freela.txt;type=image/png" | jq -r .error.code)"
 rm -f /tmp/praca-smoke-freela.txt
 
+echo "── Resíduo ──"
+# Fecha a conta depois de todas as seções (funil, entrada, mensagens,
+# disparos, cadências, mídia, indicadores, notificações, Freela): o banco
+# precisa voltar EXATAMENTE ao que o seed deixou — nada de lead, praça,
+# disparo, envio ou inscrição de teste esquecido para trás. Rodar o smoke duas
+# vezes seguidas tem que dar as mesmas contagens aqui, sempre.
+USERS_FINAL=$(curl -s $API/v1/users -H "$HD")
+check "os 3 usuários do seed continuam ativos (e só eles)" "3" \
+  "$(echo "$USERS_FINAL" | jq '[.[] | select(.active) | select(.email == "diego@praca.local" or .email == "daniel@praca.local" or .email == "mkt@praca.local")] | length')"
+check "praça do seed continua lá" "$PRACA_SEED" "$(curl -s $API/v1/pracas/$PRACA_SEED -H "$HD" | jq -r .id)"
+
+LEADS_FINAL=$(curl -s "$API/v1/leads?praca_id=$PRACA_SEED&archived=true" -H "$HD")
+check "25 leads do seed, nenhum deles de teste" "25" \
+  "$(echo "$LEADS_FINAL" | jq '[.[] | select(.is_test != true)] | length')"
+check "nenhum lead de teste (is_test) sobrou na praça do seed" "0" \
+  "$(echo "$LEADS_FINAL" | jq '[.[] | select(.is_test == true)] | length')"
+
+check "8 modelos de mensagem do seed (sem resíduo)" "8" "$(curl -s $API/v1/msg-templates -H "$HD" | jq 'length')"
+check "5 cadências-modelo do seed (sem resíduo)" "5" "$(curl -s $API/v1/cadences -H "$HD" | jq 'length')"
+check "2 campanhas de mídia do seed (sem resíduo)" "2" \
+  "$(curl -s "$API/v1/campanhas?praca_id=$PRACA_SEED" -H "$HD" | jq 'length')"
+check "13 provas do seed (sem resíduo)" "13" \
+  "$(curl -s "$API/v1/proofs?praca_id=$PRACA_SEED" -H "$HD" | jq 'length')"
+check "blocklist vazia (sem resíduo)" "0" "$(curl -s $API/v1/blocklist -H "$HD" | jq 'length')"
+check "nenhum envio (msg_sends) sobrou" "0" "$(curl -s $API/v1/sends/count -H "$HD" | jq '.total')"
+check "nenhum disparo sobrou" "0" "$(curl -s $API/v1/disparos -H "$HD" | jq 'length')"
+check "nenhuma inscrição em cadência sobrou" "0" "$(curl -s $API/v1/enrollments -H "$HD" | jq 'length')"
+
 echo
 printf 'Resultado: \033[32m%d ok\033[0m, \033[31m%d falha(s)\033[0m\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
