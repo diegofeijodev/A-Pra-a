@@ -2368,6 +2368,17 @@ Para o caminho do disparo: `POST /v1/disparos` com `mode: "freela"` e espere a
 rodada do outbox — o `disparos.freela_campaign_id` aparece quando a campanha é
 criada.
 
+**Estado deste teste (Task 24, 10/09/2026):** o caminho **sem conexão** está
+verificado ponta a ponta, inclusive na tela (`/freela` mostra o cartão de
+configuração nas três abas, com os botões de criar desligados; o diálogo de
+campanha abre pré-preenchido pelo cartão de campanha e não deixa criar; o
+disparo no modo `freela` mostra o 503 num aviso, sem quebrar a tela). O caminho
+**com conexão** continua coberto só pelos testes de unidade e pelo smoke com o
+Freela desligado: o passo a passo acima, contra um `api-freela` de verdade,
+**está pendente para o dono** — subir a API do Freela nesta máquina junto com a
+do Praça e o banco dele derruba a máquina de desenvolvimento (7,6 GB de RAM).
+Ao rodar, registre aqui o resultado dos passos 4 a 8.
+
 <a id="19-desvios"></a>
 
 ## 19. Desvios propositais em relação ao protótipo
