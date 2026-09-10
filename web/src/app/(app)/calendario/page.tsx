@@ -25,7 +25,7 @@ const BLOCK_COLORS: Record<string, string> = { Preparar: "#6B5B8A", "Começar": 
  * no navegador. As faixas de etapa usam a `window` que a API já calcula.
  */
 export default function CalendarioPage() {
-  const praca = useActivePraca();
+  const { praca, isPending: pracasPending } = useActivePraca();
   const { data: users } = useUsers();
   const openAction = useUiStore((s) => s.openAction);
   const postpone = usePostponeAction();
@@ -72,6 +72,7 @@ export default function CalendarioPage() {
     });
   }, [view, days, steps]);
 
+  if (pracasPending) return <p className="text-sm text-muted-foreground">Carregando…</p>;
   if (!praca) {
     return (
       <p className="text-sm text-muted-foreground">

@@ -1,6 +1,12 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 import {
@@ -69,6 +75,9 @@ export function useAgenda(pracaId: string | null | undefined, params: AgendaPara
     queryKey: ['agenda', pracaId, from, to, person],
     queryFn: () => fetchAgenda(pracaId as string, { from, to, person }),
     enabled: !!pracaId,
+    // Trocar de pessoa (ou de mês no calendário) muda a chave: sem isto a tela
+    // esvazia e repinta a cada clique no filtro.
+    placeholderData: keepPreviousData,
   });
 }
 

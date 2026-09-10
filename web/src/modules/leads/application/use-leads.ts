@@ -15,11 +15,14 @@ export type { LeadFilters, LeadListView, LeadView };
 export const STALLED_DAYS = 7;
 export const CRITICAL_DAYS = 15;
 
-/** Etapa 8 é "Perdido / reaquecer": não conta como parado. */
+// Mesmas guardas de `api/src/domain/lead-rules.ts:54-59` (e de
+// `.prototype/src/lib/praca/funil.ts:71-72`): arquivado e perdido (etapa 8)
+// ficam de fora dos dois. `stalled_days` já vem calculado do servidor.
 export const isStalled = (lead: LeadListView) =>
-  lead.stalled_days > STALLED_DAYS && lead.stage !== 8;
+  !lead.archived && lead.stage !== 8 && lead.stalled_days > STALLED_DAYS;
 
-export const isCritical = (lead: LeadListView) => lead.stalled_days > CRITICAL_DAYS;
+export const isCritical = (lead: LeadListView) =>
+  !lead.archived && lead.stage !== 8 && lead.stalled_days > CRITICAL_DAYS;
 
 /**
  * Leitura do funil. A Task 20 acrescenta as mutações (mover, arquivar, evento,

@@ -22,7 +22,7 @@ import { ActionRow, Avatar, NewActionButton, SectionHead } from '@/components/pr
  * ação e pinta.
  */
 export default function HojePage() {
-  const praca = useActivePraca();
+  const { praca, isPending: pracasPending } = useActivePraca();
   const hojePerson = useUiStore((s) => s.hojePerson);
   const setHojePerson = useUiStore((s) => s.setHojePerson);
   const today = todaySp();
@@ -41,6 +41,7 @@ export default function HojePage() {
     return map;
   }, [actions]);
 
+  if (pracasPending) return <p className="text-sm text-muted-foreground">Carregando…</p>;
   if (!praca) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -165,12 +166,12 @@ export default function HojePage() {
  * render.
  */
 function FunilHoje() {
-  const praca = useActivePraca();
+  const { praca } = useActivePraca();
   const hojePerson = useUiStore((s) => s.hojePerson);
   const openLead = useUiStore((s) => s.openLead);
   const { data: users } = useUsers();
   const { data: catalog } = useCatalog();
-  const { data: leads } = useLeads({ praca_id: praca?.id, archived: false });
+  const { data: leads } = useLeads({ praca_id: praca?.id, archived: 'false' });
   const today = todaySp();
 
   const { due, stalled } = useMemo(() => {

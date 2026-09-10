@@ -143,7 +143,9 @@ export function AberturaPraca({ onClose }: { onClose: () => void }) {
             </>
           ) : (
             <div className="flex h-40 items-center justify-center rounded-md border border-dashed border-border text-sm text-muted-foreground">
-              {!estados || centro ? "Carregando base de cidades…" : "Escolha o estado e a cidade para ver o mapa"}
+              {/* Mesma condição do protótipo: "carregando" é sobre a BASE de
+                  cidades, não sobre a cobertura de uma cidade já escolhida. */}
+              {!estados ? "Carregando base de cidades…" : "Escolha o estado e a cidade para ver o mapa"}
             </div>
           )}
         </div>

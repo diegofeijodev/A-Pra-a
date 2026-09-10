@@ -38,7 +38,7 @@ const STATUS_STYLE: Record<string, string> = {
  * quem" — autor é quem está logado.
  */
 export default function PracaPage() {
-  const praca = useActivePraca();
+  const { praca, isPending: pracasPending } = useActivePraca();
   const { data: pracas } = usePracas();
   const { data: users } = useUsers();
   const { data: catalog } = useCatalog();
@@ -81,7 +81,8 @@ export default function PracaPage() {
       {showNew && <div className="mt-3"><NewPracaForm onDone={() => setShowNew(false)} /></div>}
       {showAbertura && <AberturaPraca onClose={() => setShowAbertura(false)} />}
 
-      {!praca && (
+      {pracasPending && <p className="mt-6 text-sm text-muted-foreground">Carregando…</p>}
+      {!pracasPending && !praca && (
         <p className="mt-6 text-sm text-muted-foreground">Nenhuma praça ainda — comece pela abertura de praça.</p>
       )}
 

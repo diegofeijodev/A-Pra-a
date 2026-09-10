@@ -26,12 +26,20 @@ export function usePracas() {
  * A praça ativa é a de `user.active_praca_id` (guardada no banco, por usuário).
  * Conta recém-criada ainda não tem uma: cai na primeira da lista, como o
  * protótipo fazia com `activePraca()`.
+ *
+ * Devolve `isPending` junto porque `praca: undefined` é AMBÍGUO: significa
+ * tanto "a lista ainda está vindo" quanto "esta conta não tem praça nenhuma".
+ * Sem separar os dois, a tela pisca "Nenhuma praça ainda…" no carregamento
+ * frio antes de o `GET /v1/pracas` responder.
  */
-export function useActivePraca(): PracaView | undefined {
+export function useActivePraca(): { praca: PracaView | undefined; isPending: boolean } {
   const { user } = useAuth();
-  const { data } = usePracas();
-  if (!data || data.length === 0) return undefined;
-  return data.find((p) => p.id === user?.active_praca_id) ?? data[0];
+  const { data, isPending } = usePracas();
+  const praca =
+    !data || data.length === 0
+      ? undefined
+      : (data.find((p) => p.id === user?.active_praca_id) ?? data[0]);
+  return { praca, isPending };
 }
 
 /** Troca a praça ativa da conta logada (`PATCH /v1/users/me`). */

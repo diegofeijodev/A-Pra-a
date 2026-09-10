@@ -138,7 +138,7 @@ export function SectionHead({ title, count, tone }: { title: string; count: numb
 }
 
 export function NewActionButton() {
-  const praca = useActivePraca();
+  const { praca } = useActivePraca();
   const { data: users } = useUsers();
   const createAction = useCreateAction();
   const [open, setOpen] = useState(false);

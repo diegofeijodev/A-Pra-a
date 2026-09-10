@@ -16,13 +16,13 @@ export interface LeadListView {
   address: string;
   phone: string;
   cnpj: string | null;
-  instagram: string;
-  site: string;
+  instagram: string | null;
+  site: string | null;
   decisor: string;
   decisor_role: string;
   classe: string;
   origem: string;
-  owner_id: string;
+  owner_id: string | null;
   stage: number;
   entered_at: string;
   stage_since: string;
@@ -75,7 +75,7 @@ export interface LeadFilters {
   classe?: string;
   stage?: number;
   /** Texto, é query string: `'true'` traz os dois, o padrão esconde arquivados. */
-  archived?: boolean;
+  archived?: 'true' | 'false';
   campanha_id?: string;
 }
 
