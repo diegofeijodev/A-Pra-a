@@ -64,9 +64,6 @@ export function occursOn(a: RecAction, p: RecPraca, date: string): boolean {
 export const isDoneOn = (a: RecAction, date: string): boolean =>
   a.rec.kind === 'once' ? !!a.completed_at : !!a.completions?.[date];
 
-export const actionEverDone = (a: RecAction): boolean =>
-  a.rec.kind === 'once' ? !!a.completed_at : Object.keys(a.completions ?? {}).length > 0;
-
 /** Rótulo do prazo: data para `once`, cadência para o resto. */
 export function recLabel(a: RecAction, p: RecPraca): string {
   const r = a.rec;

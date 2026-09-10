@@ -15,7 +15,16 @@ export const parse = (s: string) => {
   return new Date(y, m - 1, dd);
 };
 
-export const addDays = (s: string, n: number) => iso(new Date(parse(s).getTime() + n * DAY));
+// Soma pelo CALENDÁRIO, não por 86.400.000 ms: num navegador com horário de
+// verão (Europa/EUA) o salto de outono devolvia o dia anterior
+// (`addDays('2026-10-20', 7)` dava 26 em vez de 27). Alimenta a grade de 42
+// dias do calendário, a navegação por semana, a soneca do lead e o `end_date`
+// da praça nova. (`diffDays` já é imune pelo `Math.round`.)
+export const addDays = (s: string, n: number) => {
+  const d = parse(s);
+  d.setDate(d.getDate() + n);
+  return iso(d);
+};
 
 const SP_DAY = new Intl.DateTimeFormat("en-CA", {
   timeZone: "America/Sao_Paulo",

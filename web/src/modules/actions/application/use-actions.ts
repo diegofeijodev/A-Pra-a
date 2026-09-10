@@ -36,14 +36,36 @@ import {
 export type { ActionView, AgendaView, StepInfoView };
 
 /**
- * Toda escrita numa ação mexe em quatro retratos que o servidor calcula:
- * a lista da praça, a ação aberta no painel, a agenda (atrasado/hoje/próximos)
- * e as etapas (progresso e portões) — mais o sino, que conta atraso. Invalidar
- * por PREFIXO (`['agenda']`, não `['agenda', pracaId, from, to, person]`)
- * porque cada tela monta a agenda com uma janela diferente.
+ * Toda escrita numa ação mexe em cinco retratos que o servidor calcula:
+ * a lista da praça, a ação aberta no painel, a agenda (atrasado/hoje/próximos),
+ * as etapas (progresso e portões) e os **indicadores** — mais o sino, que conta
+ * atraso. Invalidar por PREFIXO (`['agenda']`, não
+ * `['agenda', pracaId, from, to, person]`) porque cada tela monta a agenda com
+ * uma janela diferente.
+ *
+ * `['indicators']` entra porque o `playbook` lê `data.actions` e `completed_at`
+ * (`api/src/domain/indicator-rules.ts`): concluir, desfazer, adiar ou criar
+ * ação `once` muda o número. O `ActionPanel` é sobreposição **global** — dá
+ * para concluir uma ação estando em `/indicadores`, pelo sino, e o playbook
+ * ficava parado. O irmão `invalidatePracaDates` já invalidava.
  */
 function invalidateAction(queryClient: QueryClient) {
-  for (const key of [['actions'], ['action'], ['agenda'], ['steps'], ['notifications']]) {
+  for (const key of [['actions'], ['action'], ['agenda'], ['steps'], ['notifications'], ['indicators']]) {
+    void queryClient.invalidateQueries({ queryKey: key });
+  }
+}
+
+/**
+ * Etapa mexida = portão da mídia mexido. O `gate` da campanha e o
+ * `fill-brake` leem as etapas 2 e 6 e o `unlocked_at`
+ * (`docs/api-contract.md` §15), então lançar resultado ou destravar etapa
+ * envelhece as duas telas de mídia junto.
+ */
+function invalidateStep(queryClient: QueryClient) {
+  invalidateAction(queryClient);
+  // O resultado da etapa entra em `PracaView.steps` — a lista de praças
+  // também envelhece.
+  for (const key of [['pracas'], ['campanhas'], ['fill-brake']]) {
     void queryClient.invalidateQueries({ queryKey: key });
   }
 }
@@ -169,12 +191,7 @@ export function useSetStepResult() {
   return useMutation({
     mutationFn: ({ pracaId, n, value }: { pracaId: string; n: number; value: number }) =>
       setStepResult(pracaId, n, value),
-    onSuccess: () => {
-      invalidateAction(queryClient);
-      // O resultado da etapa entra em `PracaView.steps` — a lista de praças
-      // também envelhece.
-      void queryClient.invalidateQueries({ queryKey: ['pracas'] });
-    },
+    onSuccess: () => invalidateStep(queryClient),
     onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível lançar o resultado.')),
   });
 }
@@ -184,10 +201,7 @@ export function useUnlockStep() {
   return useMutation({
     mutationFn: ({ pracaId, n, reason }: { pracaId: string; n: number; reason: string }) =>
       unlockStep(pracaId, n, reason),
-    onSuccess: () => {
-      invalidateAction(queryClient);
-      void queryClient.invalidateQueries({ queryKey: ['pracas'] });
-    },
+    onSuccess: () => invalidateStep(queryClient),
     onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível destravar a etapa.')),
   });
 }

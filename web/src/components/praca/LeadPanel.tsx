@@ -65,7 +65,14 @@ export function LeadPanel() {
   const stalled = lead.stalled_days;
   const person = (id: string | null) => users?.find((u) => u.id === id);
   const owner = person(lead.owner_id);
-  const people = (users ?? []).filter((u) => u.active);
+  // Só gente ativa recebe lead novo (convenção do projeto) — mas o dono ATUAL
+  // entra na lista mesmo desativado: sem a opção correspondente o `<select>`
+  // caía em `selectedIndex = -1` e o campo aparecia VAZIO, enquanto o
+  // `<Avatar>` ao lado (que varre todos os usuários) mostrava a pessoa certa.
+  // Lead órfão (`owner_id: null`) ganha a opção "— sem dono —" pelo mesmo
+  // motivo.
+  const ativos = (users ?? []).filter((u) => u.active);
+  const people = owner && !owner.active ? [...ativos, owner] : ativos;
   const classLabel = catalog?.classes.find((c) => c.id === lead.classe)?.label ?? lead.classe;
   // `events` já vem do servidor do mais novo para o mais velho; a ordenação
   // aqui é a mesma do protótipo e não custa nada numa ficha.
@@ -143,7 +150,13 @@ export function LeadPanel() {
                 onChange={(e) => updateLead.mutate({ id: lead.id, input: { owner_id: e.target.value } })}
                 className="rounded-md border border-input bg-background px-1.5 py-1 text-xs"
               >
-                {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                {!lead.owner_id && <option value="">— sem dono —</option>}
+                {people.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                    {p.active ? "" : " (desativado)"}
+                  </option>
+                ))}
               </select>
             </span>
           </div>

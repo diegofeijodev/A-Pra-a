@@ -14,6 +14,16 @@ const config = [
       'no-restricted-globals': [
         'error',
         { name: 'localStorage', message: 'Use modules/auth/infrastructure/auth.storage.ts.' },
+        { name: 'sessionStorage', message: 'Use modules/auth/infrastructure/auth.storage.ts.' },
+      ],
+      // `no-restricted-globals` só enxerga o identificador nu:
+      // `window.localStorage.setItem(...)` passava batido. É a mesma convenção
+      // que impede o vazamento de dados entre contas.
+      'no-restricted-properties': [
+        'error',
+        { object: 'window', property: 'localStorage', message: 'Use modules/auth/infrastructure/auth.storage.ts.' },
+        { object: 'window', property: 'sessionStorage', message: 'Use modules/auth/infrastructure/auth.storage.ts.' },
+        { object: 'globalThis', property: 'localStorage', message: 'Use modules/auth/infrastructure/auth.storage.ts.' },
       ],
     },
   },

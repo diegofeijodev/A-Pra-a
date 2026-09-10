@@ -24,17 +24,6 @@ export function useUsers() {
 }
 
 /**
- * Pessoa pelo id, lida do cache de `['users']` — as telas mostram autor,
- * responsável e cor em toda linha; buscar um a um seria uma requisição por
- * célula.
- */
-export function usePerson(id: string | null | undefined): UserView | undefined {
-  const { data } = useUsers();
-  if (!id) return undefined;
-  return data?.find((u) => u.id === id);
-}
-
-/**
  * Muda a própria conta (tema, praça ativa, nome…). Além do cache, atualiza a
  * sessão guardada: o tema e a praça ativa são lidos de `user` no shell, e sem
  * isso a tela voltaria ao valor antigo no próximo carregamento.

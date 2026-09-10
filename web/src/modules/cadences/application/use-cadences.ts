@@ -6,7 +6,6 @@ import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 import {
   createCadence,
   deleteCadence,
-  enrollLead,
   exitEnrollment,
   fetchCadenceStats,
   listCadences,
@@ -95,15 +94,6 @@ export function useTogglePause() {
   });
 }
 
-export function useEnroll() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, leadId }: { id: string; leadId: string }) => enrollLead(id, leadId),
-    onSuccess: () => invalidateCadence(queryClient),
-    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível colocar o lead na cadência.')),
-  });
-}
-
 /**
  * "Testar comigo". Quem comprime o tempo (cada dia vira 5 s) e avança os passos
  * é o motor do servidor — a tela só reabre as estatísticas e vê os passos
@@ -112,6 +102,10 @@ export function useEnroll() {
  * O teste cria um lead de verdade (`Teste — Cadência`, marcado `is_test`) e o
  * matricula: além das cadências, mexe no que o servidor calcula a partir do
  * lead (o quadro, a ficha e o sino), como manda o `invalidateLead`.
+ *
+ * `is_test` não é filtrado em lugar nenhum de `leads.service.ts`: o lead de
+ * teste aparece na fila do dia, nas métricas do funil e em `leads_novos` — daí
+ * `['lead-queue']`, `['lead-metrics']` e `['indicators']` também.
  */
 export function useRunTest() {
   const queryClient = useQueryClient();
@@ -119,7 +113,14 @@ export function useRunTest() {
     mutationFn: ({ id, phone }: { id: string; phone: string }) => runCadenceTest(id, phone),
     onSuccess: () => {
       invalidateCadence(queryClient);
-      for (const key of [['leads'], ['lead'], ['notifications']]) {
+      for (const key of [
+        ['leads'],
+        ['lead'],
+        ['notifications'],
+        ['lead-queue'],
+        ['lead-metrics'],
+        ['indicators'],
+      ]) {
         void queryClient.invalidateQueries({ queryKey: key });
       }
     },

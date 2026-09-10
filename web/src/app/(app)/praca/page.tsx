@@ -82,8 +82,12 @@ export default function PracaPage() {
       {showAbertura && <AberturaPraca onClose={() => setShowAbertura(false)} />}
 
       {pracasPending && <p className="mt-6 text-sm text-muted-foreground">Carregando…</p>}
+      {/* Mesma redação das outras 7 telas ("Nenhuma praça ainda — abra a primeira
+          em …"); aqui o destino é o botão desta tela, não um link para ela. */}
       {!pracasPending && !praca && (
-        <p className="mt-6 text-sm text-muted-foreground">Nenhuma praça ainda — comece pela abertura de praça.</p>
+        <p className="mt-6 text-sm text-muted-foreground">
+          Nenhuma praça ainda — abra a primeira em <strong className="font-semibold">Abertura de praça</strong>.
+        </p>
       )}
 
       {praca && (

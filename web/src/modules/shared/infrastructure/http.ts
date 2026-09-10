@@ -16,10 +16,37 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+/**
+ * 401 = a sessão morreu (o JWT vale 12 h, e o guard da API devolve 401 no
+ * instante em que um admin desativa quem está logado).
+ *
+ * Limpar só o `localStorage` deixava a tela PRESA: `useAuthStore.user` continua
+ * preenchido (só `hydrate()` o lê, e ele roda uma vez), o portão de
+ * `(app)/layout.tsx` vê `user` e não redireciona, o interceptor de request não
+ * acha token, toda consulta volta 401 — e, como os hooks de leitura não
+ * toastam (convenção do projeto), a pessoa ficava olhando telas vazias sem
+ * nenhum sinal até recarregar na mão.
+ *
+ * `location.replace` em vez de mexer no zustand daqui: o store importa
+ * `auth.api`, que importa este arquivo — o import circular voltaria como
+ * `undefined` em tempo de execução. Recarregando, o `hydrate` acha o storage
+ * vazio e o portão faz o resto (é a regra de hidratação da Task 18).
+ */
+let redirecionando = false;
+
 api.interceptors.response.use(undefined, (error) => {
   if (error?.response?.status === 401 && typeof window !== 'undefined') {
     const url = String(error.config?.url ?? '');
-    if (!url.includes('/auth/login')) clearStoredAuth();
+    if (!url.includes('/auth/login')) {
+      clearStoredAuth();
+      // Uma vez por página: um 401 em cinco consultas paralelas mandaria cinco
+      // `replace`, e na própria tela de entrada viraria laço.
+      const naEntrada = window.location.pathname.startsWith('/entrar');
+      if (!naEntrada && !redirecionando) {
+        redirecionando = true;
+        window.location.replace('/entrar');
+      }
+    }
   }
   return Promise.reject(error);
 });
@@ -39,10 +66,3 @@ export function apiErrorMessage(error: unknown, fallback = 'Erro inesperado'): s
   return fallback;
 }
 
-export function apiErrorCode(error: unknown): string | null {
-  if (axios.isAxiosError(error)) {
-    const code = error.response?.data?.error?.code;
-    if (typeof code === 'string') return code;
-  }
-  return null;
-}

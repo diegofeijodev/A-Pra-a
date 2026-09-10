@@ -13,7 +13,6 @@ import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 import {
   createCampanha,
   createCreative,
-  createProof,
   createTraffic,
   deleteCampanha,
   deleteCreative,
@@ -145,15 +144,6 @@ export function useProofs(pracaId: string | null | undefined) {
     queryFn: () => listProofs(pracaId as string),
     // `?praca_id` é obrigatório na rota: sem praça o pedido seria 400.
     enabled: !!pracaId,
-  });
-}
-
-export function useAddProof() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: ProofBody) => createProof(body),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['proofs'] }),
-    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível salvar a prova.')),
   });
 }
 

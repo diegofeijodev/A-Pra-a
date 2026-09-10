@@ -1,14 +1,37 @@
-// Passeio headless pelo PRAÇA: entra pela conta da demonstração, abre as 10
-// telas do app e o formulário público, e faz AÇÕES DE VERDADE (concluir uma
-// ação e desfazer, criar um lead e movê-lo de etapa, montar um disparo em fila e
-// marcá-lo enviado, lançar um indicador à mão) — cada uma com a limpeza dentro
-// do próprio roteiro, para o banco terminar igual ao seed e o script poder rodar
-// de novo em seguida.
+// Passeio headless pelo PRAÇA: entra pelo formulário, abre as 10 telas do app e
+// o formulário público, e faz AÇÕES DE VERDADE (concluir uma ação e desfazer,
+// criar um lead e movê-lo de etapa, montar um disparo em fila e marcá-lo
+// enviado, lançar um indicador à mão) — cada uma com a limpeza dentro do
+// próprio roteiro, para o banco terminar igual ao seed e o script poder rodar de
+// novo em seguida.
 //
-// Qualquer erro de console, qualquer `pageerror` e qualquer resposta HTTP ≥ 400
-// derrubam a rodada. Não há exceção esperada: `GET /v1/freela/status` responde
-// 200 com `configured: false` quando o Freela não está configurado, e a tela do
-// Freela não chama mais nenhuma rota `/v1/freela/*` sem conexão.
+// Três coisas que o roteiro garante, e que a primeira versão não garantia:
+//
+// 1. **pré-condições afirmadas.** O roteiro depende do seed (a praça, o dono sem
+//    lead nenhum, a tabela de disparos vazia, o indicador `falta` sem
+//    histórico). Elas são conferidas ANTES de serem usadas: quando o seed
+//    mudar, a falha diz o que mudou em vez de estourar no meio.
+// 2. **limpeza que repara, não só afirma.** Tudo que o roteiro cria sai no
+//    `finally`, cada passo no seu próprio `try` — inclusive a CONCLUSÃO DA AÇÃO
+//    (`POST /v1/actions/:id/uncomplete`), que antes só era afirmada: uma falha
+//    entre concluir e desfazer deixava a linha em `action_completions` e **toda**
+//    rodada seguinte falhava até alguém mexer no banco à mão.
+// 3. **faxina de entrada.** Resíduo de uma rodada anterior interrompida (lead
+//    `Casa Browser-Check …`, disparo, lançamento de indicador, conclusão de
+//    ação) é apagado no começo, com aviso.
+//
+// Qualquer erro de console, qualquer `pageerror`, qualquer falha de rede
+// (`requestfailed`) e qualquer resposta HTTP ≥ 400 derrubam a rodada. Não há
+// exceção esperada: `GET /v1/freela/status` responde 200 com
+// `configured: false` quando o Freela não está configurado, e a tela do Freela
+// não chama mais nenhuma rota `/v1/freela/*` sem conexão. As duas únicas
+// tolerâncias são do servidor de desenvolvimento do Next e estão em listas
+// FECHADAS, com motivo: `IGNORADAS` (404 do `hot-update.json`) e
+// `REDE_IGNORADA` (pré-carregamento `_rsc` cancelado pelo roteador).
+//
+// A conta vem de `PRACA_CHECK_EMAIL` / `PRACA_CHECK_PASSWORD` (padrão: a conta
+// admin do seed) e o login é feito PELO FORMULÁRIO — `?demo=1` só existe com
+// `NEXT_PUBLIC_DEMO_LOGIN=1` no ambiente do web.
 //
 // Requer a API na 3014 (`npm run start:smoke` em `api/`) e o web na 3024
 // (`yarn dev` em `web/`) — nunca `next build` (ver CLAUDE.md, "Regras de baixo
@@ -25,7 +48,36 @@ const PRACA = '00000000-0000-4000-8000-0000000000aa';
  *  lead criado aqui num disparo de UMA mensagem só. */
 const DONO_SEM_LEADS = 'Mkt externo';
 const CARIMBO = Date.now().toString(36);
-const LEAD_NOME = `Casa Browser-Check ${CARIMBO}`;
+/** Prefixo fixo: é por ele que a faxina de entrada acha lead de rodada morta. */
+const LEAD_PREFIXO = 'Casa Browser-Check';
+const LEAD_NOME = `${LEAD_PREFIXO} ${CARIMBO}`;
+const EMAIL = process.env.PRACA_CHECK_EMAIL ?? 'diego@praca.local';
+const SENHA = process.env.PRACA_CHECK_PASSWORD ?? 'praca123';
+
+/**
+ * Respostas ≥ 400 que NÃO são o app quebrado. Lista fechada, com motivo — a
+ * versão anterior ignorava `/_next/` inteiro, e aí um 404 num
+ * `/_next/static/chunks/*.js` (app quebrado de verdade) passava mudo.
+ *
+ * `hot-update.json`: o `next dev` recompila e o navegador pergunta por um
+ * pedaço de HMR que já não existe. Só acontece com o servidor de
+ * desenvolvimento, e é como ele funciona.
+ */
+const IGNORADAS = [/\/_next\/static\/webpack\/.*\.hot-update\.json$/];
+const ignorada = (url) => IGNORADAS.some((re) => re.test(url));
+
+/**
+ * Falhas de REDE que não são o app quebrado — também lista fechada, e só por
+ * par (padrão de URL + erro exato).
+ *
+ * `_rsc` + `ERR_ABORTED`: o roteador do Next pré-carrega a rota apontada por um
+ * `<Link>` e **cancela** o pedido quando a navegação acontece antes de ele
+ * terminar. É o roteador desistindo do que já não precisa; um erro de verdade
+ * no mesmo pedido viria como resposta ≥ 400, que continua derrubando a rodada.
+ */
+const REDE_IGNORADA = [{ url: /[?&]_rsc=/, erro: 'net::ERR_ABORTED' }];
+const redeIgnorada = (url, erro) =>
+  ignorada(url) || REDE_IGNORADA.some((r) => r.url.test(url) && erro === r.erro);
 
 const erros = [];
 let passou = 0;
@@ -56,8 +108,17 @@ page.on('console', (m) => {
 });
 page.on('pageerror', (e) => erros.push(`[pageerror] ${page.url().replace(BASE, '')}: ${String(e).slice(0, 200)}`));
 page.on('response', (r) => {
-  if (r.status() >= 400 && !r.url().includes('/_next/')) {
+  if (r.status() >= 400 && !ignorada(r.url())) {
     erros.push(`[http ${r.status()}] ${r.request().method()} ${r.url().replace(API, 'api')}`);
+  }
+});
+// Camada de rede: conexão recusada, fetch abortado ou CORS bloqueado não geram
+// `response` e podem não gerar erro de console — o cabeçalho promete que
+// qualquer falha derruba a rodada, e sem isto faltava justamente a rede.
+page.on('requestfailed', (r) => {
+  const erro = r.failure()?.errorText ?? '?';
+  if (!redeIgnorada(r.url(), erro)) {
+    erros.push(`[rede] ${r.method()} ${r.url().replace(API, 'api')} — ${erro}`);
   }
 });
 /** Toda chamada a `/v1/freela/*` — sem conexão só `GET /status` pode sair. */
@@ -86,18 +147,110 @@ async function api(method, path, body) {
 let leadId = null;
 let disparoId = null;
 let indicadorLancado = false;
+/** Ação concluída pelo roteiro: marcada ANTES do desfazer, para o `finally`
+ *  reparar mesmo que o clique de "Desfazer conclusão" não ache a linha. */
+let acaoConcluida = null;
+const HOJE = hojeSp();
+
+/** Apaga o que der para apagar, sem derrubar a rodada por causa da limpeza. */
+async function tentar(nome, fn) {
+  try {
+    await fn();
+  } catch (e) {
+    ko(nome, String(e).slice(0, 200));
+  }
+}
+
+/** Some com o lançamento de hoje do indicador `falta` (404 = já não existe). */
+const apagarFalta = () =>
+  api('DELETE', `/v1/indicators/falta/entries?praca_id=${PRACA}&date=${HOJE}`).catch(() => null);
+
+// ── 0. token, faxina de entrada e pré-condições do seed ─────────
+// O token sai do login direto na API: a faxina e as afirmações de seed rodam
+// ANTES de o navegador abrir, porque é delas que depende o resto do roteiro.
+try {
+  const sessao = await (
+    await fetch(`${API}/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: EMAIL, password: SENHA }),
+    })
+  ).json();
+  token = sessao?.access_token ?? '';
+  if (!token) throw new Error(`login na API falhou para ${EMAIL} (defina PRACA_CHECK_EMAIL/PASSWORD)`);
+
+  console.log('-- Faxina de entrada --');
+  const leadsAntes = await api('GET', `/v1/leads?praca_id=${PRACA}&archived=true`);
+  const restos = leadsAntes.filter((l) => l.name.startsWith(LEAD_PREFIXO));
+  // Disparo do seed não existe (a tabela é global e nasce vazia): o que estiver
+  // aqui é de uma rodada interrompida.
+  const disparosAntes = await api('GET', '/v1/disparos');
+  for (const d of disparosAntes) {
+    console.log(`  faxina: apagando disparo residual ${d.id}`);
+    await api('DELETE', `/v1/disparos/${d.id}`);
+  }
+  for (const l of restos) {
+    console.log(`  faxina: apagando lead residual "${l.name}"`);
+    await api('DELETE', `/v1/leads/${l.id}`);
+  }
+  await apagarFalta();
+  const acoesAntes = await api('GET', `/v1/actions?praca_id=${PRACA}`);
+  for (const a of acoesAntes) {
+    // `once` some com uma chamada (o `date` é ignorado); recorrente é uma
+    // chamada por data concluída.
+    const datas = Object.keys(a.completions ?? {});
+    if (a.completed_at) {
+      console.log(`  faxina: desfazendo conclusão residual de "${a.title}"`);
+      await api('POST', `/v1/actions/${a.id}/uncomplete`, { date: HOJE });
+    }
+    for (const d of datas) {
+      console.log(`  faxina: desfazendo conclusão residual de "${a.title}" em ${d}`);
+      await api('POST', `/v1/actions/${a.id}/uncomplete`, { date: d });
+    }
+  }
+
+  console.log('-- Pré-condições do seed --');
+  const praca0 = await api('GET', `/v1/pracas/${PRACA}`);
+  check('praça do seed existe', praca0?.id === PRACA, String(praca0?.id));
+  const leads0 = await api('GET', `/v1/leads?praca_id=${PRACA}&archived=true`);
+  check('funil do seed com 25 leads', leads0.length === 25, `veio ${leads0.length}`);
+  const pessoas0 = await api('GET', '/v1/users');
+  const mkt0 = pessoas0.find((u) => u.name === DONO_SEM_LEADS);
+  check(`a conta "${DONO_SEM_LEADS}" existe`, !!mkt0);
+  check(
+    `"${DONO_SEM_LEADS}" não é dono de nenhum lead do seed (é o filtro de 1 lead)`,
+    !!mkt0 && leads0.every((l) => l.owner_id !== mkt0.id),
+  );
+  check('tabela de disparos vazia', (await api('GET', '/v1/disparos')).length === 0);
+  const ind0 = await api('GET', `/v1/indicators?scope=praca&praca_id=${PRACA}`);
+  const falta0 = ind0.readings.find((r) => r.key === 'falta');
+  check('indicador "falta" existe e está sem histórico', !!falta0 && falta0.history.length === 0);
+  const acoes0 = await api('GET', `/v1/actions?praca_id=${PRACA}`);
+  check(
+    'nenhuma ação começa concluída',
+    acoes0.every((a) => !a.completed_at && Object.keys(a.completions ?? {}).length === 0),
+  );
+  check('há ação sem "resultado esperado" para concluir', acoes0.some((a) => !a.expects_result));
+} catch (e) {
+  ko('faxina/pré-condições', String(e).slice(0, 300));
+}
 
 try {
   // ── 1. entrada ────────────────────────────────────────────────
   console.log('-- Entrada --');
-  await page.goto(`${BASE}/entrar?demo=1`, { waitUntil: 'networkidle' });
+  // Pelo FORMULÁRIO, não por `?demo=1`: o atalho só existe com
+  // `NEXT_PUBLIC_DEMO_LOGIN=1` (a senha do admin do seed não fica no pacote).
+  await page.goto(`${BASE}/entrar`, { waitUntil: 'networkidle' });
   check('tela de entrada com a marca PRAÇA', (await corpo(page)).includes('checklist de abertura de praças'));
-  check('?demo=1 preenche a conta semeada', (await page.locator('#email').inputValue()) === 'diego@praca.local');
+  await page.locator('#email').fill(EMAIL);
+  await page.locator('#senha').fill(SENHA);
+  check('formulário de entrada preenchido', (await page.locator('#email').inputValue()) === EMAIL);
   await page.getByRole('button', { name: 'Entrar', exact: true }).click();
   await page.waitForURL('**/hoje', { timeout: 20000 });
   await espera(1500);
-  token = await page.evaluate(() => JSON.parse(localStorage.getItem('authUser')).access_token);
-  check('login leva para /hoje com sessão guardada', page.url().includes('/hoje') && token.length > 20);
+  const tokenDoNavegador = await page.evaluate(() => JSON.parse(localStorage.getItem('authUser')).access_token);
+  check('login leva para /hoje com sessão guardada', page.url().includes('/hoje') && tokenDoNavegador.length > 20);
+  token = tokenDoNavegador;
 
   // ── 2. Hoje ───────────────────────────────────────────────────
   console.log('-- Hoje --');
@@ -142,13 +295,18 @@ try {
       return a.rec.kind === 'once' ? !!a.completed_at : !!a.completions?.[hojeSp()];
     };
     await linhaCom('Concluir').locator('button[aria-label="Concluir"]').click();
+    // Marca ANTES de conferir: se qualquer coisa entre aqui e o desfazer falhar
+    // (a linha pode não repintar), é o `finally` que devolve a ação ao seed.
+    acaoConcluida = alvo.id;
     await espera(2000);
     check(`ação "${alvo.titulo.slice(0, 40)}" ficou concluída na tela`, (await linhaCom('Desfazer conclusão').count()) === 1);
     check('a conclusão de hoje foi gravada na API', await completadaHoje());
     await linhaCom('Desfazer conclusão').locator('button[aria-label="Desfazer conclusão"]').click();
     await espera(2000);
     check('desfazer devolve a ação para pendente na tela', (await linhaCom('Concluir').count()) === 1);
-    check('a conclusão sumiu da API (sem resíduo)', !(await completadaHoje()));
+    const sobrou = await completadaHoje();
+    check('a conclusão sumiu da API (sem resíduo)', !sobrou);
+    if (!sobrou) acaoConcluida = null;
   }
 
   // ── 3. Praça ──────────────────────────────────────────────────
@@ -189,6 +347,8 @@ try {
   await page.locator('label:has-text("Dono") select').selectOption({ label: DONO_SEM_LEADS });
   await page.getByRole('button', { name: 'Criar lead', exact: true }).click();
   await espera(2000);
+  // O lead já existe no banco neste ponto: qualquer erro daqui para a frente
+  // tem de encontrar o id na limpeza, então ele é lido e guardado primeiro.
   const criados = await api('GET', `/v1/leads?praca_id=${PRACA}`);
   const novo = criados.find((l) => l.name === LEAD_NOME);
   leadId = novo?.id ?? null;
@@ -254,8 +414,11 @@ try {
   await espera(2500);
 
   const lista = await api('GET', '/v1/disparos');
+  check('disparo criado', lista.length === 1, `${lista.length} disparo(s)`);
+  // A tabela estava vazia (afirmado nas pré-condições): o único disparo é o
+  // desta rodada. O id é guardado antes de qualquer afirmação sobre ele.
   disparoId = lista[0]?.id ?? null;
-  check('disparo criado', lista.length === 1 && !!disparoId, `${lista.length} disparo(s)`);
+  check('o disparo tem id', !!disparoId);
   check('o lote nasce agendado com 1 na fila', lista[0]?.status === 'agendado' && lista[0]?.counts.queued === 1);
   check('modo do lote é fila', lista[0]?.mode === 'fila');
 
@@ -295,15 +458,16 @@ try {
     .filter({ has: page.getByPlaceholder('valor') })
     .first();
   await linhaFalta.getByPlaceholder('valor').fill('2.5');
+  // Marca antes do clique: o lançamento pode gravar e a tela não repintar.
+  indicadorLancado = true;
   await linhaFalta.getByRole('button', { name: '+', exact: true }).click();
   await espera(2200);
-  indicadorLancado = true;
   const leituras = await api('GET', `/v1/indicators?scope=praca&praca_id=${PRACA}`);
   const falta = leituras.readings.find((r) => r.key === 'falta');
   check('lançamento à mão gravado no indicador', falta?.history.length === 1 && falta?.value === 2.5, JSON.stringify(falta?.value ?? null));
   check('a tela passa a mostrar o número lançado', (await corpo(page)).includes('2,5'));
 
-  await api('DELETE', `/v1/indicators/falta/entries?praca_id=${PRACA}&date=${hojeSp()}`);
+  await apagarFalta();
   indicadorLancado = false;
   const depoisDelete = await api('GET', `/v1/indicators?scope=praca&praca_id=${PRACA}`);
   const faltaDepois = depoisDelete.readings.find((r) => r.key === 'falta');
@@ -355,8 +519,14 @@ try {
   });
   pub.on('pageerror', (e) => erros.push(`[pageerror/público] ${String(e).slice(0, 200)}`));
   pub.on('response', (r) => {
-    if (r.status() >= 400 && !r.url().includes('/_next/')) {
+    if (r.status() >= 400 && !ignorada(r.url())) {
       erros.push(`[http ${r.status()}/público] ${r.request().method()} ${r.url().replace(API, 'api')}`);
+    }
+  });
+  pub.on('requestfailed', (r) => {
+    const erro = r.failure()?.errorText ?? '?';
+    if (!redeIgnorada(r.url(), erro)) {
+      erros.push(`[rede/público] ${r.url().replace(API, 'api')} — ${erro}`);
     }
   });
   await pub.goto(`${BASE}/formulario/${PRACA}?origem=organico`, { waitUntil: 'networkidle' });
@@ -377,31 +547,68 @@ try {
 }
 
 // ── limpeza: o banco volta ao seed ──────────────────────────────
+// CADA passo no seu próprio `try`: com um `try` só, um erro no primeiro
+// `DELETE` pulava todos os outros e as afirmações de resíduo — que é como a
+// rodada anterior conseguia deixar o banco sujo e derrubar a seguinte.
 console.log('-- Limpeza --');
-try {
-  if (indicadorLancado) await api('DELETE', `/v1/indicators/falta/entries?praca_id=${PRACA}&date=${hojeSp()}`);
-  // Ordem: disparo primeiro (a cascata leva a fila), depois o lead — que leva
-  // junto os eventos e o `last_contact_at` que "marcar enviada" gravou. É por
-  // isso que o disparo foi montado sobre um lead criado AQUI: não existe rota
-  // para desfazer o toque num lead de verdade.
-  if (disparoId) check('disparo de teste apagado', (await api('DELETE', `/v1/disparos/${disparoId}`)).ok === true);
-  if (leadId) check('lead de teste apagado', (await api('DELETE', `/v1/leads/${leadId}`)).ok === true);
 
+// A conclusão da ação é REPARADA, não só afirmada: `POST
+// /v1/actions/:id/uncomplete` é o desfazer que a tela usa.
+if (acaoConcluida) {
+  await tentar('conclusão de ação desfeita pela API', async () => {
+    await api('POST', `/v1/actions/${acaoConcluida}/uncomplete`, { date: HOJE });
+    ok('conclusão de ação desfeita pela API');
+  });
+}
+if (indicadorLancado) {
+  await tentar('lançamento do indicador apagado', async () => {
+    await apagarFalta();
+    ok('lançamento do indicador apagado');
+  });
+}
+// Ordem: disparo primeiro (a cascata leva a fila), depois o lead — que leva
+// junto os eventos e o `last_contact_at` que "marcar enviada" gravou. É por
+// isso que o disparo foi montado sobre um lead criado AQUI: não existe rota
+// para desfazer o toque num lead de verdade.
+if (disparoId) {
+  await tentar('disparo de teste apagado', async () =>
+    check('disparo de teste apagado', (await api('DELETE', `/v1/disparos/${disparoId}`)).ok === true),
+  );
+}
+if (leadId) {
+  await tentar('lead de teste apagado', async () =>
+    check('lead de teste apagado', (await api('DELETE', `/v1/leads/${leadId}`)).ok === true),
+  );
+}
+
+await tentar('resíduo: leads', async () => {
   const leadsFim = await api('GET', `/v1/leads?praca_id=${PRACA}&archived=true`);
   check('funil de volta aos 25 leads do seed', leadsFim.length === 25, `veio ${leadsFim.length}`);
-  check('nenhum disparo sobrou', (await api('GET', '/v1/disparos')).length === 0);
-  check('nenhum envio sobrou', (await api('GET', '/v1/sends/count')).total === 0);
-  check('lista de bloqueio vazia', (await api('GET', '/v1/blocklist')).length === 0);
+  check(
+    'nenhum lead do browser-check sobrou',
+    leadsFim.every((l) => !l.name.startsWith(LEAD_PREFIXO)),
+  );
+});
+await tentar('resíduo: disparos', async () =>
+  check('nenhum disparo sobrou', (await api('GET', '/v1/disparos')).length === 0),
+);
+await tentar('resíduo: envios', async () =>
+  check('nenhum envio sobrou', (await api('GET', '/v1/sends/count')).total === 0),
+);
+await tentar('resíduo: bloqueio', async () =>
+  check('lista de bloqueio vazia', (await api('GET', '/v1/blocklist')).length === 0),
+);
+await tentar('resíduo: ações', async () => {
   const acoesFim = await api('GET', `/v1/actions?praca_id=${PRACA}`);
   check(
     'nenhuma conclusão de ação sobrou',
     acoesFim.every((a) => !a.completed_at && Object.keys(a.completions ?? {}).length === 0),
   );
+});
+await tentar('resíduo: indicadores', async () => {
   const indFim = await api('GET', `/v1/indicators?scope=praca&praca_id=${PRACA}`);
   check('nenhum lançamento de indicador sobrou', indFim.readings.every((r) => r.history.length === 0));
-} catch (e) {
-  ko('limpeza incompleta', String(e).slice(0, 300));
-}
+});
 
 await browser.close();
 

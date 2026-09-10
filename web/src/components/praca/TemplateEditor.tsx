@@ -116,8 +116,15 @@ export function TemplateEditor({ tpl, onClose }: { tpl: TemplateDraft; onClose: 
 
   const patch = (p: Partial<TemplateDraft>) => setT((x) => ({ ...x, ...p }));
 
+  // O anexo é acréscimo do port (o protótipo não tinha). Escolher o tipo no
+  // `<select>` cria `{kind, name: ""}`, e o campo do nome só aparece depois:
+  // sem esta guarda, clicar em "Salvar modelo" sem digitar o nome derrubava o
+  // `POST`/`PUT` inteiro com `400 VALIDATION_ERROR` (`name` é
+  // `@MinLength(1)` no DTO). Avisar é melhor que sumir com o anexo em silêncio.
+  const anexoSemNome = !!t.attachment && !t.attachment.name.trim();
+
   const save_ = () => {
-    if (!t.name.trim() || !t.text_a.trim()) return;
+    if (!t.name.trim() || !t.text_a.trim() || anexoSemNome) return;
     save.mutate(
       {
         id: t.id,
@@ -128,10 +135,10 @@ export function TemplateEditor({ tpl, onClose }: { tpl: TemplateDraft; onClose: 
           channel: t.channel,
           text_a: t.text_a,
           text_b: t.text_b,
-          attachment: t.attachment
+          attachment: t.attachment?.name.trim()
             ? {
                 kind: t.attachment.kind,
-                name: t.attachment.name,
+                name: t.attachment.name.trim(),
                 ...(t.attachment.url ? { url: t.attachment.url } : {}),
               }
             : null,
@@ -235,10 +242,15 @@ export function TemplateEditor({ tpl, onClose }: { tpl: TemplateDraft; onClose: 
                   />
                 )}
               </div>
+              {anexoSemNome && (
+                <p className="mt-1 text-xs text-destructive">
+                  Escreva o nome do arquivo (ou o link) do anexo — ou volte para “sem anexo”.
+                </p>
+              )}
             </div>
 
             <div className="flex items-center justify-between">
-              <button onClick={save_} disabled={save.isPending} className="rounded-md bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-40">
+              <button onClick={save_} disabled={save.isPending || anexoSemNome} className="rounded-md bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-40">
                 {save.isPending ? "Salvando…" : "Salvar modelo"}
               </button>
               {t.id && (

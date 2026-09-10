@@ -12,7 +12,23 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 
-const DEMO = { email: 'diego@praca.local', senha: 'praca123' };
+/**
+ * `?demo=1` preenche o formulário com uma conta de demonstração — atalho de
+ * desenvolvimento, atrás de flag.
+ *
+ * A senha NÃO vive mais no código: `diego@praca.local` é conta **admin** do
+ * seed, e uma constante aqui vai para o JS estático mesmo sem o parâmetro na
+ * URL — qualquer host com o seed aplicado entregaria credencial de admin
+ * pronta. Com a flag desligada (o padrão), as três variáveis não existem no
+ * ambiente e o Next inlina `undefined`: não há o que vazar no pacote.
+ *
+ * Ligar em desenvolvimento: as três linhas de `web/.env.example`.
+ */
+const DEMO_LIGADO = process.env.NEXT_PUBLIC_DEMO_LOGIN === '1';
+const DEMO = {
+  email: process.env.NEXT_PUBLIC_DEMO_EMAIL ?? '',
+  senha: process.env.NEXT_PUBLIC_DEMO_PASSWORD ?? '',
+};
 
 const entrarSchema = z.object({
   email: z.string().email('Informe um e-mail válido.'),
@@ -41,8 +57,10 @@ function Entrar() {
     if (!loading && user) router.replace('/hoje');
   }, [loading, user, router]);
 
-  // A demonstração é a conta semeada, não um estado falso no navegador.
+  // A demonstração é a conta semeada, não um estado falso no navegador — e só
+  // existe com `NEXT_PUBLIC_DEMO_LOGIN=1` e as duas credenciais no ambiente.
   useEffect(() => {
+    if (!DEMO_LIGADO || !DEMO.email || !DEMO.senha) return;
     if (params.get('demo') === '1') {
       setValue('email', DEMO.email);
       setValue('senha', DEMO.senha);

@@ -15,7 +15,6 @@ import {
   fetchAudienceOptions,
   fetchFreelaStatus,
   getFreelaCampaign,
-  getFreelaTemplate,
   listFreelaCampaigns,
   listFreelaTemplates,
   previewAudience,
@@ -239,15 +238,6 @@ export function useFreelaTemplates(pracaId?: string) {
     queryFn: () => listFreelaTemplates(pracaId),
     enabled: configured,
     placeholderData: keepPreviousData,
-  });
-}
-
-export function useFreelaTemplate(id: string | null | undefined) {
-  const configured = useConfigured();
-  return useQuery({
-    queryKey: ['freela', 'template', id],
-    queryFn: () => getFreelaTemplate(id as string),
-    enabled: configured && !!id,
   });
 }
 
