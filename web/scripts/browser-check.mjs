@@ -180,33 +180,47 @@ try {
   if (!token) throw new Error(`login na API falhou para ${EMAIL} (defina PRACA_CHECK_EMAIL/PASSWORD)`);
 
   console.log('-- Faxina de entrada --');
+  // Só o lead com o prefixo do roteiro e o lançamento de hoje somem sem
+  // perguntar. Apagar TODOS os disparos e desfazer TODAS as conclusões da praça
+  // também limpa o que o dono fez à mão no banco local — por isso só roda com
+  // `PRACA_CHECK_FAXINA=1`; sem a variável, resíduo de rodada morta derruba a
+  // rodada com a instrução, em vez de apagar em silêncio.
+  const FAXINA = process.env.PRACA_CHECK_FAXINA === '1';
   const leadsAntes = await api('GET', `/v1/leads?praca_id=${PRACA}&archived=true`);
   const restos = leadsAntes.filter((l) => l.name.startsWith(LEAD_PREFIXO));
-  // Disparo do seed não existe (a tabela é global e nasce vazia): o que estiver
-  // aqui é de uma rodada interrompida.
-  const disparosAntes = await api('GET', '/v1/disparos');
-  for (const d of disparosAntes) {
-    console.log(`  faxina: apagando disparo residual ${d.id}`);
-    await api('DELETE', `/v1/disparos/${d.id}`);
-  }
   for (const l of restos) {
     console.log(`  faxina: apagando lead residual "${l.name}"`);
     await api('DELETE', `/v1/leads/${l.id}`);
   }
   await apagarFalta();
+  // Disparo do seed não existe (a tabela é global e nasce vazia): o que estiver
+  // aqui é de uma rodada interrompida — ou do dono.
+  const disparosAntes = await api('GET', '/v1/disparos');
   const acoesAntes = await api('GET', `/v1/actions?praca_id=${PRACA}`);
-  for (const a of acoesAntes) {
-    // `once` some com uma chamada (o `date` é ignorado); recorrente é uma
-    // chamada por data concluída.
-    const datas = Object.keys(a.completions ?? {});
-    if (a.completed_at) {
-      console.log(`  faxina: desfazendo conclusão residual de "${a.title}"`);
-      await api('POST', `/v1/actions/${a.id}/uncomplete`, { date: HOJE });
+  const concluidas = acoesAntes.filter((a) => a.completed_at || Object.keys(a.completions ?? {}).length);
+  if (FAXINA) {
+    for (const d of disparosAntes) {
+      console.log(`  faxina: apagando disparo residual ${d.id}`);
+      await api('DELETE', `/v1/disparos/${d.id}`);
     }
-    for (const d of datas) {
-      console.log(`  faxina: desfazendo conclusão residual de "${a.title}" em ${d}`);
-      await api('POST', `/v1/actions/${a.id}/uncomplete`, { date: d });
+    for (const a of concluidas) {
+      // `once` some com uma chamada (o `date` é ignorado); recorrente é uma
+      // chamada por data concluída.
+      const datas = Object.keys(a.completions ?? {});
+      if (a.completed_at) {
+        console.log(`  faxina: desfazendo conclusão residual de "${a.title}"`);
+        await api('POST', `/v1/actions/${a.id}/uncomplete`, { date: HOJE });
+      }
+      for (const d of datas) {
+        console.log(`  faxina: desfazendo conclusão residual de "${a.title}" em ${d}`);
+        await api('POST', `/v1/actions/${a.id}/uncomplete`, { date: d });
+      }
     }
+  } else if (disparosAntes.length || concluidas.length) {
+    throw new Error(
+      `resíduo no banco: ${disparosAntes.length} disparo(s) e ${concluidas.length} ação(ões) concluída(s) na praça do seed. ` +
+        'Rode de novo com PRACA_CHECK_FAXINA=1 para apagar (isso também apaga o que foi feito à mão).',
+    );
   }
 
   console.log('-- Pré-condições do seed --');

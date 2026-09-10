@@ -21,7 +21,7 @@ Novo em relação ao protótipo: integração com o sistema de campanhas do Free
 **Status:** port **concluído**. API com 17 módulos (contrato em
 `docs/api-contract.md`) e web com as **9 telas** do protótipo mais três coisas
 que ele não tinha — `/freela`, `/entrar` e o formulário público. Verificação de
-ponta a ponta: 457 testes de unidade, 770 checagens de smoke contra a API viva e
+ponta a ponta: 457 testes de unidade, 771 checagens de smoke contra a API viva e
 97 checagens de navegador (§ Verificação).
 
 ## Como subir
@@ -218,7 +218,7 @@ npm run lint
 
 # smoke: sobe a API sem watcher, roda os checks contra ela e mata o processo
 npm run start:smoke &    # espere `curl -s localhost:3014/health` responder
-npm run smoke            # 770 checagens, repetível sem resíduo
+npm run smoke            # 771 checagens, repetível sem resíduo
                          # (769 sem o container `praca-postgres` de pé: a última
                          #  limpeza das contas de teste é por psql)
 ```
@@ -231,6 +231,7 @@ yarn lint
 # navegador: precisa da API na 3014 (start:smoke) e do web na 3024 (yarn dev)
 yarn dev &
 yarn browser-check       # 97 checagens; limpa o que cria e pode repetir
+                         # PRACA_CHECK_FAXINA=1 apaga resíduo de rodada morta (todos os disparos e conclusões da praça do seed)
 ```
 
 `browser-check` entra **pelo formulário** (conta em `PRACA_CHECK_EMAIL` /

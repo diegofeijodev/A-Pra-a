@@ -2051,8 +2051,16 @@ if command -v docker > /dev/null 2>&1 && [ -n "$(docker ps -q -f name=^praca-pos
   $PSQL "delete $SQL_TESTE" > /dev/null
   check "nenhuma pessoa de teste inativa sobrou no banco" "0" \
     "$($PSQL "select count(*) $SQL_TESTE" | tr -d '[:space:]')"
+  # Mesmo caso dos lotes de importação: `undo` devolve os leads mas o lote fica
+  # no histórico da Entrada por contrato (§10), e cada rodada cria quatro
+  # (`leads-`, `duplicados-`, `completar-`, `por-cidade-` + carimbo). Sem isto,
+  # 51 rodadas = 204 lotes no histórico da tela.
+  SQL_LOTE="from import_batches where file_name ~ '^(leads|duplicados|completar|por-cidade)-[0-9]{10,}\\.csv$'"
+  $PSQL "delete $SQL_LOTE" > /dev/null
+  check "nenhum lote de importação do smoke sobrou no histórico" "0" \
+    "$($PSQL "select count(*) $SQL_LOTE" | tr -d '[:space:]')"
 else
-  printf '  \033[33m!\033[0m docker/praca-postgres fora do ar: as pessoas de teste inativas não foram limpas\n'
+  printf '  \033[33m!\033[0m docker/praca-postgres fora do ar: pessoas de teste inativas e lotes do smoke não foram limpos\n'
 fi
 
 echo
