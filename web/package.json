@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start -p 3024",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "browser-check": "node scripts/browser-check.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
