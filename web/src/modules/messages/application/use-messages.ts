@@ -54,12 +54,14 @@ export function useTemplates() {
 }
 
 /**
- * Salvar um modelo mexe em três retratos: a lista (as métricas e a ordem saem
- * do servidor), o histórico de disparos (que mostra `template_name`) e as
- * cadências (cujos nós apontam para o modelo por id). Invalidação por PREFIXO.
+ * Salvar um modelo mexe em quatro retratos: a lista (as métricas e a ordem saem
+ * do servidor), o histórico de disparos (que mostra `template_name`), as
+ * cadências (cujos nós apontam para o modelo por id) e a prévia do disparo — o
+ * texto das 5 mensagens de exemplo é renderizado a partir do modelo, então sem
+ * isso a aba Disparos mostra a prévia antiga. Invalidação por PREFIXO.
  */
 function invalidateTemplate(queryClient: QueryClient) {
-  for (const key of [['templates'], ['disparos'], ['disparo'], ['cadences']]) {
+  for (const key of [['templates'], ['disparos'], ['disparo'], ['disparo-preview'], ['cadences']]) {
     void queryClient.invalidateQueries({ queryKey: key });
   }
 }

@@ -108,6 +108,10 @@ export function useEnroll() {
  * "Testar comigo". Quem comprime o tempo (cada dia vira 5 s) e avança os passos
  * é o motor do servidor — a tela só reabre as estatísticas e vê os passos
  * andarem.
+ *
+ * O teste cria um lead de verdade (`Teste — Cadência`, marcado `is_test`) e o
+ * matricula: além das cadências, mexe no que o servidor calcula a partir do
+ * lead (o quadro, a ficha e o sino), como manda o `invalidateLead`.
  */
 export function useRunTest() {
   const queryClient = useQueryClient();
@@ -115,7 +119,9 @@ export function useRunTest() {
     mutationFn: ({ id, phone }: { id: string; phone: string }) => runCadenceTest(id, phone),
     onSuccess: () => {
       invalidateCadence(queryClient);
-      void queryClient.invalidateQueries({ queryKey: ['leads'] });
+      for (const key of [['leads'], ['lead'], ['notifications']]) {
+        void queryClient.invalidateQueries({ queryKey: key });
+      }
     },
     onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível rodar o teste.')),
   });

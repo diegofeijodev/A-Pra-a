@@ -2455,3 +2455,8 @@ Lovable de referência (`.prototype/`).
     (`configured: false`, sem inventar conta nem flag de servidor) — é a única
     rota de `/v1/freela/*` que não quebra: todas as demais respondem
     `503 FREELA_NOT_CONFIGURED`. Ver [§18](#18-freela).
+24. Cadência criada pela tela nasce **pausada** (o protótipo criava
+    despausada): com entrada automática, o motor de 15 s matricularia a base
+    inteira antes de a pessoa terminar de montar os passos — quem liga é gente,
+    pelo "Retomar" do cartão. Mesma razão do seed pausado (item 16). Ver
+    [§14](#14-cadencias).

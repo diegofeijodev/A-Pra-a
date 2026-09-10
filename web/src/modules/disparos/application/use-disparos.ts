@@ -128,15 +128,26 @@ export function useDisparo(id: string | null | undefined) {
  * Marcar e responder mexem no envio, no lote (que fecha em `concluido` quando a
  * fila zera), nas métricas do modelo e — no caso de "pare" — na lista de
  * bloqueio e na ficha do lead.
+ *
+ * As duas rotas gravam evento na linha do tempo e mexem em `last_contact_at`
+ * (§13), então tudo que o servidor calcula a partir disso entra junto, como no
+ * `invalidateLead` de `use-leads.ts`: a fila do dia, as métricas do funil, os
+ * indicadores (que leem `msg_sends`) e o sino (que lê os dias parados). A
+ * prévia entra porque o opt-out do `reply` muda a contagem de bloqueados.
  */
 function invalidateSend(queryClient: QueryClient) {
   for (const key of [
     ['disparo'],
     ['disparos'],
+    ['disparo-preview'],
     ['templates'],
     ['blocklist'],
     ['leads'],
     ['lead'],
+    ['lead-queue'],
+    ['lead-metrics'],
+    ['indicators'],
+    ['notifications'],
     ['cadence-stats'],
   ]) {
     void queryClient.invalidateQueries({ queryKey: key });

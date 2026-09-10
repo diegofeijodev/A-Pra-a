@@ -24,6 +24,7 @@ import {
   useSettings,
   useTemplates,
   useUpdateSettings,
+  type UpdateSettingsInput,
 } from '@/modules/messages/application/use-messages';
 import { usePracas } from '@/modules/pracas/application/use-pracas';
 import { useUsers } from '@/modules/users/application/use-users';
@@ -32,6 +33,13 @@ const inputCls = "rounded-md border border-input bg-background px-2 py-1.5 text-
 
 const waLink = (phone: string, text: string) =>
   `https://wa.me/55${(phone || "").replace(/\D/g, "")}?text=${encodeURIComponent(text)}`;
+
+/** Hora solta do `datetime-local` → instante com fuso; data inválida → `undefined`. */
+const isoInstant = (local: string): string | undefined => {
+  if (!local) return undefined;
+  const d = new Date(local);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+};
 
 /**
  * Disparos — porte de `.prototype/src/components/praca/Disparos.tsx`.
@@ -98,7 +106,10 @@ function NovoDisparo() {
 
   // `datetime-local` devolve hora SOLTA ("2026-09-14T12:00"): quem converte para
   // instante com fuso é o web, que sabe o fuso de quem está olhando (§19.19).
-  const scheduledAt = when === "data" && dt ? new Date(dt).toISOString() : undefined;
+  // Data pela metade (o campo pode devolver "2026-09" em navegador antigo) seria
+  // um `Invalid Date` — e `toISOString()` num `Invalid Date` quebra o RENDER.
+  // Aqui ela cai no padrão da tela ("agora"), igual ao campo vazio.
+  const scheduledAt = when === "data" ? isoInstant(dt) : undefined;
 
   const { data: preview } = useDisparoPreview({
     filters,
@@ -230,18 +241,21 @@ function NovoDisparo() {
             className={`rounded-md border p-2.5 text-left ${modoId === m.id ? "border-primary bg-primary/10" : "border-border"}`}
           >
             <p className="text-xs font-bold">{m.label}</p>
-            <p className={`mt-1 text-[11px] ${m.tone === "danger" ? "text-danger" : m.tone === "warn" ? "text-warn" : "text-muted-foreground"}`}>{m.desc}</p>
+            <p className={`mt-1 text-[11px] ${m.tone === "danger" ? "text-danger" : m.tone === "warn" ? "text-warning" : "text-muted-foreground"}`}>{m.desc}</p>
           </button>
         ))}
       </div>
 
-      {/* Como o modelo vira campanha do Freela (§18.3) — só no modo `freela`. */}
-      {preview?.freela && (
+      {/* Como o modelo vira campanha do Freela (§18.3) — só no modo `freela`. O
+          `modoId` entra na condição porque a prévia guarda o retrato anterior
+          (`keepPreviousData`): sem ele o bloco fica na tela ao voltar para
+          `fila`, até a prévia nova chegar. */}
+      {modoId === "freela" && preview?.freela && (
         <div className="mt-3 rounded-md border border-border bg-background/50 p-3">
           <p className="tag text-muted-foreground">Como vai sair pelo Freela</p>
           <p className="mt-2 whitespace-pre-wrap text-xs">{preview.freela.template}</p>
           {preview.freela.unsupported_variables.length > 0 && (
-            <p className="mt-2 rounded-md bg-warn/12 px-3 py-2 text-[11px] text-warn">
+            <p className="mt-2 rounded-md bg-warning/12 px-3 py-2 text-[11px] text-warning">
               O Freela não conhece {preview.freela.unsupported_variables.map((v) => `{{${v}}}`).join(" · ")} — essas
               variáveis vão sair no texto do jeito que estão.
             </p>
@@ -325,6 +339,10 @@ function ConfigEnvio() {
   const { data: catalog } = useCatalog();
   const { data: settings } = useSettings();
   const update = useUpdateSettings();
+  // Muda a `key` dos campos para remontá-los quando o valor digitado não vale
+  // (foi preso pelas travas) e nenhum PATCH sobe: sem isso o input continuaria
+  // mostrando o número recusado, mentindo sobre o que está gravado.
+  const [rev, setRev] = useState(0);
   const hardMin = catalog?.hard_min ?? 8;
   const hardMax = catalog?.hard_max ?? 20;
   const clampHour = (h: number) => Math.min(hardMax, Math.max(hardMin, h));
@@ -338,30 +356,48 @@ function ConfigEnvio() {
   }
 
   const st = settings;
+  // `blur` não é mudança: entrar e sair de um campo gravava um `PATCH` à toa.
+  // Só sobe o que mudou de verdade.
+  const gravar = (atual: number, novo: number, body: UpdateSettingsInput) => {
+    if (novo === atual) {
+      setRev((r) => r + 1);
+      return;
+    }
+    update.mutate(body);
+  };
   return (
     <Card title="Proteções e configuração de envio" sub="Valem para qualquer modo — nunca é possível sair de 8h–20h.">
       <div className="grid gap-3 sm:grid-cols-4">
         <label className="text-xs text-muted-foreground">
           Janela — início
           <input
-            key={`ws-${st.window_start}`} type="number" min={hardMin} max={hardMax} defaultValue={st.window_start}
-            onBlur={(e) => update.mutate({ window_start: Math.min(clampHour(Number(e.target.value)), st.window_end - 1) })}
+            key={`ws-${rev}-${st.window_start}`} type="number" min={hardMin} max={hardMax} defaultValue={st.window_start}
+            onBlur={(e) => {
+              const v = Math.min(clampHour(Number(e.target.value)), st.window_end - 1);
+              gravar(st.window_start, v, { window_start: v });
+            }}
             className={`mt-1 w-full ${inputCls}`}
           />
         </label>
         <label className="text-xs text-muted-foreground">
           Janela — fim
           <input
-            key={`we-${st.window_end}`} type="number" min={hardMin} max={hardMax} defaultValue={st.window_end}
-            onBlur={(e) => update.mutate({ window_end: Math.max(clampHour(Number(e.target.value)), st.window_start + 1) })}
+            key={`we-${rev}-${st.window_end}`} type="number" min={hardMin} max={hardMax} defaultValue={st.window_end}
+            onBlur={(e) => {
+              const v = Math.max(clampHour(Number(e.target.value)), st.window_start + 1);
+              gravar(st.window_end, v, { window_end: v });
+            }}
             className={`mt-1 w-full ${inputCls}`}
           />
         </label>
         <label className="text-xs text-muted-foreground">
           Limite diário por número
           <input
-            key={`dl-${st.daily_limit}`} type="number" min={1} defaultValue={st.daily_limit}
-            onBlur={(e) => update.mutate({ daily_limit: Math.max(1, Number(e.target.value) || 1) })}
+            key={`dl-${rev}-${st.daily_limit}`} type="number" min={1} defaultValue={st.daily_limit}
+            onBlur={(e) => {
+              const v = Math.max(1, Number(e.target.value) || 1);
+              gravar(st.daily_limit, v, { daily_limit: v });
+            }}
             className={`mt-1 w-full ${inputCls}`}
           />
         </label>
@@ -369,13 +405,19 @@ function ConfigEnvio() {
           Intervalo entre mensagens (s)
           <span className="mt-1 flex items-center gap-1">
             <input
-              key={`gmin-${st.gap_min}`} type="number" min={5} defaultValue={st.gap_min}
-              onBlur={(e) => update.mutate({ gap_min: Math.min(Math.max(5, Number(e.target.value) || 5), st.gap_max - 1) })}
+              key={`gmin-${rev}-${st.gap_min}`} type="number" min={5} defaultValue={st.gap_min}
+              onBlur={(e) => {
+                const v = Math.min(Math.max(5, Number(e.target.value) || 5), st.gap_max - 1);
+                gravar(st.gap_min, v, { gap_min: v });
+              }}
               className={`w-full ${inputCls}`}
             />
             <input
-              key={`gmax-${st.gap_max}`} type="number" min={st.gap_min} defaultValue={st.gap_max}
-              onBlur={(e) => update.mutate({ gap_max: Math.max(st.gap_min + 1, Number(e.target.value) || st.gap_min + 1) })}
+              key={`gmax-${rev}-${st.gap_max}`} type="number" min={st.gap_min} defaultValue={st.gap_max}
+              onBlur={(e) => {
+                const v = Math.max(st.gap_min + 1, Number(e.target.value) || st.gap_min + 1);
+                gravar(st.gap_max, v, { gap_max: v });
+              }}
               className={`w-full ${inputCls}`}
             />
           </span>
@@ -497,7 +539,7 @@ function PainelDisparo({ id }: { id: string }) {
         {c.mode === "fila" ? "Fila manual — copie, abra a conversa, envie e marque como enviada" : "Fila de acompanhamento"}
       </p>
       <div className="mt-2 space-y-1.5">
-        {sends.slice(0, 60).map((x) => <FilaItem key={x.id} x={x} />)}
+        {sends.slice(0, 60).map((x) => <FilaItem key={x.id} x={x} mode={c.mode} />)}
       </div>
     </div>
   );
@@ -512,7 +554,16 @@ function Stat({ label, value }: { label: string; value: number }) {
   );
 }
 
-function FilaItem({ x }: { x: SendView }) {
+/**
+ * Uma linha da fila do lote. `mode` é o modo do DISPARO: no modo `freela` quem
+ * entrega é o outbox do servidor (§18.5), que garimpa exatamente os envios em
+ * `fila` — marcar "enviada" aqui tiraria a mensagem da fila para sempre (ela
+ * nunca sairia no WhatsApp) e ainda gravaria evento e `last_contact_at` na
+ * ficha de gente real. Por isso a marcação manual de estado só existe em
+ * `fila`; registrar a RESPOSTA continua nos dois modos — o Freela não devolve
+ * resposta, ela é sempre registrada à mão aqui (§18.6).
+ */
+function FilaItem({ x, mode }: { x: SendView; mode: string }) {
   const openLead = useUiStore((s) => s.openLead);
   const mark = useMarkSend();
   const reply = useReplySend();
@@ -530,12 +581,12 @@ function FilaItem({ x }: { x: SendView }) {
           </span>
           <button onClick={() => navigator.clipboard?.writeText(x.text)} className="rounded border border-border p-1 hover:text-primary" title="copiar"><Copy size={12} /></button>
           <a href={waLink(x.lead.phone, x.text)} target="_blank" rel="noreferrer" className="rounded border border-border p-1 hover:text-primary" title="copiar e abrir conversa"><ExternalLink size={12} /></a>
-          {x.status === "fila" && (
+          {mode === "fila" && x.status === "fila" && (
             <button onClick={() => mark.mutate({ id: x.id, status: "enviada" })} disabled={mark.isPending} className="flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-[11px] font-bold text-primary-foreground disabled:opacity-40">
               <Check size={11} /> marcar enviada
             </button>
           )}
-          {x.status === "enviada" && (
+          {mode === "fila" && x.status === "enviada" && (
             <button onClick={() => mark.mutate({ id: x.id, status: "entregue" })} disabled={mark.isPending} className="rounded-md border border-border px-2 py-1 text-[11px] disabled:opacity-40">entregue</button>
           )}
           {x.status !== "fila" && x.status !== "respondida" && (

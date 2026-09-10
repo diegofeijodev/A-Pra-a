@@ -125,7 +125,7 @@ function CadenceCard({ cadence: c, open, onToggle, onEdit }: { cadence: CadenceV
             </p>
           </div>
         </button>
-        <span className={`tag rounded-full px-2 py-0.5 ${c.paused ? "bg-muted text-muted-foreground" : "bg-[var(--verde)]/15 text-[var(--verde)]"}`}>
+        <span className={`tag rounded-full px-2 py-0.5 ${c.paused ? "bg-muted text-muted-foreground" : "bg-success/15 text-success"}`}>
           {c.paused ? "pausada" : "rodando"}
         </span>
         <div className="flex items-center gap-4 text-xs">
@@ -185,7 +185,7 @@ function CadenceCard({ cadence: c, open, onToggle, onEdit }: { cadence: CadenceV
                     <span className="shrink-0 text-muted-foreground">
                       {e.status === "aguardando" ? "esperando outra cadência" : `passo ${e.step_index + 1} · ${fmtDateTime(e.next_at)}`}
                     </span>
-                    <button onClick={() => exitEnrollment.mutate({ id: e.enrollment_id })} className="shrink-0 text-muted-foreground hover:text-[var(--vermelho)]" title="Tirar da cadência">
+                    <button onClick={() => exitEnrollment.mutate({ id: e.enrollment_id })} className="shrink-0 text-muted-foreground hover:text-danger" title="Tirar da cadência">
                       <Trash2 size={12} />
                     </button>
                   </li>
@@ -251,13 +251,21 @@ export interface CadenceDraft {
   nodes: DraftNode[];
 }
 
+/**
+ * Cadência nova nasce PAUSADA (desvio §19.24; o protótipo criava despausada).
+ * O motor é o `@Cron` de 15 s do servidor: salvar uma cadência de entrada
+ * automática (`stage_novo`, `reheat_due`, `first_vaga`) já rodando matricularia
+ * a base inteira antes de a pessoa terminar de escrever os passos. Quem liga é
+ * gente, pelo "Retomar" do cartão — a mesma razão que faz o seed nascer pausado
+ * (§19.16).
+ */
 const novaCadencia = (): CadenceDraft => ({
   name: "",
   audience: "contratante",
   entry: "manual",
   nodes: [{ _key: nid(), kind: "msg", day: 0, channel: "whatsapp", text: "" }],
   exit: { action: "sai", note: "" },
-  paused: false,
+  paused: true,
 });
 
 const toDraft = (c: CadenceView): CadenceDraft => ({
@@ -278,6 +286,9 @@ const toDraft = (c: CadenceView): CadenceDraft => ({
     task: n.task ?? undefined,
     rule: n.rule ?? undefined,
     action: n.action ?? undefined,
+    // O `PUT` substitui a cadência inteira: sem carregar a nota do nó, uma nota
+    // criada fora desta tela sumiria ao salvar aqui.
+    note: n.note ?? undefined,
   })),
 });
 
@@ -285,6 +296,7 @@ const toDraft = (c: CadenceView): CadenceDraft => ({
 function nodeBody(n: DraftNode): CadenceNodeBody {
   const base: CadenceNodeBody = { kind: n.kind };
   if (n.id) base.id = n.id;
+  if (n.note) base.note = n.note;
   if (n.kind === "cond") {
     base.rule = n.rule;
     base.action = n.action;
@@ -369,8 +381,8 @@ function CadenceEditor({ cadence, onClose }: { cadence: CadenceDraft; onClose: (
         </div>
 
         {/* entrada */}
-        <div className="mt-5 rounded-lg border-2 border-[var(--verde)]/50 bg-[var(--verde)]/5 p-3">
-          <p className="flex items-center gap-1.5 tag text-[var(--verde)]"><LogIn size={12} /> Entrada — o que coloca a pessoa na cadência</p>
+        <div className="mt-5 rounded-lg border-2 border-success/50 bg-success/5 p-3">
+          <p className="flex items-center gap-1.5 tag text-success"><LogIn size={12} /> Entrada — o que coloca a pessoa na cadência</p>
           <select value={c.entry} onChange={(e) => set({ entry: e.target.value })} className={`${inputCls} mt-2 w-full`}>
             {(catalog?.entry_rules ?? []).map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
           </select>
@@ -382,7 +394,7 @@ function CadenceEditor({ cadence, onClose }: { cadence: CadenceDraft; onClose: (
         <div className="space-y-2">
           {c.nodes.map((n, i) => (
             <div key={n._key}>
-              <div className={`rounded-lg border p-3 ${n.kind === "cond" ? "border-dashed border-[var(--amarelo)]/60 bg-[var(--amarelo)]/5" : "border-border bg-background/40"}`}>
+              <div className={`rounded-lg border p-3 ${n.kind === "cond" ? "border-dashed border-warning/60 bg-warning/5" : "border-border bg-background/40"}`}>
                 <div className="flex items-center gap-2">
                   <span className="flex items-center gap-1.5 tag">
                     {n.kind === "cond" ? <AlertTriangle size={12} /> : n.kind === "task" ? <Phone size={12} /> : <MessageSquare size={12} />}
@@ -397,7 +409,7 @@ function CadenceEditor({ cadence, onClose }: { cadence: CadenceDraft; onClose: (
                   <span className="flex-1" />
                   <button onClick={() => move(i, -1)} className="rounded border border-border p-1" title="Subir"><ChevronUp size={12} /></button>
                   <button onClick={() => move(i, 1)} className="rounded border border-border p-1" title="Descer"><ChevronDown size={12} /></button>
-                  <button onClick={() => set({ nodes: c.nodes.filter((x) => x._key !== n._key) })} className="rounded border border-border p-1 text-muted-foreground hover:text-[var(--vermelho)]"><Trash2 size={12} /></button>
+                  <button onClick={() => set({ nodes: c.nodes.filter((x) => x._key !== n._key) })} className="rounded border border-border p-1 text-muted-foreground hover:text-danger"><Trash2 size={12} /></button>
                 </div>
 
                 {n.kind === "cond" && (
@@ -448,8 +460,8 @@ function CadenceEditor({ cadence, onClose }: { cadence: CadenceDraft; onClose: (
         </div>
 
         {/* saída */}
-        <div className="mt-3 rounded-lg border-2 border-[var(--vermelho)]/40 bg-[var(--vermelho)]/5 p-3">
-          <p className="flex items-center gap-1.5 tag text-[var(--vermelho)]"><LogOut size={12} /> Saída — quem chegou ao fim sem responder</p>
+        <div className="mt-3 rounded-lg border-2 border-danger/40 bg-danger/5 p-3">
+          <p className="flex items-center gap-1.5 tag text-danger"><LogOut size={12} /> Saída — quem chegou ao fim sem responder</p>
           <select value={c.exit.action} onChange={(e) => set({ exit: { ...c.exit, action: e.target.value } })} className={`${inputCls} mt-2 w-full`}>
             {(catalog?.cond_actions ?? []).filter((a) => a.id !== "continua").map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
           </select>
