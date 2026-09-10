@@ -98,6 +98,54 @@ export function FreelaNaoConfigurado() {
   );
 }
 
+/**
+ * Aviso amarelo de campo — o motivo de o botão estar desligado, do lado do
+ * campo culpado. As regras do Freela (dia da semana, texto por canal, janela)
+ * só voltariam como `502 FREELA_ERROR` depois de a chamada ir e voltar.
+ */
+export function AvisoCampo({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mt-2 rounded-md bg-warning/12 px-3 py-2 text-[11px] text-warning">{children}</p>
+  );
+}
+
+/**
+ * Separador de variantes DO FREELA (`message-template.ts`,
+ * `VARIANT_SEPARATOR`): uma linha **só** com `---`, com ou sem espaços em
+ * volta. Contar com `\n---\n` seria mais estrito do que o servidor e a tela
+ * mostraria "1 variação" para um texto que lá vira três.
+ */
+export const SEPARADOR_VARIANTES = /^\s*---\s*$/m;
+
+/**
+ * O Freela rotaciona no máximo 3 variantes (`MAX_CUSTOM_VARIANTS`) e
+ * `resolveWhatsAppVariants` faz `.slice(0, 3)`: a quarta é **descartada em
+ * silêncio**, não recusada.
+ */
+export const MAX_VARIANTES = 3;
+
+export function contarVariantes(texto: string): number {
+  return texto
+    .split(SEPARADOR_VARIANTES)
+    .map((v) => v.trim())
+    .filter(Boolean).length;
+}
+
+/**
+ * Ritmo padrão da campanha automática **no Freela** (`CampaignTemplate`:
+ * 15/h, 120/dia, 9–18, só dias úteis). Diferente da campanha normal, o corpo
+ * sem `pacing` NÃO passa pela conversão do `GET /v1/settings` do Praça — o
+ * Freela usa o padrão dele. Então é ele que o formulário mostra: o que está na
+ * tela é o que vale.
+ */
+export const FREELA_PACING_DEFAULTS: Required<FreelaPacingInput> = {
+  messages_per_hour: 15,
+  daily_cap: 120,
+  window_start_hour: 9,
+  window_end_hour: 18,
+  weekdays_only: true,
+};
+
 /** Aviso fixo de todo disparo frio — vale para campanha normal e automática. */
 export function AvisoFrio() {
   return (

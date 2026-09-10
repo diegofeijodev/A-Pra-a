@@ -188,13 +188,20 @@ export function useFreelaCampaigns(pracaId?: string) {
   });
 }
 
+/**
+ * O detalhe (campanha + destinatários) é leitura sob demanda: cada tique custa
+ * **duas** chamadas ao Freela (detalhe + `recipients`) e um `UPDATE` no espelho.
+ * Por isso o relógio só corre enquanto a campanha está **andando**
+ * (`RUNNING`) — em rascunho, pausada ou terminada nada muda lá sozinho.
+ */
 export function useFreelaCampaign(id: string | null | undefined) {
   const configured = useConfigured();
   return useQuery({
     queryKey: ['freela', 'campaign', id],
     queryFn: () => getFreelaCampaign(id as string),
     enabled: configured && !!id,
-    refetchInterval: configured ? CAMPAIGNS_POLL_MS : false,
+    refetchInterval: (query) =>
+      configured && query.state.data?.campaign.status === 'RUNNING' ? CAMPAIGNS_POLL_MS : false,
     placeholderData: keepPreviousData,
   });
 }

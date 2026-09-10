@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { fmtDateTime } from '@/lib/dates';
 import { maskPhone, RecipientTag } from './FreelaBits';
 import { useFreelaCampaign } from '@/modules/freela/application/use-freela';
+import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 
 /** Linhas por página na tabela — a rota traz os 50 primeiros destinatários. */
 const POR_PAGINA = 10;
@@ -27,7 +28,7 @@ export function FreelaCampaignDetail({ freelaId }: { freelaId: string }) {
   if (isError || !data) {
     return (
       <div className="border-t border-border p-3 text-xs text-danger">
-        {error instanceof Error ? error.message : 'Não foi possível ler os destinatários.'}
+        {apiErrorMessage(error, 'Não foi possível ler os destinatários.')}
       </div>
     );
   }
@@ -90,6 +91,7 @@ export function FreelaCampaignDetail({ freelaId }: { freelaId: string }) {
           {paginas > 1 && (
             <div className="mt-2 flex items-center gap-2 text-[11px]">
               <button
+                type="button"
                 onClick={() => setPage(Math.max(1, atual - 1))}
                 disabled={atual === 1}
                 className="rounded border border-border px-2 py-1 disabled:opacity-40"
@@ -100,6 +102,7 @@ export function FreelaCampaignDetail({ freelaId }: { freelaId: string }) {
                 página {atual} de {paginas}
               </span>
               <button
+                type="button"
                 onClick={() => setPage(Math.min(paginas, atual + 1))}
                 disabled={atual === paginas}
                 className="rounded border border-border px-2 py-1 disabled:opacity-40"

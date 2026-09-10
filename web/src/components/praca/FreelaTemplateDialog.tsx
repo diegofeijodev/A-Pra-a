@@ -4,10 +4,13 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { WD_SHORT } from '@/lib/dates';
 import {
+  AvisoCampo,
   AvisoFrio,
+  contarVariantes,
+  FREELA_PACING_DEFAULTS,
   FreelaNaoConfigurado,
   inputCls,
-  pacingFromSettings,
+  MAX_VARIANTES,
   pracaCities,
   pracaUf,
 } from './FreelaBits';
@@ -24,7 +27,6 @@ import {
   type FreelaTemplateBody,
   type FreelaTemplateView,
 } from '@/modules/freela/application/use-freela';
-import { useSettings } from '@/modules/messages/application/use-messages';
 import { usePracas, useActivePraca } from '@/modules/pracas/application/use-pracas';
 
 /**
@@ -58,7 +60,6 @@ function Form({ onClose, template }: { onClose: () => void; template: FreelaTemp
   const { data: status } = useFreelaStatus();
   const { data: pracas } = usePracas();
   const { praca: ativa } = useActivePraca();
-  const { data: settings } = useSettings();
   const create = useCreateFreelaTemplate();
   const update = useUpdateFreelaTemplate();
   const upload = useUploadFreelaImage();
@@ -87,7 +88,7 @@ function Form({ onClose, template }: { onClose: () => void; template: FreelaTemp
   const [imageUrl, setImageUrl] = useState('');
   const [deepLink, setDeepLink] = useState(template?.deepLink ?? '');
   const [maxPerRun, setMaxPerRun] = useState(template?.maxPerRun ?? 0);
-  const [pacing, setPacing] = useState<FreelaPacingInput | null>(
+  const [pacing, setPacing] = useState<Required<FreelaPacingInput> | null>(
     template
       ? {
           messages_per_hour: template.messagesPerHour,
@@ -102,12 +103,62 @@ function Form({ onClose, template }: { onClose: () => void; template: FreelaTemp
   const configured = status?.configured === true;
   const praca = (pracas ?? []).find((p) => p.id === (pracaId || template?.praca_id || ativa?.id));
   const pracaAtual = praca?.id ?? '';
-  const ritmo = pacing ?? pacingFromSettings(settings);
+  // Campanha NOVA: `pacing` nasce nulo e o corpo sai sem ele — e aí vale o
+  // padrão do Freela, que é o que os campos mostram. Em EDIÇÃO ele nasce da
+  // campanha (o `PUT` substitui o corpo inteiro lá, então omitir zeraria o
+  // ritmo que já está gravado).
+  const ritmo = pacing ?? FREELA_PACING_DEFAULTS;
   const setRitmo = (p: Partial<FreelaPacingInput>) => setPacing({ ...ritmo, ...p });
   const salvando = create.isPending || update.isPending;
   const temWhats = channels.includes('WHATSAPP');
   const temPush = channels.includes('PUSH');
-  const podeSalvar = configured && !!name.trim() && !!pracaAtual && channels.length > 0 && !salvando;
+  const cidades = pracaCities(praca);
+  const uf = pracaUf(praca);
+
+  /**
+   * Recorte escolhido que não produz campo nenhum: `filters` sumiria do corpo e
+   * a campanha automática passaria a rodar sobre a base inteira do Freela toda
+   * semana. "Sem recorte" continua sendo uma opção — explícita.
+   */
+  const recorteVazio = (recorte === 'cidades' && !cidades.length) || (recorte === 'uf' && !uf);
+
+  /**
+   * As quatro regras de campo cruzado do `CampaignTemplateService.validate` do
+   * Freela. Sem guarda aqui elas voltam como `502 FREELA_ERROR` depois de a
+   * chamada ir e voltar — e o botão habilitado tinha prometido o contrário.
+   */
+  const diasOk = kind !== 'WEEKLY' || weekdays.length > 0; // WEEKDAYS_REQUIRED
+  const whatsOk = !temWhats || !!texto.trim(); // WHATSAPP_TEXT_REQUIRED
+  const pushOk = !temPush || (!!pushTitle.trim() && !!pushBody.trim()); // PUSH_TEXT_REQUIRED
+  const janelaOk = ritmo.window_end_hour > ritmo.window_start_hour; // INVALID_SEND_WINDOW
+
+  /**
+   * `datedTriggerKeys` monta a data com `Date.UTC`, que NORMALIZA: 31/02 vira
+   * 02 ou 03/03 e 29/02 em ano não bissexto vira 01/03. Nem 400 nem aviso — a
+   * campanha só sairia no dia errado.
+   */
+  const diasDoMes = (mes: number, ano: number | null) => {
+    if (mes !== 2) return [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][mes - 1] ?? 31;
+    if (ano === null) return 29;
+    return (ano % 4 === 0 && ano % 100 !== 0) || ano % 400 === 0 ? 29 : 28;
+  };
+  const diaMax = diasDoMes(targetMonth, todoAno ? null : targetYear);
+  const dataOk = kind !== 'DATED' || (targetDay >= 1 && targetDay <= diaMax);
+  const avisoBissexto = kind === 'DATED' && todoAno && targetMonth === 2 && targetDay === 29;
+
+  const variantes = contarVariantes(texto);
+  const podeSalvar =
+    configured &&
+    name.trim().length >= 3 &&
+    !!pracaAtual &&
+    channels.length > 0 &&
+    diasOk &&
+    whatsOk &&
+    pushOk &&
+    janelaOk &&
+    dataOk &&
+    !recorteVazio &&
+    !salvando;
 
   const toggleDia = (d: number) =>
     setWeekdays((x) => (x.includes(d) ? x.filter((n) => n !== d) : [...x, d].sort()));
@@ -117,14 +168,8 @@ function Form({ onClose, template }: { onClose: () => void; template: FreelaTemp
 
   const filtros = (): FreelaTemplateBody['filters'] => {
     const out: NonNullable<FreelaTemplateBody['filters']> = {};
-    if (recorte === 'cidades') {
-      const cidades = pracaCities(praca);
-      if (cidades.length) out.cities = cidades;
-    }
-    if (recorte === 'uf') {
-      const uf = pracaUf(praca);
-      if (uf) out.ufs = [uf];
-    }
+    if (recorte === 'cidades' && cidades.length) out.cities = cidades;
+    if (recorte === 'uf' && uf) out.ufs = [uf];
     if (modulo !== 'all') out.modules = [modulo];
     return Object.keys(out).length ? out : undefined;
   };
@@ -155,7 +200,10 @@ function Form({ onClose, template }: { onClose: () => void; template: FreelaTemp
       ...(temPush && pushBody.trim() ? { push_body: pushBody.trim() } : {}),
       ...(imageKey ? { image_key: imageKey } : {}),
       ...(deepLink.trim() ? { deep_link: deepLink.trim() } : {}),
-      pacing: ritmo,
+      // Ausente = o padrão do Freela (o mesmo que os campos mostram). Só sobe
+      // quando o operador mexeu — ou quando é edição, e aí `pacing` nasceu da
+      // campanha que já existe.
+      ...(pacing ? { pacing } : {}),
       ...(maxPerRun > 0 ? { max_per_run: maxPerRun } : {}),
     };
     const feito = () => {
@@ -188,7 +236,11 @@ function Form({ onClose, template }: { onClose: () => void; template: FreelaTemp
           <h2 className="font-display text-lg font-extrabold">
             {template ? 'Campanha automática' : 'Nova campanha automática'}
           </h2>
-          <button onClick={onClose} className="text-sm text-muted-foreground hover:text-foreground">
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
             fechar
           </button>
         </div>
@@ -228,6 +280,10 @@ function Form({ onClose, template }: { onClose: () => void; template: FreelaTemp
           </label>
         </div>
 
+        {!!name.trim() && name.trim().length < 3 && (
+          <AvisoCampo>O nome precisa ter ao menos 3 letras.</AvisoCampo>
+        )}
+
         {/* 2. agenda */}
         <p className="tag mt-4 text-muted-foreground">2. Agenda</p>
         <div className="mt-2 flex flex-wrap gap-3">
@@ -242,19 +298,27 @@ function Form({ onClose, template }: { onClose: () => void; template: FreelaTemp
         </div>
 
         {kind === 'WEEKLY' ? (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {WD_SHORT.map((d, i) => (
-              <button
-                key={d}
-                onClick={() => toggleDia(i)}
-                className={`rounded-md border px-2.5 py-1 text-xs ${
-                  weekdays.includes(i) ? 'border-primary bg-primary/10 text-primary' : 'border-border'
-                }`}
-              >
-                {d}
-              </button>
-            ))}
-          </div>
+          <>
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {WD_SHORT.map((d, i) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => toggleDia(i)}
+                  className={`rounded-md border px-2.5 py-1 text-xs ${
+                    weekdays.includes(i)
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border'
+                  }`}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+            {!diasOk && (
+              <AvisoCampo>Escolha ao menos um dia da semana — o Freela recusa a agenda vazia.</AvisoCampo>
+            )}
+          </>
         ) : (
           <div className="mt-2 grid gap-2 sm:grid-cols-4">
             <label className="text-xs text-muted-foreground">
@@ -262,9 +326,11 @@ function Form({ onClose, template }: { onClose: () => void; template: FreelaTemp
               <input
                 type="number"
                 min={1}
-                max={31}
+                max={diaMax}
                 value={targetDay}
-                onChange={(e) => setTargetDay(Math.min(31, Math.max(1, Number(e.target.value) || 1)))}
+                onChange={(e) =>
+                  setTargetDay(Math.min(diaMax, Math.max(1, Number(e.target.value) || 1)))
+                }
                 className={`mt-1 w-full ${inputCls}`}
               />
             </label>
@@ -307,6 +373,19 @@ function Form({ onClose, template }: { onClose: () => void; template: FreelaTemp
           </div>
         )}
 
+        {!dataOk && (
+          <AvisoCampo>
+            O mês {targetMonth} não tem dia {targetDay}: o Freela normaliza a data e a campanha
+            sairia no mês seguinte.
+          </AvisoCampo>
+        )}
+        {avisoBissexto && (
+          <AvisoCampo>
+            29 de fevereiro só existe em ano bissexto — repetindo todo ano, nos outros anos o Freela
+            dispara em 1º de março.
+          </AvisoCampo>
+        )}
+
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <label className="text-xs text-muted-foreground">
             Hora do envio
@@ -343,8 +422,8 @@ function Form({ onClose, template }: { onClose: () => void; template: FreelaTemp
         <div className="mt-2 flex flex-wrap items-center gap-3">
           {(
             [
-              ['cidades', 'Cidades da praça'],
-              ['uf', 'UF da praça'],
+              ['cidades', `Cidades da praça (${cidades.length})`],
+              ['uf', `UF da praça${uf ? ` (${uf})` : ''}`],
               ['nenhum', 'Sem recorte'],
             ] as const
           ).map(([id, label]) => (
@@ -372,6 +451,13 @@ function Form({ onClose, template }: { onClose: () => void; template: FreelaTemp
         <p className="mt-1 text-[11px] text-muted-foreground">
           Campanha automática não recorta por raio — só cidades, UF e módulo.
         </p>
+        {recorteVazio && (
+          <AvisoCampo>
+            Esta praça não tem {recorte === 'uf' ? 'UF' : 'cobertura'} cadastrada, então este recorte
+            não filtra nada e a campanha rodaria sobre a base inteira do Freela toda vez. Cadastre a
+            cobertura da praça, escolha outro recorte — ou marque “Sem recorte” de propósito.
+          </AvisoCampo>
+        )}
 
         {/* 4. canais e conteúdo */}
         <p className="tag mt-4 text-muted-foreground">4. Canais e conteúdo</p>
@@ -399,9 +485,20 @@ function Form({ onClose, template }: { onClose: () => void; template: FreelaTemp
               className={`mt-2 w-full font-mono ${inputCls}`}
             />
             <p className="mt-1 text-[11px] text-muted-foreground">
-              {texto.length}/4000 · até 3 variantes separadas por uma linha só com{' '}
-              <code className="font-mono">---</code>.
+              {texto.length}/4000 · {variantes} variação(ões) — separe até {MAX_VARIANTES} por uma
+              linha só com <code className="font-mono">---</code> (espaços em volta valem).
             </p>
+            {variantes > MAX_VARIANTES && (
+              <AvisoCampo>
+                O Freela usa só as {MAX_VARIANTES} primeiras variantes — as outras são descartadas em
+                silêncio, sem recusar a campanha.
+              </AvisoCampo>
+            )}
+            {!whatsOk && (
+              <AvisoCampo>
+                O canal WhatsApp exige texto — sem ele o Freela recusa a campanha automática.
+              </AvisoCampo>
+            )}
           </>
         )}
 
@@ -426,6 +523,9 @@ function Form({ onClose, template }: { onClose: () => void; template: FreelaTemp
               />
             </label>
           </div>
+        )}
+        {temPush && !pushOk && (
+          <AvisoCampo>O canal push exige título E corpo — o Freela recusa só um dos dois.</AvisoCampo>
         )}
 
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
@@ -457,7 +557,14 @@ function Form({ onClose, template }: { onClose: () => void; template: FreelaTemp
                 ver
               </a>
             )}
-            <button onClick={() => { setImageKey(''); setImageUrl(''); }} className="hover:text-danger">
+            <button
+              type="button"
+              onClick={() => {
+                setImageKey('');
+                setImageUrl('');
+              }}
+              className="hover:text-danger"
+            >
               remover
             </button>
           </p>
@@ -537,19 +644,31 @@ function Form({ onClose, template }: { onClose: () => void; template: FreelaTemp
           />
           só dias úteis (o Freela não separa sábado de domingo)
         </label>
+        {!janelaOk && (
+          <AvisoCampo>
+            A janela precisa terminar depois de começar (início 0–23, fim 1–24) — o Freela recusa o
+            contrário.
+          </AvisoCampo>
+        )}
         <p className="mt-1 text-[11px] text-muted-foreground">
           Máximo por rodada em 0 = sem teto por ocorrência.
+          {!pacing && ' Sem mexer em nada, o ritmo não sobe no corpo: vale o padrão do Freela, que é o que está aí em cima.'}
         </p>
 
         <div className="mt-5 flex flex-wrap items-center gap-2">
           <button
+            type="button"
             onClick={salvar}
             disabled={!podeSalvar}
             className="rounded-md bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-40"
           >
             {salvando ? 'Salvando…' : template ? 'Salvar' : 'Criar (nasce pausada)'}
           </button>
-          <button onClick={onClose} className="px-2 py-2 text-sm text-muted-foreground">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-2 py-2 text-sm text-muted-foreground"
+          >
             cancelar
           </button>
         </div>
