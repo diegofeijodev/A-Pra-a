@@ -201,18 +201,25 @@ function EntryBlock({ entry: t, onEdit }: { entry: TrafficEntryView; onEdit: () 
   const [form, setForm] = useState({ date: todaySp(), investido: 0, alcance: 0, cliques: 0, conversoes: 0 });
   const url = safeUrl(t.manager_url);
 
-  const lancar = () => {
-    saveDay.mutate({
-      id: t.id,
-      body: {
-        date: form.date,
-        investido: Math.max(0, form.investido),
-        alcance: Math.max(0, form.alcance),
-        cliques: Math.max(0, form.cliques),
-        conversoes: Math.max(0, form.conversoes),
-      },
-    });
-    setForm({ ...form, investido: 0, alcance: 0, cliques: 0, conversoes: 0 });
+  const lancar = async () => {
+    try {
+      // `alcance`, `cliques` e `conversoes` são `@IsInt()` no DTO: arredonda
+      // aqui para um decimal digitado não virar 400. `investido` é decimal.
+      await saveDay.mutateAsync({
+        id: t.id,
+        body: {
+          date: form.date,
+          investido: Math.max(0, form.investido),
+          alcance: Math.max(0, Math.round(form.alcance)),
+          cliques: Math.max(0, Math.round(form.cliques)),
+          conversoes: Math.max(0, Math.round(form.conversoes)),
+        },
+      });
+      // Só limpa quando o servidor aceitou — num erro os números digitados ficam.
+      setForm((f) => ({ ...f, investido: 0, alcance: 0, cliques: 0, conversoes: 0 }));
+    } catch {
+      // O `onError` da mutação já mostrou a mensagem da API.
+    }
   };
 
   return (
@@ -254,9 +261,9 @@ function EntryBlock({ entry: t, onEdit }: { entry: TrafficEntryView; onEdit: () 
             <div className="flex flex-wrap items-end gap-2">
               <label className="grid gap-1 text-[11px]">data<input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className={`${inputCls} w-36`} /></label>
               <label className="grid gap-1 text-[11px]">investido<input type="number" min={0} value={form.investido} onChange={(e) => setForm({ ...form, investido: Number(e.target.value) })} className={`${inputCls} w-24`} /></label>
-              <label className="grid gap-1 text-[11px]">alcance<input type="number" min={0} value={form.alcance} onChange={(e) => setForm({ ...form, alcance: Number(e.target.value) })} className={`${inputCls} w-24`} /></label>
-              <label className="grid gap-1 text-[11px]">cliques<input type="number" min={0} value={form.cliques} onChange={(e) => setForm({ ...form, cliques: Number(e.target.value) })} className={`${inputCls} w-24`} /></label>
-              <label className="grid gap-1 text-[11px]">conversões<input type="number" min={0} value={form.conversoes} onChange={(e) => setForm({ ...form, conversoes: Number(e.target.value) })} className={`${inputCls} w-24`} /></label>
+              <label className="grid gap-1 text-[11px]">alcance<input type="number" min={0} step={1} value={form.alcance} onChange={(e) => setForm({ ...form, alcance: Number(e.target.value) })} className={`${inputCls} w-24`} /></label>
+              <label className="grid gap-1 text-[11px]">cliques<input type="number" min={0} step={1} value={form.cliques} onChange={(e) => setForm({ ...form, cliques: Number(e.target.value) })} className={`${inputCls} w-24`} /></label>
+              <label className="grid gap-1 text-[11px]">conversões<input type="number" min={0} step={1} value={form.conversoes} onChange={(e) => setForm({ ...form, conversoes: Number(e.target.value) })} className={`${inputCls} w-24`} /></label>
               <button onClick={lancar} disabled={saveDay.isPending} className="rounded-md bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground disabled:opacity-40">Lançar dia</button>
             </div>
           )}

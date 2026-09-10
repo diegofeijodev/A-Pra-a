@@ -128,6 +128,16 @@ function invalidateTraffic(queryClient: QueryClient) {
   }
 }
 
+/**
+ * `combine` estável dos `useQueries` de calendário: uma arrow declarada no
+ * corpo do componente é uma função nova a cada render, o que anula a
+ * memoização do `useQueries` (ele reexecuta o `combine` e realoca o array
+ * sempre). Hoistada aqui, roda só quando o resultado das consultas muda.
+ */
+function combineData<T>(results: { data?: T[] }[]): T[] {
+  return results.flatMap((r) => r.data ?? []);
+}
+
 // ── provas ─────────────────────────────────────────────────────
 export function useProofs(pracaId: string | null | undefined) {
   return useQuery({
@@ -256,7 +266,7 @@ export function useCreativesOfCampanhas(campanhaIds: string[]): CreativeView[] {
       queryKey: ['creatives', id],
       queryFn: () => listCreatives(id),
     })),
-    combine: (results) => results.flatMap((r) => r.data ?? []),
+    combine: combineData,
   });
 }
 
@@ -327,7 +337,7 @@ export function useTrafficOfCampanhas(campanhaIds: string[]): TrafficEntryView[]
       queryKey: ['traffic', id],
       queryFn: () => listTraffic(id),
     })),
-    combine: (results) => results.flatMap((r) => r.data ?? []),
+    combine: combineData,
   });
 }
 

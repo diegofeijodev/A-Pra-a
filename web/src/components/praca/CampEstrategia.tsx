@@ -238,12 +238,23 @@ function Briefing({ campanha, onClose }: { campanha: CampanhaView | null; onClos
   // cada render dela) e deixa o briefing existente abrir sem ir ao servidor.
   const nameKey = `${c.praca_id}|${c.publico}|${c.objetivo}|${c.start}`;
   const askedRef = useRef(campanha ? nameKey : "");
+  const suggestSeq = useRef(0);
   useEffect(() => {
-    if (!c.praca_id || askedRef.current === nameKey) return;
+    // Data limpa (`start === ""`) não vai ao servidor: renderia 400 e um toast
+    // de erro no meio da digitação.
+    if (!c.praca_id || !c.start || askedRef.current === nameKey) return;
     askedRef.current = nameKey;
+    // Trocar praça/público/objetivo depressa deixa mais de um pedido no ar:
+    // só a resposta do ÚLTIMO vale.
+    const seq = ++suggestSeq.current;
     suggest.mutate(
       { praca_id: c.praca_id, publico: c.publico, objetivo: c.objetivo, start: c.start },
-      { onSuccess: (r) => setName(r.name) },
+      {
+        onSuccess: (r) => {
+          if (seq !== suggestSeq.current) return;
+          setName(r.name);
+        },
+      },
     );
   }, [nameKey, c.praca_id, c.publico, c.objetivo, c.start, suggest]);
 
@@ -260,7 +271,13 @@ function Briefing({ campanha, onClose }: { campanha: CampanhaView | null; onClos
         // `PUT` sem `status` mantém o status atual (§15) — quem muda de status
         // é o `POST /:id/status`, que é onde o portão cobra a justificativa.
         await save.mutateAsync({ id: campanha.id, body });
-        if (status !== campanha.status) {
+        // O `PUT` descarta a justificativa quando o status NÃO muda
+        // (`midia.service.ts:253-256`), e é justamente o caso das campanhas que
+        // já saíram do rascunho com o portão fechado: sem o `POST /:id/status`
+        // o texto se perde e a tela cobra a justificativa a cada reabertura.
+        // Com o mesmo status o `POST` é idempotente (`justOrFail` devolve `{}`
+        // quando já existe justificativa gravada).
+        if (status !== campanha.status || justification) {
           await setStatus.mutateAsync({ id: campanha.id, status, justification });
         }
       }
