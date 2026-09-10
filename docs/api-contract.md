@@ -2203,7 +2203,9 @@ cadências (§14) gravam `msg_sends` em `fila` com `scheduled_at`; o
   commit** e só então vem o `PATCH /:id/start`. Campanha criada com envio solto
   faria a rodada seguinte criar tudo de novo e o lead receber duas vezes; start
   que falha só deixa a campanha em `DRAFT` (o motivo vai para o log e para
-  `start_error`, e a sincronização traz o status depois).
+  `start_error`) e o lote **não** conta como entregue — ele entra em
+  `start_pending` no resultado da rodada e a sincronização tenta iniciar de novo
+  no próximo tick (§18.6).
 
 A garimpagem da fila roda numa transação curta com
 `pg_advisory_xact_lock(hashtext('freela-outbox'))`; a chamada HTTP acontece
@@ -2217,6 +2219,15 @@ para a próxima rodada — nada fica meio enviado.
 relógio) faz, nesta ordem: `outbox.flush()` e depois, para cada campanha do
 espelho fora de `COMPLETED|CANCELLED`:
 
+0. **retenta o `start`** quando o espelho está em `DRAFT` e a campanha é de
+   lote (`kind ∈ disparo | cadencia`, que nascem sempre com `start` pedido):
+   uma tentativa por rodada, e falhar só adia para a próxima. Sem isso, um erro
+   de dois segundos no `PATCH /:id/start` deixaria a campanha `DRAFT`, os
+   destinatários `PENDING` e o lote em `fila` **para sempre** — o espelho e o
+   `freela_campaign_id` já estão gravados, então a garimpagem do outbox
+   (`freela_campaign_id IS NULL`) não pega mais esses envios. Campanha de tela
+   (`base`/`manual`) em `DRAFT` **não** é iniciada: ali o `DRAFT` pode ser
+   `start_now: false`, e começar sozinho seria disparar sem ordem;
 1. `GET /:id` → atualiza `status`, `stats` e `last_synced_at`;
 2. se há `msg_sends` pendurados, pagina `GET /:id/recipients?pageSize=200`
    (resposta `{data: {total, page, pageSize, items}}`) e casa o campo

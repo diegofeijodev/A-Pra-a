@@ -53,12 +53,17 @@ interface Lote {
 }
 
 export interface FlushResult {
-  /** Campanhas criadas no Freela nesta rodada. */
+  /** Campanhas criadas **e iniciadas** no Freela nesta rodada. */
   campaigns: number;
   /** Envios que entraram nessas campanhas. */
   sends: number;
-  /** Envios que morreram aqui (telefone que não vira WhatsApp). */
+  /** Envios que morreram aqui (telefone inválido ou repetido no lote). */
   failed: number;
+  /**
+   * Campanhas criadas que **não** começaram (o `start` falhou). Não contam
+   * como entregues: a sincronização tenta iniciar de novo na próxima rodada.
+   */
+  start_pending: number;
 }
 
 const NOME_PARTES = new Intl.DateTimeFormat('en-CA', {
@@ -91,7 +96,7 @@ export class FreelaOutboxService {
 
   /** Entrega ao Freela tudo que venceu até `now`. Nunca lança por lote. */
   async flush(now: Date = new Date()): Promise<FlushResult> {
-    const out: FlushResult = { campaigns: 0, sends: 0, failed: 0 };
+    const out: FlushResult = { campaigns: 0, sends: 0, failed: 0, start_pending: 0 };
     // Sem conexão não adianta nem garimpar: a fila fica esperando a conexão
     // voltar (é o mesmo lote, com a mesma hora marcada).
     if (!this.client.isConfigured()) return out;
@@ -139,6 +144,15 @@ export class FreelaOutboxService {
           link_send_ids: validos.map((s) => s.id),
         });
         if (!feito.freela_id) continue;
+        if (feito.start_error) {
+          // Campanha existe e os envios já estão pendurados nela, mas ninguém
+          // vai receber até ela começar: NÃO conta como entregue.
+          out.start_pending += 1;
+          this.log.warn(
+            `lote ${lote.disparo_id ?? 'cadências'} → campanha ${feito.freela_id} criada mas não iniciada (retry no próximo tick): ${feito.start_error}`,
+          );
+          continue;
+        }
         out.campaigns += 1;
         out.sends += feito.recipients_count;
         this.log.log(

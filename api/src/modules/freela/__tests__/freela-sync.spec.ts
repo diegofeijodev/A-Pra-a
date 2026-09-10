@@ -94,6 +94,8 @@ function fakePrisma() {
     freela_campaigns: {
       update: jest.fn().mockResolvedValue({}),
       findMany: jest.fn().mockResolvedValue([]),
+      // Espelho da campanha: `RUNNING` é o caso normal (nada a reiniciar).
+      findUnique: jest.fn().mockResolvedValue({ status: 'RUNNING', kind: 'disparo' }),
     },
     msg_sends: {
       findMany: jest.fn().mockResolvedValue([]),
@@ -346,6 +348,72 @@ describe('FreelaCampaignsService.syncOne — envios', () => {
     expect(String(paginas[0]![1])).toContain('page=1&pageSize=200');
     expect(String(paginas[1]![1])).toContain('page=2&pageSize=200');
     expect(p.msg_sends.update).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('FreelaCampaignsService.syncOne — start que ficou pendurado', () => {
+  it('espelho DRAFT de lote do outbox manda começar ANTES de ler o status', async () => {
+    const p = fakePrisma();
+    p.freela_campaigns.findUnique.mockResolvedValue({ status: 'DRAFT', kind: 'disparo' });
+    const client = fakeClient();
+
+    await montar(p, client).syncOne('fc-1');
+
+    const caminhos = client.request.mock.calls.map((c) => `${String(c[0])} ${String(c[1])}`);
+    expect(caminhos[0]).toBe('PATCH /v1/admins/activation-campaigns/fc-1/start');
+    expect(caminhos[1]).toBe('GET /v1/admins/activation-campaigns/fc-1');
+    // O start que deu certo já escreve RUNNING no espelho.
+    expect(p.freela_campaigns.update.mock.calls[0]![0]).toMatchObject({
+      data: expect.objectContaining({ status: 'RUNNING' }),
+    });
+  });
+
+  it('lote de cadência em DRAFT também é reiniciado', async () => {
+    const p = fakePrisma();
+    p.freela_campaigns.findUnique.mockResolvedValue({ status: 'DRAFT', kind: 'cadencia' });
+    const client = fakeClient();
+
+    await montar(p, client).syncOne('fc-1');
+
+    expect(client.request.mock.calls[0]![0]).toBe('PATCH');
+  });
+
+  it('campanha de tela em DRAFT NÃO é iniciada (alguém pediu para não começar)', async () => {
+    const p = fakePrisma();
+    p.freela_campaigns.findUnique.mockResolvedValue({ status: 'DRAFT', kind: 'base' });
+    const client = fakeClient();
+
+    await montar(p, client).syncOne('fc-1');
+
+    expect(client.request.mock.calls.filter((c) => c[0] === 'PATCH')).toHaveLength(0);
+  });
+
+  it('campanha que já está RUNNING não é reiniciada', async () => {
+    const p = fakePrisma();
+    const client = fakeClient();
+
+    await montar(p, client).syncOne('fc-1');
+
+    expect(client.request.mock.calls.filter((c) => c[0] === 'PATCH')).toHaveLength(0);
+  });
+
+  it('start que falha de novo não derruba a sincronização: fica DRAFT e tenta na próxima', async () => {
+    const aviso = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const p = fakePrisma();
+    p.freela_campaigns.findUnique.mockResolvedValue({ status: 'DRAFT', kind: 'disparo' });
+    const client = fakeClient();
+    client.request.mockImplementation(async (method: string, path: string) => {
+      if (method === 'PATCH') throw new Error('Freela fora do ar');
+      if (path.includes('/recipients')) return pagina([]);
+      return DETALHE;
+    });
+
+    await expect(montar(p, client).syncOne('fc-1')).resolves.toBeUndefined();
+
+    // Nenhuma escrita de status vindo do start; só a do `GET` que veio depois.
+    expect(p.freela_campaigns.update).toHaveBeenCalledTimes(1);
+    expect(aviso).toHaveBeenCalledWith(expect.stringContaining('não começou'));
+    aviso.mockRestore();
   });
 });
 

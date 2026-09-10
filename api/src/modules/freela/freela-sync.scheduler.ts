@@ -37,9 +37,9 @@ export class FreelaSyncScheduler {
     this.rodando = true;
     try {
       const entregue = await this.outbox.flush(new Date());
-      if (entregue.campaigns > 0 || entregue.failed > 0) {
+      if (entregue.campaigns > 0 || entregue.failed > 0 || entregue.start_pending > 0) {
         this.log.log(
-          `outbox: ${entregue.campaigns} campanha(s), ${entregue.sends} envio(s), ${entregue.failed} sem telefone`,
+          `outbox: ${entregue.campaigns} campanha(s), ${entregue.sends} envio(s), ${entregue.failed} sem telefone, ${entregue.start_pending} esperando começar`,
         );
       }
       await this.campaigns.syncAll();

@@ -142,7 +142,7 @@ describe('FreelaOutboxService.flush — lote de disparo', () => {
 
     const out = await montar(p, client).flush(new Date('2026-09-09T12:00:00Z'));
 
-    expect(out).toEqual({ campaigns: 1, sends: 3, failed: 0 });
+    expect(out).toEqual({ campaigns: 1, sends: 3, failed: 0, start_pending: 0 });
 
     const criacoes = client.request.mock.calls.filter(
       (c) => c[0] === 'POST' && c[1] === '/v1/admins/activation-campaigns',
@@ -215,7 +215,7 @@ describe('FreelaOutboxService.flush — lote de disparo', () => {
 
     const out = await montar(p, client).flush(new Date('2026-09-09T12:00:00Z'));
 
-    expect(out).toEqual({ campaigns: 1, sends: 1, failed: 1 });
+    expect(out).toEqual({ campaigns: 1, sends: 1, failed: 1, start_pending: 0 });
     expect(updates(p)).toContainEqual({
       where: { id: { in: ['send-2'] } },
       data: { status: 'falhou', failure_reason: 'Telefone inválido para WhatsApp.' },
@@ -235,7 +235,7 @@ describe('FreelaOutboxService.flush — lote de disparo', () => {
 
     const out = await montar(p, client).flush(new Date());
 
-    expect(out).toEqual({ campaigns: 1, sends: 2, failed: 1 });
+    expect(out).toEqual({ campaigns: 1, sends: 2, failed: 1, start_pending: 0 });
     expect(updates(p)).toContainEqual({
       where: { id: { in: ['send-2'] } },
       data: { status: 'falhou', failure_reason: 'Telefone repetido no lote.' },
@@ -256,7 +256,7 @@ describe('FreelaOutboxService.flush — lote de disparo', () => {
 
     const out = await montar(p, client).flush(new Date());
 
-    expect(out).toEqual({ campaigns: 0, sends: 0, failed: 1 });
+    expect(out).toEqual({ campaigns: 0, sends: 0, failed: 1, start_pending: 0 });
     expect(client.request).not.toHaveBeenCalled();
     // Ninguém sobrou na fila: o disparo fecha.
     expect(p.disparos.updateMany).toHaveBeenCalled();
@@ -310,9 +310,34 @@ describe('FreelaOutboxService.flush — lote de disparo', () => {
 
     const out = await montar(p, client).flush(new Date());
 
-    expect(out).toEqual({ campaigns: 0, sends: 0, failed: 0 });
+    expect(out).toEqual({ campaigns: 0, sends: 0, failed: 0, start_pending: 0 });
     expect(p.freela_campaigns.create).not.toHaveBeenCalled();
     expect(updates(p)).not.toContainEqual(expect.objectContaining({ data: { freela_campaign_id: 'fc-1' } }));
+  });
+
+  it('campanha criada que não começou NÃO conta como entregue (espera o retry)', async () => {
+    const p = fakePrisma();
+    p.msg_sends.findMany.mockResolvedValue([send(1), send(2)]);
+    const client = fakeClient((method) => {
+      // O Freela pisca exatamente no start: a campanha existe, mas ninguém
+      // recebe até ela começar.
+      if (method === 'PATCH') throw new Error('Freela fora do ar');
+      return undefined;
+    });
+
+    const out = await montar(p, client).flush(new Date());
+
+    expect(out).toEqual({ campaigns: 0, sends: 0, failed: 0, start_pending: 1 });
+    // Espelho e vínculo ficam gravados (a campanha existe lá): é a
+    // sincronização que tenta iniciar de novo, não uma segunda criação.
+    expect(p.freela_campaigns.create).toHaveBeenCalledTimes(1);
+    expect(p.freela_campaigns.create.mock.calls[0]![0]).toMatchObject({
+      data: expect.objectContaining({ status: 'DRAFT', kind: 'disparo' }),
+    });
+    expect(updates(p)).toContainEqual({
+      where: { id: { in: ['send-1', 'send-2'] } },
+      data: { freela_campaign_id: 'fc-1' },
+    });
   });
 
   it('fila vazia não fala com o Freela', async () => {
@@ -321,7 +346,7 @@ describe('FreelaOutboxService.flush — lote de disparo', () => {
 
     const out = await montar(p, client).flush(new Date());
 
-    expect(out).toEqual({ campaigns: 0, sends: 0, failed: 0 });
+    expect(out).toEqual({ campaigns: 0, sends: 0, failed: 0, start_pending: 0 });
     expect(client.request).not.toHaveBeenCalled();
     expect(p.msg_sends.findMany).toHaveBeenCalledTimes(1);
   });
@@ -349,7 +374,7 @@ describe('FreelaOutboxService.flush — lote de cadência', () => {
 
     const out = await montar(p, client).flush(new Date('2026-09-09T15:30:00Z'));
 
-    expect(out).toEqual({ campaigns: 1, sends: 2, failed: 0 });
+    expect(out).toEqual({ campaigns: 1, sends: 2, failed: 0, start_pending: 0 });
     const body = client.request.mock.calls[0]![2] as Record<string, unknown>;
     // 15:30 UTC = 12:30 em Brasília.
     expect(body.name).toBe('Cadências — 09/09 12:30');
@@ -383,7 +408,7 @@ describe('FreelaOutboxService.flush — lote de cadência', () => {
 
     const out = await montar(p, client).flush(new Date());
 
-    expect(out).toEqual({ campaigns: 0, sends: 0, failed: 0 });
+    expect(out).toEqual({ campaigns: 0, sends: 0, failed: 0, start_pending: 0 });
     expect(client.request).not.toHaveBeenCalled();
   });
 });

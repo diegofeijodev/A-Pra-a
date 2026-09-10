@@ -40,6 +40,15 @@ export const CAMPAIGNS_PATH = '/v1/admins/activation-campaigns';
 /** Status em que a campanha parou de andar — não vale mais sincronizar. */
 const TERMINAIS = ['COMPLETED', 'CANCELLED'];
 
+/**
+ * Campanhas que o **outbox** cria: nascem sempre com `start` pedido (a fila do
+ * Praça já venceu, não há "criar para começar depois"). Se o espelho de uma
+ * dessas está em `DRAFT`, o `start` falhou na criação e precisa ser tentado de
+ * novo — as de tela (`base`/`manual`) podem estar em `DRAFT` porque alguém
+ * pediu `start_now: false`, e forçar o início delas seria disparar sem ordem.
+ */
+const KINDS_COM_START = ['disparo', 'cadencia'];
+
 /** Idade máxima do espelho antes de a leitura sincronizar de novo. */
 const FRESCOR_MS = 60_000;
 
@@ -593,12 +602,36 @@ export class FreelaCampaignsService {
    * nada de `msg_sends`.
    */
   async syncOne(freelaId: string): Promise<void> {
+    await this.retryStart(freelaId);
     const r = await this.client.request<Record<string, unknown>>(
       'GET',
       `${CAMPAIGNS_PATH}/${encodeURIComponent(freelaId)}`,
     );
     await this.gravarStatus(freelaId, r.data);
     await this.syncSends(freelaId);
+  }
+
+  /**
+   * Tenta de novo o `start` que falhou na criação.
+   *
+   * A campanha do outbox é criada e **depois** iniciada (§18.5). Se o Freela
+   * piscar exatamente no `PATCH /:id/start`, a campanha fica `DRAFT` com os
+   * destinatários `PENDING` — e o lote não voltaria nunca: o espelho e o
+   * `freela_campaign_id` já estão gravados, então a garimpagem do outbox
+   * (`freela_campaign_id IS NULL`) não pega mais esses envios. Uma tentativa
+   * por rodada, aqui, é o que impede o lote de morrer na fila por um erro de
+   * dois segundos.
+   */
+  private async retryStart(freelaId: string): Promise<void> {
+    const row = await this.prisma.freela_campaigns.findUnique({
+      where: { freela_id: freelaId },
+      select: { status: true, kind: true },
+    });
+    if (!row || row.status !== 'DRAFT' || !KINDS_COM_START.includes(row.kind)) return;
+    this.log.log(`campanha ${freelaId} ficou em DRAFT: tentando iniciar de novo`);
+    // `startIfAsked` já loga e NÃO lança: falhar aqui só adia para a próxima
+    // rodada, sem impedir a leitura de status que vem depois.
+    await this.startIfAsked(freelaId, true);
   }
 
   /**
