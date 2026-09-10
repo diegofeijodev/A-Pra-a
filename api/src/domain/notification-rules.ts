@@ -127,7 +127,11 @@ export function buildNotifications(input: BuildNotificationsInput): NotifItem[] 
 
   // ...e teto de custo por cliente novo.
   for (const c of input.campanhas_acima_teto) {
-    out.push({ id: `teto-${c.id}`, text: `${c.name} passou do teto de custo por cliente novo`, tone: 'warn' });
+    out.push({
+      id: `teto-${c.id}`,
+      text: `${c.name} passou do teto de custo por cliente novo`,
+      tone: 'warn',
+    });
   }
 
   return out;

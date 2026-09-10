@@ -49,7 +49,9 @@ describe('buildNotifications — amanhã', () => {
 describe('buildNotifications — etapas travadas/paradas', () => {
   it('etapa locked vira aviso warn com o motivo', () => {
     const out = buildNotifications(
-      base({ steps: [{ n: 3, status: 'locked', lock_reason: 'Falta bater o Portão: 40 garçons confirmados' }] }),
+      base({
+        steps: [{ n: 3, status: 'locked', lock_reason: 'Falta bater o Portão: 40 garçons confirmados' }],
+      }),
     );
     expect(out).toEqual([
       { id: 'lock-3', text: 'Etapa 3 travada — Falta bater o Portão: 40 garçons confirmados', tone: 'warn' },
@@ -99,13 +101,22 @@ describe('buildNotifications — etapas travadas/paradas', () => {
       rec: { kind: 'daily', start_day: 0, end_day: 5 },
       completions: { '2026-01-01': { by: 'u1', at: '2026-01-01T09:00:00.000Z' } },
     });
-    const out = buildNotifications(base({ actions: [acaoRec], steps: [{ n: 5, status: 'active', lock_reason: null }] }));
-    expect(out).toEqual([{ id: 'stall-5', text: 'Etapa 5 há 7+ dias sem ação concluída — avisar Diego', tone: 'warn' }]);
+    const out = buildNotifications(
+      base({ actions: [acaoRec], steps: [{ n: 5, status: 'active', lock_reason: null }] }),
+    );
+    expect(out).toEqual([
+      { id: 'stall-5', text: 'Etapa 5 há 7+ dias sem ação concluída — avisar Diego', tone: 'warn' },
+    ]);
   });
 
   it('etapa done/todo nunca vira aviso', () => {
     const out = buildNotifications(
-      base({ steps: [{ n: 1, status: 'done', lock_reason: null }, { n: 2, status: 'todo', lock_reason: null }] }),
+      base({
+        steps: [
+          { n: 1, status: 'done', lock_reason: null },
+          { n: 2, status: 'todo', lock_reason: null },
+        ],
+      }),
     );
     expect(out).toEqual([]);
   });
@@ -113,17 +124,23 @@ describe('buildNotifications — etapas travadas/paradas', () => {
 
 describe('buildNotifications — leads críticos', () => {
   it('lead com mais de 15 dias parado vira aviso warn', () => {
-    const out = buildNotifications(base({ leads: [{ id: 'l1', name: 'Bar do Zé', stage: 3, stalled_days: 16 }] }));
+    const out = buildNotifications(
+      base({ leads: [{ id: 'l1', name: 'Bar do Zé', stage: 3, stalled_days: 16 }] }),
+    );
     expect(out).toEqual([{ id: 'lead-l1', text: 'Lead parado há 16 dias: Bar do Zé', tone: 'warn' }]);
   });
 
   it('lead com exatamente 15 dias parado ainda NÃO é crítico', () => {
-    const out = buildNotifications(base({ leads: [{ id: 'l2', name: 'Bar do Zé', stage: 3, stalled_days: 15 }] }));
+    const out = buildNotifications(
+      base({ leads: [{ id: 'l2', name: 'Bar do Zé', stage: 3, stalled_days: 15 }] }),
+    );
     expect(out).toEqual([]);
   });
 
   it('lead na etapa 8 (perdido) nunca é crítico, mesmo muito parado', () => {
-    const out = buildNotifications(base({ leads: [{ id: 'l3', name: 'Bar do Zé', stage: 8, stalled_days: 999 }] }));
+    const out = buildNotifications(
+      base({ leads: [{ id: 'l3', name: 'Bar do Zé', stage: 8, stalled_days: 999 }] }),
+    );
     expect(out).toEqual([]);
   });
 });
@@ -151,9 +168,15 @@ describe('buildNotifications — freio de preenchimento', () => {
 
 describe('buildNotifications — campanhas acima do teto', () => {
   it('campanha ativa acima do teto vira aviso warn', () => {
-    const out = buildNotifications(base({ campanhas_acima_teto: [{ id: 'c1', name: 'BH-Contratante-Cadastro-Set26' }] }));
+    const out = buildNotifications(
+      base({ campanhas_acima_teto: [{ id: 'c1', name: 'BH-Contratante-Cadastro-Set26' }] }),
+    );
     expect(out).toEqual([
-      { id: 'teto-c1', text: 'BH-Contratante-Cadastro-Set26 passou do teto de custo por cliente novo', tone: 'warn' },
+      {
+        id: 'teto-c1',
+        text: 'BH-Contratante-Cadastro-Set26 passou do teto de custo por cliente novo',
+        tone: 'warn',
+      },
     ]);
   });
 });

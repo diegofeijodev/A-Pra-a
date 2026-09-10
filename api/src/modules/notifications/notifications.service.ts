@@ -51,7 +51,12 @@ export class NotificationsService {
         completions: a.completions,
       })),
       steps: steps.map((s) => ({ n: s.n, status: s.status, lock_reason: s.lock_reason })),
-      leads: leadsDaPraca.map((l) => ({ id: l.id, name: l.name, stage: l.stage, stalled_days: l.stalled_days })),
+      leads: leadsDaPraca.map((l) => ({
+        id: l.id,
+        name: l.name,
+        stage: l.stage,
+        stalled_days: l.stalled_days,
+      })),
       fill_hours: fill.fill_hours,
       campanhas_acima_teto: campanhas
         .filter((c) => c.status === 'ativa' && c.metrics.acima_teto)
