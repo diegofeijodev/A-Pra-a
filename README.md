@@ -133,7 +133,7 @@ npm run typecheck        # tsc --noEmit, sozinho
 
 # smoke (sobe a API sem watcher, roda os checks, mata o processo)
 npm run start:smoke &    # espera responder em :3014, mata depois
-npm run smoke             # 745 checks, repetível sem resíduo
+npm run smoke             # 747 checks, repetível sem resíduo
 
 npm run build             # UMA vez, sozinho, sem outro processo Node de pé
 ```

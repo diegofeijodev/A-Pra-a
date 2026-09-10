@@ -313,8 +313,8 @@ check "etapa não entra por /events" "VALIDATION_ERROR" \
 
 check "perder sem motivo = LOST_REASON_REQUIRED" "LOST_REASON_REQUIRED" \
   "$(curl -s -X POST $API/v1/leads/$LEAD_ID/move -H "$J" -H "$HD" -d '{"stage":8}' | jq -r .error.code)"
-check "motivo fora da lista = VALIDATION_ERROR" "VALIDATION_ERROR" \
-  "$(curl -s -X POST $API/v1/leads/$LEAD_ID/move -H "$J" -H "$HD" -d '{"stage":8,"lost_reason":"cansei"}' | jq -r .error.code)"
+check "motivo vazio = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/leads/$LEAD_ID/move -H "$J" -H "$HD" -d '{"stage":8,"lost_reason":""}' | jq -r .error.code)"
 PERDIDO=$(curl -s -X POST $API/v1/leads/$LEAD_ID/move -H "$J" -H "$HD" -d '{"stage":8,"lost_reason":"não respondeu"}')
 check "'não respondeu' agenda o reaquecimento para daqui a 30 dias" "$HOJE30" \
   "$(echo "$PERDIDO" | jq -r '.reheat_at')"
@@ -322,6 +322,13 @@ check "motivo entra no texto do evento" "true" \
   "$(echo "$PERDIDO" | jq '.events[-1].text | endswith(" · motivo: não respondeu")')"
 check "sair da etapa 8 limpa motivo e reaquecimento" "null" \
   "$(curl -s -X POST $API/v1/leads/$LEAD_ID/move -H "$J" -H "$HD" -d "{\"stage\":3,\"next_step\":{\"what\":\"Retomar\",\"date\":\"$HOJE3\"}}" | jq -r '.reheat_at')"
+
+# Motivo de perda é texto livre: a opção "outro" da tela grava o que o usuário digitou.
+LIVRE=$(curl -s -X POST $API/v1/leads/$LEAD_ID/move -H "$J" -H "$HD" \
+  -d '{"stage":8,"lost_reason":"vai reformar e some até janeiro"}')
+check "motivo de perda aceita texto livre" "vai reformar e some até janeiro" \
+  "$(echo "$LIVRE" | jq -r '.lost_reason')"
+check "texto livre não agenda reaquecimento" "null" "$(echo "$LIVRE" | jq -r '.reheat_at')"
 
 check "PUT next-step troca o próximo passo" "Mandar a proposta" \
   "$(curl -s -X PUT $API/v1/leads/$LEAD_ID/next-step -H "$J" -H "$HD" -d "{\"what\":\"Mandar a proposta\",\"date\":\"$HOJE3\"}" | jq -r '.next_step.what')"

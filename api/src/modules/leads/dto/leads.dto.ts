@@ -7,6 +7,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Length,
   Max,
   MaxLength,
   Min,
@@ -14,7 +15,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { IsDayString } from '../../../common/validation/is-day.decorator';
-import { CLASSES, CONTACT_KINDS, LOST_REASONS } from '../../../domain/catalog';
+import { CLASSES, CONTACT_KINDS } from '../../../domain/catalog';
 
 const CLASSE_IDS = CLASSES.map((c) => c.id);
 const aparado = () => Transform(({ value }) => (typeof value === 'string' ? value.trim() : value));
@@ -230,8 +231,14 @@ export class MoveLeadDto {
   @Type(() => NextStepDto)
   next_step?: NextStepDto;
 
+  /**
+   * Texto livre (1..120). O catálogo (`LOST_REASONS`) é lista sugerida na tela,
+   * não conjunto fechado: a opção "outro" grava o motivo digitado pelo usuário.
+   */
   @IsOptional()
-  @IsIn(LOST_REASONS as unknown as string[])
+  @aparado()
+  @IsString()
+  @Length(1, 120)
   lost_reason?: string;
 }
 

@@ -123,7 +123,7 @@ Campos da resposta:
 | `gated_by` | `steps.ts` | etapa → etapa anterior que a libera (`{"3":2,"7":6,"11":10}`) |
 | `step_blocks` | `steps.ts` | blocos do roteiro (`Preparar, Começar, Provar, Crescer, Fixas`) |
 | `funnel_stages` | `funnel.ts` | 8 etapas do funil de leads (`n, name, meaning, color`) |
-| `lost_reasons` | `funnel.ts` | motivos de perda de lead |
+| `lost_reasons` | `funnel.ts` | motivos de perda de lead (lista sugerida — o campo aceita texto livre) |
 | `classes` | `funnel.ts` | classificação do lead (`grande, alvo, depois`) |
 | `origens` | `funnel.ts` | origens de lead |
 | `import_origens` | `funnel.ts` | origens usadas na importação em lote |
@@ -581,14 +581,19 @@ ficha sem um segundo GET).
   catálogo (§4 `origens` e `import_origens`) são sugestão de tela, não trava:
   a importação de planilha, o formulário público e o diálogo de novo lead
   gravam origens que não estão na lista curta (`tráfego pago`, `orgânico`,
-  `prospecção ativa`, `evento`). `classe` e `lost_reason`, esses sim, são
-  conjuntos fechados do catálogo.
+  `prospecção ativa`, `evento`). `lost_reason` segue a mesma regra: é **texto
+  livre** (1 a 120 caracteres, aparado) e a lista do catálogo (§4
+  `lost_reasons`) é sugestão de tela — a opção "outro" do diálogo de mover
+  grava o motivo que o usuário digitou. Só `classe` é conjunto fechado do
+  catálogo.
 - **PATCH** não aceita `stage`: etapa muda só pelo `/move`, que grava o evento
   e reinicia o `stage_since`. Mandar `stage` no PATCH →
   `400 VALIDATION_ERROR` (`forbidNonWhitelisted`).
 - **move**: `stage` é 1..8 e precisa ser diferente da atual
-  (`400 SAME_STAGE`). Etapa 8 exige `lost_reason` do catálogo
-  (`400 LOST_REASON_REQUIRED`); as outras exigem `next_step`
+  (`400 SAME_STAGE`). Etapa 8 exige `lost_reason` — texto livre de 1 a 120
+  caracteres, do catálogo ou digitado pelo usuário
+  (`400 LOST_REASON_REQUIRED` sem motivo, `400 VALIDATION_ERROR` com motivo
+  vazio ou acima de 120 caracteres); as outras exigem `next_step`
   (`400 NEXT_STEP_REQUIRED`). Grava `stage_since = hoje` e um evento
   `kind: "stage"` com `stage_to`, texto
   `Mudou de etapa: <de> → <para>` (ou `Voltou etapa: …` quando volta) mais
