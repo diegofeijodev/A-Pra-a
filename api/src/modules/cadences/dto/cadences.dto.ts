@@ -120,9 +120,16 @@ export class CadenceBodyDto {
   @Type(() => CadenceExitDto)
   exit!: CadenceExitDto;
 
+  // Sem inicializador de propósito (mesmo padrão do `status` da campanha):
+  // ausente = **pausada** no `POST` e "mantém o que já era" no `PUT`. Um
+  // default aqui apagaria a diferença entre "omitido" e "mandou `true`", e o
+  // `PUT` (documentado como "mesmo corpo do POST") despausaria — ou repausaria
+  // — cadência em silêncio. A invariante do §19.24/§19.16 ("cadência não nasce
+  // rodando, senão o motor de 15 s matricula a base inteira") é do SERVIDOR:
+  // `cadences.service.ts` aplica `?? true` no create e `?? atual.paused` no PUT.
   @IsOptional()
   @IsBoolean()
-  paused: boolean = false;
+  paused?: boolean;
 
   @IsArray()
   @ArrayMaxSize(MAX_NODES)

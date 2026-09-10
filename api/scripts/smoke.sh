@@ -42,6 +42,15 @@ check "e-mail repetido barrado" "EMAIL_IN_USE" \
 
 check "PATCH /v1/users/me troca o tema" "light" \
   "$(curl -s -X PATCH $API/v1/users/me -H "$J" -H "$HD" -d '{"theme":"light"}' | jq -r .theme)"
+# `users.active_praca_id` não tem FK: sem esta guarda, um uuid inexistente
+# entrava com 200 e estourava depois em `POST /v1/cadences/:id/test` (que grava
+# a praça em `leads.praca_id`, esse SIM com FK) como 500 INTERNAL_ERROR.
+check "praça ativa inexistente = NOT_FOUND (não 200 agora e 500 depois)" "NOT_FOUND" \
+  "$(curl -s -X PATCH $API/v1/users/me -H "$J" -H "$HD" \
+    -d '{"active_praca_id":"00000000-0000-4000-8000-00000000beef"}' | jq -r .error.code)"
+check "praça ativa com id malformado = VALIDATION_ERROR (não 500)" "VALIDATION_ERROR" \
+  "$(curl -s -X PATCH $API/v1/users/me -H "$J" -H "$HD" \
+    -d '{"active_praca_id":"nao-e-uuid"}' | jq -r .error.code)"
 
 echo "── Senha ──"
 TESTE_LOGIN=$(curl -s -X POST $API/v1/auth/login -H "$J" -d "{\"email\":\"$EMAIL_TESTE\",\"password\":\"teste123\"}")
@@ -705,6 +714,14 @@ check "modelo com id malformado = NOT_FOUND (não 500)" "NOT_FOUND" \
 check "apaga o modelo de teste (sem resíduo)" "true" \
   "$(curl -s -X DELETE $API/v1/msg-templates/$TPL_ID -H "$HD" | jq -r .ok)"
 check "voltou aos 8 modelos do seed" "8" "$(curl -s $API/v1/msg-templates -H "$HD" | jq 'length')"
+# `cadence_nodes.template_id` não tem FK (o nó guarda o id solto): sem a guarda,
+# apagar um modelo citado por um passo deixava o nó apontando para o nada e o
+# motor gravava `msg_sends` com texto VAZIO — mensagem em branco no modo `fila`,
+# `whatsappTemplate: ""` no modo `freela`.
+TPL_EM_USO=$(curl -s $API/v1/cadences -H "$HD" | jq -r '[.[].nodes[] | select(.template_id != null)][0].template_id')
+check "modelo usado por cadência não é apagado" "TEMPLATE_IN_USE" \
+  "$(curl -s -X DELETE $API/v1/msg-templates/$TPL_EM_USO -H "$HD" | jq -r .error.code)"
+check "o modelo em uso continua lá" "8" "$(curl -s $API/v1/msg-templates -H "$HD" | jq 'length')"
 
 # --- configurações de envio (uma linha só; tudo é devolvido no fim) ---
 SET0=$(curl -s $API/v1/settings -H "$HD")
@@ -1388,6 +1405,12 @@ check "as provas vêm nos 3 tipos" "3" "$(echo "$PROVAS" | jq '[.[].kind] | uniq
 check "/v1/proofs sem praca_id é barrado" "VALIDATION_ERROR" "$(curl -s "$API/v1/proofs" -H "$HD" | jq -r .error.code)"
 check "prova de praça que não existe = NOT_FOUND" "NOT_FOUND" \
   "$(curl -s -X POST $API/v1/proofs -H "$J" -H "$HD" -d "{\"praca_id\":\"$BEEF\",\"kind\":\"caso\",\"title\":\"X\"}" | jq -r .error.code)"
+# Lista de praça inexistente é 404 como em todo o resto da API (o `fill-brake`,
+# que recebe o MESMO DTO, já era): lista vazia esconderia o id errado.
+check "GET /v1/proofs de praça que não existe = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s "$API/v1/proofs?praca_id=$BEEF" -H "$HD" | jq -r .error.code)"
+check "GET /v1/campanhas de praça que não existe = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s "$API/v1/campanhas?praca_id=$BEEF" -H "$HD" | jq -r .error.code)"
 check "tipo de prova fora do catálogo é barrado" "VALIDATION_ERROR" \
   "$(curl -s -X POST $API/v1/proofs -H "$J" -H "$HD" -d "{\"praca_id\":\"$PRACA_SEED\",\"kind\":\"podcast\",\"title\":\"X\"}" | jq -r .error.code)"
 PROVA_SEED=$(echo "$PROVAS" | jq -r '.[0].id')
@@ -1611,6 +1634,34 @@ check "puxar pela API não cria segunda linha para o mesmo dia" "1" \
   "$(curl -s "$API/v1/traffic?campanha_id=$CAMP_ID" -H "$HD" | jq '.[0].days | length')"
 check "entrada de tráfego que não existe = NOT_FOUND" "NOT_FOUND" \
   "$(curl -s -X POST $API/v1/traffic/$BEEF/pull-api -H "$HD" | jq -r .error.code)"
+
+# --- não mova o filho de praça (§15) ---
+# `PUT /v1/campanhas/:id` gravava `praca_id` sem comparar com o atual: salvar o
+# briefing com outra praça movia a campanha e levava criativos e tráfego (verba,
+# gerenciador, dias investidos) junto — o portão e o `fill-hours` passavam a ser
+# avaliados contra a praça de destino com o gasto da origem. É o vazamento que o
+# `/duplicate` evita de propósito ("Tráfego NÃO vai").
+check "PUT não muda a praça de campanha com criativo e tráfego" "CAMPANHA_HAS_CHILDREN" \
+  "$(curl -s -X PUT $API/v1/campanhas/$CAMP_ID -H "$J" -H "$HD" \
+    -d "$(corpo_camp "$NOVA_ID" contratante cadastro_contratante "Dono perde o sábado." "[]" ",\"status\":\"pausada\"")" | jq -r .error.code)"
+check "a campanha continua na praça de origem" "$PRACA_SEED" \
+  "$(curl -s $API/v1/campanhas/$CAMP_ID -H "$HD" | jq -r .praca_id)"
+# Campanha ainda sem filho PODE trocar: não há gasto nem peça para vazar.
+CAMP3=$(curl -s -X POST $API/v1/campanhas -H "$J" -H "$HD" \
+  -d "$(corpo_camp "$PRACA_SEED" contratante marca "Marca desconhecida." "[]" "")")
+CAMP3_ID=$(echo "$CAMP3" | jq -r .id)
+check "campanha sem criativo e sem tráfego pode trocar de praça" "$NOVA_ID" \
+  "$(curl -s -X PUT $API/v1/campanhas/$CAMP3_ID -H "$J" -H "$HD" \
+    -d "$(corpo_camp "$NOVA_ID" contratante marca "Marca desconhecida." "[]" "")" | jq -r .praca_id)"
+check "apaga a campanha sem filho (sem resíduo)" "true" \
+  "$(curl -s -X DELETE $API/v1/campanhas/$CAMP3_ID -H "$HD" | jq -r .ok)"
+# Mesma porta, um andar abaixo: mudar `campanha_id` levaria os dias já
+# investidos para outra campanha (e, por ela, para outra praça).
+check "PUT não muda a campanha da entrada de tráfego" "CAMPANHA_HAS_CHILDREN" \
+  "$(curl -s -X PUT $API/v1/traffic/$TR_ID -H "$J" -H "$HD" \
+    -d "{\"campanha_id\":\"$CS1_ID\",\"plataforma\":\"meta\",\"nome_la\":\"BH-Contratante-Teste\",\"publico\":\"Donos de bar, 25–55\",\"geo\":\"Belo Horizonte + 50 km\",\"verba_diaria\":120,\"criativos\":[]}" | jq -r .error.code)"
+check "a entrada continua na campanha de origem" "$CAMP_ID" \
+  "$(curl -s "$API/v1/traffic?campanha_id=$CAMP_ID" -H "$HD" | jq -r '.[0].campanha_id')"
 
 # Lead vindo do anúncio: é ele que vira "cadastro" e "ativo" nos números.
 LEAD_MID=$(curl -s -X POST $API/v1/leads -H "$J" -H "$HD" \

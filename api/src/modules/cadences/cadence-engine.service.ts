@@ -130,7 +130,12 @@ export class CadenceEngineService {
       try {
         // Uma transação por inscrição: o passo é atômico (envio + evento + log
         // + `next_at`), mas o tombo de uma não derruba as outras.
-        await this.prisma.$transaction((tx) => this.advance(tx, cad, e.id, st));
+        // Teto explícito: `advance` percorre até 40 nós e o padrão do Prisma
+        // (5 s) derrubaria a inscrição com `P2028` numa trilha longa.
+        await this.prisma.$transaction((tx) => this.advance(tx, cad, e.id, st), {
+          timeout: 30_000,
+          maxWait: 10_000,
+        });
       } catch (err) {
         this.log.error(`inscrição ${e.id} não avançou: ${this.motivo(err)}`);
       }

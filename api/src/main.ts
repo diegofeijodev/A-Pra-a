@@ -6,6 +6,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
 import { AppModule } from './app.module';
+import { validateEnv } from './common/config/env.validation';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 const logger = new Logger('Bootstrap');
@@ -23,12 +24,22 @@ function flattenErrors(errors: ValidationError[], path = ''): string {
 }
 
 async function bootstrap() {
+  // O adaptador do Fastify é construído ANTES de o `ConfigService` existir, e
+  // `trustProxy` é opção de construção. O `.env` já está em `process.env` neste
+  // ponto (o `ConfigModule.forRoot()` do `AppModule` carrega o arquivo quando o
+  // módulo é avaliado, no `import` acima), então vale o mesmo schema do resto.
+  const env = validateEnv(process.env);
+
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter({
       logger: { timestamp: () => `,"time":"${new Date().toISOString()}"` },
       // Importações de planilha chegam no body (até 5.000 linhas).
       bodyLimit: 8 * 1024 * 1024,
+      // Sem isto, `req.ip` é o IP do socket: atrás de nginx TODO visitante vira
+      // um IP só e o teto por IP (300/min por rota, 10/min no formulário
+      // público) passa a valer para o mundo inteiro junto. Ver README, "Produção".
+      trustProxy: env.TRUST_PROXY,
     }),
   );
 

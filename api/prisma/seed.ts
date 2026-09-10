@@ -25,7 +25,19 @@ import { seedAppSettings, seedMsgTemplates } from './seed-data/msg-templates';
 import { seedPraca } from './seed-data/praca';
 import { seedTemplateActions } from './seed-data/template-actions';
 
+/**
+ * Senha das contas em desenvolvimento. Em `NODE_ENV=production` ela **não** é
+ * usada: o seed exige `SEED_ADMIN_PASSWORD` e cria só o admin.
+ *
+ * O formulário público precisa estar na internet (é embutido em anúncio e
+ * landing), então a API inteira fica exposta — `POST /v1/auth/login` incluído.
+ * `prisma migrate deploy && npm run seed` num servidor de verdade não pode
+ * deixar `diego@praca.local` / `praca123` admin e ativo.
+ */
 const SENHA_DEMO = 'praca123';
+
+/** Senha mínima do admin em produção — a mesma do `SetPasswordDto`. */
+const MIN_SENHA = 8;
 
 export const SEED_USER_IDS = {
   diego: '00000000-0000-4000-8000-000000000001',
@@ -63,8 +75,30 @@ const SEED_USERS = [
   },
 ] as const;
 
+type SeedUser = (typeof SEED_USERS)[number];
+
+/**
+ * Senha e contas a criar, conforme o ambiente.
+ *
+ * - produção: `SEED_ADMIN_PASSWORD` obrigatória (mínimo 8) e **só o admin** —
+ *   as duas contas de demonstração (Daniel e Mkt externo) ficam de fora;
+ * - resto: as três contas com a senha de demonstração.
+ */
+function planoDoSeed(): { senha: string; users: readonly SeedUser[] } {
+  if (process.env.NODE_ENV !== 'production') return { senha: SENHA_DEMO, users: SEED_USERS };
+  const senha = (process.env.SEED_ADMIN_PASSWORD ?? '').trim();
+  if (senha.length < MIN_SENHA) {
+    throw new Error(
+      `NODE_ENV=production: defina SEED_ADMIN_PASSWORD (mínimo ${MIN_SENHA} caracteres) antes de rodar o seed. ` +
+        'Em produção o seed cria só a conta admin — sem ela, a API subiria com a senha de demonstração pública.',
+    );
+  }
+  return { senha, users: SEED_USERS.filter((u) => u.is_admin) };
+}
+
 export async function seedUsers(prisma: PrismaClient) {
-  for (const u of SEED_USERS) {
+  const { senha, users } = planoDoSeed();
+  for (const u of users) {
     // `update: {}` — só cria na ausência; rodar de novo não sobrescreve o que
     // já foi editado pelo time (nome, cor, role_label) depois do primeiro boot.
     await prisma.users.upsert({
@@ -73,7 +107,7 @@ export async function seedUsers(prisma: PrismaClient) {
       create: {
         id: u.id,
         email: u.email,
-        password_hash: await bcrypt.hash(SENHA_DEMO, 10),
+        password_hash: await bcrypt.hash(senha, 10),
         name: u.name,
         role_label: u.role_label,
         color: u.color,
@@ -82,7 +116,8 @@ export async function seedUsers(prisma: PrismaClient) {
       },
     });
   }
-  console.log(`✔ Pessoas: ${SEED_USERS.map((u) => u.email).join(', ')} (senha ${SENHA_DEMO})`);
+  const comoFoi = senha === SENHA_DEMO ? `senha ${SENHA_DEMO}` : 'senha de SEED_ADMIN_PASSWORD';
+  console.log(`✔ Pessoas: ${users.map((u) => u.email).join(', ')} (${comoFoi})`);
 }
 
 async function main() {

@@ -19,7 +19,12 @@ import { PreviewDisparoDto } from '../dto/disparos.dto';
 
 const PRACA = '11111111-1111-4111-8111-111111111111';
 const TEMPLATE = '22222222-2222-4222-8222-222222222222';
-const DIEGO = { id: '33333333-3333-4333-8333-333333333333', email: 'diego@praca.local', name: 'Diego Souza', is_admin: true };
+const DIEGO = {
+  id: '33333333-3333-4333-8333-333333333333',
+  email: 'diego@praca.local',
+  name: 'Diego Souza',
+  is_admin: true,
+};
 
 const SETTINGS: SettingsView = {
   mode: 'fila',
@@ -73,7 +78,12 @@ function fakePrisma() {
         cobertura_cidade: '',
       }),
     },
-    msg_sends: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn(), update: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+    msg_sends: {
+      findMany: jest.fn().mockResolvedValue([]),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+      count: jest.fn().mockResolvedValue(0),
+    },
     msg_templates: { findUnique: jest.fn().mockResolvedValue({ name: 'Contratante · toque 1' }) },
     lead_events: { create: jest.fn() },
     disparos: { updateMany: jest.fn() },
@@ -112,7 +122,10 @@ function preview(body: Record<string, unknown>) {
 describe('prévia com texto escrito na mão', () => {
   it('renderiza o texto avulso sem nenhum modelo salvo', async () => {
     const { service, prisma } = build();
-    const out = await service.preview(preview({ text: 'Oi {{primeiro_nome_dono}}, e o {{estabelecimento}}?' }), DIEGO);
+    const out = await service.preview(
+      preview({ text: 'Oi {{primeiro_nome_dono}}, e o {{estabelecimento}}?' }),
+      DIEGO,
+    );
 
     expect(out.previews[0]?.text).toBe('Oi Chefe1, e o Casa 1?');
     expect(prisma.msg_templates.findUnique).not.toHaveBeenCalled();
@@ -130,7 +143,10 @@ describe('prévia com texto escrito na mão', () => {
 
   it('as variantes do `---` viram A e B nas mensagens de exemplo', async () => {
     const { service } = build();
-    const out = await service.preview(preview({ text: 'Bom dia {{primeiro_nome_dono}}\n---\nBoa tarde {{primeiro_nome_dono}}', split: true }), DIEGO);
+    const out = await service.preview(
+      preview({ text: 'Bom dia {{primeiro_nome_dono}}\n---\nBoa tarde {{primeiro_nome_dono}}', split: true }),
+      DIEGO,
+    );
 
     expect(out.previews.map((p) => p.variant)).toEqual(['A', 'B']);
     expect(out.previews[0]?.text).toBe('Bom dia Chefe1');
@@ -140,13 +156,18 @@ describe('prévia com texto escrito na mão', () => {
   it('no modo freela o texto avulso é convertido pelo caminho do modelo', async () => {
     const { service } = build();
     const out = await service.preview(
-      preview({ text: 'Oi {{primeiro_nome}}, sou {{meu_nome}} da {{praca}}. E o {{estabelecimento}}?', mode: 'freela' }),
+      preview({
+        text: 'Oi {{primeiro_nome}}, sou {{meu_nome}} da {{praca}}. E o {{estabelecimento}}?',
+        mode: 'freela',
+      }),
       DIEGO,
     );
 
     // `{{primeiro_nome}}` e `{{cidade}}` o Freela tem; `{{meu_nome}}`/`{{praca}}`
     // viram texto aqui; `{{estabelecimento}}` fica avisado.
-    expect(out.freela?.template).toBe('Oi {{primeiro_nome}}, sou Diego da Praça BH. E o {{estabelecimento}}?');
+    expect(out.freela?.template).toBe(
+      'Oi {{primeiro_nome}}, sou Diego da Praça BH. E o {{estabelecimento}}?',
+    );
     expect(out.freela?.unsupported_variables).toEqual(['estabelecimento']);
   });
 
@@ -206,7 +227,9 @@ describe('fila manual: guarda do modo freela', () => {
     const { service, prisma } = build();
     prisma.msg_sends.findUnique.mockResolvedValue(send('freela'));
 
-    await expect(service.mark('44444444-4444-4444-8444-444444444444', { status: 'enviada' }, DIEGO)).rejects.toMatchObject({
+    await expect(
+      service.mark('44444444-4444-4444-8444-444444444444', { status: 'enviada' }, DIEGO),
+    ).rejects.toMatchObject({
       status: 409,
       response: { code: 'FREELA_SEND', message: 'Envio do modo Freela: quem marca é o Freela.' },
     });
@@ -218,7 +241,9 @@ describe('fila manual: guarda do modo freela', () => {
     const { service, prisma } = build();
     prisma.msg_sends.findUnique.mockResolvedValue(send('freela'));
 
-    await expect(service.mark('44444444-4444-4444-8444-444444444444', { status: 'entregue' }, DIEGO)).rejects.toMatchObject({
+    await expect(
+      service.mark('44444444-4444-4444-8444-444444444444', { status: 'entregue' }, DIEGO),
+    ).rejects.toMatchObject({
       response: { code: 'FREELA_SEND' },
     });
   });
@@ -237,7 +262,11 @@ describe('fila manual: guarda do modo freela', () => {
     const { service, prisma } = build();
     prisma.msg_sends.findUnique.mockResolvedValue(send('freela'));
 
-    const out = await service.reply('44444444-4444-4444-8444-444444444444', { text: 'tenho interesse' }, DIEGO);
+    const out = await service.reply(
+      '44444444-4444-4444-8444-444444444444',
+      { text: 'tenho interesse' },
+      DIEGO,
+    );
 
     expect(out).toEqual({ blocked: false });
     expect(prisma.msg_sends.update).toHaveBeenCalled();

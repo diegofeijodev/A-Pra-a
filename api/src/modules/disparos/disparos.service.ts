@@ -188,6 +188,13 @@ const STATUS_CONCLUIDO = 'concluido';
 const STATUS_AGENDADO = 'agendado';
 const RESPONDIDA = 'respondida';
 
+/**
+ * Teto explícito da transação que monta o disparo: o `createMany` pode ser de
+ * milhares de linhas e o padrão do Prisma (5 s) mataria o lote com `P2028` no
+ * meio — o mesmo motivo pelo qual a importação já passa `timeout`/`maxWait`.
+ */
+const TX_DISPARO = { timeout: 60_000, maxWait: 20_000 } as const;
+
 const channelLabel = (id: string): string => CHANNELS.find((c) => c.id === id)?.label ?? id;
 
 /** "2026-09-09" → "09/09/2026" (nome padrão do disparo). */
@@ -302,7 +309,7 @@ export class DisparosService {
       });
       await tx.msg_sends.createMany({ data: finais.map((x) => ({ ...x, disparo_id: disparo.id })) });
       return { id: disparo.id, created: finais.length, skipped_dup: disparo.skipped_dup };
-    });
+    }, TX_DISPARO);
 
     return {
       id: feito.id,

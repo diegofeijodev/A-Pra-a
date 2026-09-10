@@ -39,6 +39,7 @@ interface PendingSend {
   id: string;
   disparo_id: string | null;
   cadence_id: string | null;
+  node_id: string | null;
   lead_id: string;
   text: string;
   lead: { id: string; name: string; decisor: string; phone: string; city: string };
@@ -47,6 +48,13 @@ interface PendingSend {
 /** Um lote: tudo que vira UMA campanha. */
 interface Lote {
   disparo_id: string | null;
+  /**
+   * Nó da cadência do lote (só nos lotes de cadência). É o que garante **um
+   * texto por campanha**: o Freela manda um `whatsappTemplate` para todo o
+   * lote, então misturar passos diferentes na mesma campanha faria todo mundo
+   * receber o texto de um deles.
+   */
+  node_id: string | null;
   sends: PendingSend[];
   /** Só quando o lote não caberia numa campanha só (`n` de `total`). */
   parte?: { n: number; total: number };
@@ -75,13 +83,30 @@ const NOME_PARTES = new Intl.DateTimeFormat('en-CA', {
   hour12: false,
 });
 
-/** "Cadências — 09/09 12:30" (horário de Brasília). */
-function nomeDoLoteDeCadencia(now: Date): string {
+/** Nome máximo da campanha no Freela — cadência de nome longo não estoura o campo. */
+const MAX_NOME = 120;
+
+/**
+ * "Cadências — 09/09 12:30 · Reaquecimento · passo 2" (horário de Brasília).
+ *
+ * O passo entra no nome porque cada nó vira uma campanha própria (um texto por
+ * campanha): sem ele, duas campanhas da mesma rodada nasceriam homônimas e
+ * ninguém saberia qual passo é qual na tela do Freela.
+ */
+function nomeDoLoteDeCadencia(now: Date, cadencia?: string, passo?: number): string {
   const p: Record<string, string> = {};
   for (const part of NOME_PARTES.formatToParts(now)) p[part.type] = part.value;
   const hora = String(Number(p.hour ?? '0') % 24).padStart(2, '0');
-  return `Cadências — ${p.day}/${p.month} ${hora}:${p.minute}`;
+  const base = `Cadências — ${p.day}/${p.month} ${hora}:${p.minute}`;
+  if (!cadencia || !passo) return base;
+  const sufixo = ` · passo ${passo}`;
+  const espaco = MAX_NOME - base.length - sufixo.length - 3;
+  const nome = cadencia.length > espaco ? `${cadencia.slice(0, Math.max(0, espaco - 1))}…` : cadencia;
+  return `${base} · ${nome}${sufixo}`;
 }
+
+/** O texto do lote quando ele é um só (todos idênticos). */
+const primeiroTexto = (sends: PendingSend[]): string => sends[0]!.text;
 
 @Injectable()
 export class FreelaOutboxService {
@@ -199,6 +224,7 @@ export class FreelaOutboxService {
           id: true,
           disparo_id: true,
           cadence_id: true,
+          node_id: true,
           lead_id: true,
           text: true,
           lead: { select: { id: true, name: true, decisor: true, phone: true, city: true } },
@@ -208,22 +234,32 @@ export class FreelaOutboxService {
     });
   }
 
-  /** Um lote por disparo; tudo que veio de cadência cai num lote só. */
+  /**
+   * Um lote por disparo (o modelo é o do disparo) e, nas cadências, **um lote
+   * por nó** — não um lote por rodada.
+   *
+   * O nó é a unidade certa porque o Freela manda UM `whatsappTemplate` por
+   * campanha: juntar passos (e cadências) diferentes num lote só obrigaria a
+   * escolher o texto de um deles para todos. É de propósito que o agrupamento
+   * NÃO é por cadência: dois passos da mesma cadência têm textos diferentes.
+   */
   private agrupar(sends: PendingSend[]): Lote[] {
     const porDisparo = new Map<string, PendingSend[]>();
-    const cadencias: PendingSend[] = [];
+    const porNo = new Map<string, PendingSend[]>();
     for (const s of sends) {
-      if (!s.disparo_id) {
-        cadencias.push(s);
-        continue;
-      }
-      const atual = porDisparo.get(s.disparo_id) ?? [];
+      const chave = s.disparo_id ?? null;
+      const mapa = chave ? porDisparo : porNo;
+      // `node_id` nulo não acontece pelo motor (ele sempre grava o nó); a chave
+      // de reserva existe para o envio de cadência que chegar sem nó não cair
+      // no lote de outro passo.
+      const k = chave ?? s.node_id ?? 'sem-no';
+      const atual = mapa.get(k) ?? [];
       atual.push(s);
-      porDisparo.set(s.disparo_id, atual);
+      mapa.set(k, atual);
     }
     const lotes: Lote[] = [];
-    for (const [disparo_id, ls] of porDisparo) lotes.push(...this.fatiar(disparo_id, ls));
-    if (cadencias.length > 0) lotes.push(...this.fatiar(null, cadencias));
+    for (const [disparo_id, ls] of porDisparo) lotes.push(...this.fatiar(disparo_id, null, ls));
+    for (const [, ls] of porNo) lotes.push(...this.fatiar(null, ls[0]!.node_id, ls));
     return lotes;
   }
 
@@ -232,11 +268,12 @@ export class FreelaOutboxService {
    * ou mais. Sem isso, um disparo gigante seria recusado a cada 2 minutos para
    * sempre.
    */
-  private fatiar(disparoId: string | null, sends: PendingSend[]): Lote[] {
-    if (sends.length <= MAX_CONTATOS) return [{ disparo_id: disparoId, sends }];
+  private fatiar(disparoId: string | null, nodeId: string | null, sends: PendingSend[]): Lote[] {
+    if (sends.length <= MAX_CONTATOS) return [{ disparo_id: disparoId, node_id: nodeId, sends }];
     const total = Math.ceil(sends.length / MAX_CONTATOS);
     return Array.from({ length: total }, (_, i) => ({
       disparo_id: disparoId,
+      node_id: nodeId,
       sends: sends.slice(i * MAX_CONTATOS, (i + 1) * MAX_CONTATOS),
       parte: { n: i + 1, total },
     }));
@@ -272,11 +309,11 @@ export class FreelaOutboxService {
         this.log.warn('lote de cadências sem admin ativo para assinar a campanha — fica na fila');
         return null;
       }
+      const modelo = await this.modeloDoNo(lote, validos, now);
+      if (!modelo) return null;
       return {
-        name: nomeDoLoteDeCadencia(now),
-        // O texto da cadência já foi renderizado lead a lead; o Freela só
-        // manda um texto por campanha, então vai o do primeiro (variante única).
-        template: primeiro.text,
+        name: modelo.name,
+        template: modelo.template,
         praca_id: null,
         created_by: admin.id,
         pacing,
@@ -330,6 +367,97 @@ export class FreelaOutboxService {
       praca_id: pracaId,
       created_by: disparo.by,
       pacing,
+    };
+  }
+
+  /**
+   * Nome e `whatsappTemplate` do lote de cadência — o ponto que fecha o buraco
+   * do "todo mundo recebe o texto do primeiro lead".
+   *
+   * O motor renderiza o texto de cada envio lead a lead (`{{estabelecimento}}`,
+   * `{{primeiro_nome_dono}}`, `{{bairro}}`… já substituídos). Subir esse texto
+   * como modelo da campanha faria os outros N contatos serem chamados pelo nome
+   * do dono do primeiro bar. Então aqui a campanha sobe o **modelo do nó**
+   * (modelo salvo ou texto próprio do passo) pela MESMA conversão do ramo do
+   * disparo: `{{primeiro_nome_dono}}` → `{{primeiro_nome}}` (o Freela
+   * personaliza por destinatário) e o que é fixo por campanha vira texto.
+   *
+   * O que só existe lead a lead (`{{estabelecimento}}`, `{{bairro}}`,
+   * `{{estabelecimento_vizinho}}`, `{{data_vaga}}`) fica no texto como
+   * `{{chave}}` e sai no aviso — §18.5. `{{cidade}}` é resolvida quando todos
+   * os leads do lote são da mesma cidade (é o caso normal: a cadência corre por
+   * praça), porque aí o valor é o mesmo que o render lead a lead daria.
+   *
+   * `null` = o lote não tem como subir agora (fica na fila).
+   */
+  private async modeloDoNo(
+    lote: Lote,
+    validos: PendingSend[],
+    now: Date,
+  ): Promise<{ name: string; template: string } | null> {
+    const no = lote.node_id
+      ? await this.prisma.cadence_nodes.findUnique({
+          where: { id: lote.node_id },
+          select: {
+            sort: true,
+            text: true,
+            template_id: true,
+            cadence: { select: { name: true } },
+          },
+        })
+      : null;
+
+    if (!no) {
+      // Nó apagado (ou envio sem nó): sem o modelo não há como despersonalizar
+      // o texto. Só sobe se os textos do lote forem idênticos — aí não há nada
+      // de um lead no texto do outro.
+      const unicos = new Set(validos.map((s) => s.text));
+      if (unicos.size !== 1) {
+        this.log.warn(
+          `lote de cadência sem nó (${lote.node_id ?? 'nulo'}) e com ${unicos.size} textos diferentes — fica na fila`,
+        );
+        return null;
+      }
+      return { name: nomeDoLoteDeCadencia(now), template: primeiroTexto(validos) };
+    }
+
+    const tpl = no.template_id
+      ? await this.prisma.msg_templates.findUnique({
+          where: { id: no.template_id },
+          select: { text_a: true },
+        })
+      : null;
+    // Mesma ordem do motor (`cadence-engine.service.ts`): texto próprio do nó
+    // vence, senão o modelo citado.
+    const corpo = no.text ?? tpl?.text_a ?? '';
+    if (!corpo.trim()) {
+      this.log.warn(
+        `nó ${lote.node_id} sem texto (modelo apagado?) — o lote fica na fila em vez de subir mensagem vazia`,
+      );
+      return null;
+    }
+
+    const settings = await this.messages.getSettings();
+    // Uma cidade só no lote: a variável vira texto (é o mesmo valor que o
+    // render lead a lead usou). Cidades diferentes: fica no aviso.
+    const cidades = new Set(validos.map((s) => s.lead.city.trim()).filter(Boolean));
+    const cidade = cidades.size === 1 ? [...cidades][0] : undefined;
+    const convertido = toFreelaTemplate(corpo, null, {
+      // Lote de cadência atravessa praças: `{{praca}}` não tem valor único.
+      praca: undefined,
+      cidade,
+      // Cadência não tem "quem está logado" — igual ao motor.
+      me: undefined,
+      defaults: settings.template_defaults,
+    });
+    if (convertido.unsupported_variables.length > 0) {
+      this.log.warn(
+        `nó ${lote.node_id}: ${convertido.unsupported_variables.map((v) => `{{${v}}}`).join(', ')} não têm equivalente no Freela e vão no texto como estão`,
+      );
+    }
+    return {
+      name: nomeDoLoteDeCadencia(now, no.cadence.name, no.sort + 1),
+      template: convertido.template,
     };
   }
 

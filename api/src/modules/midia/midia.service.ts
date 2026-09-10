@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuthUser } from '../../common/auth/auth-user';
 import { PrismaService } from '../../common/database/prisma.service';
 import { isUuid } from '../../common/ids/uuid';
@@ -175,6 +175,9 @@ export class MidiaService {
 
   // ── provas ───────────────────────────────────────────────────
   async listProofs(praca_id: string): Promise<ProofView[]> {
+    // Praça inexistente é 404 aqui como em todo o resto da API (o `fill-brake`,
+    // que recebe o MESMO DTO, já era 404): lista vazia esconderia o id errado.
+    await this.pracaOrFail(praca_id);
     const rows = await this.prisma.proofs.findMany({ where: { praca_id }, orderBy: PROOF_ORDER });
     return rows.map((p) => ({ id: p.id, praca_id: p.praca_id, kind: p.kind, title: p.title }));
   }
@@ -189,6 +192,8 @@ export class MidiaService {
 
   // ── campanhas ────────────────────────────────────────────────
   async listCampanhas(query: CampanhasQueryDto): Promise<CampanhaView[]> {
+    // Idem: `?praca_id=` de praça que não existe é 404, não lista vazia.
+    if (query.praca_id) await this.pracaOrFail(query.praca_id);
     const rows = await this.prisma.campanhas.findMany({
       where: query.praca_id ? { praca_id: query.praca_id } : {},
       include: { provas: { select: { proof_id: true } } },
@@ -242,6 +247,7 @@ export class MidiaService {
 
   async replaceCampanha(id: string, dto: CampanhaBodyDto, user: AuthUser): Promise<CampanhaView> {
     const atual = await this.campanhaRow(id);
+    await this.assertMesmaPraca(id, dto.praca_id, atual.praca_id);
     const praca = await this.pracaOrFail(dto.praca_id);
     await this.provasOrFail(dto.praca_id, dto.provas);
     const gate = await this.gateOf(dto.praca_id);
@@ -508,7 +514,18 @@ export class MidiaService {
   }
 
   async replaceTraffic(id: string, dto: TrafficBodyDto): Promise<TrafficEntryView> {
-    await this.trafficRow(id);
+    const atual = await this.trafficRow(id);
+    // Mudar de campanha pelo PUT levaria a verba, o gerenciador e os dias já
+    // investidos para outra campanha (e, por ela, para outra praça): o gasto
+    // seria de uma e o portão/`fill-hours` de outra. Quem errou a campanha
+    // apaga a entrada e cria de novo — simétrico ao guarda do criativo.
+    if (dto.campanha_id !== atual.campanha_id) {
+      throw new ConflictException({
+        code: 'CAMPANHA_HAS_CHILDREN',
+        message:
+          'campanha_id não pode ser alterado: os dias já investidos são desta campanha. Apague a entrada e crie na outra campanha.',
+      });
+    }
     await this.campanhaRow(dto.campanha_id);
     await this.criativosOrFail(dto.campanha_id, dto.criativos);
     const row = await this.prisma.traffic_entries.update({
@@ -845,6 +862,29 @@ export class MidiaService {
     const row = await this.prisma.traffic_entries.findUnique({ where: { id } });
     if (!row) throw this.entradaNaoAchada();
     return row;
+  }
+
+  /**
+   * O `PUT` do briefing NÃO muda a praça de uma campanha que já tem filho.
+   *
+   * As provas são revalidadas, mas `creatives` e `traffic_entries` (verba,
+   * gerenciador, dias já investidos) iriam junto: o portão (`gateOf`) e o
+   * `fill-hours` passariam a ser avaliados contra a praça de destino enquanto o
+   * gasto continua sendo da origem. É o vazamento que o `/duplicate` evita de
+   * propósito ("Tráfego NÃO vai"). Campanha ainda sem criativo e sem tráfego
+   * pode trocar: não há o que vazar.
+   */
+  private async assertMesmaPraca(id: string, nova: string, atual: string): Promise<void> {
+    if (nova === atual) return;
+    const [criativos, trafego] = await Promise.all([
+      this.prisma.creatives.count({ where: { campanha_id: id } }),
+      this.prisma.traffic_entries.count({ where: { campanha_id: id } }),
+    ]);
+    if (criativos === 0 && trafego === 0) return;
+    throw new ConflictException({
+      code: 'CAMPANHA_HAS_CHILDREN',
+      message: `Esta campanha já tem ${criativos} criativo(s) e ${trafego} entrada(s) de tráfego desta praça. Use "Duplicar em outra praça" em vez de trocar a praça no briefing.`,
+    });
   }
 
   /** Prova de outra praça não entra na campanha — a prova é local. */

@@ -419,6 +419,7 @@ export class FreelaCampaignsService {
           'Ninguém pode receber esta campanha: o público está vazio, caiu na lista de bloqueio ou nenhum telefone vira WhatsApp.',
       });
     }
+    await this.espelharEnvios(feito, publico.leads, modelo.template, dto.template_id ?? null);
     return {
       campaign: this.toView(await this.rowOrFail(feito.freela_id)),
       recipients_count: feito.recipients_count,
@@ -680,7 +681,7 @@ export class FreelaCampaignsService {
       return;
     }
 
-    const nomes = await this.loteNames(pendentes);
+    const nomes = await this.loteNames(pendentes, freelaId);
     const disparosTocados = new Set<string>();
 
     for (const s of pendentes) {
@@ -753,9 +754,14 @@ export class FreelaCampaignsService {
     return Array.isArray(itens) ? (itens as Recipient[]) : [];
   }
 
-  /** Nome que vai no evento do lead: o do disparo ou o da cadência. */
+  /**
+   * Nome que vai no evento do lead: o do disparo, o da cadência ou — no envio
+   * espelhado de campanha criada pela tela, que não tem nem um nem outro — o
+   * nome da própria campanha.
+   */
   private async loteNames(
     sends: { id: string; disparo_id: string | null; cadence_id: string | null }[],
+    freelaId: string,
   ): Promise<Map<string, string>> {
     const disparoIds = [...new Set(sends.map((s) => s.disparo_id).filter((x): x is string => !!x))];
     const cadenceIds = [...new Set(sends.map((s) => s.cadence_id).filter((x): x is string => !!x))];
@@ -774,11 +780,20 @@ export class FreelaCampaignsService {
     const porDisparo = new Map(disparos.map((d) => [d.id, d.name]));
     const porCadencia = new Map(cadencias.map((c) => [c.id, `Cadência “${c.name}”`]));
 
+    const soltos = sends.some((s) => !s.disparo_id && !s.cadence_id);
+    const daCampanha = soltos
+      ? await this.prisma.freela_campaigns.findUnique({
+          where: { freela_id: freelaId },
+          select: { name: true },
+        })
+      : null;
+
     const out = new Map<string, string>();
     for (const s of sends) {
       const nome =
         (s.disparo_id ? porDisparo.get(s.disparo_id) : undefined) ??
-        (s.cadence_id ? porCadencia.get(s.cadence_id) : undefined);
+        (s.cadence_id ? porCadencia.get(s.cadence_id) : undefined) ??
+        (daCampanha ? `Campanha “${daCampanha.name}”` : undefined);
       if (nome) out.set(s.id, nome);
     }
     return out;
@@ -801,6 +816,86 @@ export class FreelaCampaignsService {
   }
 
   // ── internos ────────────────────────────────────────────────
+  /**
+   * Espelha em `msg_sends` os destinatários da campanha criada **pela tela**
+   * (§18.7). Sem isto a campanha da caixa "Freela → Nova" não deixava rastro
+   * nenhum no Praça, ao contrário do disparo em modo `freela` (§18.5):
+   *
+   * 1. a **trava de 30 dias por modelo** era LIDA (`audienceForFreela` →
+   *    `plan`) e nunca escrita, então mandar o mesmo modelo duas vezes por esta
+   *    caixa atingia as mesmas pessoas — o que queima chip, que é exatamente o
+   *    que o aviso da tela promete evitar;
+   * 2. o lead continuava "parado há N dias", voltava para a fila do dia, entrava
+   *    em cadência e em disparo, e a ficha não mostrava que um WhatsApp saiu;
+   * 3. `taxa_resposta` e os indicadores de mensagem ignoravam esses envios.
+   *
+   * Com o envio espelhado, a sincronização (`syncSends`) resolve `enviada` /
+   * `falhou`, grava o `lead_events` `msg_out` e o `last_contact_at` pelo MESMO
+   * caminho do disparo — nada de código novo do outro lado.
+   *
+   * Duas decisões de desenho:
+   *
+   * - as linhas nascem **depois** de a campanha existir e **já com**
+   *   `freela_campaign_id`. Criá-las antes (como o disparo faz, para o outbox
+   *   garimpar) deixaria envios em `fila` sem campanha se o Freela recusasse o
+   *   lote — e a próxima rodada do outbox criaria uma segunda campanha para as
+   *   mesmas pessoas;
+   * - falhar aqui **não** derruba a resposta: a campanha já está no Freela e
+   *   dizer "não deu" para uma campanha que vai enviar é pior que o rastro
+   *   faltando. Vai um aviso no log.
+   *
+   * Sem `template_id` (texto escrito na mão) o envio é gravado igual, só não
+   * acumula trava nenhuma — a trava é por modelo e aqui não há modelo.
+   */
+  private async espelharEnvios(
+    feito: CreateFromLeadsResult,
+    leads: FreelaLeadContact[],
+    template: string,
+    templateId: string | null,
+  ): Promise<void> {
+    if (!feito.freela_id) return;
+    const fora = new Set([...feito.invalid_lead_ids, ...feito.duplicate_lead_ids]);
+    const entraram = leads.filter((l) => !fora.has(l.id));
+    if (entraram.length === 0) return;
+
+    try {
+      // `stage_at_send` é a etapa do funil no momento do envio (é o que as
+      // métricas de modelo leem); só ela precisa vir do banco.
+      const stages = new Map(
+        (
+          await this.prisma.leads.findMany({
+            where: { id: { in: entraram.map((l) => l.id) } },
+            select: { id: true, stage: true },
+          })
+        ).map((l) => [l.id, l.stage]),
+      );
+      const agora = new Date();
+      await this.prisma.msg_sends.createMany({
+        data: entraram
+          .filter((l) => stages.has(l.id))
+          .map((l) => ({
+            template_id: templateId,
+            variant: 'A',
+            lead_id: l.id,
+            channel: 'whatsapp',
+            // Sem `FREELA_PER_CONTACT_MESSAGE` o texto por lead não é
+            // renderizado (`l.text` vem vazio): fica o modelo convertido, que é
+            // o texto que o Freela vai personalizar e mandar.
+            text: l.text || template,
+            mode: 'freela',
+            scheduled_at: agora,
+            status: 'fila',
+            stage_at_send: stages.get(l.id)!,
+            freela_campaign_id: feito.freela_id,
+          })),
+      });
+    } catch (e) {
+      this.log.warn(
+        `campanha ${feito.freela_id} criada, mas os envios não foram espelhados (${this.motivo(e)}): a trava de 30 dias e a ficha do lead não vão registrar este lote`,
+      );
+    }
+  }
+
   /** Cria a linha do espelho e (quando há) pendura os envios no mesmo commit. */
   private async gravarEspelho(
     data: {

@@ -45,6 +45,13 @@ export class UsersService {
   }
 
   async updateMe(userId: string, dto: UpdateMeDto) {
+    // `users.active_praca_id` NÃO tem FK (a praça apagada anula a coluna à
+    // mão), então um uuid bem-formado e inexistente entraria aqui com 200 e
+    // estouraria depois: `POST /v1/cadences/:id/test` escreve esse id em
+    // `leads.praca_id`, que TEM FK, e o `P2003` do Prisma vira 500. Também
+    // envenenaria o `{{praca}}` do render. A praça é conferida na entrada.
+    if (dto.active_praca_id) await this.pracaOrFail(dto.active_praca_id);
+
     const user = await this.prisma.users.update({
       where: { id: userId },
       data: {
@@ -136,6 +143,14 @@ export class UsersService {
         message: 'Você não pode desativar a própria conta.',
       });
     }
+  }
+
+  /** Praça do "estou nesta praça" tem de existir — mesmo 404 do resto da API. */
+  private async pracaOrFail(id: string): Promise<void> {
+    const naoAchada = new NotFoundException({ code: 'NOT_FOUND', message: 'Praça não encontrada.' });
+    if (!isUuid(id)) throw naoAchada;
+    const praca = await this.prisma.pracas.findUnique({ where: { id }, select: { id: true } });
+    if (!praca) throw naoAchada;
   }
 
   private async findOrFail(id: string) {

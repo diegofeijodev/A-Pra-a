@@ -126,8 +126,27 @@ export class MessagesService {
     return { ...this.toTemplateView(row), metrics: await this.metricsFor(row.id) };
   }
 
+  /**
+   * `cadence_nodes.template_id` não tem FK (por desenho: o nó guarda o id
+   * solto). Sem esta guarda, apagar um modelo usado por um passo deixava o nó
+   * apontando para o nada e o motor gravava `msg_sends` com **texto vazio** —
+   * em modo `fila` o operador copiava uma mensagem em branco, em modo `freela`
+   * subia `whatsappTemplate: ""`. Silencioso nos dois casos, e as 5
+   * cadências-modelo citam os 8 modelos semeados, então era o caminho normal.
+   */
   async removeTemplate(id: string): Promise<{ ok: true }> {
     await this.templateOrFail(id);
+    const nos = await this.prisma.cadence_nodes.findMany({
+      where: { template_id: id },
+      select: { cadence: { select: { name: true } } },
+    });
+    if (nos.length > 0) {
+      const cadencias = [...new Set(nos.map((n) => n.cadence.name))];
+      throw new ConflictException({
+        code: 'TEMPLATE_IN_USE',
+        message: `Este modelo está em uso na cadência ${cadencias.map((c) => `“${c}”`).join(', ')}. Troque o passo antes de apagar.`,
+      });
+    }
     await this.prisma.msg_templates.delete({ where: { id } });
     return { ok: true };
   }

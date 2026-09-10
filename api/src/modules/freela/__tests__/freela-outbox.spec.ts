@@ -32,6 +32,7 @@ function baseSend(n: number) {
     id: `send-${n}`,
     disparo_id: DISPARO as string | null,
     cadence_id: null as string | null,
+    node_id: null as string | null,
     lead_id: `lead-${n}`,
     text: `Oi Chefe${n}, tudo bem?`,
     lead: {
@@ -59,6 +60,14 @@ function fakePrisma() {
         name: 'Contratante · toque 1',
         text_a: 'Oi {{primeiro_nome_dono}}, sou {{meu_nome}}. E o {{estabelecimento}} em {{cidade}}?',
         text_b: null,
+      }),
+    },
+    cadence_nodes: {
+      findUnique: jest.fn().mockResolvedValue({
+        sort: 1,
+        text: null as string | null,
+        template_id: 'tpl-1',
+        cadence: { name: 'Reaquecimento' },
       }),
     },
     disparos: {
@@ -364,32 +373,127 @@ describe('FreelaOutboxService.flush — lote de disparo', () => {
 });
 
 describe('FreelaOutboxService.flush — lote de cadência', () => {
-  it('mensagens de cadência viram uma campanha só, com o nome do horário de Brasília', async () => {
+  const cad = (n: number, node = 'node-1') =>
+    send(n, { disparo_id: null, cadence_id: 'cad-1', node_id: node });
+
+  it('lote de um nó sobe o MODELO do nó, não o texto renderizado do primeiro lead', async () => {
     const p = fakePrisma();
-    p.msg_sends.findMany.mockResolvedValue([
-      send(1, { disparo_id: null, cadence_id: 'cad-1' }),
-      send(2, { disparo_id: null, cadence_id: 'cad-1' }),
-    ]);
+    p.msg_sends.findMany.mockResolvedValue([cad(1), cad(2)]);
     const client = fakeClient();
 
     const out = await montar(p, client).flush(new Date('2026-09-09T15:30:00Z'));
 
     expect(out).toEqual({ campaigns: 1, sends: 2, failed: 0, start_pending: 0 });
     const body = client.request.mock.calls[0]![2] as Record<string, unknown>;
-    // 15:30 UTC = 12:30 em Brasília.
-    expect(body.name).toBe('Cadências — 09/09 12:30');
+    // 15:30 UTC = 12:30 em Brasília; o passo entra no nome porque cada nó vira
+    // uma campanha própria.
+    expect(body.name).toBe('Cadências — 09/09 12:30 · Reaquecimento · passo 2');
     expect(body.listFileName).toBe('praca:cadencia');
-    // Texto do primeiro envio, como variante única (o Freela não tem as
-    // variáveis por lead do Praça).
-    expect(body.whatsappTemplate).toBe('Oi Chefe1, tudo bem?');
+
+    const texto = body.whatsappTemplate as string;
+    // O nome de quem recebe volta a ser variável do Freela: NINGUÉM recebe
+    // "Chefe1" (o dono do primeiro bar do lote).
+    expect(texto).toContain('{{primeiro_nome}}');
+    expect(texto).not.toContain('Chefe1');
+    expect(texto).not.toContain('Oi Chefe');
+    // Todos os leads do lote são da mesma cidade: a variável vira texto.
+    expect(texto).toContain('em Belo Horizonte?');
+    // O que só existe lead a lead fica como chave (e sai no aviso, §18.5).
+    expect(texto).toContain('{{estabelecimento}}');
     expect(p.freela_campaigns.create.mock.calls[0]![0]).toMatchObject({
       data: expect.objectContaining({ kind: 'cadencia', disparo_id: null, created_by: DIEGO }),
     });
+    expect(p.cadence_nodes.findUnique.mock.calls[0]![0]).toMatchObject({ where: { id: 'node-1' } });
+  });
+
+  it('dois nós na mesma rodada viram DUAS campanhas, cada uma com o seu texto', async () => {
+    const p = fakePrisma();
+    p.msg_sends.findMany.mockResolvedValue([cad(1, 'node-1'), cad(2, 'node-2'), cad(3, 'node-1')]);
+    p.cadence_nodes.findUnique.mockImplementation(async (args: { where: { id: string } }) =>
+      args.where.id === 'node-1'
+        ? { sort: 0, text: 'Passo 1 para {{primeiro_nome_dono}}.', template_id: null, cadence: { name: 'Reaquecimento' } }
+        : { sort: 3, text: 'Passo 4 para {{primeiro_nome_dono}}.', template_id: null, cadence: { name: 'Reaquecimento' } },
+    );
+    const client = fakeClient();
+
+    const out = await montar(p, client).flush(new Date('2026-09-09T15:30:00Z'));
+
+    // Sem o agrupamento por nó, os 3 envios virariam UMA campanha e os dois
+    // passos sairiam com o mesmo texto.
+    expect(out).toEqual({ campaigns: 2, sends: 3, failed: 0, start_pending: 0 });
+    const criacoes = client.request.mock.calls.filter(
+      (c) => c[0] === 'POST' && c[1] === '/v1/admins/activation-campaigns',
+    );
+    expect(criacoes).toHaveLength(2);
+    const textos = criacoes.map((c) => (c[2] as { whatsappTemplate: string }).whatsappTemplate);
+    expect(textos).toEqual([
+      'Passo 1 para {{primeiro_nome}}.',
+      'Passo 4 para {{primeiro_nome}}.',
+    ]);
+    const nomes = criacoes.map((c) => (c[2] as { name: string }).name);
+    expect(nomes).toEqual([
+      'Cadências — 09/09 12:30 · Reaquecimento · passo 1',
+      'Cadências — 09/09 12:30 · Reaquecimento · passo 4',
+    ]);
+    // Cada campanha leva só os envios do seu nó.
+    expect(updates(p)).toContainEqual({
+      where: { id: { in: ['send-1', 'send-3'] } },
+      data: { freela_campaign_id: 'fc-1' },
+    });
+    expect(updates(p)).toContainEqual({
+      where: { id: { in: ['send-2'] } },
+      data: { freela_campaign_id: 'fc-1' },
+    });
+  });
+
+  it('leads de cidades diferentes deixam {{cidade}} como variável (o valor não é único)', async () => {
+    const p = fakePrisma();
+    p.msg_sends.findMany.mockResolvedValue([
+      cad(1),
+      { ...cad(2), lead: { ...baseSend(2).lead, city: 'Contagem' } },
+    ]);
+    const client = fakeClient();
+
+    await montar(p, client).flush(new Date());
+
+    const body = client.request.mock.calls[0]![2] as { whatsappTemplate: string };
+    expect(body.whatsappTemplate).toContain('{{cidade}}');
+    expect(body.whatsappTemplate).not.toContain('Belo Horizonte');
+  });
+
+  it('nó apagado com textos diferentes NÃO sobe: o lote fica na fila', async () => {
+    const p = fakePrisma();
+    p.cadence_nodes.findUnique.mockResolvedValue(null);
+    p.msg_sends.findMany.mockResolvedValue([cad(1), cad(2)]);
+    const client = fakeClient();
+
+    const out = await montar(p, client).flush(new Date());
+
+    expect(out).toEqual({ campaigns: 0, sends: 0, failed: 0, start_pending: 0 });
+    expect(client.request).not.toHaveBeenCalled();
+  });
+
+  it('nó sem texto nenhum (modelo apagado) não sobe campanha vazia', async () => {
+    const p = fakePrisma();
+    p.cadence_nodes.findUnique.mockResolvedValue({
+      sort: 0,
+      text: null,
+      template_id: 'tpl-apagado',
+      cadence: { name: 'Reaquecimento' },
+    });
+    p.msg_templates.findUnique.mockResolvedValue(null);
+    p.msg_sends.findMany.mockResolvedValue([cad(1)]);
+    const client = fakeClient();
+
+    const out = await montar(p, client).flush(new Date());
+
+    expect(out).toEqual({ campaigns: 0, sends: 0, failed: 0, start_pending: 0 });
+    expect(client.request).not.toHaveBeenCalled();
   });
 
   it('disparo e cadência na mesma rodada viram DUAS campanhas', async () => {
     const p = fakePrisma();
-    p.msg_sends.findMany.mockResolvedValue([send(1), send(2, { disparo_id: null, cadence_id: 'cad-1' })]);
+    p.msg_sends.findMany.mockResolvedValue([send(1), cad(2)]);
     const client = fakeClient();
 
     const out = await montar(p, client).flush(new Date('2026-09-09T15:30:00Z'));
@@ -403,7 +507,7 @@ describe('FreelaOutboxService.flush — lote de cadência', () => {
   it('sem nenhum admin ativo o lote de cadência fica na fila (não inventa autor)', async () => {
     const p = fakePrisma();
     p.users.findFirst.mockResolvedValue(null);
-    p.msg_sends.findMany.mockResolvedValue([send(1, { disparo_id: null, cadence_id: 'cad-1' })]);
+    p.msg_sends.findMany.mockResolvedValue([cad(1)]);
     const client = fakeClient();
 
     const out = await montar(p, client).flush(new Date());

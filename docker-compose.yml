@@ -33,6 +33,16 @@ services:
       CORS_ORIGINS: http://localhost:3024
       PUBLIC_URL: http://localhost:3014
       APP_URL: http://localhost:3024
+      # Flags declaradas mesmo quando o default do zod já resolve: regra de ops
+      # do workspace (flag nova precisa aparecer no compose, senão ninguém sabe
+      # que ela existe ao subir em produção). Ver README, "Produção".
+      #
+      # `TRUST_PROXY` fica `false` aqui porque o compose publica a porta direto;
+      # atrás de nginx, `true` — sem isso o teto por IP vale para o mundo todo.
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      PUBLIC_LEADS_PER_MINUTE: ${PUBLIC_LEADS_PER_MINUTE:-10}
+      CADENCE_ENGINE_ENABLED: ${CADENCE_ENGINE_ENABLED:-true}
+      FREELA_SYNC_ENABLED: ${FREELA_SYNC_ENABLED:-true}
     ports:
       - '3014:3014'
 

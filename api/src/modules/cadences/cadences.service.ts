@@ -175,7 +175,7 @@ export class CadencesService {
     const manter = dto.nodes.map((n) => n.id).filter((nid): nid is string => !!nid && existentes.has(nid));
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.cadences.update({ where: { id }, data: this.toCadenceData(dto) });
+      await tx.cadences.update({ where: { id }, data: this.toCadenceData(dto, atual.paused) });
       // Apaga o que saiu da trilha ANTES de reordenar: o `sort` não é único, mas
       // deixar nó órfão dentro da cadência bagunçaria a ordem dos passos.
       await tx.cadence_nodes.deleteMany({
@@ -508,14 +508,18 @@ export class CadencesService {
     }
   }
 
-  private toCadenceData(dto: CadenceBodyDto) {
+  private toCadenceData(dto: CadenceBodyDto, pausedAtual?: boolean) {
     return {
       name: dto.name,
       audience: dto.audience,
       entry: dto.entry,
       exit_action: dto.exit.action,
       exit_note: dto.exit.note ?? '',
-      paused: dto.paused,
+      // `paused` ausente: nasce PAUSADA no create e MANTÉM o valor atual no
+      // `PUT`. Sem isso, editar o texto de um passo de uma das cadências-modelo
+      // (3 das 5 têm entrada automática) despausaria a trilha e o tick de 15 s
+      // matricularia a base inteira.
+      paused: dto.paused ?? pausedAtual ?? true,
     };
   }
 

@@ -417,6 +417,42 @@ describe('FreelaCampaignsService.syncOne — start que ficou pendurado', () => {
   });
 });
 
+describe('FreelaCampaignsService.syncOne — envio espelhado de campanha da tela', () => {
+  it('sem disparo e sem cadência, o evento do lead leva o nome da CAMPANHA', async () => {
+    const p = fakePrisma();
+    // Envio espelhado pela caixa "Freela → Nova" (§18.7): não tem disparo nem
+    // cadência, e sem o nome da campanha a ficha do lead diria só "Mensagem".
+    p.msg_sends.findMany.mockResolvedValue([send(1, { disparo_id: null, cadence_id: null })]);
+    p.freela_campaigns.findUnique.mockResolvedValue({
+      status: 'RUNNING',
+      kind: 'manual',
+      name: 'Reativação BH',
+    });
+    const client = fakeClient([pagina([recipient({ id: 'rec-1', status: 'SENT', sentAt: ENVIADO_EM })])]);
+
+    await montar(p, client).syncOne('fc-1');
+
+    expect(p.msg_sends.update).toHaveBeenCalledWith({
+      where: { id: 'send-1' },
+      data: { status: 'enviada', sent_at: new Date(ENVIADO_EM), freela_recipient_id: 'rec-1' },
+    });
+    expect(p.lead_events.create.mock.calls[0]![0]).toEqual({
+      data: {
+        lead_id: 'lead-1',
+        at: new Date(ENVIADO_EM),
+        kind: 'msg_out',
+        text: 'Campanha “Reativação BH” enviada pelo Freela (WhatsApp).',
+      },
+    });
+    // A trava de 30 dias passa a contar este lote (é o `msg_sends` que a
+    // sustenta) e o lead deixa de aparecer como "parado há N dias".
+    expect(p.leads.update).toHaveBeenCalledWith({
+      where: { id: 'lead-1' },
+      data: { last_contact_at: new Date(ENVIADO_EM) },
+    });
+  });
+});
+
 describe('FreelaCampaignsService.syncAll', () => {
   it('só sincroniza campanha que ainda anda, e uma que falha não para as outras', async () => {
     const p = fakePrisma();
