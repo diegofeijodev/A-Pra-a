@@ -51,12 +51,32 @@ import {
  * `PATCH`. O `key` amarrado ao valor do servidor remonta o campo quando a
  * gravação passa, para o que está na tela nunca mentir sobre o que está gravado.
  * Quando a gravação NÃO passa, a linha do servidor não muda — e sem ajuda o
- * `key` também não mudaria, deixando o valor recusado na tela. Daí o contador
- * `resync` de cada bloco: ele entra no `key` e força a remontagem no `onError`,
- * o mesmo "volta a ler o servidor" que a cota da Entrada faz no `onSettled`.
+ * `key` também não mudaria, deixando o valor recusado na tela. Daí o
+ * `useFieldResync`: um contador POR CAMPO (e por linha, onde o bloco é lista)
+ * que entra no `key` e força a remontagem no `onError`, o mesmo "volta a ler o
+ * servidor" que a cota da Entrada faz no `onSettled`. Por campo, e não por
+ * bloco, porque a gravação também é por campo: um erro no campo A não pode
+ * remontar o campo B e engolir o que ainda está sendo digitado lá.
  */
 
 const inputCls = "rounded-md border border-input bg-background px-2 py-1.5 text-xs outline-none";
+
+/**
+ * Contador de remontagem por campo — `id` é a linha (a pessoa, a ação, a praça)
+ * e `campo` é o que o `PATCH` mandou. `keyFor` devolve só o prefixo do `key`; o
+ * valor do servidor continua colado no fim pela chamadora, que é o que remonta
+ * o campo quando a gravação passa. `bump` sobe o contador de um campo só.
+ */
+function useFieldResync() {
+  const [contadores, setContadores] = useState<Record<string, number>>({});
+  const keyFor = (id: string, campo: string) => `${campo}-${id}-${contadores[`${id}:${campo}`] ?? 0}`;
+  const bump = (id: string, campo: string) =>
+    setContadores((atuais) => {
+      const chave = `${id}:${campo}`;
+      return { ...atuais, [chave]: (atuais[chave] ?? 0) + 1 };
+    });
+  return { keyFor, bump };
+}
 
 export default function ConfiguracoesPage() {
   const { praca, isPending: pracasPending } = useActivePraca();
@@ -97,11 +117,15 @@ function Pessoas() {
   const desativar = useDeactivateUser();
   const [nova, setNova] = useState(NOVA_PESSOA);
   const [senhas, setSenhas] = useState<Record<string, string>>({});
-  const [resync, setResync] = useState(0);
+  const { keyFor, bump } = useFieldResync();
   // Nome vazio, função longa demais, última conta admin: a API recusa e o
-  // `useUpdateUser` toasta — este contador é o que tira o valor recusado do campo.
+  // `useUpdateUser` toasta — o contador é o que tira o valor recusado do campo.
+  // Só do campo recusado: quem digita no nome da pessoa B não perde a digitação
+  // porque a função da pessoa A foi rejeitada.
   const gravar = (id: string, input: Parameters<typeof atualizar.mutate>[0]["input"]) =>
-    atualizar.mutate({ id, input }, { onError: () => setResync((n) => n + 1) });
+    atualizar.mutate({ id, input }, {
+      onError: () => Object.keys(input).forEach((campo) => bump(id, campo)),
+    });
   const admin = !!user?.is_admin;
   const lista = users ?? [];
 
@@ -112,24 +136,24 @@ function Pessoas() {
         {lista.map((p) => (
           <div key={p.id} className={`card-surface flex flex-wrap items-center gap-2 p-3 ${p.active ? "" : "opacity-60"}`}>
             <input
-              key={`cor-${p.id}-${resync}-${p.color}`} type="color" defaultValue={p.color} disabled={!admin}
+              key={`${keyFor(p.id, "color")}-${p.color}`} type="color" defaultValue={p.color} disabled={!admin}
               onBlur={(e) => { if (e.target.value !== p.color) gravar(p.id, { color: e.target.value }); }}
               className="h-8 w-10 cursor-pointer rounded-md border border-border bg-transparent"
             />
             <input
-              key={`nome-${p.id}-${resync}-${p.name}`} defaultValue={p.name} disabled={!admin}
+              key={`${keyFor(p.id, "name")}-${p.name}`} defaultValue={p.name} disabled={!admin}
               onBlur={(e) => { if (e.target.value !== p.name) gravar(p.id, { name: e.target.value }); }}
               className="w-32 rounded-md border border-input bg-background px-2 py-1.5 text-sm font-bold outline-none"
             />
             <input
-              key={`funcao-${p.id}-${resync}-${p.role_label}`} defaultValue={p.role_label} placeholder="Função" disabled={!admin}
+              key={`${keyFor(p.id, "role_label")}-${p.role_label}`} defaultValue={p.role_label} placeholder="Função" disabled={!admin}
               onBlur={(e) => { if (e.target.value !== p.role_label) gravar(p.id, { role_label: e.target.value }); }}
               className={`min-w-40 flex-1 ${inputCls}`}
             />
             {/* Nenhum PATCH do contrato troca e-mail: o campo continua na linha, só leitura. */}
             <input value={p.email} readOnly className={`w-44 ${inputCls} text-muted-foreground`} />
             <input
-              key={`tel-${p.id}-${resync}-${p.phone}`} defaultValue={p.phone} placeholder="telefone" disabled={!admin}
+              key={`${keyFor(p.id, "phone")}-${p.phone}`} defaultValue={p.phone} placeholder="telefone" disabled={!admin}
               onBlur={(e) => { if (e.target.value !== p.phone) gravar(p.id, { phone: e.target.value }); }}
               className={`w-32 ${inputCls}`}
             />
@@ -196,13 +220,16 @@ function Pessoas() {
 function DadosDaPraca({ praca }: { praca: PracaView }) {
   const atualizar = useUpdatePraca();
   const recalcular = useRecalcDates();
-  const [resync, setResync] = useState(0);
+  const { keyFor, bump } = useFieldResync();
   // `blur` não é mudança: entrar e sair de um campo gravava um `PATCH` à toa.
-  // No erro (o contrato recusa `end_date` antes de `start_date`, §6), o campo
-  // volta a ler a praça: sem isso a data recusada ficava na tela como gravada.
+  // No erro (o contrato recusa `end_date` antes de `start_date`, §6), só o campo
+  // recusado volta a ler a praça: sem isso a data recusada ficava na tela como
+  // gravada — e com o contador por bloco os outros três perdiam a digitação.
   const gravar = (atual: string, novo: string, input: UpdatePracaInput) => {
     if (novo === atual) return;
-    atualizar.mutate({ id: praca.id, input }, { onError: () => setResync((n) => n + 1) });
+    atualizar.mutate({ id: praca.id, input }, {
+      onError: () => Object.keys(input).forEach((campo) => bump(praca.id, campo)),
+    });
   };
 
   return (
@@ -210,13 +237,13 @@ function DadosDaPraca({ praca }: { praca: PracaView }) {
       <h2 className="tag text-muted-foreground">Dados da praça</h2>
       <div className="card-surface mt-2 grid gap-3 p-4 sm:grid-cols-2">
         <label className="text-xs text-muted-foreground">Nome
-          <input key={`nome-${resync}-${praca.name}`} defaultValue={praca.name} onBlur={(e) => gravar(praca.name, e.target.value, { name: e.target.value })} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary" /></label>
+          <input key={`${keyFor(praca.id, "name")}-${praca.name}`} defaultValue={praca.name} onBlur={(e) => gravar(praca.name, e.target.value, { name: e.target.value })} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary" /></label>
         <label className="text-xs text-muted-foreground">Cidade
-          <input key={`cidade-${resync}-${praca.city}`} defaultValue={praca.city} onBlur={(e) => gravar(praca.city, e.target.value, { city: e.target.value })} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary" /></label>
+          <input key={`${keyFor(praca.id, "city")}-${praca.city}`} defaultValue={praca.city} onBlur={(e) => gravar(praca.city, e.target.value, { city: e.target.value })} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary" /></label>
         <label className="text-xs text-muted-foreground">Data de início
-          <input key={`inicio-${resync}-${praca.start_date}`} type="date" defaultValue={praca.start_date} onBlur={(e) => gravar(praca.start_date, e.target.value, { start_date: e.target.value })} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" /></label>
+          <input key={`${keyFor(praca.id, "start_date")}-${praca.start_date}`} type="date" defaultValue={praca.start_date} onBlur={(e) => gravar(praca.start_date, e.target.value, { start_date: e.target.value })} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" /></label>
         <label className="text-xs text-muted-foreground">Previsão de fim
-          <input key={`fim-${resync}-${praca.end_date}`} type="date" defaultValue={praca.end_date} onBlur={(e) => gravar(praca.end_date, e.target.value, { end_date: e.target.value })} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" /></label>
+          <input key={`${keyFor(praca.id, "end_date")}-${praca.end_date}`} type="date" defaultValue={praca.end_date} onBlur={(e) => gravar(praca.end_date, e.target.value, { end_date: e.target.value })} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" /></label>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
         <button onClick={() => recalcular.mutate(praca.id)} className="rounded-md border border-primary px-4 py-2 text-sm font-bold text-primary">
@@ -244,7 +271,9 @@ const VARIAVEIS: { key: keyof TemplateDefaults; label: string }[] = [
 function VariaveisPadrao() {
   const { data: settings } = useSettings();
   const atualizar = useUpdateSettings();
-  const [resync, setResync] = useState(0);
+  // As 6 variáveis ficam lado a lado e cada uma grava sozinha: o contador é por
+  // variável, senão um erro em "Valor" remontaria "Turno" no meio da digitação.
+  const { keyFor, bump } = useFieldResync();
 
   return (
     <section className="mt-8">
@@ -258,12 +287,12 @@ function VariaveisPadrao() {
             return (
               <label key={v.key} className="text-xs text-muted-foreground">{v.label}
                 <input
-                  key={`${v.key}-${resync}-${atual}`} defaultValue={atual}
+                  key={`${keyFor("template_defaults", v.key)}-${atual}`} defaultValue={atual}
                   onBlur={(e) => {
                     if (e.target.value === atual) return;
                     atualizar.mutate(
                       { template_defaults: { [v.key]: e.target.value } },
-                      { onError: () => setResync((n) => n + 1) },
+                      { onError: () => bump("template_defaults", v.key) },
                     );
                   }}
                   className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary"
@@ -291,15 +320,19 @@ function RoteiroModelo({ praca }: { praca: PracaView }) {
   const atualizar = useUpdateTemplateAction();
   const apagar = useDeleteTemplateAction();
   const [editStep, setEditStep] = useState<number | null>(null);
-  const [resync, setResync] = useState(0);
+  const { keyFor, bump } = useFieldResync();
   const admin = !!user?.is_admin;
   const lista = template ?? [];
   // Conta desativada some da visão Pessoa dos indicadores e não trabalha mais:
   // atribuir uma ação-modelo a ela seria dar dono a quem não existe. A API não
   // barra (`assertPessoas` não olha `active`), então quem barra é a lista.
   const people = (users ?? []).filter((u) => u.active);
+  // Por ação e por campo: várias etapas ficam abertas ao mesmo tempo e um título
+  // recusado não pode remontar o "dia" (nem o título de outra ação) sendo digitado.
   const gravar = (id: string, input: Parameters<typeof atualizar.mutate>[0]["input"]) =>
-    atualizar.mutate({ id, input }, { onError: () => setResync((n) => n + 1) });
+    atualizar.mutate({ id, input }, {
+      onError: () => Object.keys(input).forEach((campo) => bump(id, campo)),
+    });
 
   return (
     <section className="mt-8">
@@ -325,7 +358,7 @@ function RoteiroModelo({ praca }: { praca: PracaView }) {
                     return (
                     <div key={a.id} className="flex flex-wrap items-center gap-2">
                       <input
-                        key={`titulo-${a.id}-${resync}-${a.title}`} defaultValue={a.title} disabled={!admin}
+                        key={`${keyFor(a.id, "title")}-${a.title}`} defaultValue={a.title} disabled={!admin}
                         onBlur={(e) => { if (e.target.value.trim() && e.target.value !== a.title) gravar(a.id, { title: e.target.value }); }}
                         className={`min-w-40 flex-1 ${inputCls}`}
                       />
@@ -342,7 +375,7 @@ function RoteiroModelo({ praca }: { praca: PracaView }) {
                       {a.rec.kind === "once" ? (
                         <label className="text-[11px] text-muted-foreground">dia
                           <input
-                            key={`dia-${a.id}-${resync}-${a.rec.day}`} type="number" defaultValue={a.rec.day} disabled={!admin}
+                            key={`${keyFor(a.id, "rec")}-${a.rec.day}`} type="number" defaultValue={a.rec.day} disabled={!admin}
                             onBlur={(e) => {
                               const dia = Number(e.target.value);
                               if (Number.isInteger(dia) && a.rec.kind === "once" && dia !== a.rec.day) {
