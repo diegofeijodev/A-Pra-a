@@ -63,17 +63,18 @@ function useDebounced<T>(value: T, ms: number): T {
  * segura o retrato anterior no lugar enquanto o novo não chega (sem isso a
  * contagem some e volta a cada clique).
  *
- * `enabled` só com modelo e modo escolhidos: sem eles o servidor responde 400.
+ * `enabled` só com texto (modelo ou escrito na mão) e modo escolhidos: sem eles
+ * o servidor responde 400.
  */
 export function useDisparoPreview(input: DisparoInput) {
   const debounced = useDebounced(input, 300);
   return useQuery({
     queryKey: ['disparo-preview', debounced],
     queryFn: () => previewDisparo(debounced),
-    // Modelo E modo: os dois chegam de pedidos diferentes (`GET
+    // Texto E modo: o modelo e o modo chegam de pedidos diferentes (`GET
     // /v1/msg-templates` e `GET /v1/settings`), e disparar a prévia com o modo
     // ainda vazio seria um 400 garantido.
-    enabled: !!debounced.template_id && !!debounced.mode,
+    enabled: (!!debounced.template_id || !!debounced.text?.trim()) && !!debounced.mode,
     placeholderData: keepPreviousData,
   });
 }

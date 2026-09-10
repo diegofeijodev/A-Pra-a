@@ -1,6 +1,13 @@
 import { DEFAULT_TEMPLATE_DEFAULTS } from '../../../domain/catalog/messages';
 import type { SendSettings } from '../../../domain/send-schedule';
-import { pracaCidade, toFreelaPacing, toFreelaTemplate, type FreelaTemplateCtx } from '../freela-template';
+import {
+  pracaCidade,
+  splitVariants,
+  toFreelaPacing,
+  toFreelaTemplate,
+  toFreelaTemplateFromText,
+  type FreelaTemplateCtx,
+} from '../freela-template';
 import { SEED_TEMPLATES } from '../../../../prisma/seed-data/msg-templates';
 
 // Modelo `…f001` do seed ("Contratante · toque 1"): é o texto real que o time
@@ -107,6 +114,16 @@ describe('toFreelaTemplate', () => {
     expect(out.unsupported_variables).toEqual([]);
   });
 
+  // Quem escreve o texto na mão (§18.2) escreve no vocabulário do Freela: a
+  // própria caixa diz "o Freela conhece {{nome}}, {{primeiro_nome}} e
+  // {{cidade}}". Avisar que ele não conhece seria mentir para o operador.
+  it('{{primeiro_nome}} atravessa igual e não vira aviso', () => {
+    const out = toFreelaTemplate('Oi {{primeiro_nome}}, tudo bem?', null, CTX);
+
+    expect(out.template).toBe('Oi {{primeiro_nome}}, tudo bem?');
+    expect(out.unsupported_variables).toEqual([]);
+  });
+
   it('variável desconhecida fica intacta e entra na lista (não vira buraco no texto)', () => {
     const out = toFreelaTemplate('Oi {{inventada}}!', null, CTX);
 
@@ -173,5 +190,32 @@ describe('toFreelaPacing', () => {
 
   it('limite diário zerado prende no piso de 1', () => {
     expect(toFreelaPacing({ ...SETTINGS, daily_limit: 0 }).dailyCap).toBe(1);
+  });
+});
+
+describe('splitVariants e toFreelaTemplateFromText', () => {
+  it('a linha só com --- separa as variantes (espaços em volta valem)', () => {
+    expect(splitVariants('Um\n --- \nDois\n---\nTrês')).toEqual(['Um', 'Dois', 'Três']);
+  });
+
+  it('--- no meio da frase não separa nada', () => {
+    expect(splitVariants('Promoção --- imperdível')).toEqual(['Promoção --- imperdível']);
+  });
+
+  it('variante vazia é descartada', () => {
+    expect(splitVariants('Um\n---\n   \n---\nDois')).toEqual(['Um', 'Dois']);
+  });
+
+  it('converte o texto escrito na mão pelo mesmo caminho do modelo', () => {
+    const out = toFreelaTemplateFromText('Oi {{primeiro_nome}}, sou {{meu_nome}}. E o {{estabelecimento}}?', CTX);
+
+    expect(out.template).toBe('Oi {{primeiro_nome}}, sou Diego. E o {{estabelecimento}}?');
+    expect(out.unsupported_variables).toEqual(['estabelecimento']);
+  });
+
+  it('mantém todas as variantes (o Freela rotaciona até 3)', () => {
+    const out = toFreelaTemplateFromText('Um\n---\nDois\n---\nTrês', CTX);
+
+    expect(out.template.split('\n---\n')).toHaveLength(3);
   });
 });

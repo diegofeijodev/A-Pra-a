@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '../../common/auth/auth-user';
 import { PrismaService } from '../../common/database/prisma.service';
@@ -16,11 +16,18 @@ import {
 } from '../../domain/template-render';
 import type { FreelaLeadContact } from '../freela/freela-campaigns.service';
 import { FreelaClient } from '../freela/freela-client';
-import { pracaCidade, toFreelaTemplate, type FreelaTemplateOut } from '../freela/freela-template';
+import {
+  pracaCidade,
+  splitVariants,
+  toFreelaTemplate,
+  toFreelaTemplateFromText,
+  type FreelaTemplateOut,
+} from '../freela/freela-template';
 import { LeadsService, PARA_LISTA, type LeadListView } from '../leads/leads.service';
 import { MessagesService, type SettingsView } from '../messages/messages.service';
 import {
   CreateDisparoDto,
+  DisparoBaseDto,
   DisparoFiltersDto,
   MarkSendDto,
   PreviewDisparoDto,
@@ -137,6 +144,17 @@ interface TemplateRow {
   text_b: string | null;
 }
 
+/**
+ * O texto que o plano do lote renderiza: um modelo salvo ou o texto escrito na
+ * mão na prévia. `TemplateRow` já serve como um.
+ */
+interface PlanTemplate {
+  /** `null` = texto avulso — sem modelo, logo sem trava de 30 dias. */
+  id: string | null;
+  text_a: string;
+  text_b: string | null;
+}
+
 /** Um lead do público, com a primeira vaga (a variável `{{data_vaga}}`). */
 interface PublicoLead {
   lead: LeadListView;
@@ -194,7 +212,10 @@ export class DisparosService {
    * como ficam as 5 primeiras mensagens de verdade.
    */
   async preview(dto: PreviewDisparoDto, user: AuthUser): Promise<DisparoPreviewView> {
-    const tpl = await this.templateOrFail(dto.template_id);
+    // Modelo salvo ou texto escrito na mão — o DTO já garantiu que veio um só.
+    const tpl = dto.template_id
+      ? await this.templateOrFail(dto.template_id)
+      : this.textoAvulso(dto.text ?? '');
     // 5: a prévia mostra 5 mensagens, então resolver praça e vizinho das 2.000
     // do lote seria trabalho jogado fora a cada tecla no filtro.
     const plano = await this.plan(dto, tpl, user, PREVIEW_SIZE);
@@ -312,7 +333,7 @@ export class DisparosService {
     if (templateId) {
       const tpl = await this.templateOrFail(templateId);
       const plano = await this.plan(
-        { filters, template_id: templateId, split: false, mode: 'freela' },
+        { filters, split: false, mode: 'freela' },
         tpl,
         user,
         // 0 = não resolve praça nem vizinho de ninguém (o render nem é chamado).
@@ -358,7 +379,7 @@ export class DisparosService {
    */
   private async freelaTemplate(
     dto: PreviewDisparoDto,
-    tpl: TemplateRow,
+    tpl: PlanTemplate,
     plano: Plano,
     user: AuthUser,
   ): Promise<FreelaTemplateOut> {
@@ -371,12 +392,29 @@ export class DisparosService {
           select: { name: true, start_date: true, city: true, cobertura_cidade: true },
         })
       : null;
-    return toFreelaTemplate(tpl.text_a, plano.split ? tpl.text_b : null, {
+    const ctx = {
       praca: row ? { name: row.name, start_date: row.start_date } : undefined,
       cidade: pracaCidade(row),
       me: { name: user.name },
       defaults: plano.defaults,
-    });
+    };
+    // Texto escrito na mão sobe INTEIRO (todas as variantes do `---`), porque é
+    // assim que `POST /v1/freela/campaigns` com `whatsapp_template` o converte —
+    // `split` só manda no modelo salvo, que tem A e B e mais nada.
+    return dto.text
+      ? toFreelaTemplateFromText(dto.text, ctx)
+      : toFreelaTemplate(tpl.text_a, plano.split ? tpl.text_b : null, ctx);
+  }
+
+  /**
+   * O texto escrito na mão como se fosse um modelo, para o plano do lote: a
+   * primeira variante do `---` é a A, a segunda é a B. Da terceira em diante o
+   * texto só aparece na conversão para o Freela (`freela.template`) — as
+   * mensagens de exemplo da prévia são A/B, como as de um modelo salvo.
+   */
+  private textoAvulso(text: string): PlanTemplate {
+    const [a, b] = splitVariants(text);
+    return { id: null, text_a: a ?? '', text_b: b ?? null };
   }
 
   /**
@@ -451,6 +489,17 @@ export class DisparosService {
    */
   async mark(id: string, dto: MarkSendDto, user: AuthUser): Promise<SendView> {
     const send = await this.sendOrFail(id);
+    // No modo `freela` a fila não é do Praça: o outbox garimpa exatamente
+    // `mode: 'freela'` + `status: 'fila'` (§18.5) e a sincronização escreve
+    // enviada/entregue de lá para cá. Marcar à mão tiraria o envio da garimpagem
+    // e ele NUNCA chegaria à campanha — a mensagem constaria como enviada sem
+    // ninguém ter mandado nada.
+    if (send.mode === 'freela') {
+      throw new ConflictException({
+        code: 'FREELA_SEND',
+        message: 'Envio do modo Freela: quem marca é o Freela.',
+      });
+    }
     // Envio já respondido não volta atrás: marcar "enviada" apagaria a resposta
     // do lead do painel e gravaria um segundo evento de saída.
     if (send.status === RESPONDIDA) {
@@ -538,8 +587,8 @@ export class DisparosService {
    * (inclusive a ordem, que é quem decide a variante A/B).
    */
   private async plan(
-    dto: PreviewDisparoDto,
-    tpl: TemplateRow,
+    dto: DisparoBaseDto,
+    tpl: PlanTemplate,
     user: AuthUser,
     /** Quantos envios vão ser renderizados: 5 na prévia, todos na criação. */
     renderLimit?: number,
@@ -547,11 +596,15 @@ export class DisparosService {
     const settings = await this.messages.getSettings();
     const publico = await this.audience(dto.filters);
     const bloqueados = await this.messages.blockedKeys();
-    const repetidos = await this.dupLeadIds(
-      this.prisma,
-      tpl.id,
-      publico.map((p) => p.lead.id),
-    );
+    // Texto avulso não tem trava: ela é por MODELO (`msg_sends.template_id`), e
+    // aqui não há modelo nenhum para comparar.
+    const repetidos = tpl.id
+      ? await this.dupLeadIds(
+          this.prisma,
+          tpl.id,
+          publico.map((p) => p.lead.id),
+        )
+      : new Set<string>();
 
     const parte = partitionAudience(
       publico,

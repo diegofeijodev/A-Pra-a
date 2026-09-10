@@ -55,7 +55,15 @@ const VAR_RE = /\{\{\s*([\w_]+)\s*\}\}/g;
 const EQUIVALENTES: Record<string, string> = {
   primeiro_nome_dono: 'primeiro_nome',
   nome: 'nome',
+  // `{{primeiro_nome}}` não é variável do Praça, mas É do Freela: quem escreve o
+  // texto na mão (§18.2, "escrever aqui") escreve no vocabulário de lá. Sem esta
+  // linha ela cairia em `unsupported_variables` e a caixa avisaria o contrário
+  // do que o próprio campo diz logo acima do textarea.
+  primeiro_nome: 'primeiro_nome',
 };
+
+/** Separador de variantes do texto escrito na mão: uma linha só com `---`. */
+const SEPARADOR_VARIANTES = /^\s*---\s*$/m;
 
 /**
  * Variáveis fixas por campanha: são resolvidas AQUI, com o contexto de quem
@@ -112,11 +120,34 @@ export function toFreelaTemplate(
   textB: string | null | undefined,
   ctx: FreelaTemplateCtx,
 ): FreelaTemplateOut {
+  return converterVariantes(
+    [textA, textB].filter((t): t is string => !!t && t.trim() !== ''),
+    ctx,
+  );
+}
+
+/** Texto escrito na mão em variantes: uma linha só com `---` separa cada uma. */
+export function splitVariants(text: string): string[] {
+  return (text || '')
+    .split(SEPARADOR_VARIANTES)
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Texto escrito na mão (§18.2) → `whatsappTemplate` do Freela, pela MESMA
+ * conversão do modelo salvo. Sem ela `{{meu_nome}}` e `{{praca}}` subiriam crus
+ * e o lead receberia a chave no lugar do valor; com ela, o que a prévia do
+ * disparo mostra é exatamente o que a criação da campanha manda.
+ */
+export function toFreelaTemplateFromText(text: string, ctx: FreelaTemplateCtx): FreelaTemplateOut {
+  return converterVariantes(splitVariants(text), ctx);
+}
+
+function converterVariantes(variantes: string[], ctx: FreelaTemplateCtx): FreelaTemplateOut {
   const achadas = new Set<string>();
-  const variantes = [textA, textB]
-    .filter((t): t is string => !!t && t.trim() !== '')
-    .map((t) => converterVariante(t, ctx, achadas));
-  return { template: variantes.join('\n---\n'), unsupported_variables: [...achadas] };
+  const convertidas = variantes.map((t) => converterVariante(t, ctx, achadas));
+  return { template: convertidas.join('\n---\n'), unsupported_variables: [...achadas] };
 }
 
 /**

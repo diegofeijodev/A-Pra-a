@@ -162,10 +162,10 @@ function Form({ onClose, initial }: { onClose: () => void; initial?: FreelaCampa
    * 2. a praça do filtro é a praça DA CAMPANHA: é de `dto.praca_id` que a
    *    criação tira `{{praca}}` e `{{cidade}}`. Com `all` a prévia mostraria
    *    `⟨praca⟩` e um aviso falso de variável desconhecida;
-   * 3. em "escrever aqui" a rota é a única contagem do público (o DTO exige
-   *    `template_id`), então ela roda com um modelo qualquer só pelos números:
-   *    `audience` e `blocked` não dependem do modelo. O texto convertido e
-   *    `dupes` (que são do modelo) ficam escondidos nesse modo.
+   * 3. em "escrever aqui" vai `text` no lugar de `template_id` (§13): a rota
+   *    converte o texto pelo MESMO caminho da criação da campanha, então o
+   *    quadro "como vai sair pelo Freela" vale nos dois modos. `dupes` fica
+   *    zerado — a trava de 30 dias é por modelo, e aqui não há modelo.
    */
   const leadFiltersFinal: DisparoFilters = { ...leadFilters, praca_id: pracaAtual || 'all' };
   // Nos quatro públicos internos a prévia não conta nada que valha (o funil do
@@ -174,7 +174,8 @@ function Form({ onClose, initial }: { onClose: () => void; initial?: FreelaCampa
   const previaLigada = !!pracaAtual && (externa || (modo === 'modelo' && verTexto));
   const { data: previa } = useDisparoPreview({
     filters: externa ? leadFiltersFinal : { ...EMPTY_FILTERS, praca_id: pracaAtual || 'all' },
-    template_id: previaLigada ? (modo === 'modelo' ? tplId : lista[0]?.id || '') : '',
+    template_id: previaLigada && modo === 'modelo' ? tplId : '',
+    ...(previaLigada && modo === 'texto' ? { text: texto } : {}),
     split: true,
     mode: 'freela',
   });
@@ -450,20 +451,12 @@ function Form({ onClose, initial }: { onClose: () => void; initial?: FreelaCampa
                       </>
                     ) : (
                       <>
-                        {previa.audience - previa.blocked} podem receber · {previa.blocked} na lista
-                        de bloqueio · sem trava de 30 dias (o texto não vem de um modelo)
+                        {previa.sendable} podem receber · {previa.blocked} na lista de bloqueio ·
+                        sem trava de 30 dias (o texto não vem de um modelo)
                       </>
                     )}
                   </p>
-                ) : (
-                  modo === 'texto' &&
-                  !lista.length && (
-                    <p className="mt-2 rounded-md bg-secondary/60 px-3 py-2 text-[11px] text-muted-foreground">
-                      Sem nenhum modelo cadastrado em Mensagens não dá para contar o público aqui — a
-                      rota da contagem é a mesma da conversão do modelo.
-                    </p>
-                  )
-                )}
+                ) : null}
               </>
             ) : (
               <>

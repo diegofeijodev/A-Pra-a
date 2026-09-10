@@ -112,15 +112,51 @@ export class DisparoFiltersDto {
   min_stalled: number = 0;
 }
 
-/** Corpo da prévia. O `POST /v1/disparos` herda tudo e acrescenta o nome. */
-export class PreviewDisparoDto {
+/**
+ * Exatamente um entre `template_id` e `text`.
+ *
+ * Vive num decorator (e não no serviço) porque as duas recusas são de corpo
+ * malformado: `400 VALIDATION_ERROR`, do mesmo jeito que etapa fora do funil ou
+ * praça que não é UUID. Não pode ser `@IsOptional()` + `@IsUUID()`, porque
+ * `@IsOptional()` desliga TODA a validação do campo quando ele vem ausente — e
+ * é justamente aí que a regra do par precisa falar.
+ */
+function IsModeloOuTexto(validationOptions?: ValidationOptions) {
+  const temTexto = (o: unknown) => {
+    const t = (o as { text?: unknown }).text;
+    return typeof t === 'string' && t.trim() !== '';
+  };
+  return function (object: object, propertyName: string) {
+    registerDecorator({
+      name: 'isModeloOuTexto',
+      target: object.constructor,
+      propertyName,
+      options: validationOptions,
+      validator: {
+        validate: (value: unknown, args) => {
+          const outro = temTexto(args?.object ?? {});
+          if (value === undefined || value === null || value === '') return outro;
+          return !outro && typeof value === 'string' && isUuid(value);
+        },
+        defaultMessage: (args) => {
+          const obj = (args?.object ?? {}) as { template_id?: unknown };
+          const modelo = typeof obj.template_id === 'string' && obj.template_id !== '';
+          const texto = temTexto(obj);
+          if (modelo && texto) return 'mande o modelo (template_id) OU o texto (text), nunca os dois';
+          if (!modelo && !texto) return 'mande o modelo (template_id) ou o texto (text)';
+          return 'deve ser um UUID';
+        },
+      },
+    });
+  };
+}
+
+/** O que prévia e criação têm em comum: público, divisão A/B, modo e hora. */
+export class DisparoBaseDto {
   @IsObject()
   @ValidateNested()
   @Type(() => DisparoFiltersDto)
   filters!: DisparoFiltersDto;
-
-  @IsUUID()
-  template_id!: string;
 
   // Sem variante B no modelo, `true` aqui não divide nada (o servidor decide).
   @IsOptional()
@@ -137,7 +173,31 @@ export class PreviewDisparoDto {
   scheduled_at?: string;
 }
 
-export class CreateDisparoDto extends PreviewDisparoDto {
+/**
+ * Corpo da prévia. Aceita **modelo salvo** (`template_id`) ou **texto escrito
+ * na mão** (`text`) — a caixa de campanha do Freela (§18.2) tem os dois modos e
+ * precisa contar o mesmo público nos dois. A criação (`POST /v1/disparos`) só
+ * aceita modelo: o envio guarda `template_id`, e é dele que sai a trava de 30
+ * dias.
+ */
+export class PreviewDisparoDto extends DisparoBaseDto {
+  @IsModeloOuTexto()
+  template_id?: string;
+
+  // Variantes separadas por uma linha só com `---`, como no textarea da caixa
+  // de campanha do Freela.
+  @IsOptional()
+  @aparado()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(4000)
+  text?: string;
+}
+
+export class CreateDisparoDto extends DisparoBaseDto {
+  @IsUUID()
+  template_id!: string;
+
   // Vazio = `"<modelo> · dd/mm/aaaa"`.
   @IsOptional()
   @IsString()

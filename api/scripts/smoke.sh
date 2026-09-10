@@ -955,6 +955,39 @@ check "a trava é por modelo: outro modelo não foi travado" "0" \
   "$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
     -d "{\"filters\":$FILTRO,\"template_id\":\"$TPL_F007\",\"mode\":\"fila\"}" | jq '.dupes')"
 
+# Texto escrito na mão no lugar do modelo (§13): é a contagem de público da
+# caixa de campanha do Freela em "escrever aqui". A trava de 30 dias é por
+# MODELO — aqui os mesmos 5 leads que acabaram de travar no `$TPL_F001` voltam a
+# poder receber.
+PRV_TXT=$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
+  -d "{\"filters\":$FILTRO,\"text\":\"Oi {{primeiro_nome_dono}}, e o {{estabelecimento}}?\",\"mode\":\"fila\"}")
+check "prévia aceita texto no lugar do modelo" "5" "$(echo "$PRV_TXT" | jq '.audience')"
+check "texto avulso não tem trava de 30 dias (a trava é por modelo)" "0" "$(echo "$PRV_TXT" | jq '.dupes')"
+check "quem pediu para não receber continua fora do texto avulso" "1" "$(echo "$PRV_TXT" | jq '.blocked')"
+check "o texto avulso é renderizado lead a lead" "true" \
+  "$(echo "$PRV_TXT" | jq --arg n "Casa Disparo 1 · $SUF" '.previews[0].text == ("Oi Chefe1, e o " + $n + "?")')"
+check "as variantes do texto avulso saem separadas por ---" "A B A B" \
+  "$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
+    -d "{\"filters\":$FILTRO,\"text\":\"Bom dia {{primeiro_nome_dono}}\n---\nBoa tarde {{primeiro_nome_dono}}\",\"split\":true,\"mode\":\"fila\"}" \
+    | jq -r '[.previews[].variant] | join(" ")')"
+check "no modo freela o texto avulso é convertido igual ao modelo" "Oi {{primeiro_nome}}, sou Diego. E o {{estabelecimento}}?" \
+  "$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
+    -d "{\"filters\":$FILTRO,\"text\":\"Oi {{primeiro_nome}}, sou {{meu_nome}}. E o {{estabelecimento}}?\",\"mode\":\"freela\"}" \
+    | jq -r '.freela.template')"
+check "a conversão do texto avulso avisa o que o Freela não tem" "estabelecimento" \
+  "$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
+    -d "{\"filters\":$FILTRO,\"text\":\"Oi {{primeiro_nome}}, e o {{estabelecimento}}?\",\"mode\":\"freela\"}" \
+    | jq -r '.freela.unsupported_variables | join(",")')"
+check "modelo e texto juntos barrados" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
+    -d "{\"filters\":$FILTRO,\"template_id\":\"$TPL_F001\",\"text\":\"Oi\",\"mode\":\"fila\"}" | jq -r .error.code)"
+check "prévia sem modelo e sem texto barrada" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
+    -d "{\"filters\":$FILTRO,\"mode\":\"fila\"}" | jq -r .error.code)"
+check "criar disparo só com texto (sem modelo) barrado" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/disparos -H "$J" -H "$HD" \
+    -d "{\"filters\":$FILTRO,\"text\":\"Oi {{primeiro_nome_dono}}\",\"mode\":\"fila\"}" | jq -r .error.code)"
+
 check "prévia com modelo inexistente = NOT_FOUND" "NOT_FOUND" \
   "$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
     -d "{\"filters\":$FILTRO,\"template_id\":\"00000000-0000-4000-8000-00000000beef\",\"mode\":\"fila\"}" | jq -r .error.code)"
@@ -975,6 +1008,10 @@ check "status de marcação fora de enviada/entregue barrado" "VALIDATION_ERROR"
 # Envio já respondido não volta atrás (apagaria a resposta do painel).
 check "marcar envio já respondido = ALREADY_REPLIED" "ALREADY_REPLIED" \
   "$(curl -s -X POST $API/v1/sends/$SEND2/mark -H "$J" -H "$HD" -d '{"status":"enviada"}' | jq -r .error.code)"
+# A guarda do modo `freela` em `mark` (409 FREELA_SEND, §18.5) não cabe aqui:
+# criar um disparo em modo `freela` exige a conexão configurada (503 acima), e
+# sem ela não existe `msg_send` em modo `freela` para tentar marcar. A guarda é
+# coberta pelo jest — `src/modules/disparos/__tests__/disparos.service.spec.ts`.
 check "o envio respondido continua respondida" "respondida" \
   "$(curl -s $API/v1/disparos/$DISP_ID -H "$HD" | jq -r --arg i "$SEND2" '[.sends[] | select(.id==$i)][0].status')"
 check "resposta sem texto barrada" "VALIDATION_ERROR" \
@@ -1950,6 +1987,22 @@ check "blocklist vazia (sem resíduo)" "0" "$(curl -s $API/v1/blocklist -H "$HD"
 check "nenhum envio (msg_sends) sobrou" "0" "$(curl -s $API/v1/sends/count -H "$HD" | jq '.total')"
 check "nenhum disparo sobrou" "0" "$(curl -s $API/v1/disparos -H "$HD" | jq 'length')"
 check "nenhuma inscrição em cadência sobrou" "0" "$(curl -s $API/v1/enrollments -H "$HD" | jq 'length')"
+
+# O único resíduo que a API não sabe limpar: `DELETE /v1/users/:id` é lógico por
+# contrato (§3, o histórico de quem escreveu o quê depende da linha), então cada
+# rodada deixa um `teste<carimbo>@praca.local` INATIVO no banco. Sem isto, 68
+# rodadas = 68 linhas mortas. Quem apaga é o psql do container do compose — e
+# só quando ele está de pé (numa máquina sem docker o smoke segue com um aviso,
+# em vez de falhar por algo que não é da API).
+PSQL="docker exec praca-postgres psql -U praca -d praca -tAc"
+SQL_TESTE="from users where email like 'teste%@praca.local' and active = false"
+if command -v docker > /dev/null 2>&1 && [ -n "$(docker ps -q -f name=^praca-postgres$ 2>/dev/null)" ]; then
+  $PSQL "delete $SQL_TESTE" > /dev/null
+  check "nenhuma pessoa de teste inativa sobrou no banco" "0" \
+    "$($PSQL "select count(*) $SQL_TESTE" | tr -d '[:space:]')"
+else
+  printf '  \033[33m!\033[0m docker/praca-postgres fora do ar: as pessoas de teste inativas não foram limpas\n'
+fi
 
 echo
 printf 'Resultado: \033[32m%d ok\033[0m, \033[31m%d falha(s)\033[0m\n' "$PASS" "$FAIL"

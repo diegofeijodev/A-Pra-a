@@ -32,7 +32,13 @@ import {
   type FreelaCampaignKind,
 } from './dto/freela.dto';
 import { FreelaClient } from './freela-client';
-import { pracaCidade, toFreelaPacing, toFreelaTemplate, type FreelaPacing } from './freela-template';
+import {
+  pracaCidade,
+  toFreelaPacing,
+  toFreelaTemplate,
+  toFreelaTemplateFromText,
+  type FreelaPacing,
+} from './freela-template';
 
 /** Raiz das campanhas de ativação no Freela. */
 export const CAMPAIGNS_PATH = '/v1/admins/activation-campaigns';
@@ -888,7 +894,17 @@ export class FreelaCampaignsService {
         message: 'Escolha um modelo do Praça (template_id) ou escreva o texto (whatsapp_template).',
       });
     }
-    return { template: dto.whatsapp_template, unsupported_variables: [] };
+    // Texto escrito na mão passa pela MESMA conversão do modelo (§18.3), com as
+    // variantes (`---`) preservadas: quem escreve pode usar `{{meu_nome}}` ou
+    // `{{praca}}` sem saber que o Freela não os conhece, e é a prévia do
+    // disparo com `text` (§13) que mostra o resultado antes de subir.
+    const settings = await this.messages.getSettings();
+    return toFreelaTemplateFromText(dto.whatsapp_template, {
+      praca: praca.praca,
+      cidade: praca.cidade,
+      me: { name: user.name },
+      defaults: settings.template_defaults,
+    });
   }
 
   private async pracaOrFail(id: string): Promise<PracaCtx> {

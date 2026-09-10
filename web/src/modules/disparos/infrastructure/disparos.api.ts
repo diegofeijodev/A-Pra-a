@@ -30,7 +30,13 @@ export const EMPTY_FILTERS: DisparoFilters = {
 /** Corpo da prévia e da criação (a criação acrescenta `name`). */
 export interface DisparoInput {
   filters: DisparoFilters;
+  /** Modelo salvo. Vazio quando a prévia vai de `text` (nunca os dois, §13). */
   template_id: string;
+  /**
+   * Texto escrito na mão, no lugar do modelo — só na PRÉVIA (a criação exige
+   * modelo). Variantes separadas por uma linha só com `---`.
+   */
+  text?: string;
   split: boolean;
   mode: string;
   /** Instante ISO COM fuso — nunca a hora "solta" do `datetime-local`. */
@@ -134,10 +140,11 @@ export interface CreateDisparoResult {
 }
 
 export async function previewDisparo(input: DisparoInput): Promise<DisparoPreviewView> {
-  const { filters, template_id, split, mode, scheduled_at } = input;
+  const { filters, template_id, text, split, mode, scheduled_at } = input;
   const { data } = await api.post('/v1/disparos/preview', {
     filters,
-    template_id,
+    // Modelo salvo OU texto escrito na mão: mandar os dois é VALIDATION_ERROR.
+    ...(text?.trim() ? { text: text.trim() } : { template_id }),
     split,
     mode,
     ...(scheduled_at ? { scheduled_at } : {}),

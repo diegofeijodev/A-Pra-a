@@ -1063,8 +1063,8 @@ vira uma linha em `msg_sends`. Porta de
 
 | Método | Rota | Corpo | Resposta |
 |---|---|---|---|
-| POST | `/v1/disparos/preview` | `{filters, template_id, split?, mode, scheduled_at?}` | `DisparoPreview` |
-| POST | `/v1/disparos` | o mesmo + `name?` | `{id, created, skipped_block, skipped_dup}` |
+| POST | `/v1/disparos/preview` | `{filters, template_id\|text, split?, mode, scheduled_at?}` | `DisparoPreview` |
+| POST | `/v1/disparos` | o mesmo, só com `template_id`, + `name?` | `{id, created, skipped_block, skipped_dup}` |
 | GET | `/v1/disparos` | — | `DisparoView[]` (mais novo primeiro) |
 | GET | `/v1/disparos/:id` | — | `{disparo, stats, by_hour, sends}` |
 | DELETE | `/v1/disparos/:id` | — | `{ok: true}` — **só admin** |
@@ -1145,6 +1145,22 @@ continua visível como `⟨variavel⟩`.
 `freela` é `null` no modo `fila` e, no modo `freela`, traz o modelo já
 convertido para o formato de campanha do Freela (§18.3):
 `{template, unsupported_variables}`. Modelo inexistente → `404 NOT_FOUND`.
+
+**`template_id` ou `text` — exatamente um dos dois** (os dois juntos, ou nenhum,
+é `400 VALIDATION_ERROR`). `text` (1 a 4000, aparado) é o texto escrito na mão da
+caixa de campanha do Freela (§18.2, "escrever aqui"): existe para ela poder
+contar o público **sem** um modelo salvo. Com `text`:
+
+- as **variantes** vêm de uma linha só com `---` (espaços em volta valem, `---`
+  no meio da frase não separa nada). A 1ª vira a variante A e a 2ª a B nas
+  mensagens de exemplo de `previews`, como num modelo salvo; a conversão para o
+  Freela (`freela.template`) leva **todas** — é ela que sobe;
+- **não há trava de 30 dias**: a trava é por modelo (`msg_sends.template_id`) e
+  aqui não há modelo. `dupes` é sempre `0`; a lista de bloqueio continua valendo;
+- no modo `freela` a conversão é a MESMA de `POST /v1/freela/campaigns` com
+  `whatsapp_template` (§18.3) — o que a prévia mostra é o que a campanha manda;
+- `POST /v1/disparos` **não** aceita `text` (`400 VALIDATION_ERROR`): o envio
+  guarda `template_id`, e é dele que sai a trava de 30 dias.
 
 ### `POST /v1/disparos`
 
@@ -1233,7 +1249,13 @@ aconteceu. Rota por **envio** (não por disparo) porque envio também nasce de
 cadência.
 
 `mark` — `{status}` com `status ∈ enviada | entregue` (`falhou` é do motor, não
-da tela). Envio já `respondida` → `400 ALREADY_REPLIED` ("Este envio já foi
+da tela). Envio em modo `freela` → `409 FREELA_SEND` ("Envio do modo Freela:
+quem marca é o Freela."): lá a fila não é do Praça — o outbox garimpa
+exatamente `mode: 'freela'` + `status: 'fila'` (§18.5) e a sincronização escreve
+`enviada`/`entregue` de lá para cá, então marcar à mão tiraria o envio da
+garimpagem e ele nunca chegaria à campanha. `reply` continua liberado nos dois
+modos (a resposta chega pelo WhatsApp de quem operou, não pelo Freela). Envio já
+`respondida` → `400 ALREADY_REPLIED` ("Este envio já foi
 respondido."): voltar atrás apagaria a resposta do painel e gravaria um segundo
 evento de saída. Grava `sent_at` se ainda estiver vazio e **não reescreve** o que
 já existe. `enviada` é o toque de verdade: grava evento `msg_out` na timeline do
@@ -2193,7 +2215,7 @@ O Freela conhece **três** variáveis por destinatário; o Praça tem dezesseis
 | Variável do Praça | Vira | Por quê |
 |---|---|---|
 | `{{primeiro_nome_dono}}` | `{{primeiro_nome}}` | mesma coisa, nome diferente |
-| `{{nome}}` | `{{nome}}` | existe nos dois |
+| `{{nome}}`, `{{primeiro_nome}}` | iguais | existem nos dois (quem escreve o texto na mão escreve no vocabulário do Freela) |
 | `{{cidade}}` | **cidade-sede da praça** (texto), ou fica avisada | o Freela só preenche `{{cidade}}` para a base dele: em lista externa o destinatário nasce com `city: null` e a variável sairia vazia |
 | `{{praca}}`, `{{meu_nome}}`, `{{link_video_caso}}`, `{{link_cadastro}}`, `{{funcao}}`, `{{valor}}`, `{{turno}}`, `{{dia_forte}}`, `{{data}}` | **texto resolvido agora** | são fixas por campanha (praça do filtro, quem dispara, `template_defaults`) |
 | `{{estabelecimento}}`, `{{bairro}}`, `{{estabelecimento_vizinho}}`, `{{data_vaga}}` | **ficam como estão** e entram em `unsupported_variables` | são por lead e o Freela não as tem |
@@ -2209,6 +2231,13 @@ para não mandar frase pela metade.
 Variante A e B viram `A\n---\nB` (o Freela alterna variantes por índice — é
 exatamente o teste A/B do Praça). Variável fixa sem valor continua visível como
 `⟨praca⟩`, igual ao render do §12: é o que faz ver o buraco antes de disparar.
+
+**Texto escrito na mão** (`whatsapp_template` em `POST /v1/freela/campaigns`, e
+`text` na prévia do disparo, §13) passa pela **mesma** conversão, com as
+variantes separadas pela linha `---` preservadas
+(`toFreelaTemplateFromText`). Sem isso, um `{{meu_nome}}` digitado no campo
+subiria cru e o lead receberia a chave no lugar do valor — e a prévia do §13
+mostraria um texto diferente do que a campanha manda.
 
 Ritmo (`toFreelaPacing`, a partir de `GET /v1/settings`):
 
@@ -2296,6 +2325,12 @@ A garimpagem da fila roda numa transação curta com
 `pg_advisory_xact_lock(hashtext('freela-outbox'))`; a chamada HTTP acontece
 **fora** de transação. Campanha recusada pelo Freela deixa os envios em `fila`
 para a próxima rodada — nada fica meio enviado.
+
+Por isso `POST /v1/sends/:id/mark` num envio em modo `freela` é
+`409 FREELA_SEND` (§13): a garimpagem é exatamente `mode: 'freela'` +
+`status: 'fila'`, então marcar à mão tiraria o envio dela e ele nunca chegaria
+à campanha — a fila do Praça constaria como enviada sem ninguém ter mandado
+nada. `POST /v1/sends/:id/reply` continua liberado nos dois modos.
 
 ### 18.6 Sincronização
 
