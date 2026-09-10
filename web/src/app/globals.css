@@ -1,0 +1,127 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  /* As fontes chegam por `next/font/google` no layout raiz (sem <link> para o
+     Google): Montserrat 700/800/900 e Inter 400–700. */
+  --font-display: var(--font-montserrat), "Montserrat", sans-serif;
+  --font-sans: var(--font-inter), "Inter", sans-serif;
+}
+
+/* Dark is the default theme (per spec). .light overrides. */
+:root {
+  --radius: 0.5rem;
+  --background: oklch(0.225 0.004 95); /* #1D1D1B */
+  --foreground: oklch(0.97 0.003 95);
+  --card: oklch(0.255 0.005 95); /* #262623 */
+  --card-foreground: oklch(0.97 0.003 95);
+  --popover: oklch(0.275 0.005 95);
+  --popover-foreground: oklch(0.97 0.003 95);
+  --primary: oklch(0.75 0.141 82); /* #ECA826 */
+  --primary-foreground: oklch(0.225 0.004 95);
+  --secondary: oklch(0.31 0.006 95);
+  --secondary-foreground: oklch(0.97 0.003 95);
+  --muted: oklch(0.31 0.006 95);
+  --muted-foreground: oklch(0.66 0.008 95);
+  --accent: oklch(0.75 0.141 82 / 14%);
+  --accent-foreground: oklch(0.82 0.12 82);
+  --destructive: oklch(0.5 0.15 35);
+  --destructive-foreground: oklch(0.97 0.003 95);
+  --border: oklch(0.36 0.005 95); /* #424242 */
+  --input: oklch(0.36 0.005 95);
+  --ring: oklch(0.75 0.141 82);
+  --success: oklch(0.58 0.11 150); /* #3E8E5A */
+  --warning: oklch(0.75 0.141 82); /* #ECA826 */
+  --danger: oklch(0.52 0.15 30); /* #B4432E */
+}
+
+.light {
+  --background: oklch(0.975 0.004 90);
+  --foreground: oklch(0.24 0.005 95);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.24 0.005 95);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.24 0.005 95);
+  --primary: oklch(0.72 0.141 82);
+  --primary-foreground: oklch(0.225 0.004 95);
+  --secondary: oklch(0.93 0.006 90);
+  --secondary-foreground: oklch(0.3 0.005 95);
+  --muted: oklch(0.93 0.006 90);
+  --muted-foreground: oklch(0.5 0.008 95);
+  --accent: oklch(0.75 0.141 82 / 14%);
+  --accent-foreground: oklch(0.55 0.13 75);
+  --destructive: oklch(0.5 0.15 35);
+  --destructive-foreground: oklch(0.97 0.003 95);
+  --border: oklch(0.88 0.006 90);
+  --input: oklch(0.88 0.006 90);
+  --ring: oklch(0.72 0.141 82);
+  --success: oklch(0.55 0.11 150);
+  --warning: oklch(0.72 0.141 82);
+  --danger: oklch(0.52 0.15 30);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+  }
+}
+
+@utility tag {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+@utility card-surface {
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+@media print {
+  body { background: white; color: black; }
+  .no-print { display: none !important; }
+  .print-only { display: block !important; }
+  .print-only * { color: black !important; border-color: #ccc !important; }
+}
+.print-only { display: none; }
