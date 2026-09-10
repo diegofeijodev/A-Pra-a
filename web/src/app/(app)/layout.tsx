@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { AppShell } from '@/components/praca/AppShell';
 import { useAuth } from '@/modules/auth/application/use-auth';
+import { useMe } from '@/modules/auth/application/use-me';
 import { ThemeSync } from './ThemeSync';
 
 /**
@@ -17,6 +18,11 @@ import { ThemeSync } from './ThemeSync';
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { user, loading } = useAuth();
+
+  // Ponto único de montagem de `['auth','me']`: o que voltar daqui é escrito de
+  // volta na sessão, então invalidar essa chave (ou criar uma praça, que muda
+  // `active_praca_id` no servidor) atualiza o shell inteiro.
+  useMe();
 
   useEffect(() => {
     if (loading) return;

@@ -13,6 +13,9 @@ export function ThemeSync() {
 
   useEffect(() => {
     document.documentElement.classList.toggle('light', theme === 'light');
+    // Ao desmontar (sair da área logada), devolve o `<html>` ao padrão escuro —
+    // senão o `/entrar` depois do "Sair" ficaria com o tema da conta anterior.
+    return () => document.documentElement.classList.remove('light');
   }, [theme]);
 
   return null;

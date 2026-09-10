@@ -1,7 +1,10 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { useAuth } from '@/modules/auth/application/use-auth';
+import { useRefreshSession } from '@/modules/auth/application/use-me';
+import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 import { useUpdateMe } from '@/modules/users/application/use-users';
 import {
   createPraca,
@@ -38,8 +41,10 @@ export function useSetActivePraca() {
   return useMutation({
     mutationFn: (pracaId: string | null) =>
       updateMeMutation.mutateAsync({ active_praca_id: pracaId }),
+    // A resposta do `PATCH /v1/users/me` já é o `UserView` novo, e o
+    // `useUpdateMe` grava ele na sessão e em `['auth','me']` — não há o que
+    // reler aqui, só as praças (portões e estado de etapa mudam com a ativa).
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['auth', 'me'] });
       void queryClient.invalidateQueries({ queryKey: ['pracas'] });
     },
   });
@@ -47,14 +52,17 @@ export function useSetActivePraca() {
 
 export function useCreatePraca() {
   const queryClient = useQueryClient();
+  const refreshSession = useRefreshSession();
   return useMutation({
     mutationFn: (input: CreatePracaInput) => createPraca(input),
-    onSuccess: () => {
-      // Criar uma praça também grava `active_praca_id` de quem criou (§6):
-      // a sessão precisa reler o próprio usuário.
+    onSuccess: async () => {
+      // Criar uma praça também grava `active_praca_id` de quem criou (§6), e
+      // isso não volta na resposta: a sessão precisa reler o próprio usuário,
+      // senão o shell continua apontando para a praça anterior.
+      await refreshSession();
       void queryClient.invalidateQueries({ queryKey: ['pracas'] });
-      void queryClient.invalidateQueries({ queryKey: ['auth', 'me'] });
     },
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível criar a praça.')),
   });
 }
 
