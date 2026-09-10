@@ -74,7 +74,14 @@ function fakePrisma() {
       update: jest.fn().mockResolvedValue({}),
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
-    pracas: { findUnique: jest.fn().mockResolvedValue({ name: 'BH · Setembro', start_date: '2026-09-14' }) },
+    pracas: {
+      findUnique: jest.fn().mockResolvedValue({
+        name: 'BH · Setembro',
+        start_date: '2026-09-14',
+        city: 'Belo Horizonte',
+        cobertura_cidade: 'Belo Horizonte',
+      }),
+    },
     users: {
       findUnique: jest.fn().mockResolvedValue({ name: 'Diego Souza' }),
       findFirst: jest.fn().mockResolvedValue({ id: DIEGO }),
@@ -154,6 +161,10 @@ describe('FreelaOutboxService.flush — lote de disparo', () => {
     // Modelo convertido, não o texto já renderizado de um dos leads.
     expect(body.whatsappTemplate).toContain('{{primeiro_nome}}');
     expect(body.whatsappTemplate).toContain('Diego');
+    // `{{cidade}}` vira a cidade-sede da praça do filtro: em lista externa o
+    // Freela não sabe a cidade do contato.
+    expect(body.whatsappTemplate).toContain('em Belo Horizonte?');
+    expect(body.whatsappTemplate).not.toContain('{{cidade}}');
     // Ritmo do Praça.
     expect(body.messagesPerHour).toBe(60);
     expect(body.dailyCap).toBe(200);
@@ -172,9 +183,16 @@ describe('FreelaOutboxService.flush — lote de disparo', () => {
         disparo_id: DISPARO,
         praca_id: PRACA,
         audience: 'EXTERNAL_LIST',
-        status: 'RUNNING',
+        status: 'DRAFT',
         created_by: DIEGO,
       }),
+    });
+    // Espelho gravado ANTES do start (com o status de nascimento) e o status de
+    // verdade escrito depois — sem essa ordem, o start falhando deixaria a
+    // campanha sem espelho e a próxima rodada criaria outra igual.
+    expect(p.freela_campaigns.update.mock.calls[0]![0]).toMatchObject({
+      where: { freela_id: 'fc-1' },
+      data: expect.objectContaining({ status: 'RUNNING' }),
     });
 
     expect(updates(p)).toContainEqual({
@@ -204,6 +222,31 @@ describe('FreelaOutboxService.flush — lote de disparo', () => {
     });
     const body = client.request.mock.calls[0]![2] as { contacts: unknown[] };
     expect(body.contacts).toEqual([{ name: 'Chefe1 Teste', phone: '+553199990001' }]);
+  });
+
+  it('telefone repetido no lote vira falhou (o Freela descarta o segundo)', async () => {
+    const p = fakePrisma();
+    p.msg_sends.findMany.mockResolvedValue([
+      send(1),
+      send(2, { lead: { ...baseSend(2).lead, phone: '(31) 9999-0001' } }),
+      send(3),
+    ]);
+    const client = fakeClient();
+
+    const out = await montar(p, client).flush(new Date());
+
+    expect(out).toEqual({ campaigns: 1, sends: 2, failed: 1 });
+    expect(updates(p)).toContainEqual({
+      where: { id: { in: ['send-2'] } },
+      data: { status: 'falhou', failure_reason: 'Telefone repetido no lote.' },
+    });
+    const body = client.request.mock.calls[0]![2] as { contacts: { phone: string }[] };
+    expect(body.contacts.map((c) => c.phone)).toEqual(['+553199990001', '+553199990003']);
+    // Só quem entrou na campanha é pendurado nela.
+    expect(updates(p)).toContainEqual({
+      where: { id: { in: ['send-1', 'send-3'] } },
+      data: { freela_campaign_id: 'fc-1' },
+    });
   });
 
   it('lote inteiro com telefone inválido não cria campanha nenhuma', async () => {

@@ -29,24 +29,34 @@ import {
 } from 'class-validator';
 import { DisparoFiltersDto } from '../../disparos/dto/disparos.dto';
 
-/** Públicos aceitos numa campanha de ativação (uma rodada só). */
-export const FREELA_CAMPAIGN_AUDIENCES = [
+/** Os quatro públicos internos do Freela (parados/nunca usaram). */
+const FREELA_BASE_AUDIENCES = [
   'CONTRACTORS_NEVER_PUBLISHED',
   'CONTRACTORS_DORMANT_90D',
   'PROVIDERS_NEVER_APPLIED',
   'PROVIDERS_DORMANT_90D',
-  'EXTERNAL_LIST',
 ] as const;
 
-/** Públicos das campanhas automáticas: os quatro acima + os dois "todos". */
-export const FREELA_TEMPLATE_AUDIENCES = [
-  'CONTRACTORS_NEVER_PUBLISHED',
-  'CONTRACTORS_DORMANT_90D',
-  'PROVIDERS_NEVER_APPLIED',
-  'PROVIDERS_DORMANT_90D',
+/**
+ * Públicos que dá para **criar** numa campanha de ativação: os quatro internos
+ * mais a lista externa (`CREATABLE_AUDIENCES` do Freela).
+ */
+export const FREELA_CREATABLE_AUDIENCES = [...FREELA_BASE_AUDIENCES, 'EXTERNAL_LIST'] as const;
+
+/**
+ * Públicos que dá para **prever** (contar antes): os quatro internos mais os
+ * dois "todos" (`PREVIEWABLE_AUDIENCES` do Freela). `EXTERNAL_LIST` fica de
+ * fora — a lista externa não é uma consulta na base do Freela, ela vem do
+ * funil do Praça, e prever ali é a prévia do disparo (§13).
+ */
+export const FREELA_PREVIEWABLE_AUDIENCES = [
+  ...FREELA_BASE_AUDIENCES,
   'CONTRACTORS_ALL',
   'CONTRACTORS_ACTIVE',
 ] as const;
+
+/** Públicos das campanhas automáticas — os mesmos que dá para prever. */
+export const FREELA_TEMPLATE_AUDIENCES = FREELA_PREVIEWABLE_AUDIENCES;
 
 export const FREELA_MODULES = ['bars-restaurants', 'home-services'] as const;
 export const FREELA_CHANNELS = ['PUSH', 'WHATSAPP'] as const;
@@ -150,13 +160,16 @@ export class FreelaPacingDto {
   weekdays_only?: boolean;
 }
 
+/** Recusa `EXTERNAL_LIST` aqui mesmo: o Freela não sabe contar essa. */
+const SEM_PREVIA = `${umDe(FREELA_PREVIEWABLE_AUDIENCES)} (EXTERNAL_LIST não tem prévia de público: a lista vem do funil do Praça)`;
+
 export class AudienceOptionsQueryDto {
-  @IsIn(FREELA_CAMPAIGN_AUDIENCES, { message: umDe(FREELA_CAMPAIGN_AUDIENCES) })
+  @IsIn(FREELA_PREVIEWABLE_AUDIENCES, { message: SEM_PREVIA })
   audience!: string;
 }
 
 export class AudiencePreviewDto {
-  @IsIn(FREELA_CAMPAIGN_AUDIENCES, { message: umDe(FREELA_CAMPAIGN_AUDIENCES) })
+  @IsIn(FREELA_PREVIEWABLE_AUDIENCES, { message: SEM_PREVIA })
   audience!: string;
 
   @IsOptional()
@@ -184,7 +197,7 @@ export class CreateFreelaCampaignDto {
   @IsUUID()
   praca_id!: string;
 
-  @IsIn(FREELA_CAMPAIGN_AUDIENCES, { message: umDe(FREELA_CAMPAIGN_AUDIENCES) })
+  @IsIn(FREELA_CREATABLE_AUDIENCES, { message: umDe(FREELA_CREATABLE_AUDIENCES) })
   audience!: string;
 
   @IsOptional()

@@ -1852,7 +1852,17 @@ check "lista de campanhas sem conexão = 503" "FREELA_NOT_CONFIGURED" \
 check "campanhas automáticas sem conexão = 503" "FREELA_NOT_CONFIGURED" \
   "$(curl -s $API/v1/freela/templates -H "$HD" | jq -r .error.code)"
 check "opções de público sem conexão = 503" "FREELA_NOT_CONFIGURED" \
+  "$(curl -s "$API/v1/freela/audience-options?audience=CONTRACTORS_ALL" -H "$HD" | jq -r .error.code)"
+# EXTERNAL_LIST não é consulta na base do Freela: a lista vem do funil do Praça,
+# e prever ali é a prévia do disparo (§13). Barrado ANTES de chamar o Freela.
+check "EXTERNAL_LIST não tem prévia de público (opções)" "VALIDATION_ERROR" \
   "$(curl -s "$API/v1/freela/audience-options?audience=EXTERNAL_LIST" -H "$HD" | jq -r .error.code)"
+check "EXTERNAL_LIST não tem prévia de público (contagem)" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/freela/audience-preview -H "$J" -H "$HD" \
+    -d '{"audience":"EXTERNAL_LIST"}' | jq -r .error.code)"
+check "público 'todos' vale para prever, mas não para criar campanha" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/freela/campaigns -H "$J" -H "$HD" \
+    -d "{\"name\":\"Campanha\",\"praca_id\":\"$PRACA_SEED\",\"audience\":\"CONTRACTORS_ALL\",\"whatsapp_template\":\"Oi!\",\"start_now\":false}" | jq -r .error.code)"
 check "prévia de público sem conexão = 503" "FREELA_NOT_CONFIGURED" \
   "$(curl -s -X POST $API/v1/freela/audience-preview -H "$J" -H "$HD" \
     -d '{"audience":"PROVIDERS_DORMANT_90D"}' | jq -r .error.code)"
@@ -1877,6 +1887,16 @@ check "agenda fora de WEEKLY|DATED é barrada" "VALIDATION_ERROR" \
 check "campanha automática sem canal é barrada" "VALIDATION_ERROR" \
   "$(curl -s -X POST $API/v1/freela/templates -H "$J" -H "$HD" \
     -d "{\"praca_id\":\"$PRACA_SEED\",\"name\":\"Automática\",\"schedule_kind\":\"WEEKLY\",\"audience\":\"CONTRACTORS_ALL\",\"channels\":[]}" | jq -r .error.code)"
+
+# `:id` de campanha automática é UUID no Freela: lixo da URL morre aqui como
+# 404, sem virar chamada (e 500) do outro lado.
+check "campanha automática com id malformado = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s $API/v1/freela/templates/nao-e-uuid -H "$HD" | jq -r .error.code)"
+check "ligar campanha automática com id malformado = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X PATCH $API/v1/freela/templates/nao-e-uuid/enabled -H "$J" -H "$HD" \
+    -d '{"enabled":true}' | jq -r .error.code)"
+check "campanha automática com id válido e sem conexão = 503" "FREELA_NOT_CONFIGURED" \
+  "$(curl -s $API/v1/freela/templates/$BEEF -H "$HD" | jq -r .error.code)"
 
 # Upload da imagem do push: o arquivo passa PELO Praça (a credencial de admin do
 # Freela é da API, não da tela).

@@ -1983,10 +1983,10 @@ modo de envio `freela` (§13) param.
 | Método | Rota | Corpo / query | Resposta |
 |---|---|---|---|
 | GET | `/v1/freela/status` | — | `FreelaStatus` — **única** rota que responde 200 sem conexão |
-| GET | `/v1/freela/audience-options` | `?audience=` | opções de recorte do público (repasse) |
-| POST | `/v1/freela/audience-preview` | `{audience, filters?}` | contagem do público (repasse) |
+| GET | `/v1/freela/audience-options` | `?audience=` (**previsível**) | opções de recorte do público (repasse) |
+| POST | `/v1/freela/audience-preview` | `{audience (previsível), filters?}` | contagem do público (repasse) |
 | GET | `/v1/freela/campaigns` | `?praca_id` | `FreelaCampaign[]` (espelho local) |
-| POST | `/v1/freela/campaigns` | `CreateCampaign` | `{campaign, recipients_count, invalid_phones, unsupported_variables}` |
+| POST | `/v1/freela/campaigns` | `CreateCampaign` | `{campaign, recipients_count, invalid_phones, duplicate_phones, unsupported_variables, start_error}` |
 | GET | `/v1/freela/campaigns/:id` | — | `{campaign, freela, recipients, recipients_meta}` |
 | PATCH | `/v1/freela/campaigns/:id/start` | — | `FreelaCampaign` |
 | PATCH | `/v1/freela/campaigns/:id/pause` | — | `FreelaCampaign` |
@@ -1998,10 +1998,25 @@ modo de envio `freela` (§13) param.
 | PATCH | `/v1/freela/templates/:id/enabled` | `{enabled}` | a campanha |
 | POST | `/v1/freela/templates/upload` | `multipart/form-data`, campo `file` | `{key, url}` |
 
-Todas exigem JWT; nenhuma é só de admin. **`:id` aqui é o id do Freela**
-(string livre, não UUID do Praça) — é o que a lista de lá devolve e o que o
-vínculo local guarda em `freela_id`. Id que não existe no espelho →
-`404 NOT_FOUND`.
+Todas exigem JWT; nenhuma é só de admin. **`:id` aqui é o id do Freela** — é o
+que a lista de lá devolve e o que o vínculo local guarda em `freela_id`. Em
+campanha, id que não existe no espelho → `404 NOT_FOUND`; em campanha
+automática, `:id` é **UUID** no Freela e id malformado morre aqui como
+`404 NOT_FOUND`, sem virar chamada lá.
+
+**Dois conjuntos de público** (os mesmos dois do Freela):
+
+| Conjunto | Onde vale | Valores |
+|---|---|---|
+| **previsível** | `audience-options`, `audience-preview`, campanhas automáticas | os 4 internos + `CONTRACTORS_ALL` + `CONTRACTORS_ACTIVE` |
+| **criável** | `POST /v1/freela/campaigns` | os 4 internos + `EXTERNAL_LIST` |
+
+Os 4 internos são `CONTRACTORS_NEVER_PUBLISHED`, `CONTRACTORS_DORMANT_90D`,
+`PROVIDERS_NEVER_APPLIED`, `PROVIDERS_DORMANT_90D`. `EXTERNAL_LIST` em rota de
+prévia é `400 VALIDATION_ERROR` **local** (não é consulta na base do Freela: a
+lista vem do funil do Praça, e prever ali é a prévia do disparo, §13);
+`CONTRACTORS_ALL`/`ACTIVE` em `POST /campaigns` também é `400` — campanha de
+ativação não dispara para a base inteira.
 
 Corpos de entrada são **snake_case** (§1) e o serviço traduz para o camelCase do
 Freela. As **leituras** que só repassam o Freela (`GET /campaigns/:id` →
@@ -2040,7 +2055,9 @@ funil, lote de cadências, público do Freela, lista montada na tela do Freela).
 /v1/freela/campaigns` sincroniza antes as **5** campanhas mais velhas com mais
 de 60 s, em melhor esforço (Freela fora do ar abre a tela com o número de
 antes); o resto fica para o relógio de 2 min. `GET /v1/freela/campaigns/:id`
-atualiza `status`/`stats` com o que acabou de chegar, sem paginar destinatário.
+atualiza `status`/`stats` com o que acabou de chegar, sem paginar destinatário,
+e devolve `recipients_meta` em snake_case (`{total, page, page_size}`, do
+`{total, page, pageSize}` que vem dentro de `data`).
 
 #### `CreateCampaign`
 
@@ -2056,9 +2073,8 @@ atualiza `status`/`stats` com o que acabou de chegar, sem paginar destinatário.
   "start_now": true }
 ```
 
-- `name` de 3 a 120; `audience ∈ CONTRACTORS_NEVER_PUBLISHED |
-  CONTRACTORS_DORMANT_90D | PROVIDERS_NEVER_APPLIED | PROVIDERS_DORMANT_90D |
-  EXTERNAL_LIST`.
+- `name` de 3 a 120; `audience` no conjunto **criável** (os 4 internos +
+  `EXTERNAL_LIST`).
 - **Texto:** `template_id` (modelo do Praça, convertido pelo §18.3) **ou**
   `whatsapp_template` (até 4.000, até 3 variantes separadas por uma linha
   `---`). Sem nenhum dos dois → `400 TEMPLATE_REQUIRED`.
@@ -2074,6 +2090,12 @@ atualiza `status`/`stats` com o que acabou de chegar, sem paginar destinatário.
 - `start_now: false` deixa a campanha em `DRAFT` no Freela (é o `PATCH
   /:id/start` que solta).
 - Praça inexistente → `404 NOT_FOUND`.
+- **Telefone repetido** na lista é descartado (o Freela também descarta) e
+  volta contado em `duplicate_phones`.
+- `start_error` traz o motivo quando a campanha **nasceu** mas o
+  `PATCH /:id/start` falhou: ela fica em `DRAFT` no Freela e no espelho, e a
+  tela pode tentar `start` de novo. A campanha nunca é criada duas vezes por
+  isso (§18.5).
 
 #### `CreateTemplate` (campanha automática)
 
@@ -2104,10 +2126,17 @@ O Freela conhece **três** variáveis por destinatário; o Praça tem dezesseis
 |---|---|---|
 | `{{primeiro_nome_dono}}` | `{{primeiro_nome}}` | mesma coisa, nome diferente |
 | `{{nome}}` | `{{nome}}` | existe nos dois |
-| `{{cidade}}` | `{{cidade}}` | existe nos dois |
+| `{{cidade}}` | **cidade-sede da praça** (texto), ou fica avisada | o Freela só preenche `{{cidade}}` para a base dele: em lista externa o destinatário nasce com `city: null` e a variável sairia vazia |
 | `{{praca}}`, `{{meu_nome}}`, `{{link_video_caso}}`, `{{link_cadastro}}`, `{{funcao}}`, `{{valor}}`, `{{turno}}`, `{{dia_forte}}`, `{{data}}` | **texto resolvido agora** | são fixas por campanha (praça do filtro, quem dispara, `template_defaults`) |
 | `{{estabelecimento}}`, `{{bairro}}`, `{{estabelecimento_vizinho}}`, `{{data_vaga}}` | **ficam como estão** e entram em `unsupported_variables` | são por lead e o Freela não as tem |
 | qualquer outra | idem | variável desconhecida não vira buraco no texto |
+
+A cidade-sede vem de `cobertura_cidade` da praça (ou do `city` da linha, antes
+do `·`) e entra quando a campanha é **de uma praça**: prévia/criação de disparo
+com `filters.praca_id` diferente de `all` e `POST /v1/freela/campaigns` (que
+sempre tem `praca_id`). Em lote de cadência e em filtro `all` a cidade não
+existe, então `{{cidade}}` fica no texto e entra em `unsupported_variables` —
+para não mandar frase pela metade.
 
 Variante A e B viram `A\n---\nB` (o Freela alterna variantes por índice — é
 exatamente o teste A/B do Praça). Variável fixa sem valor continua visível como
@@ -2165,9 +2194,16 @@ cadências (§14) gravam `msg_sends` em `fila` com `scheduled_at`; o
 - telefone que não vira E.164 **não sobe**: o envio fica `falhou` com
   `failure_reason: "Telefone inválido para WhatsApp."` (o Freela recusaria o
   lote inteiro por causa de um número quebrado);
-- a campanha e o `freela_campaign_id` dos envios são gravados **no mesmo
-  commit** — campanha criada com envio solto faria a rodada seguinte criar tudo
-  de novo e o lead receber duas vezes.
+- **telefone repetido** no lote também não sobe: o Freela descarta o segundo
+  contato do mesmo número, então o envio extra fica `falhou` com
+  `"Telefone repetido no lote."` em vez de esperar para sempre um destinatário
+  que nunca vai existir;
+- a ordem é **criar → espelho → começar**: o `POST` cria a campanha em `DRAFT`,
+  o espelho e o `freela_campaign_id` dos envios são gravados **no mesmo
+  commit** e só então vem o `PATCH /:id/start`. Campanha criada com envio solto
+  faria a rodada seguinte criar tudo de novo e o lead receber duas vezes; start
+  que falha só deixa a campanha em `DRAFT` (o motivo vai para o log e para
+  `start_error`, e a sincronização traz o status depois).
 
 A garimpagem da fila roda numa transação curta com
 `pg_advisory_xact_lock(hashtext('freela-outbox'))`; a chamada HTTP acontece
@@ -2182,14 +2218,22 @@ relógio) faz, nesta ordem: `outbox.flush()` e depois, para cada campanha do
 espelho fora de `COMPLETED|CANCELLED`:
 
 1. `GET /:id` → atualiza `status`, `stats` e `last_synced_at`;
-2. se há `msg_sends` pendurados, pagina `GET /:id/recipients?pageSize=200` e
-   casa `externalPhone` com o telefone E.164 do lead:
+2. se há `msg_sends` pendurados, pagina `GET /:id/recipients?pageSize=200`
+   (resposta `{data: {total, page, pageSize, items}}`) e casa o campo
+   **`phone`** do destinatário — que o Freela monta como
+   `COALESCE(external_phone, users.phone, destination)` — com o telefone do
+   lead, os dois normalizados para E.164:
    - `SENT` → envio vira `enviada` com `sent_at` do Freela, guarda
      `freela_recipient_id`, grava o evento `msg_out` na linha do tempo do lead
      (`"<disparo ou Cadência “X”> enviada pelo Freela (WhatsApp)."`) e atualiza
      `last_contact_at` — **uma vez só** (o passo só olha envio em `fila`);
    - `FAILED`/`SKIPPED` → `falhou` com o motivo do Freela;
 3. disparo sem ninguém na fila vira `concluido` (mesma regra do §13).
+
+Campanha com envio pendurado e **nenhum** destinatário com telefone lido vira
+aviso no log (`nenhum destinatário com telefone lido`): ou a campanha ainda não
+tem destinatário, ou o Freela mudou o nome do campo — e nos dois casos o envio
+ficaria em `fila` para sempre em silêncio.
 
 A **resposta** do lead continua sendo registrada à mão no Praça (`POST
 /v1/sends/:id/reply`): o Freela não devolve resposta.

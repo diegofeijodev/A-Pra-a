@@ -16,7 +16,7 @@ import {
 } from '../../domain/template-render';
 import type { FreelaLeadContact } from '../freela/freela-campaigns.service';
 import { FreelaClient } from '../freela/freela-client';
-import { toFreelaTemplate, type FreelaTemplateOut } from '../freela/freela-template';
+import { pracaCidade, toFreelaTemplate, type FreelaTemplateOut } from '../freela/freela-template';
 import { LeadsService, PARA_LISTA, type LeadListView } from '../leads/leads.service';
 import { MessagesService, type SettingsView } from '../messages/messages.service';
 import {
@@ -293,15 +293,21 @@ export class DisparosService {
 
   /**
    * O mesmo público do disparo, no formato de contato de campanha do Freela
-   * (Task 15). Com `templateId` passa pelo plano inteiro — lista de bloqueio,
-   * trava de 30 dias e texto renderizado lead a lead; sem ele (texto escrito na
-   * mão na tela do Freela) só a lista de bloqueio se aplica, porque a trava é
-   * por modelo e aqui não há modelo.
+   * (Task 15). Com `templateId` passa pelo plano inteiro — lista de bloqueio e
+   * trava de 30 dias; sem ele (texto escrito na mão na tela do Freela) só a
+   * lista de bloqueio se aplica, porque a trava é por modelo e aqui não há
+   * modelo.
+   *
+   * `comTexto` decide se o texto de cada lead é renderizado: sem a extensão do
+   * Freela (`FREELA_PER_CONTACT_MESSAGE`) o texto é **descartado**, então
+   * renderizar 2.000 mensagens — com praça e vizinho de cada uma — seria
+   * trabalho jogado fora.
    */
   async audienceForFreela(
     filters: DisparoFiltersDto,
     templateId: string | null,
     user: AuthUser,
+    comTexto = false,
   ): Promise<{ leads: FreelaLeadContact[]; blocked: number; dupes: number }> {
     if (templateId) {
       const tpl = await this.templateOrFail(templateId);
@@ -309,9 +315,13 @@ export class DisparosService {
         { filters, template_id: templateId, split: false, mode: 'freela' },
         tpl,
         user,
+        // 0 = não resolve praça nem vizinho de ninguém (o render nem é chamado).
+        comTexto ? undefined : 0,
       );
       return {
-        leads: plano.sendable.map((item, i) => this.toContact(item, plano.render(item, i).text)),
+        leads: plano.sendable.map((item, i) =>
+          this.toContact(item, comTexto ? plano.render(item, i).text : ''),
+        ),
         blocked: plano.blocked,
         dupes: plano.dupes,
       };
@@ -353,9 +363,17 @@ export class DisparosService {
     user: AuthUser,
   ): Promise<FreelaTemplateOut> {
     const pracaId = dto.filters.praca_id !== 'all' ? dto.filters.praca_id : null;
-    const praca = pracaId ? (await this.pracasByIds([pracaId])).get(pracaId) : undefined;
+    // Praça do filtro: a campanha é UMA, então `{{praca}}` e `{{cidade}}` são
+    // dela. Filtro `all` não tem praça — e aí as duas ficam avisadas.
+    const row = pracaId
+      ? await this.prisma.pracas.findUnique({
+          where: { id: pracaId },
+          select: { name: true, start_date: true, city: true, cobertura_cidade: true },
+        })
+      : null;
     return toFreelaTemplate(tpl.text_a, plano.split ? tpl.text_b : null, {
-      praca,
+      praca: row ? { name: row.name, start_date: row.start_date } : undefined,
+      cidade: pracaCidade(row),
       me: { name: user.name },
       defaults: plano.defaults,
     });

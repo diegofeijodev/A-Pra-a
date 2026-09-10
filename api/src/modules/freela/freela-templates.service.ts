@@ -13,6 +13,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuthUser } from '../../common/auth/auth-user';
 import { PrismaService } from '../../common/database/prisma.service';
+import { isUuid } from '../../common/ids/uuid';
 import { CreateFreelaTemplateDto, FreelaTemplateBodyDto, UpdateFreelaTemplateDto } from './dto/freela.dto';
 import { FreelaClient, type FreelaMultipart } from './freela-client';
 
@@ -42,6 +43,7 @@ export class FreelaTemplatesService {
   }
 
   async get(id: string): Promise<FreelaTemplateView> {
+    this.idOrFail(id);
     const r = await this.client.request<Record<string, unknown>>(
       'GET',
       `${TEMPLATES_PATH}/${encodeURIComponent(id)}`,
@@ -70,6 +72,7 @@ export class FreelaTemplatesService {
 
   /** `PUT` substitui a campanha inteira lá; aqui só o vínculo pode mudar. */
   async update(id: string, dto: UpdateFreelaTemplateDto, user: AuthUser): Promise<FreelaTemplateView> {
+    this.idOrFail(id);
     if (dto.praca_id) await this.pracaOrFail(dto.praca_id);
     const r = await this.client.request<Record<string, unknown>>(
       'PUT',
@@ -87,6 +90,7 @@ export class FreelaTemplatesService {
   }
 
   async setEnabled(id: string, enabled: boolean): Promise<FreelaTemplateView> {
+    this.idOrFail(id);
     const r = await this.client.request<Record<string, unknown>>(
       'PATCH',
       `${TEMPLATES_PATH}/${encodeURIComponent(id)}/enabled`,
@@ -172,6 +176,16 @@ export class FreelaTemplatesService {
       });
     }
     return String(id);
+  }
+
+  /**
+   * `:id` é o id do Freela, e lá `campaign_templates.id` é UUID. Barrar aqui
+   * evita repassar lixo da URL (e tomar 500 do outro lado) por um 404 nosso.
+   */
+  private idOrFail(id: string): void {
+    if (!isUuid(id)) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Campanha automática não encontrada.' });
+    }
   }
 
   private async pracaOrFail(id: string): Promise<void> {

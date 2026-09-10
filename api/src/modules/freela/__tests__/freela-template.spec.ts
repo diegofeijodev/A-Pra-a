@@ -1,6 +1,6 @@
 import { DEFAULT_TEMPLATE_DEFAULTS } from '../../../domain/catalog/messages';
 import type { SendSettings } from '../../../domain/send-schedule';
-import { toFreelaPacing, toFreelaTemplate, type FreelaTemplateCtx } from '../freela-template';
+import { pracaCidade, toFreelaPacing, toFreelaTemplate, type FreelaTemplateCtx } from '../freela-template';
 import { SEED_TEMPLATES } from '../../../../prisma/seed-data/msg-templates';
 
 // Modelo `…f001` do seed ("Contratante · toque 1"): é o texto real que o time
@@ -12,7 +12,11 @@ const CTX: FreelaTemplateCtx = {
   praca: { name: 'BH · Setembro', start_date: '2026-09-14' },
   me: { name: 'Diego Souza' },
   defaults: DEFAULT_TEMPLATE_DEFAULTS,
+  cidade: 'Belo Horizonte',
 };
+
+/** O mesmo contexto sem a cidade da praça (lote de cadência, praça `all`). */
+const CTX_SEM_CIDADE: FreelaTemplateCtx = { ...CTX, cidade: undefined };
 
 const SETTINGS: SendSettings = {
   mode: 'freela',
@@ -25,12 +29,31 @@ const SETTINGS: SendSettings = {
 };
 
 describe('toFreelaTemplate', () => {
-  it('converte o modelo f001: primeiro_nome_dono vira primeiro_nome e cidade fica', () => {
+  it('converte o modelo f001: primeiro_nome_dono vira primeiro_nome', () => {
     const out = toFreelaTemplate(F001.text_a, F001.text_b, CTX);
 
     expect(out.template).toContain('{{primeiro_nome}}');
     expect(out.template).not.toContain('{{primeiro_nome_dono}}');
-    expect(out.template).toContain('{{cidade}}');
+  });
+
+  it('com a cidade da praça, {{cidade}} vira texto (o Freela deixa vazio em lista externa)', () => {
+    const out = toFreelaTemplate('Aqui em {{cidade}} a gente resolve.', null, CTX);
+
+    expect(out.template).toBe('Aqui em Belo Horizonte a gente resolve.');
+    expect(out.unsupported_variables).toEqual([]);
+  });
+
+  it('sem cidade no contexto, {{cidade}} fica intacta e entra na lista de avisos', () => {
+    const out = toFreelaTemplate('Aqui em {{cidade}} a gente resolve.', null, CTX_SEM_CIDADE);
+
+    expect(out.template).toBe('Aqui em {{cidade}} a gente resolve.');
+    expect(out.unsupported_variables).toEqual(['cidade']);
+  });
+
+  it('cidade só de espaços conta como ausente', () => {
+    const out = toFreelaTemplate('Em {{cidade}}!', null, { ...CTX, cidade: '   ' });
+
+    expect(out.unsupported_variables).toEqual(['cidade']);
   });
 
   it('resolve as variáveis de contexto fixo antes de mandar (meu_nome, link_video_caso)', () => {
@@ -52,6 +75,8 @@ describe('toFreelaTemplate', () => {
     expect(out.unsupported_variables).toContain('estabelecimento_vizinho');
     // Ordem de aparição, sem repetir.
     expect(out.unsupported_variables).toEqual(['estabelecimento_vizinho', 'estabelecimento']);
+    // Com a cidade da praça, `{{cidade}}` não é aviso: virou texto.
+    expect(out.template).toContain('aí em Belo Horizonte');
   });
 
   it('junta as duas variantes com a linha --- (o teste A/B do Freela)', () => {
@@ -99,6 +124,21 @@ describe('toFreelaTemplate', () => {
 
   it('texto vazio vira texto vazio, sem variável nenhuma', () => {
     expect(toFreelaTemplate('', null, CTX)).toEqual({ template: '', unsupported_variables: [] });
+  });
+});
+
+describe('pracaCidade', () => {
+  it('prefere a cobertura escolhida da praça', () => {
+    expect(pracaCidade({ city: 'BH · Setembro', cobertura_cidade: 'Belo Horizonte' })).toBe('Belo Horizonte');
+  });
+
+  it('sem cobertura, corta o rótulo da praça no separador', () => {
+    expect(pracaCidade({ city: 'Belo Horizonte · Setembro', cobertura_cidade: null })).toBe('Belo Horizonte');
+  });
+
+  it('praça sem cidade nenhuma não inventa cidade', () => {
+    expect(pracaCidade({ city: '', cobertura_cidade: null })).toBeUndefined();
+    expect(pracaCidade(null)).toBeUndefined();
   });
 });
 

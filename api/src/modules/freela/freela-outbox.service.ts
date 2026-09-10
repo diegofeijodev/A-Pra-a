@@ -26,10 +26,11 @@ import {
   FreelaCampaignsService,
   MAX_CONTATOS,
   TELEFONE_INVALIDO,
+  TELEFONE_REPETIDO,
   type FreelaLeadContact,
 } from './freela-campaigns.service';
 import { FreelaClient } from './freela-client';
-import { toFreelaTemplate } from './freela-template';
+import { pracaCidade, toFreelaTemplate } from './freela-template';
 
 const SP_TZ = 'America/Sao_Paulo';
 
@@ -101,21 +102,24 @@ export class FreelaOutboxService {
     for (const lote of this.agrupar(pendentes)) {
       const validos: PendingSend[] = [];
       const invalidos: string[] = [];
+      const repetidos: string[] = [];
+      const vistos = new Set<string>();
       for (const s of lote.sends) {
-        if (toE164BR(s.lead.phone)) validos.push(s);
-        else invalidos.push(s.id);
+        const tel = toE164BR(s.lead.phone);
+        if (!tel) invalidos.push(s.id);
+        // O Freela descarta telefone repetido: o segundo envio nunca teria
+        // destinatário para casar e ficaria em `fila` para sempre.
+        else if (vistos.has(tel)) repetidos.push(s.id);
+        else {
+          vistos.add(tel);
+          validos.push(s);
+        }
       }
 
-      if (invalidos.length > 0) {
-        // Morre aqui, com motivo na tela: o Freela recusaria o lote inteiro por
-        // causa de um telefone quebrado.
-        await this.prisma.msg_sends.updateMany({
-          where: { id: { in: invalidos } },
-          data: { status: 'falhou', failure_reason: TELEFONE_INVALIDO },
-        });
-        out.failed += invalidos.length;
-        if (lote.disparo_id) await this.campaigns.settleDisparo(lote.disparo_id);
-      }
+      // Morrem aqui, com motivo na tela: o Freela recusaria o lote inteiro por
+      // causa de um telefone quebrado.
+      out.failed += await this.marcarFalha(invalidos, TELEFONE_INVALIDO, lote.disparo_id);
+      out.failed += await this.marcarFalha(repetidos, TELEFONE_REPETIDO, lote.disparo_id);
 
       if (validos.length === 0) continue;
 
@@ -149,6 +153,17 @@ export class FreelaOutboxService {
       }
     }
     return out;
+  }
+
+  /** Tira os envios da fila com um motivo e fecha o disparo se ninguém sobrou. */
+  private async marcarFalha(ids: string[], motivo: string, disparoId: string | null): Promise<number> {
+    if (ids.length === 0) return 0;
+    await this.prisma.msg_sends.updateMany({
+      where: { id: { in: ids } },
+      data: { status: 'falhou', failure_reason: motivo },
+    });
+    if (disparoId) await this.campaigns.settleDisparo(disparoId);
+    return ids.length;
   }
 
   /**
@@ -269,17 +284,27 @@ export class FreelaOutboxService {
       pracaId
         ? this.prisma.pracas.findUnique({
             where: { id: pracaId },
-            select: { name: true, start_date: true },
+            select: { name: true, start_date: true, city: true, cobertura_cidade: true },
           })
         : Promise.resolve(null),
       this.prisma.users.findUnique({ where: { id: disparo.by }, select: { name: true } }),
       this.messages.getSettings(),
     ]);
 
+    const cidade = pracaCidade(praca);
+    if (!cidade) {
+      // Disparo com filtro `all` (ou praça sem cidade): o Freela deixaria
+      // `{{cidade}}` vazio na lista externa, então a variável sobe intacta e
+      // fica no aviso.
+      this.log.warn(
+        `disparo ${disparo.id} sem praça no filtro: {{cidade}} não vai ser preenchida na campanha`,
+      );
+    }
     // Modelo apagado depois do disparo: sobe o texto que já estava na fila.
     const convertido = tpl
       ? toFreelaTemplate(tpl.text_a, disparo.split ? tpl.text_b : null, {
           praca: praca ?? undefined,
+          cidade,
           me: { name: autor?.name ?? '' },
           defaults: settings.template_defaults,
         }).template

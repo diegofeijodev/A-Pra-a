@@ -19,8 +19,19 @@
 import { renderTemplate, type RenderCtx } from '../../domain/template-render';
 import type { SendSettings } from '../../domain/send-schedule';
 
-/** O contexto do render sem o lead: é justamente o que o Freela não tem. */
-export type FreelaTemplateCtx = Omit<RenderCtx, 'lead' | 'neighbor'>;
+/**
+ * O contexto do render sem o lead: é justamente o que o Freela não tem.
+ *
+ * `cidade` é a exceção: o Freela **tem** `{{cidade}}`, mas só preenche para
+ * audiência interna dele — em lista externa (`EXTERNAL_LIST`) o destinatário
+ * nasce com `city: null` e a variável renderizaria vazia. Então quem conhece a
+ * praça passa a cidade-sede aqui e a variável vira texto; sem ela,
+ * `{{cidade}}` entra em `unsupported_variables` em vez de virar buraco.
+ */
+export type FreelaTemplateCtx = Omit<RenderCtx, 'lead' | 'neighbor'> & {
+  /** Cidade-sede da praça, quando a campanha é de uma praça só. */
+  cidade?: string | undefined;
+};
 
 export interface FreelaTemplateOut {
   /** Texto pronto para `whatsappTemplate`, variantes separadas por `\n---\n`. */
@@ -44,7 +55,6 @@ const VAR_RE = /\{\{\s*([\w_]+)\s*\}\}/g;
 const EQUIVALENTES: Record<string, string> = {
   primeiro_nome_dono: 'primeiro_nome',
   nome: 'nome',
-  cidade: 'cidade',
 };
 
 /**
@@ -74,6 +84,14 @@ function converterVariante(text: string, ctx: FreelaTemplateCtx, achadas: Set<st
   return (text || '').replace(VAR_RE, (bruto, key: string) => {
     const equivalente = EQUIVALENTES[key];
     if (equivalente) return `{{${equivalente}}}`;
+    if (key === 'cidade') {
+      // Com a cidade da praça na mão vira texto; sem ela, fica avisada (o
+      // Freela deixaria vazio em lista externa).
+      const cidade = ctx.cidade?.trim();
+      if (cidade) return cidade;
+      achadas.add(key);
+      return bruto;
+    }
     if ((RESOLVIDAS as readonly string[]).includes(key)) {
       // Mesmo render do Praça: variável sem valor continua visível como
       // `⟨praca⟩` em vez de sumir e deixar a frase pela metade.
@@ -113,6 +131,20 @@ export function toFreelaTemplate(
  * domingo" no Praça vira "só dias úteis" lá — o sábado se perde, e é de
  * propósito (o contrato §18 avisa).
  */
+/**
+ * Cidade-sede da praça para o `{{cidade}}` da campanha. Praça sem cobertura
+ * escolhida cai no `city` da linha (o rótulo pode vir como
+ * "Belo Horizonte · Setembro", e só a primeira parte é cidade).
+ */
+export function pracaCidade(
+  p: { city?: string | null; cobertura_cidade?: string | null } | null | undefined,
+): string | undefined {
+  const cobertura = p?.cobertura_cidade?.trim();
+  if (cobertura) return cobertura;
+  const cidade = (p?.city ?? '').split(' · ')[0]?.trim();
+  return cidade || undefined;
+}
+
 export function toFreelaPacing(s: SendSettings): FreelaPacing {
   const medio = (s.gap_min + s.gap_max) / 2;
   const porHora = medio > 0 ? Math.round(3600 / medio) : 60;

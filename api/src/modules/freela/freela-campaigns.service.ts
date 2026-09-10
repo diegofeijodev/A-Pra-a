@@ -32,7 +32,7 @@ import {
   type FreelaCampaignKind,
 } from './dto/freela.dto';
 import { FreelaClient } from './freela-client';
-import { toFreelaPacing, toFreelaTemplate, type FreelaPacing } from './freela-template';
+import { pracaCidade, toFreelaPacing, toFreelaTemplate, type FreelaPacing } from './freela-template';
 
 /** Raiz das campanhas de ativação no Freela. */
 export const CAMPAIGNS_PATH = '/v1/admins/activation-campaigns';
@@ -51,6 +51,9 @@ export const MAX_CONTATOS = 5000;
 
 /** Motivo gravado no envio quando o telefone não vira WhatsApp. */
 export const TELEFONE_INVALIDO = 'Telefone inválido para WhatsApp.';
+
+/** Motivo do envio que repetiu o telefone de outro lead do mesmo lote. */
+export const TELEFONE_REPETIDO = 'Telefone repetido no lote.';
 
 export interface FreelaCampaignView {
   id: string;
@@ -111,6 +114,10 @@ export interface CreateFromLeadsResult {
   recipients_count: number;
   invalid_phones: number;
   invalid_lead_ids: string[];
+  /** Leads descartados por repetirem o telefone de outro lead do lote. */
+  duplicate_lead_ids: string[];
+  /** Motivo de a campanha ter nascido e não ter começado (`start_now`). */
+  start_error: string | null;
 }
 
 export interface CreateForBaseArgs {
@@ -141,10 +148,26 @@ interface CampaignRow {
   last_synced_at: Date | null;
 }
 
-/** Um destinatário da campanha, no recorte que a sincronização usa. */
+/** A praça da campanha: o que o render precisa dela. */
+interface PracaCtx {
+  praca: RenderPraca;
+  /** Cidade-sede, para o `{{cidade}}` do Freela (§18.3). */
+  cidade: string | undefined;
+}
+
+/**
+ * Um destinatário da campanha, no recorte que a sincronização usa.
+ *
+ * O campo do telefone é **`phone`**: o Freela devolve
+ * `COALESCE(external_phone, users.phone, destination) AS phone`
+ * (`activation-campaign.service.ts` → `RecipientView`). `externalPhone` e
+ * `destination` ficam aceitos só por defesa — nenhuma versão da API expõe os
+ * dois hoje.
+ */
 interface Recipient {
   id?: string;
   status?: string;
+  phone?: string | null;
   externalPhone?: string | null;
   destination?: string | null;
   sentAt?: string | null;
@@ -255,7 +278,7 @@ export class FreelaCampaignsService {
     campaign: FreelaCampaignView;
     freela: unknown;
     recipients: unknown;
-    recipients_meta: unknown;
+    recipients_meta: { total: number; page: number; page_size: number } | null;
   }> {
     this.client.ensureConfigured();
     await this.rowOrFail(freelaId);
@@ -271,8 +294,19 @@ export class FreelaCampaignsService {
       campaign: this.toView(await this.rowOrFail(freelaId)),
       freela: detalhe.data,
       recipients: this.recipientsOf(lista.data),
-      recipients_meta: lista.meta ?? null,
+      // A paginação vem DENTRO de `data` (`{total, page, pageSize, items}`), não
+      // em `meta` — e sai em snake_case, como o resto do Praça.
+      recipients_meta: this.recipientsMeta(lista.data),
     };
+  }
+
+  /** `{total, page, pageSize}` do corpo do Freela em snake_case. */
+  private recipientsMeta(data: unknown): { total: number; page: number; page_size: number } | null {
+    const d = (typeof data === 'object' && data !== null ? data : {}) as Record<string, unknown>;
+    const numero = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+    const total = numero(d.total);
+    if (total === null) return null;
+    return { total, page: numero(d.page) ?? 1, page_size: numero(d.pageSize) ?? 0 };
   }
 
   /** Começar, pausar ou cancelar — o Freela decide, o espelho copia. */
@@ -308,7 +342,9 @@ export class FreelaCampaignsService {
     campaign: FreelaCampaignView;
     recipients_count: number | null;
     invalid_phones: number;
+    duplicate_phones: number;
     unsupported_variables: string[];
+    start_error: string | null;
   }> {
     this.client.ensureConfigured();
     const praca = await this.pracaOrFail(dto.praca_id);
@@ -316,7 +352,7 @@ export class FreelaCampaignsService {
     const pacing = await this.pacing(dto.pacing);
 
     if (dto.audience !== 'EXTERNAL_LIST') {
-      const campaign = await this.createForBase({
+      const feita = await this.createForBase({
         name: dto.name,
         praca_id: dto.praca_id,
         audience: dto.audience,
@@ -327,10 +363,12 @@ export class FreelaCampaignsService {
         created_by: user.id,
       });
       return {
-        campaign,
+        campaign: feita.campaign,
         recipients_count: null,
         invalid_phones: 0,
+        duplicate_phones: 0,
         unsupported_variables: modelo.unsupported_variables,
+        start_error: feita.start_error,
       };
     }
 
@@ -340,7 +378,15 @@ export class FreelaCampaignsService {
         message: 'Campanha de lista externa precisa do filtro do funil (lead_filters).',
       });
     }
-    const publico = await this.disparos.audienceForFreela(dto.lead_filters, dto.template_id ?? null, user);
+    // Texto por lead só é renderizado se for subir (§18.4): sem a flag, o
+    // Freela usa o modelo único e renderizar 2.000 textos seria trabalho jogado
+    // fora.
+    const publico = await this.disparos.audienceForFreela(
+      dto.lead_filters,
+      dto.template_id ?? null,
+      user,
+      this.client.perContactMessage(),
+    );
     const feito = await this.createFromLeads({
       name: dto.name,
       praca_id: dto.praca_id,
@@ -362,7 +408,9 @@ export class FreelaCampaignsService {
       campaign: this.toView(await this.rowOrFail(feito.freela_id)),
       recipients_count: feito.recipients_count,
       invalid_phones: feito.invalid_phones,
+      duplicate_phones: feito.duplicate_lead_ids.length,
       unsupported_variables: modelo.unsupported_variables,
+      start_error: feito.start_error,
     };
   }
 
@@ -378,6 +426,8 @@ export class FreelaCampaignsService {
     const perContact = this.client.perContactMessage();
     const contacts: { name: string; phone: string; message?: string }[] = [];
     const invalid_lead_ids: string[] = [];
+    const duplicate_lead_ids: string[] = [];
+    const vistos = new Set<string>();
 
     for (const l of args.leads) {
       const phone = toE164BR(l.phone);
@@ -385,6 +435,14 @@ export class FreelaCampaignsService {
         invalid_lead_ids.push(l.id);
         continue;
       }
+      // O Freela descarta telefone repetido na normalização da lista: mandar
+      // dois contatos com o mesmo número cria UM destinatário, e o segundo
+      // envio ficaria em `fila` esperando alguém que nunca vai existir.
+      if (vistos.has(phone)) {
+        duplicate_lead_ids.push(l.id);
+        continue;
+      }
+      vistos.add(phone);
       contacts.push({
         // O funil grava "—" quando ninguém sabe o nome do dono: aí vale o nome
         // da casa, que é como o WhatsApp vai chamar a pessoa.
@@ -409,6 +467,8 @@ export class FreelaCampaignsService {
         recipients_count: 0,
         invalid_phones: invalid_lead_ids.length,
         invalid_lead_ids,
+        duplicate_lead_ids,
+        start_error: null,
       };
     }
 
@@ -429,7 +489,9 @@ export class FreelaCampaignsService {
       });
     }
 
-    const status = await this.startIfAsked(freelaId, criada.data?.status, args.start_now);
+    // Espelho ANTES do start: a campanha já existe lá, e é o
+    // `freela_campaign_id` nos envios que impede a próxima rodada de criar
+    // outra igual.
     await this.gravarEspelho(
       {
         freela_id: freelaId,
@@ -439,23 +501,28 @@ export class FreelaCampaignsService {
         disparo_id: args.disparo_id ?? null,
         audience: 'EXTERNAL_LIST',
         audience_filters: Prisma.DbNull,
-        status,
+        status: criada.data?.status ?? 'DRAFT',
         created_by: args.created_by,
       },
       args.link_send_ids,
       args.disparo_id ?? null,
     );
+    const inicio = await this.startIfAsked(freelaId, args.start_now);
 
     return {
       freela_id: freelaId,
       recipients_count: contacts.length,
       invalid_phones: invalid_lead_ids.length,
       invalid_lead_ids,
+      duplicate_lead_ids,
+      start_error: inicio.error,
     };
   }
 
   /** Público do próprio Freela (contratantes/freelancers parados etc.). */
-  async createForBase(args: CreateForBaseArgs): Promise<FreelaCampaignView> {
+  async createForBase(
+    args: CreateForBaseArgs,
+  ): Promise<{ campaign: FreelaCampaignView; start_error: string | null }> {
     this.client.ensureConfigured();
     const criada = await this.client.request<{ id?: string; status?: string }>('POST', CAMPAIGNS_PATH, {
       name: args.name,
@@ -471,7 +538,6 @@ export class FreelaCampaignsService {
         message: 'O Freela não devolveu o id da campanha criada.',
       });
     }
-    const status = await this.startIfAsked(freelaId, criada.data?.status, args.start_now);
     await this.gravarEspelho({
       freela_id: freelaId,
       name: args.name,
@@ -480,10 +546,11 @@ export class FreelaCampaignsService {
       disparo_id: null,
       audience: args.audience,
       audience_filters: (args.filters ?? Prisma.DbNull) as Prisma.InputJsonValue | typeof Prisma.DbNull,
-      status,
+      status: criada.data?.status ?? 'DRAFT',
       created_by: args.created_by,
     });
-    return this.toView(await this.rowOrFail(freelaId));
+    const inicio = await this.startIfAsked(freelaId, args.start_now);
+    return { campaign: this.toView(await this.rowOrFail(freelaId)), start_error: inicio.error };
   }
 
   /** Ritmo pedido na tela por cima do ritmo do Praça (`GET /v1/settings`). */
@@ -564,7 +631,15 @@ export class FreelaCampaignsService {
     if (pendentes.length === 0) return;
 
     const porTelefone = await this.recipientsByPhone(freelaId);
-    if (porTelefone.size === 0) return;
+    if (porTelefone.size === 0) {
+      // Campanha com envio pendurado e nenhum telefone lido: ou a campanha
+      // ainda não tem destinatário, ou o Freela mudou o nome do campo. Nos dois
+      // casos o envio ficaria em `fila` para sempre em silêncio.
+      this.log.warn(
+        `campanha ${freelaId}: ${pendentes.length} envio(s) na fila e nenhum destinatário com telefone lido`,
+      );
+      return;
+    }
 
     const nomes = await this.loteNames(pendentes);
     const disparosTocados = new Set<string>();
@@ -624,7 +699,7 @@ export class FreelaCampaignsService {
       const r = await this.client.request<unknown>('GET', `${base}?page=${page}&pageSize=200`);
       const itens = this.recipientsOf(r.data);
       for (const item of itens) {
-        const tel = toE164BR(item.externalPhone ?? item.destination ?? null);
+        const tel = toE164BR(item.phone ?? item.externalPhone ?? item.destination ?? null);
         if (tel && !out.has(tel)) out.set(tel, item);
       }
       if (itens.length < 200) break;
@@ -723,26 +798,42 @@ export class FreelaCampaignsService {
     });
   }
 
-  /** `PATCH /:id/start` quando a tela pediu para já sair. */
+  /**
+   * `PATCH /:id/start` — chamado **depois** de o espelho existir.
+   *
+   * Falhar aqui não desfaz a campanha: o espelho fica com o status de
+   * nascimento (`DRAFT`), o motivo volta em `start_error` e a próxima
+   * sincronização traz o status de verdade. Começar antes de gravar o espelho
+   * abriria a janela em que a rodada seguinte do outbox criaria tudo de novo.
+   */
   private async startIfAsked(
     freelaId: string,
-    statusCriado: string | undefined,
     startNow: boolean,
-  ): Promise<string> {
-    const nascida = statusCriado ?? 'DRAFT';
-    if (!startNow) return nascida;
-    const r = await this.client.request<{ status?: string }>(
-      'PATCH',
-      `${CAMPAIGNS_PATH}/${encodeURIComponent(freelaId)}/start`,
-    );
-    return r.data?.status ?? 'RUNNING';
+  ): Promise<{ status: string | null; error: string | null }> {
+    if (!startNow) return { status: null, error: null };
+    try {
+      const r = await this.client.request<{ status?: string }>(
+        'PATCH',
+        `${CAMPAIGNS_PATH}/${encodeURIComponent(freelaId)}/start`,
+      );
+      const status = r.data?.status ?? 'RUNNING';
+      await this.prisma.freela_campaigns.update({
+        where: { freela_id: freelaId },
+        data: { status, last_synced_at: new Date() },
+      });
+      return { status, error: null };
+    } catch (e) {
+      const error = this.motivo(e);
+      this.log.warn(`campanha ${freelaId} criada, mas não começou: ${error}`);
+      return { status: null, error };
+    }
   }
 
   /** Modelo do Praça convertido, ou o texto escrito na mão. */
   private async resolveTemplate(
     dto: CreateFreelaCampaignDto,
     user: AuthUser,
-    praca: RenderPraca | undefined,
+    praca: PracaCtx,
   ): Promise<{ template: string; unsupported_variables: string[] }> {
     if (dto.template_id) {
       const tpl = await this.prisma.msg_templates.findUnique({
@@ -752,7 +843,8 @@ export class FreelaCampaignsService {
       if (!tpl) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Modelo não encontrado.' });
       const settings = await this.messages.getSettings();
       return toFreelaTemplate(tpl.text_a, tpl.text_b, {
-        praca,
+        praca: praca.praca,
+        cidade: praca.cidade,
         me: { name: user.name },
         defaults: settings.template_defaults,
       });
@@ -766,13 +858,13 @@ export class FreelaCampaignsService {
     return { template: dto.whatsapp_template, unsupported_variables: [] };
   }
 
-  private async pracaOrFail(id: string): Promise<RenderPraca | undefined> {
+  private async pracaOrFail(id: string): Promise<PracaCtx> {
     const p = await this.prisma.pracas.findUnique({
       where: { id },
-      select: { name: true, start_date: true },
+      select: { name: true, start_date: true, city: true, cobertura_cidade: true },
     });
     if (!p) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Praça não encontrada.' });
-    return { name: p.name, start_date: p.start_date };
+    return { praca: { name: p.name, start_date: p.start_date }, cidade: pracaCidade(p) };
   }
 
   private async rowOrFail(freelaId: string): Promise<CampaignRow> {
