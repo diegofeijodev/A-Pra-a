@@ -1,8 +1,6 @@
 import {
   BadRequestException,
-  BadGatewayException,
   ConflictException,
-  HttpException,
   Inject,
   Injectable,
   NotFoundException,
@@ -25,7 +23,14 @@ import {
 import { COM_LEAD, respostasDe, visitView, type VisitRow, type VisitView } from './campo-views';
 import type { AnswersDto, CheckinDto, PosicaoDto } from './dto/campo.dto';
 import { JourneysService } from './journeys.service';
-import { chaveDaFoto, PHOTO_STORAGE, tipoDaImagem, type FotoLida, type PhotoStorage } from './photo-storage';
+import {
+  chaveDaFoto,
+  lerFotoOuFalha,
+  PHOTO_STORAGE,
+  tipoDaImagem,
+  type FotoLida,
+  type PhotoStorage,
+} from './photo-storage';
 import { PlacesService } from './places.service';
 import { violouUnico } from './prisma-errors';
 
@@ -52,14 +57,24 @@ export class VisitsService {
   ) {}
 
   async checkin(c: CampoConsultant, dto: CheckinDto, foto: Buffer, agora = new Date()): Promise<VisitView> {
-    const mesma = await this.prisma.field_visits.findUnique({ where: { client_id: dto.client_id }, include: COM_LEAD });
+    const mesma = await this.prisma.field_visits.findUnique({
+      where: { client_id: dto.client_id },
+      include: COM_LEAD,
+    });
     if (mesma) return this.daMesmaPessoa(mesma, c, agora);
 
     if (!!dto.lead_id === !!dto.new_place) {
-      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'Informe lead_id ou new_place (um dos dois).' });
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Informe lead_id ou new_place (um dos dois).',
+      });
     }
     const mime = tipoDaImagem(foto);
-    if (!mime) throw new BadRequestException({ code: 'INVALID_FILE_TYPE', message: 'A foto precisa ser JPEG, PNG ou WEBP.' });
+    if (!mime)
+      throw new BadRequestException({
+        code: 'INVALID_FILE_TYPE',
+        message: 'A foto precisa ser JPEG, PNG ou WEBP.',
+      });
 
     const jornada = await this.journeys.abertaOuFalha(c.id);
     const aberta = await this.prisma.field_visits.findFirst({
@@ -71,7 +86,10 @@ export class VisitsService {
     const { at, ajustado } = carimbo(dto.at, agora, jornada.started_at);
     const ponto = { lat: dto.lat, lng: dto.lng };
     let leadId: string;
-    let marca: { distance_m: number | null; far_from_place: boolean } = { distance_m: null, far_from_place: false };
+    let marca: { distance_m: number | null; far_from_place: boolean } = {
+      distance_m: null,
+      far_from_place: false,
+    };
     let novoLead: Prisma.leadsUncheckedCreateInput | null = null;
 
     if (dto.lead_id) {
@@ -79,7 +97,11 @@ export class VisitsService {
         where: { id: dto.lead_id, praca_id: c.praca_id },
         select: { id: true, lat: true, lng: true },
       });
-      if (!lead) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Estabelecimento não encontrado na sua praça.' });
+      if (!lead)
+        throw new NotFoundException({
+          code: 'NOT_FOUND',
+          message: 'Estabelecimento não encontrado na sua praça.',
+        });
       leadId = lead.id;
       marca = marcaLonge(ponto, lead);
     } else {
@@ -87,7 +109,10 @@ export class VisitsService {
       // Sem "é outro" confirmado (check-in feito sem sinal, sem como perguntar),
       // não bloqueia: cria marcando possível duplicado para a equipe.
       const parecidos = dto.confirm_new ? [] : await this.places.similar(c, { name: lugar.name, ...ponto });
-      const praca = await this.prisma.pracas.findUnique({ where: { id: c.praca_id }, select: { cobertura_cidade: true } });
+      const praca = await this.prisma.pracas.findUnique({
+        where: { id: c.praca_id },
+        select: { cobertura_cidade: true },
+      });
       const dia = todaySp(at);
       leadId = randomUUID();
       novoLead = {
@@ -154,14 +179,22 @@ export class VisitsService {
       // A foto já está guardada: sem a linha, ela vira lixo — sai junto.
       await this.fotos.remove(key).catch(() => undefined);
       if (!violouUnico(e)) throw e;
-      const ganhou = await this.prisma.field_visits.findUnique({ where: { client_id: dto.client_id }, include: COM_LEAD });
+      const ganhou = await this.prisma.field_visits.findUnique({
+        where: { client_id: dto.client_id },
+        include: COM_LEAD,
+      });
       if (ganhou) return this.daMesmaPessoa(ganhou, c, agora);
       throw visitaAberta();
     }
     return this.porId(visitId, agora);
   }
 
-  async saveAnswers(c: CampoConsultant, ref: string, dto: AnswersDto, agora = new Date()): Promise<VisitView> {
+  async saveAnswers(
+    c: CampoConsultant,
+    ref: string,
+    dto: AnswersDto,
+    agora = new Date(),
+  ): Promise<VisitView> {
     const v = await this.daVisita(c.id, ref);
     if (v.checkout_at || v.auto_closed) {
       throw new ConflictException({ code: 'VISIT_CLOSED', message: 'Esta visita já foi encerrada.' });
@@ -172,7 +205,8 @@ export class VisitsService {
     if (dto.freela_status !== undefined) data.freela_status = dto.freela_status;
     if (dto.interest !== undefined) data.interest = dto.interest;
     if (dto.open_vagas !== undefined) data.open_vagas = dto.open_vagas;
-    if (dto.vaga_roles !== undefined) data.vaga_roles = (dto.vaga_roles ?? []).map((s) => s.trim()).filter(Boolean);
+    if (dto.vaga_roles !== undefined)
+      data.vaga_roles = (dto.vaga_roles ?? []).map((s) => s.trim()).filter(Boolean);
     if (dto.freelas_per_week !== undefined) data.freelas_per_week = dto.freelas_per_week;
     if (dto.channels !== undefined) data.channels = (dto.channels ?? []).map((s) => s.trim()).filter(Boolean);
     if (dto.channel_other !== undefined) data.channel_other = texto(dto.channel_other);
@@ -192,11 +226,17 @@ export class VisitsService {
     const respostas = respostasDe(v);
     const falta = faltando(respostas, todaySp(agora));
     if (falta.length > 0) {
-      throw new UnprocessableEntityException({ code: 'ANSWERS_INCOMPLETE', message: `Falta responder: ${falta.join(', ')}.` });
+      throw new UnprocessableEntityException({
+        code: 'ANSWERS_INCOMPLETE',
+        message: `Falta responder: ${falta.join(', ')}.`,
+      });
     }
 
     const { at, ajustado } = carimbo(dto.at, agora, v.checkin_at);
-    const lead = await this.prisma.leads.findUniqueOrThrow({ where: { id: v.lead_id }, select: { id: true, stage: true } });
+    const lead = await this.prisma.leads.findUniqueOrThrow({
+      where: { id: v.lead_id },
+      select: { id: true, stage: true },
+    });
     const estagio = estagioDepoisDaVisita(lead.stage);
     const mudou = estagio !== lead.stage;
 
@@ -204,7 +244,12 @@ export class VisitsService {
       // Condicional: dois checkouts simultâneos gravam UM evento no CRM.
       const r = await tx.field_visits.updateMany({
         where: { id: v.id, checkout_at: null, auto_closed: false },
-        data: { checkout_at: at, checkout_lat: dto.lat, checkout_lng: dto.lng, ...(ajustado ? { clock_adjusted: true } : {}) },
+        data: {
+          checkout_at: at,
+          checkout_lat: dto.lat,
+          checkout_lng: dto.lng,
+          ...(ajustado ? { clock_adjusted: true } : {}),
+        },
       });
       if (r.count === 0) return;
       await tx.field_points.create({
@@ -251,15 +296,7 @@ export class VisitsService {
 
   async photo(c: CampoConsultant, ref: string): Promise<FotoLida> {
     const v = await this.daVisita(c.id, ref);
-    let f: FotoLida | null;
-    try {
-      f = await this.fotos.get(v.photo_key);
-    } catch (e) {
-      if (e instanceof HttpException) throw e; // ex.: 503 PHOTO_STORAGE_NOT_CONFIGURED
-      throw new BadGatewayException({ code: 'PHOTO_STORAGE_ERROR', message: 'Não foi possível ler a foto agora.' });
-    }
-    if (!f) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Foto não encontrada.' });
-    return f;
+    return lerFotoOuFalha(this.fotos, v.photo_key);
   }
 
   // ── internos ────────────────────────────────────────────────

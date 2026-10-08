@@ -10,8 +10,20 @@
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { BadGatewayException, Logger, ServiceUnavailableException } from '@nestjs/common';
-import { DeleteObjectCommand, GetObjectCommand, NoSuchKey, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  BadGatewayException,
+  HttpException,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  NoSuchKey,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import type { Env } from '../../common/config/env.validation';
 
 export type MimeImagem = 'image/jpeg' | 'image/png' | 'image/webp';
@@ -38,7 +50,10 @@ export const PHOTO_STORAGE_NOT_CONFIGURED_MESSAGE =
  */
 export function tipoDaImagem(b: Buffer): MimeImagem | null {
   if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
-  if (b.length >= 8 && b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+  if (
+    b.length >= 8 &&
+    b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+  ) {
     return 'image/png';
   }
   if (b.length >= 12 && b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WEBP') {
@@ -133,7 +148,10 @@ export class S3PhotoStorage implements PhotoStorage {
     try {
       const r = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
       if (!r.Body) return null;
-      return { bytes: Buffer.from(await r.Body.transformToByteArray()), mime: r.ContentType ?? mimeDaChave(key) };
+      return {
+        bytes: Buffer.from(await r.Body.transformToByteArray()),
+        mime: r.ContentType ?? mimeDaChave(key),
+      };
     } catch (e) {
       if (e instanceof NoSuchKey || (e as { name?: string }).name === 'NoSuchKey') return null;
       throw e;
@@ -178,5 +196,24 @@ export function criarPhotoStorage(env: EnvFotos, log = new Logger('PhotoStorage'
     env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY
       ? { accessKeyId: env.AWS_ACCESS_KEY_ID, secretAccessKey: env.AWS_SECRET_ACCESS_KEY }
       : undefined;
-  return new S3PhotoStorage(env.S3_BUCKET, new S3Client({ region: env.S3_REGION, ...(credentials ? { credentials } : {}) }));
+  return new S3PhotoStorage(
+    env.S3_BUCKET,
+    new S3Client({ region: env.S3_REGION, ...(credentials ? { credentials } : {}) }),
+  );
+}
+
+/** Lê a foto de uma visita: falha do armazenamento = 502 (HttpException, como o 503, passa), ausente = 404. */
+export async function lerFotoOuFalha(fotos: PhotoStorage, key: string): Promise<FotoLida> {
+  let f: FotoLida | null;
+  try {
+    f = await fotos.get(key);
+  } catch (e) {
+    if (e instanceof HttpException) throw e; // ex.: 503 PHOTO_STORAGE_NOT_CONFIGURED
+    throw new BadGatewayException({
+      code: 'PHOTO_STORAGE_ERROR',
+      message: 'Não foi possível ler a foto agora.',
+    });
+  }
+  if (!f) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Foto não encontrada.' });
+  return f;
 }

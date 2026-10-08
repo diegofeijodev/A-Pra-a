@@ -1,10 +1,23 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Res,
+  StreamableFile,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import type { FastifyReply } from 'fastify';
 import { AuthUser } from '../../common/auth/auth-user';
 import { AdminOnly } from '../../common/decorators/admin-only.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ConsultoresService } from './consultores.service';
-import { CreateConsultorDto, UpdateConsultorDto } from './dto/consultores.dto';
+import { ChannelsDto, CreateConsultorDto, UpdateConsultorDto } from './dto/consultores.dto';
 
 /**
  * Telas da equipe sobre os consultores de campo (`/v1/consultores`, §20.4).
@@ -28,10 +41,35 @@ export class ConsultoresController {
     return this.consultores.create(dto, user);
   }
 
-  // ── rotas com :id (as estáticas da Task 7 entram ACIMA desta linha) ──
+  // ── estáticas: ANTES de ':id', senão ':id' captura "settings" e "visits" ──
+  @Get('settings/channels')
+  channels() {
+    return this.consultores.channels();
+  }
+
+  @AdminOnly()
+  @Put('settings/channels')
+  setChannels(@Body() dto: ChannelsDto) {
+    return this.consultores.setChannels(dto);
+  }
+
+  @Get('visits/:visitId/photo')
+  async photo(@Param('visitId') visitId: string, @Res({ passthrough: true }) res: FastifyReply) {
+    const f = await this.consultores.photo(visitId);
+    // Só no sucesso: erro (404/502/503) não pode ficar 24 h no cache do aparelho.
+    void res.header('Cache-Control', 'private, max-age=86400');
+    return new StreamableFile(f.bytes, { type: f.mime, disposition: 'inline' });
+  }
+
+  // ── rotas com :id ──
   @Get(':id')
   get(@Param('id') id: string) {
     return this.consultores.get(id);
+  }
+
+  @Get(':id/days/:day')
+  day(@Param('id') id: string, @Param('day') day: string) {
+    return this.consultores.day(id, day);
   }
 
   @AdminOnly()

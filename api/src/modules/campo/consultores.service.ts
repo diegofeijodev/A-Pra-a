@@ -1,11 +1,17 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { AuthUser } from '../../common/auth/auth-user';
 import { PrismaService } from '../../common/database/prisma.service';
 import { isUuid } from '../../common/ids/uuid';
 import { digits } from '../../common/phone/phone';
-import { todaySp } from '../../common/time/dates';
+import { isDateString, todaySp } from '../../common/time/dates';
 import {
   cpfValido,
   gerarSenhaProvisoria,
@@ -15,10 +21,20 @@ import {
   type SituacaoHoje,
 } from '../../domain/campo-rules';
 import { CampoFreelaService } from './campo-freela.service';
+import { lerCanais } from './campo-canais';
 import { signupUrl } from './campo-links';
 import { COM_PRACA } from './campo-prisma';
-import { CreateConsultorDto, UpdateConsultorDto } from './dto/consultores.dto';
-import { PHOTO_STORAGE, type PhotoStorage } from './photo-storage';
+import {
+  COM_LEAD,
+  journeyView,
+  pointView,
+  visitView,
+  type JourneyView,
+  type PointView,
+  type VisitView,
+} from './campo-views';
+import { ChannelsDto, CreateConsultorDto, UpdateConsultorDto } from './dto/consultores.dto';
+import { lerFotoOuFalha, PHOTO_STORAGE, type FotoLida, type PhotoStorage } from './photo-storage';
 import { colunaUnicaDoConsultor, violouUnico } from './prisma-errors';
 
 export interface ConsultorView {
@@ -47,7 +63,9 @@ export interface ConsultorListItem extends ConsultorView {
   today: { status: SituacaoHoje; visits: number; cadastros: number; last_point_at: string | null };
 }
 
-export type ConsultorRow = Prisma.field_consultantsGetPayload<{ include: { praca: { select: { name: true } } } }>;
+export type ConsultorRow = Prisma.field_consultantsGetPayload<{
+  include: { praca: { select: { name: true } } };
+}>;
 
 /** Projeção da equipe — nunca `password_hash` nem `token_version`. */
 export function toConsultorView(c: ConsultorRow): ConsultorView {
@@ -78,7 +96,8 @@ const naoAchado = () => new NotFoundException({ code: 'NOT_FOUND', message: 'Con
 
 const emailEmUso = () =>
   new ConflictException({ code: 'EMAIL_IN_USE', message: 'Já existe um consultor com este e-mail.' });
-const cpfEmUso = () => new ConflictException({ code: 'CPF_IN_USE', message: 'Já existe um consultor com este CPF.' });
+const cpfEmUso = () =>
+  new ConflictException({ code: 'CPF_IN_USE', message: 'Já existe um consultor com este CPF.' });
 
 @Injectable()
 export class ConsultoresService {
@@ -91,7 +110,10 @@ export class ConsultoresService {
   async list(agora = new Date()): Promise<ConsultorListItem[]> {
     const hoje = todaySp(agora);
     const [consultores, jornadas, visitas] = await Promise.all([
-      this.prisma.field_consultants.findMany({ include: COM_PRACA, orderBy: [{ active: 'desc' }, { name: 'asc' }] }),
+      this.prisma.field_consultants.findMany({
+        include: COM_PRACA,
+        orderBy: [{ active: 'desc' }, { name: 'asc' }],
+      }),
       this.prisma.field_journeys.findMany({
         where: { day: hoje },
         select: { id: true, consultant_id: true, ended_at: true },
@@ -131,7 +153,10 @@ export class ConsultoresService {
     return toConsultorView(await this.findOrFail(id));
   }
 
-  async create(dto: CreateConsultorDto, admin: AuthUser): Promise<{ consultant: ConsultorView; temp_password: string }> {
+  async create(
+    dto: CreateConsultorDto,
+    admin: AuthUser,
+  ): Promise<{ consultant: ConsultorView; temp_password: string }> {
     const email = dto.email.trim().toLowerCase();
     const cpf = this.cpfOuFalha(dto.cpf);
     const phone = this.telefoneOuFalha(dto.phone);
@@ -239,11 +264,92 @@ export class ConsultoresService {
   /** Apaga de vez (limpeza de teste): cascata leva jornadas, pontos e visitas; as fotos saem à mão. */
   async remove(id: string): Promise<{ ok: true }> {
     const c = await this.findOrFail(id);
-    const fotos = await this.prisma.field_visits.findMany({ where: { consultant_id: id }, select: { photo_key: true } });
+    const fotos = await this.prisma.field_visits.findMany({
+      where: { consultant_id: id },
+      select: { photo_key: true },
+    });
     await this.freela.desativarAntesDeApagar(c);
     await this.prisma.field_consultants.delete({ where: { id } });
     for (const f of fotos) await this.fotos.remove(f.photo_key).catch(() => undefined);
     return { ok: true };
+  }
+
+  /** Linha do tempo de um dia: jornadas (com os pontos em ordem) e visitas. */
+  async day(
+    id: string,
+    day: string,
+  ): Promise<{ day: string; journeys: (JourneyView & { points: PointView[] })[]; visits: VisitView[] }> {
+    await this.findOrFail(id);
+    if (!isDateString(day)) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'day: deve ser uma data válida no formato YYYY-MM-DD',
+      });
+    }
+    const [jornadas, visitas] = await Promise.all([
+      this.prisma.field_journeys.findMany({
+        where: { consultant_id: id, day },
+        orderBy: { started_at: 'asc' },
+        include: { points: { orderBy: { at: 'asc' } } },
+      }),
+      this.prisma.field_visits.findMany({
+        where: { consultant_id: id, journey: { day } },
+        include: COM_LEAD,
+        orderBy: { checkin_at: 'asc' },
+      }),
+    ]);
+    const hoje = todaySp();
+    return {
+      day,
+      journeys: jornadas.map((j) => ({ ...journeyView(j), points: j.points.map(pointView) })),
+      visits: visitas.map((v) => visitView(v, hoje)),
+    };
+  }
+
+  /** Foto de qualquer visita — a equipe inteira lê (spec §11). */
+  async photo(visitId: string): Promise<FotoLida> {
+    if (!isUuid(visitId)) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Foto não encontrada.' });
+    const v = await this.prisma.field_visits.findUnique({
+      where: { id: visitId },
+      select: { photo_key: true },
+    });
+    if (!v) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Foto não encontrada.' });
+    return lerFotoOuFalha(this.fotos, v.photo_key);
+  }
+
+  async channels(): Promise<{ channels: string[] }> {
+    return { channels: await lerCanais(this.prisma) };
+  }
+
+  /** Apara e tira repetidos sem diferenciar caixa ("iFood" e "ifood" são um só). */
+  async setChannels(dto: ChannelsDto): Promise<{ channels: string[] }> {
+    const vistos = new Set<string>();
+    const lista: string[] = [];
+    for (const bruto of dto.channels) {
+      const canal = bruto.trim();
+      const chave = canal.toLowerCase();
+      if (!canal || vistos.has(chave)) continue;
+      if (canal.length > 80) {
+        throw new BadRequestException({
+          code: 'VALIDATION_ERROR',
+          message: 'channels: cada canal tem no máximo 80 caracteres.',
+        });
+      }
+      vistos.add(chave);
+      lista.push(canal);
+    }
+    if (lista.length === 0) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'channels: informe ao menos um canal.',
+      });
+    }
+    await this.prisma.app_settings.upsert({
+      where: { id: 1 },
+      update: { field_channels: lista },
+      create: { id: 1, field_channels: lista },
+    });
+    return { channels: lista };
   }
 
   async findOrFail(id: string): Promise<ConsultorRow> {
@@ -269,7 +375,10 @@ export class ConsultoresService {
 
   private pixOuFalha(tipo: string, chave: string): void {
     if (!pixValido(tipo, chave)) {
-      throw new BadRequestException({ code: 'INVALID_PIX', message: 'A chave Pix não confere com o tipo escolhido.' });
+      throw new BadRequestException({
+        code: 'INVALID_PIX',
+        message: 'A chave Pix não confere com o tipo escolhido.',
+      });
     }
   }
 
@@ -279,7 +388,10 @@ export class ConsultoresService {
     if (coluna === 'email') return emailEmUso();
     if (coluna === 'cpf') return cpfEmUso();
     if (violouUnico(e)) {
-      return new ConflictException({ code: 'CONFLICT', message: 'E-mail ou CPF já cadastrado em outro consultor.' });
+      return new ConflictException({
+        code: 'CONFLICT',
+        message: 'E-mail ou CPF já cadastrado em outro consultor.',
+      });
     }
     return e;
   }

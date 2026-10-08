@@ -1,4 +1,16 @@
-import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, IsUUID, Length, MaxLength } from 'class-validator';
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsBoolean,
+  IsEmail,
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Length,
+  MaxLength,
+} from 'class-validator';
 import { PIX_TIPOS } from '../../../domain/campo-rules';
 
 const TIPOS_PIX = [...PIX_TIPOS] as string[];
@@ -69,4 +81,13 @@ export class UpdateConsultorDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+}
+
+export class ChannelsDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(30)
+  @IsString({ each: true })
+  @Length(1, 80, { each: true })
+  channels!: string[];
 }
