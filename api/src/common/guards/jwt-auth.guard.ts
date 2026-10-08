@@ -10,7 +10,9 @@ import { JwtService } from '@nestjs/jwt';
 import { AuthUser } from '../auth/auth-user';
 import { PrismaService } from '../database/prisma.service';
 import { ADMIN_ONLY_KEY } from '../decorators/admin-only.decorator';
+import { CAMPO_ROUTE_KEY } from '../decorators/campo-route.decorator';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { CAMPO_AUDIENCE, CampoAuthGuard } from './campo-auth.guard';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -18,6 +20,7 @@ export class JwtAuthGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
+    private readonly campo: CampoAuthGuard,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -27,6 +30,13 @@ export class JwtAuthGuard implements CanActivate {
     ]);
     if (isPublic) return true;
 
+    // Rotas do consultor de campo têm sessão própria (spec §4.1).
+    const isCampo = this.reflector.getAllAndOverride<boolean>(CAMPO_ROUTE_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isCampo) return this.campo.canActivate(context);
+
     const request = context.switchToHttp().getRequest();
     const header: string | undefined = request.headers?.authorization;
     const token = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
@@ -34,10 +44,16 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException({ code: 'UNAUTHORIZED', message: 'Token ausente' });
     }
 
-    let payload: { sub: string; email: string; name: string; is_admin: boolean };
+    let payload: { sub: string; email: string; name: string; is_admin: boolean; aud?: string | string[] };
     try {
       payload = await this.jwtService.verifyAsync(token);
     } catch {
+      throw new UnauthorizedException({ code: 'UNAUTHORIZED', message: 'Token inválido ou expirado' });
+    }
+
+    // Recusa EXPLÍCITA do token de consultor: sem isto ele só falharia porque o
+    // `sub` não está em `users` — e a segurança da equipe dependeria disso.
+    if (([] as string[]).concat(payload.aud ?? []).includes(CAMPO_AUDIENCE)) {
       throw new UnauthorizedException({ code: 'UNAUTHORIZED', message: 'Token inválido ou expirado' });
     }
 

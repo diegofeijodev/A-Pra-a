@@ -23,6 +23,11 @@ const envSchema = z.object({
   FREELA_PER_CONTACT_MESSAGE: z.string().default('false'),
   CADENCE_ENGINE_ENABLED: z.string().default('true'),
   FREELA_SYNC_ENABLED: z.string().default('true'),
+  // Consultores de campo (spec 2026-10-08). O consultor não deve precisar logar
+  // todo dia na rua: token próprio, mais longo que o da equipe.
+  CAMPO_JWT_EXPIRES_IN: z.string().default('7d'),
+  // Endereço público do Freela web — base do link do QR (`/cadastro?consultor=`).
+  FREELA_WEB_URL: z.string().default(''),
 
   SWAGGER_ENABLED: z.string().optional(),
 

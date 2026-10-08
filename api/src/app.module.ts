@@ -7,11 +7,13 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { validateEnv } from './common/config/env.validation';
 import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
 import { PrismaModule } from './common/database/prisma.module';
+import { CampoAuthGuard } from './common/guards/campo-auth.guard';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { HealthModule } from './common/health/health.module';
 import { ActionsModule } from './modules/actions/actions.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CadencesModule } from './modules/cadences/cadences.module';
+import { CampoModule } from './modules/campo/campo.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { DisparosModule } from './modules/disparos/disparos.module';
 import { FreelaModule } from './modules/freela/freela.module';
@@ -49,8 +51,12 @@ import { UsersModule } from './modules/users/users.module';
     MidiaModule,
     IndicatorsModule,
     NotificationsModule,
+    CampoModule,
   ],
   providers: [
+    // Não é APP_GUARD: o `JwtAuthGuard` global delega para ele nas rotas
+    // `@CampoRoute()` (sessão do consultor de campo, `aud: "campo"`).
+    CampoAuthGuard,
     // Subclasse do ThrottlerGuard: o teto do formulário público vem do
     // ambiente (`PUBLIC_LEADS_PER_MINUTE`), o resto continua no balde de 300/min.
     { provide: APP_GUARD, useClass: AppThrottlerGuard },
