@@ -1,4 +1,4 @@
-import { BadRequestException, Logger, ValidationError, ValidationPipe } from '@nestjs/common';
+import { BadRequestException, Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -8,20 +8,9 @@ import multipart from '@fastify/multipart';
 import { AppModule } from './app.module';
 import { validateEnv } from './common/config/env.validation';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { flattenErrors } from './common/validation/flatten-errors';
 
 const logger = new Logger('Bootstrap');
-
-function flattenErrors(errors: ValidationError[], path = ''): string {
-  return errors
-    .flatMap((e) => {
-      const campo = path ? `${path}.${e.property}` : e.property;
-      const proprias = Object.values(e.constraints ?? {}).map((m) => `${campo}: ${m}`);
-      const filhas = e.children?.length ? [flattenErrors(e.children, campo)] : [];
-      return [...proprias, ...filhas];
-    })
-    .filter(Boolean)
-    .join(' | ');
-}
 
 async function bootstrap() {
   // O adaptador do Fastify é construído ANTES de o `ConfigService` existir, e
@@ -56,10 +45,10 @@ async function bootstrap() {
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   });
 
-  // Só uma rota usa multipart: o repasse da imagem das campanhas automáticas
-  // do Freela (`POST /v1/freela/templates/upload`). O teto é o mesmo de lá —
-  // 5 MB, um arquivo — para o arquivo grande morrer aqui, e não depois de
-  // atravessar a internet duas vezes.
+  // Multipart: o repasse da imagem das campanhas automáticas do Freela
+  // (`POST /v1/freela/templates/upload`) e a foto da fachada no check-in do
+  // consultor de campo (`POST /v1/campo/visits`). 5 MB, um arquivo — o arquivo
+  // grande morre aqui, com 413, e não depois de atravessar a rede.
   await app.register(multipart as never, { limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
 
   const config = app.get(ConfigService);

@@ -1,11 +1,27 @@
-import { Body, Controller, Get, HttpCode, Post } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  StreamableFile,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import type { FastifyRequest } from 'fastify';
 import { CampoConsultant } from '../../common/auth/campo-consultant';
 import { AllowPendingPassword, CampoRoute } from '../../common/decorators/campo-route.decorator';
 import { CurrentConsultant } from '../../common/decorators/current-consultant.decorator';
 import { CampoAuthService } from './campo-auth.service';
-import { PontosDto, PosicaoDto, StartJourneyDto } from './dto/campo.dto';
+import { AnswersDto, PlacesQueryDto, PontosDto, PosicaoDto, SimilarQueryDto, StartJourneyDto } from './dto/campo.dto';
 import { JourneysService } from './journeys.service';
+import { lerCheckinMultipart } from './multipart-checkin';
+import { PlacesService } from './places.service';
+import { VisitsService } from './visits.service';
 
 /** Rotas do dia a dia do consultor (`/v1/campo/*`) — §20 do contrato. */
 @ApiTags('Campo')
@@ -16,6 +32,8 @@ export class CampoController {
   constructor(
     private readonly auth: CampoAuthService,
     private readonly journeys: JourneysService,
+    private readonly places: PlacesService,
+    private readonly visits: VisitsService,
   ) {}
 
   @AllowPendingPassword()
@@ -45,5 +63,42 @@ export class CampoController {
   @Post('journeys/current/end')
   end(@CurrentConsultant() c: CampoConsultant, @Body() dto: PosicaoDto) {
     return this.journeys.end(c, dto);
+  }
+
+  // ── estabelecimentos (a estática `places/similar` antes de `places`) ──
+  @Get('places/similar')
+  similar(@CurrentConsultant() c: CampoConsultant, @Query() q: SimilarQueryDto) {
+    return this.places.similar(c, q);
+  }
+
+  @Get('places')
+  listPlaces(@CurrentConsultant() c: CampoConsultant, @Query() q: PlacesQueryDto) {
+    return this.places.list(c, q);
+  }
+
+  // ── visitas ─────────────────────────────────────────────────
+  @Post('visits')
+  @ApiConsumes('multipart/form-data')
+  async checkin(@CurrentConsultant() c: CampoConsultant, @Req() req: FastifyRequest) {
+    const { campos, foto } = await lerCheckinMultipart(req);
+    return this.visits.checkin(c, campos, foto);
+  }
+
+  @Patch('visits/:ref/answers')
+  answers(@CurrentConsultant() c: CampoConsultant, @Param('ref') ref: string, @Body() dto: AnswersDto) {
+    return this.visits.saveAnswers(c, ref, dto);
+  }
+
+  @HttpCode(200)
+  @Post('visits/:ref/checkout')
+  checkout(@CurrentConsultant() c: CampoConsultant, @Param('ref') ref: string, @Body() dto: PosicaoDto) {
+    return this.visits.checkout(c, ref, dto);
+  }
+
+  @Get('visits/:ref/photo')
+  @Header('Cache-Control', 'private, max-age=86400')
+  async photo(@CurrentConsultant() c: CampoConsultant, @Param('ref') ref: string) {
+    const f = await this.visits.photo(c, ref);
+    return new StreamableFile(f.bytes, { type: f.mime, disposition: 'inline' });
   }
 }
