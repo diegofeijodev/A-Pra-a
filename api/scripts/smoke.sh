@@ -1921,6 +1921,225 @@ check "lock-3 volta a aparecer pro Diego (sem resíduo)" "1" \
 check "undismiss de id nunca dispensado também responde ok" "true" \
   "$(curl -s -X POST $API/v1/notifications/undismiss -H "$J" -H "$HD" -d '{"ids":["nunca-dispensado"]}' | jq -r .ok)"
 
+echo "── Campo: cadastro pela equipe ──"
+# CPF válido e novo a cada rodada (é único): 9 dígitos do carimbo + os 2 verificadores.
+cpf_valido(){ node -e '
+const b=process.argv[1].slice(-9).padStart(9,"1").split("").map(Number);
+const dv=(a)=>{const s=a.reduce((t,d,i)=>t+d*(a.length+1-i),0);const r=(s*10)%11;return r===10?0:r;};
+const d1=dv(b),d2=dv([...b,d1]);console.log([...b,d1,d2].join(""));' "$1"; }
+uuid(){ cat /proc/sys/kernel/random/uuid; }
+
+EMAIL_CAMPO="campo$SUF@praca.local"
+CPF_CAMPO=$(cpf_valido "$SUF")
+CPF_ERRADO="${CPF_CAMPO:0:10}$(( (${CPF_CAMPO:10:1} + 1) % 10 ))"
+CORPO_CAMPO="{\"name\":\"Consultor $SUF\",\"email\":\"$EMAIL_CAMPO\",\"phone\":\"(31) 99999-0000\",\"cpf\":\"$CPF_CAMPO\",\"praca_id\":\"$PRACA_SEED\",\"pix_key_type\":\"cpf\",\"pix_key\":\"$CPF_CAMPO\"}"
+
+check "daniel (não admin) não cria consultor" "FORBIDDEN" \
+  "$(curl -s -X POST $API/v1/consultores -H "$J" -H "$HN" -d "$CORPO_CAMPO" | jq -r .error.code)"
+check "CPF com dígito errado = INVALID_CPF" "INVALID_CPF" \
+  "$(curl -s -X POST $API/v1/consultores -H "$J" -H "$HD" -d "$(echo "$CORPO_CAMPO" | jq -c --arg c "$CPF_ERRADO" '.cpf=$c')" | jq -r .error.code)"
+check "praça inexistente = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X POST $API/v1/consultores -H "$J" -H "$HD" -d "$(echo "$CORPO_CAMPO" | jq -c '.praca_id="00000000-0000-4000-8000-00000000beef"')" | jq -r .error.code)"
+
+CRIA_CAMPO=$(curl -s -o /tmp/praca-smoke-campo.json -w '%{http_code}' -X POST $API/v1/consultores -H "$J" -H "$HD" -d "$CORPO_CAMPO")
+check "diego cria consultor = 201" "201" "$CRIA_CAMPO"
+CONS_ID=$(jq -r .consultant.id /tmp/praca-smoke-campo.json)
+SENHA_TEMP=$(jq -r .temp_password /tmp/praca-smoke-campo.json)
+check "senha provisória de 10 caracteres" "10" "${#SENHA_TEMP}"
+check "consultor não vaza password_hash" "false" "$(jq '.consultant | has("password_hash")' /tmp/praca-smoke-campo.json)"
+check "sem Freela configurado: código pendente com o motivo" "true" \
+  "$(jq '.consultant.freela_code == null and (.consultant.freela_sync_error | startswith("Conexão com o Freela não configurada"))' /tmp/praca-smoke-campo.json)"
+check "e-mail repetido = EMAIL_IN_USE" "EMAIL_IN_USE" \
+  "$(curl -s -X POST $API/v1/consultores -H "$J" -H "$HD" -d "$CORPO_CAMPO" | jq -r .error.code)"
+check "CPF repetido = CPF_IN_USE" "CPF_IN_USE" \
+  "$(curl -s -X POST $API/v1/consultores -H "$J" -H "$HD" -d "$(echo "$CORPO_CAMPO" | jq -c --arg e "outro$SUF@praca.local" '.email=$e')" | jq -r .error.code)"
+check "consultor com id malformado = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s $API/v1/consultores/nao-e-uuid -H "$HD" | jq -r .error.code)"
+check "lista (qualquer pessoa da equipe): ainda não iniciou" "nao_iniciou" \
+  "$(curl -s $API/v1/consultores -H "$HN" | jq -r --arg i "$CONS_ID" '.[] | select(.id==$i) | .today.status')"
+
+echo "── Campo: sessão do consultor ──"
+check "senha errada = INVALID_CREDENTIALS" "INVALID_CREDENTIALS" \
+  "$(curl -s -X POST $API/v1/campo/auth/login -H "$J" -d "{\"email\":\"$EMAIL_CAMPO\",\"password\":\"errada123\"}" | jq -r .error.code)"
+LOGIN_CAMPO=$(curl -s -X POST $API/v1/campo/auth/login -H "$J" -d "{\"email\":\"$EMAIL_CAMPO\",\"password\":\"$SENHA_TEMP\"}")
+HC0="Authorization: Bearer $(echo "$LOGIN_CAMPO" | jq -r .access_token)"
+check "login com a senha provisória pede a troca" "true" "$(echo "$LOGIN_CAMPO" | jq .must_change_password)"
+check "antes da troca, /today = PASSWORD_CHANGE_REQUIRED" "PASSWORD_CHANGE_REQUIRED" \
+  "$(curl -s $API/v1/campo/today -H "$HC0" | jq -r .error.code)"
+check "/me liberado antes da troca" "$CONS_ID" "$(curl -s $API/v1/campo/me -H "$HC0" | jq -r .consultant.id)"
+check "token da equipe em /v1/campo/me = UNAUTHORIZED" "UNAUTHORIZED" \
+  "$(curl -s $API/v1/campo/me -H "$HD" | jq -r .error.code)"
+check "token do consultor em /v1/users = UNAUTHORIZED" "UNAUTHORIZED" \
+  "$(curl -s $API/v1/users -H "$HC0" | jq -r .error.code)"
+check "token do consultor em /v1/consultores = UNAUTHORIZED" "UNAUTHORIZED" \
+  "$(curl -s $API/v1/consultores -H "$HC0" | jq -r .error.code)"
+check "senha atual errada = WRONG_PASSWORD (400, não derruba a sessão)" "WRONG_PASSWORD" \
+  "$(curl -s -X POST $API/v1/campo/auth/change-password -H "$J" -H "$HC0" -d '{"current_password":"errada123","new_password":"campoSenha123"}' | jq -r .error.code)"
+TROCA=$(curl -s -X POST $API/v1/campo/auth/change-password -H "$J" -H "$HC0" \
+  -d "{\"current_password\":\"$SENHA_TEMP\",\"new_password\":\"campoSenha123\"}")
+HC="Authorization: Bearer $(echo "$TROCA" | jq -r .access_token)"
+check "troca de senha libera o acesso" "false" "$(echo "$TROCA" | jq .must_change_password)"
+check "token de antes da troca = UNAUTHORIZED" "UNAUTHORIZED" "$(curl -s $API/v1/campo/me -H "$HC0" | jq -r .error.code)"
+ME_CAMPO=$(curl -s $API/v1/campo/me -H "$HC")
+check "/me: praça do consultor" "Belo Horizonte + Contagem" "$(echo "$ME_CAMPO" | jq -r .consultant.praca_name)"
+check "/me: sem código ainda, link do QR nulo" "null" "$(echo "$ME_CAMPO" | jq -r .consultant.signup_url)"
+check "/me: os 4 canais iniciais" "4" "$(echo "$ME_CAMPO" | jq '.channels | length')"
+
+echo "── Campo: jornada ──"
+AGORA=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+FUTURO=$(date -u -d '+1 hour' +%Y-%m-%dT%H:%M:%S.000Z)
+LAT=-19.9245; LNG=-43.9352; LONGE_LAT=-19.9220
+J1=$(uuid); P1=$(uuid); P2=$(uuid); V1=$(uuid); V2=$(uuid)
+POS_CAMPO="\"at\":\"$AGORA\",\"lat\":$LAT,\"lng\":$LNG,\"accuracy\":12"
+# JPEG mínimo: a API confere os bytes mágicos (FF D8 FF), não o nome do arquivo.
+printf '\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xd9' > /tmp/praca-smoke-fachada.jpg
+echo "nao e imagem" > /tmp/praca-smoke-campo.txt
+checkin(){ # $1 client_id, $2 lat, $3 campo do lugar (lead_id=… ou new_place=…), $4 arquivo
+  curl -s -X POST $API/v1/campo/visits -H "$HC" -F "client_id=$1" -F "at=$AGORA" -F "lat=$2" -F "lng=$LNG" \
+    -F "accuracy=12" --form-string "$3" ${4:+-F "photo=@$4;type=image/jpeg"}
+}
+NOVO_LUGAR="new_place={\"name\":\"Campo $SUF\",\"address\":\"Rua de Teste, 10\"}"
+
+check "check-in sem jornada = NO_OPEN_JOURNEY" "NO_OPEN_JOURNEY" \
+  "$(checkin "$V1" "$LAT" "$NOVO_LUGAR" /tmp/praca-smoke-fachada.jpg | jq -r .error.code)"
+check "places?lat&lng sem jornada aberta = NO_OPEN_JOURNEY" "NO_OPEN_JOURNEY" \
+  "$(curl -s "$API/v1/campo/places?lat=$LAT&lng=$LNG" -H "$HC" | jq -r .error.code)"
+check "places/similar sem jornada aberta = NO_OPEN_JOURNEY" "NO_OPEN_JOURNEY" \
+  "$(curl -s "$API/v1/campo/places/similar?name=xx&lat=$LAT&lng=$LNG" -H "$HC" | jq -r .error.code)"
+check "places?q sem jornada aberta = 200 (não exige posição)" "true" \
+  "$(curl -s "$API/v1/campo/places?q=mercado" -H "$HC" | jq 'type == "array"')"
+INICIO=$(curl -s -X POST $API/v1/campo/journeys/start -H "$J" -H "$HC" -d "{\"client_id\":\"$J1\",$POS_CAMPO}")
+JORNADA_ID=$(echo "$INICIO" | jq -r .id)
+check "jornada aberta com o dia de Brasília" "$HOJE" "$(echo "$INICIO" | jq -r .day)"
+check "reenvio do início devolve a mesma jornada" "$JORNADA_ID" \
+  "$(curl -s -X POST $API/v1/campo/journeys/start -H "$J" -H "$HC" -d "{\"client_id\":\"$J1\",$POS_CAMPO}" | jq -r .id)"
+check "outra jornada com uma aberta = JOURNEY_ALREADY_OPEN" "JOURNEY_ALREADY_OPEN" \
+  "$(curl -s -X POST $API/v1/campo/journeys/start -H "$J" -H "$HC" -d "{\"client_id\":\"$(uuid)\",$POS_CAMPO}" | jq -r .error.code)"
+PONTOS="{\"points\":[{\"client_id\":\"$P1\",$POS_CAMPO},{\"client_id\":\"$P2\",\"at\":\"$FUTURO\",\"lat\":$LAT,\"lng\":$LNG,\"accuracy\":20}]}"
+check "lote de pontos aceito" "2" \
+  "$(curl -s -X POST $API/v1/campo/journeys/current/points -H "$J" -H "$HC" -d "$PONTOS" | jq .accepted)"
+check "reenvio do lote não duplica" "2" \
+  "$(curl -s -X POST $API/v1/campo/journeys/current/points -H "$J" -H "$HC" -d "$PONTOS" | jq .duplicates)"
+check "lote acima de 50 pontos = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/campo/journeys/current/points -H "$J" -H "$HC" \
+    -d "$(jq -nc --arg at "$AGORA" '{points:[range(51)|{client_id:"00000000-0000-4000-8000-000000000001",at:$at,lat:-19.9,lng:-43.9,accuracy:10}]}')" | jq -r .error.code)"
+
+echo "── Campo: visitas ──"
+check "busca por nome acha o lead do seed" "Bar do Mercado" \
+  "$(curl -s "$API/v1/campo/places?q=mercado" -H "$HC" | jq -r '.[0].name')"
+check "places sem q nem posição = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s "$API/v1/campo/places" -H "$HC" | jq -r .error.code)"
+check "places?lat&lng com jornada aberta (sem foto ainda) = 200 lista" "true" \
+  "$(curl -s "$API/v1/campo/places?lat=$LAT&lng=$LNG" -H "$HC" | jq 'type == "array"')"
+check "arquivo que não é imagem (mesmo dizendo image/jpeg) = INVALID_FILE_TYPE" "INVALID_FILE_TYPE" \
+  "$(checkin "$V1" "$LAT" "$NOVO_LUGAR" /tmp/praca-smoke-campo.txt | jq -r .error.code)"
+check "check-in sem foto = FILE_REQUIRED" "FILE_REQUIRED" \
+  "$(checkin "$V1" "$LAT" "$NOVO_LUGAR" | jq -r .error.code)"
+VISITA_C=$(checkin "$V1" "$LAT" "$NOVO_LUGAR" /tmp/praca-smoke-fachada.jpg)
+VISITA_ID=$(echo "$VISITA_C" | jq -r .id)
+LEAD_CAMPO=$(echo "$VISITA_C" | jq -r .lead_id)
+check "check-in abre a visita" "null" "$(echo "$VISITA_C" | jq -r .checkout_at)"
+check "lead novo do campo: origem e etapa" "visita de campo|1" \
+  "$(curl -s $API/v1/leads/$LEAD_CAMPO -H "$HD" | jq -r '"\(.origem)|\(.stage)"')"
+check "reenvio do check-in devolve a mesma visita" "$VISITA_ID" \
+  "$(checkin "$V1" "$LAT" "$NOVO_LUGAR" /tmp/praca-smoke-fachada.jpg | jq -r .id)"
+check "segunda visita com uma aberta = VISIT_ALREADY_OPEN" "VISIT_ALREADY_OPEN" \
+  "$(checkin "$V2" "$LAT" "lead_id=$LEAD_CAMPO" /tmp/praca-smoke-fachada.jpg | jq -r .error.code)"
+check "parecido a até 100 m acha o lead recém-criado" "$LEAD_CAMPO" \
+  "$(curl -s "$API/v1/campo/places/similar?name=Campo%20$SUF&lat=$LAT&lng=$LNG" -H "$HC" | jq -r '.[0].id')"
+check "perto de mim acha o lead a 0 m" "0" \
+  "$(curl -s "$API/v1/campo/places?lat=$LAT&lng=$LNG" -H "$HC" | jq --arg i "$LEAD_CAMPO" '.[] | select(.id==$i) | .distance_m')"
+check "encerrar a jornada com visita aberta = VISIT_OPEN" "VISIT_OPEN" \
+  "$(curl -s -X POST $API/v1/campo/journeys/current/end -H "$J" -H "$HC" -d "{$POS_CAMPO}" | jq -r .error.code)"
+check "checkout com questionário vazio = ANSWERS_INCOMPLETE (422)" "422|ANSWERS_INCOMPLETE" \
+  "$(curl -s -o /tmp/praca-smoke-campo.json -w '%{http_code}' -X POST $API/v1/campo/visits/$V1/checkout -H "$J" -H "$HC" -d "{$POS_CAMPO}")|$(jq -r .error.code /tmp/praca-smoke-campo.json)"
+check "rascunho parcial salvo pelo client_id: faltam 6 itens" "6" \
+  "$(curl -s -X PATCH $API/v1/campo/visits/$V1/answers -H "$J" -H "$HC" -d '{"interlocutor_name":"João","interlocutor_role":"dono"}' | jq '.missing | length')"
+check "cargo fora da lista = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s -X PATCH $API/v1/campo/visits/$V1/answers -H "$J" -H "$HC" -d '{"interlocutor_role":"chefe"}' | jq -r .error.code)"
+RESPOSTAS_C="{\"freela_status\":\"cadastrou_qr\",\"interest\":\"alto\",\"open_vagas\":2,\"vaga_roles\":[\"Garçom\"],\"freelas_per_week\":4,\"channels\":[\"Grupos de WhatsApp\"],\"needs_followup\":true,\"followup_what\":\"Ligar na sexta\",\"followup_date\":\"$HOJE3\"}"
+check "questionário completo: nada falta" "0" \
+  "$(curl -s -X PATCH $API/v1/campo/visits/$V1/answers -H "$J" -H "$HC" -d "$RESPOSTAS_C" | jq '.missing | length')"
+SAIDA=$(curl -s -X POST $API/v1/campo/visits/$V1/checkout -H "$J" -H "$HC" -d "{$POS_CAMPO}")
+check "checkout feito" "true" "$(echo "$SAIDA" | jq '.checkout_at != null')"
+check "reenvio do checkout devolve a mesma hora (nada gravado de novo)" "$(echo "$SAIDA" | jq -r .checkout_at)" \
+  "$(curl -s -X POST $API/v1/campo/visits/$V1/checkout -H "$J" -H "$HC" -d "{$POS_CAMPO}" | jq -r .checkout_at)"
+LEAD_DEPOIS=$(curl -s $API/v1/leads/$LEAD_CAMPO -H "$HD")
+check "CRM: lead foi para Conversa aberta" "3" "$(echo "$LEAD_DEPOIS" | jq .stage)"
+check "CRM: decisor é quem atendeu" "João|Dono" "$(echo "$LEAD_DEPOIS" | jq -r '"\(.decisor)|\(.decisor_role)"')"
+check "CRM: próximo passo é o retorno pedido" "Ligar na sexta|$HOJE3" \
+  "$(echo "$LEAD_DEPOIS" | jq -r '"\(.next_step.what)|\(.next_step.date)"')"
+check "CRM: UM evento de visita do consultor, com a etapa nova" "1|3" \
+  "$(echo "$LEAD_DEPOIS" | jq -r --arg a "Consultor: Consultor $SUF" '[.events[] | select(.kind=="visit" and .author_label==$a)] | "\(length)|\(.[0].stage_to)"')"
+check "foto da visita para o consultor" "image/jpeg" \
+  "$(curl -s -o /dev/null -w '%{content_type}' $API/v1/campo/visits/$V1/photo -H "$HC")"
+check "foto do consultor: Cache-Control privado só no 200" "private, max-age=86400" \
+  "$(curl -s -D - -o /dev/null $API/v1/campo/visits/$V1/photo -H "$HC" | tr -d '\r' | awk -F': ' 'tolower($1)=="cache-control"{print $2}')"
+check "foto inexistente (consultor) = 404 sem Cache-Control" "404|" \
+  "$(curl -s -D /tmp/praca-smoke-h.txt -o /dev/null -w '%{http_code}' $API/v1/campo/visits/$(uuid)/photo -H "$HC")|$(tr -d '\r' < /tmp/praca-smoke-h.txt | awk -F': ' 'tolower($1)=="cache-control"{print $2}')"
+check "foto da visita para a equipe" "image/jpeg" \
+  "$(curl -s -o /dev/null -w '%{content_type}' $API/v1/consultores/visits/$VISITA_ID/photo -H "$HN")"
+check "foto da equipe: Cache-Control privado só no 200" "private, max-age=86400" \
+  "$(curl -s -D - -o /dev/null $API/v1/consultores/visits/$VISITA_ID/photo -H "$HN" | tr -d '\r' | awk -F': ' 'tolower($1)=="cache-control"{print $2}')"
+check "foto inexistente (equipe) = 404 sem Cache-Control" "404|" \
+  "$(curl -s -D /tmp/praca-smoke-h.txt -o /dev/null -w '%{http_code}' $API/v1/consultores/visits/$(uuid)/photo -H "$HN")|$(tr -d '\r' < /tmp/praca-smoke-h.txt | awk -F': ' 'tolower($1)=="cache-control"{print $2}')"
+
+VISITA_2=$(checkin "$V2" "$LONGE_LAT" "lead_id=$LEAD_CAMPO" /tmp/praca-smoke-fachada.jpg)
+check "check-in a mais de 200 m marca 'longe do local'" "true|278" \
+  "$(echo "$VISITA_2" | jq -r '"\(.far_from_place)|\(.distance_m)"')"
+curl -s -X PATCH $API/v1/campo/visits/$V2/answers -H "$J" -H "$HC" \
+  -d '{"interlocutor_name":"Maria","interlocutor_role":"gerente","freela_status":"ja_usa","interest":"medio","open_vagas":0,"freelas_per_week":0,"channels":["Nenhum"],"needs_followup":false}' > /dev/null
+curl -s -X POST $API/v1/campo/visits/$V2/checkout -H "$J" -H "$HC" -d "{$POS_CAMPO}" > /dev/null
+check "segunda visita: etapa ≥ 3 se mantém" "3" "$(curl -s $API/v1/leads/$LEAD_CAMPO -H "$HD" | jq .stage)"
+FIM=$(curl -s -X POST $API/v1/campo/journeys/current/end -H "$J" -H "$HC" -d "{$POS_CAMPO}")
+check "jornada encerrada" "true" "$(echo "$FIM" | jq '.ended_at != null')"
+check "reenvio do encerrar devolve a mesma jornada (200)" "$JORNADA_ID" \
+  "$(curl -s -X POST $API/v1/campo/journeys/current/end -H "$J" -H "$HC" -d "{$POS_CAMPO}" | jq -r .id)"
+check "hoje: 2 visitas, 1 'cadastrou agora', jornada fechada" "2|1|null" \
+  "$(curl -s $API/v1/campo/today -H "$HC" | jq -r '"\(.counters.visits)|\(.counters.cadastrou_qr)|\(.journey)"')"
+
+echo "── Campo: telas da equipe ──"
+DIA_CAMPO=$(curl -s $API/v1/consultores/$CONS_ID/days/$HOJE -H "$HN")
+check "dia: pontos de início, trilha, check-ins, checkouts e fim" "checkin:2,checkout:2,end:1,start:1,track:2" \
+  "$(echo "$DIA_CAMPO" | jq -r '[.journeys[0].points[].kind] | group_by(.) | map("\(.[0]):\(length)") | join(",")')"
+check "dia: o ponto do futuro ficou com a hora ajustada" "1" \
+  "$(echo "$DIA_CAMPO" | jq '[.journeys[0].points[] | select(.clock_adjusted)] | length')"
+# As duas visitas têm o mesmo `checkin_at` ($AGORA): ordena antes de comparar.
+check "dia: 2 visitas, uma longe do local" "2|false,true" \
+  "$(echo "$DIA_CAMPO" | jq -r '"\(.visits | length)|\([.visits[].far_from_place] | sort | map(tostring) | join(","))"')"
+check "dia inexistente no calendário = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s $API/v1/consultores/$CONS_ID/days/2026-02-31 -H "$HN" | jq -r .error.code)"
+check "lista: encerrou, 2 visitas, 1 cadastro declarado" "encerrou|2|1" \
+  "$(curl -s $API/v1/consultores -H "$HN" | jq -r --arg i "$CONS_ID" '.[] | select(.id==$i) | "\(.today.status)|\(.today.visits)|\(.today.cadastros)"')"
+CANAIS_ORIGINAIS='{"channels":["Nenhum","Grupos de WhatsApp","Indicação de conhecidos","Agência de mão de obra"]}'
+check "canais: a lista inicial" "4" "$(curl -s $API/v1/consultores/settings/channels -H "$HN" | jq '.channels | length')"
+check "canais: daniel não muda = FORBIDDEN" "FORBIDDEN" \
+  "$(curl -s -X PUT $API/v1/consultores/settings/channels -H "$J" -H "$HN" -d '{"channels":["X"]}' | jq -r .error.code)"
+check "canais: admin troca aparando e sem repetir" "iFood|Indeed" \
+  "$(curl -s -X PUT $API/v1/consultores/settings/channels -H "$J" -H "$HD" -d '{"channels":[" iFood ","ifood","Indeed"]}' | jq -r '.channels | join("|")')"
+check "canais: volta à lista inicial (sem resíduo)" "4" \
+  "$(curl -s -X PUT $API/v1/consultores/settings/channels -H "$J" -H "$HD" -d "$CANAIS_ORIGINAIS" | jq '.channels | length')"
+NOVA_TEMP=$(curl -s -X POST $API/v1/consultores/$CONS_ID/reset-password -H "$HD" | jq -r .temp_password)
+check "nova senha provisória" "10" "${#NOVA_TEMP}"
+check "nova senha derruba a sessão aberta" "UNAUTHORIZED" "$(curl -s $API/v1/campo/me -H "$HC" | jq -r .error.code)"
+check "tentar o código no Freela agora (sem conexão) mantém o motivo" "true" \
+  "$(curl -s -X POST $API/v1/consultores/$CONS_ID/freela-sync -H "$HD" | jq '.freela_sync_error | startswith("Conexão com o Freela")')"
+check "desativar o consultor" "false" \
+  "$(curl -s -X PATCH $API/v1/consultores/$CONS_ID -H "$J" -H "$HD" -d '{"active":false}' | jq .active)"
+check "login de consultor desativado = UNAUTHORIZED" "UNAUTHORIZED" \
+  "$(curl -s -X POST $API/v1/campo/auth/login -H "$J" -d "{\"email\":\"$EMAIL_CAMPO\",\"password\":\"$NOVA_TEMP\"}" | jq -r .error.code)"
+
+echo "── Campo: limpeza ──"
+check "daniel não apaga consultor = FORBIDDEN" "FORBIDDEN" \
+  "$(curl -s -X DELETE $API/v1/consultores/$CONS_ID -H "$HN" | jq -r .error.code)"
+check "admin apaga o consultor de teste (jornadas, visitas e fotos juntos)" "true" \
+  "$(curl -s -X DELETE $API/v1/consultores/$CONS_ID -H "$HD" | jq .ok)"
+check "consultor apagado = NOT_FOUND" "NOT_FOUND" "$(curl -s $API/v1/consultores/$CONS_ID -H "$HD" | jq -r .error.code)"
+check "lead criado pela visita apagado" "true" "$(curl -s -X DELETE $API/v1/leads/$LEAD_CAMPO -H "$HD" | jq .ok)"
+# Fotos em disco (PHOTO_STORAGE=disk, PHOTOS_DIR=./uploads, relativo a api/).
+check "nenhuma foto de teste sobrou no disco" "nao" "$([ -e "uploads/campo/$CONS_ID" ] && echo sim || echo nao)"
+rm -f /tmp/praca-smoke-h.txt /tmp/praca-smoke-fachada.jpg /tmp/praca-smoke-campo.txt /tmp/praca-smoke-campo.json
+
 echo "── Freela: conexão desligada ──"
 # O `.env` do smoke não tem FREELA_API_URL/EMAIL/PASSWORD: é exatamente o estado
 # de quem ainda não ligou a integração. `GET /status` é a ÚNICA rota /v1/freela
@@ -2038,6 +2257,7 @@ check "blocklist vazia (sem resíduo)" "0" "$(curl -s $API/v1/blocklist -H "$HD"
 check "nenhum envio (msg_sends) sobrou" "0" "$(curl -s $API/v1/sends/count -H "$HD" | jq '.total')"
 check "nenhum disparo sobrou" "0" "$(curl -s $API/v1/disparos -H "$HD" | jq 'length')"
 check "nenhuma inscrição em cadência sobrou" "0" "$(curl -s $API/v1/enrollments -H "$HD" | jq 'length')"
+check "nenhum consultor de campo sobrou" "0" "$(curl -s $API/v1/consultores -H "$HD" | jq 'length')"
 
 # O único resíduo que a API não sabe limpar: `DELETE /v1/users/:id` é lógico por
 # contrato (§3, o histórico de quem escreveu o quê depende da linha), então cada
