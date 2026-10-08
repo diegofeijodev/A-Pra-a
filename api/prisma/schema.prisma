@@ -24,6 +24,7 @@ model users {
   created_at      DateTime @default(now())
 
   dismissed_notifs user_dismissed_notifs[]
+  field_consultants_created field_consultants[]
 }
 
 model user_dismissed_notifs {
@@ -55,6 +56,7 @@ model pracas {
   leads       leads[]
   proofs      proofs[]
   campanhas   campanhas[]
+  field_consultants field_consultants[]
 }
 
 model praca_step_states {
@@ -196,6 +198,10 @@ model leads {
   campanha_id     String?   @db.Uuid
   form_answer     String?
   is_test         Boolean   @default(false)
+  // Localização do estabelecimento (§5). Nula nos que já existiam; o bloco B
+  // preenche em massa; a visita de campo grava a do check-in no lead novo.
+  lat             Float?
+  lng             Float?
   created_at      DateTime  @default(now())
   praca           pracas?   @relation(fields: [praca_id], references: [id], onDelete: SetNull)
 
@@ -203,7 +209,9 @@ model leads {
   vagas       lead_vagas[]
   sends       msg_sends[]
   enrollments enrollments[]
+  field_visits field_visits[]
 
+  @@index([praca_id, lat, lng])
   @@index([praca_id, stage])
   @@index([phone_key])
   @@index([import_batch_id])
@@ -280,6 +288,7 @@ model app_settings {
   gap_max           Int     @default(90)
   daily_quota       Int     @default(20)
   template_defaults Json    @default("{}")
+  field_channels    Json    @default("[\"Nenhum\",\"Grupos de WhatsApp\",\"Indicação de conhecidos\",\"Agência de mão de obra\"]")
 }
 
 model blocklist {
@@ -547,4 +556,117 @@ model freela_templates {
   praca_id   String?  @db.Uuid
   created_by String   @db.Uuid
   created_at DateTime @default(now())
+}
+
+// ── consultores de campo (spec 2026-10-08) ───────────────────
+model field_consultants {
+  id                   String    @id @default(uuid()) @db.Uuid
+  name                 String
+  email                String    @unique
+  phone                String    @default("")
+  cpf                  String    @unique
+  praca_id             String    @db.Uuid
+  pix_key              String
+  pix_key_type         String
+  password_hash        String
+  must_change_password Boolean   @default(true)
+  token_version        Int       @default(0)
+  active               Boolean   @default(true)
+  freela_consultant_id String?
+  freela_code          String?
+  freela_sync_error    String?
+  freela_synced_at     DateTime?
+  created_by           String    @db.Uuid
+  created_at           DateTime  @default(now())
+  updated_at           DateTime  @updatedAt
+  praca                pracas    @relation(fields: [praca_id], references: [id], onDelete: Restrict)
+  creator              users     @relation(fields: [created_by], references: [id], onDelete: Restrict)
+
+  journeys field_journeys[]
+  visits   field_visits[]
+}
+
+model field_journeys {
+  id             String            @id @default(uuid()) @db.Uuid
+  consultant_id  String            @db.Uuid
+  day            String
+  client_id      String            @unique @db.Uuid
+  started_at     DateTime
+  start_lat      Float
+  start_lng      Float
+  start_accuracy Float
+  ended_at       DateTime?
+  end_lat        Float?
+  end_lng        Float?
+  end_accuracy   Float?
+  auto_closed    Boolean           @default(false)
+  created_at     DateTime          @default(now())
+  consultant     field_consultants @relation(fields: [consultant_id], references: [id], onDelete: Cascade)
+
+  points field_points[]
+  visits field_visits[]
+
+  // Mais o índice único PARCIAL `field_journeys_one_open_per_consultant`
+  // (SQL cru na migração — o Prisma 5 não declara índice parcial).
+  @@index([consultant_id, day])
+  @@index([day])
+}
+
+model field_points {
+  id             String         @id @default(uuid()) @db.Uuid
+  journey_id     String         @db.Uuid
+  at             DateTime
+  received_at    DateTime       @default(now())
+  lat            Float
+  lng            Float
+  accuracy       Float
+  kind           String
+  client_id      String         @unique @db.Uuid
+  clock_adjusted Boolean        @default(false)
+  journey        field_journeys @relation(fields: [journey_id], references: [id], onDelete: Cascade)
+
+  @@index([journey_id, at])
+}
+
+model field_visits {
+  id                String            @id @default(uuid()) @db.Uuid
+  client_id         String            @unique @db.Uuid
+  journey_id        String            @db.Uuid
+  consultant_id     String            @db.Uuid
+  lead_id           String            @db.Uuid
+  checkin_at        DateTime
+  checkin_lat       Float
+  checkin_lng       Float
+  checkin_accuracy  Float
+  distance_m        Int?
+  far_from_place    Boolean           @default(false)
+  photo_key         String
+  photo_bytes       Int
+  checkout_at       DateTime?
+  checkout_lat      Float?
+  checkout_lng      Float?
+  auto_closed       Boolean           @default(false)
+  clock_adjusted    Boolean           @default(false)
+  interlocutor_name String?
+  interlocutor_role String?
+  freela_status     String?
+  interest          String?
+  open_vagas        Int?
+  vaga_roles        String[]          @default([])
+  freelas_per_week  Int?
+  channels          String[]          @default([])
+  channel_other     String?
+  needs_followup    Boolean?
+  followup_what     String?
+  followup_date     String?
+  notes             String?
+  created_at        DateTime          @default(now())
+  updated_at        DateTime          @updatedAt
+  journey           field_journeys    @relation(fields: [journey_id], references: [id], onDelete: Cascade)
+  consultant        field_consultants @relation(fields: [consultant_id], references: [id], onDelete: Cascade)
+  lead              leads             @relation(fields: [lead_id], references: [id], onDelete: Cascade)
+
+  // Mais o índice único PARCIAL `field_visits_one_open_per_consultant`.
+  @@index([consultant_id, checkin_at])
+  @@index([journey_id])
 }

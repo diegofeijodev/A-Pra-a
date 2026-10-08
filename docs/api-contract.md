@@ -24,6 +24,7 @@ aqui primeiro. Swagger interativo em `/docs` (fora de produção).
 17. [Notificações — `/v1/notifications`](#17-notificacoes)
 18. [Freela — `/v1/freela`](#18-freela)
 19. [Desvios propositais em relação ao protótipo](#19-desvios)
+20. [Consultores de campo — `/v1/campo`, `/v1/consultores`](#20-campo)
 
 <a id="1-convencoes"></a>
 
@@ -2747,3 +2748,266 @@ comportamento deliberado, diferente do protótipo Lovable de referência
     troca de `praca_id` e entrada de tráfego recusa a troca de `campanha_id`
     (`409 CAMPANHA_HAS_CHILDREN`) — no protótipo o objeto era um só em memória e
     a questão não existia. Para mover, `/duplicate`. Ver [§15](#15-midia).
+
+<a id="20-campo"></a>
+
+## 20. Consultores de campo — `/v1/campo`, `/v1/consultores`
+
+Consultor de campo é uma conta **separada** da equipe (tabela `field_consultants`,
+login, token e telas próprios). Desenho: `docs/superpowers/specs/2026-10-08-consultores-de-campo-design.md`.
+
+### 20.1 Sessão do consultor
+
+- Token: JWT HS256 com o mesmo `JWT_SECRET`, **`aud: "campo"`**, `sub` = id do
+  consultor, `tv` = `token_version`. Validade `CAMPO_JWT_EXPIRES_IN` (padrão `7d`).
+- Isolamento nos dois sentidos: token de consultor em qualquer rota da equipe →
+  `401 UNAUTHORIZED`; token da equipe em `/v1/campo/*` → `401 UNAUTHORIZED`.
+- O consultor é relido a cada request: `active = false` → `401 UNAUTHORIZED`
+  ("Conta desativada"); `tv` menor que o `token_version` do banco → `401
+  UNAUTHORIZED` ("Sessão encerrada — entre de novo."). Desativar, "nova senha
+  provisória" e trocar a senha sobem `token_version`.
+- Com `must_change_password = true`, toda rota `/v1/campo/*` responde
+  `403 PASSWORD_CHANGE_REQUIRED`, exceto `POST /auth/change-password` e `GET /me`.
+
+| Método | Rota | Corpo | Resposta |
+|---|---|---|---|
+| POST | `/v1/campo/auth/login` | `{email, password}` | `200 {access_token, consultant, must_change_password}` — público, 20/min por IP |
+| POST | `/v1/campo/auth/change-password` | `{current_password, new_password}` (nova: 8–72) | `200 {access_token, consultant, must_change_password: false}` |
+| GET | `/v1/campo/me` | — | `{consultant, channels}` |
+
+Erros: `401 INVALID_CREDENTIALS`, `401 UNAUTHORIZED` (conta desativada),
+`400 WRONG_PASSWORD` (senha atual não confere — **não** é 401, para não derrubar
+a sessão), `400 SAME_PASSWORD`.
+
+`CampoMeView` (`consultant`):
+
+```json
+{
+  "id": "uuid", "name": "Ana Souza", "email": "ana@exemplo.com", "phone": "31999990000",
+  "praca_id": "uuid", "praca_name": "Belo Horizonte + Contagem",
+  "must_change_password": false,
+  "freela_code": "ANASOU7K2P",
+  "signup_url": "https://app.freelaservicos.com.br/cadastro?consultor=ANASOU7K2P"
+}
+```
+
+`freela_code`/`signup_url` ficam `null` enquanto o código no Freela estiver
+pendente; `signup_url` também é `null` sem `FREELA_WEB_URL`. `channels` é a lista
+de "apps e canais" do questionário (§20.4, `settings/channels`).
+
+### 20.2 Jornada
+
+| Método | Rota | Corpo | Resposta |
+|---|---|---|---|
+| GET | `/v1/campo/today` | — | `TodayView` |
+| POST | `/v1/campo/journeys/start` | `{client_id, at, lat, lng, accuracy}` | `201 JourneyView` |
+| POST | `/v1/campo/journeys/current/points` | `{points: [{client_id, at, lat, lng, accuracy}]}` (1–50) | `200 {accepted, duplicates}` |
+| POST | `/v1/campo/journeys/current/end` | `{at, lat, lng, accuracy}` | `200 JourneyView` |
+
+- Uma jornada aberta por vez (índice único parcial). `start` com um `client_id`
+  já gravado devolve a mesma jornada (reenvio da fila); com outro `client_id` e
+  jornada aberta → `409 JOURNEY_ALREADY_OPEN`.
+- `points` é idempotente por `client_id` (repetido conta em `duplicates`). Sem
+  jornada aberta → `409 NO_OPEN_JOURNEY`.
+- `end` com visita aberta → `409 VISIT_OPEN`. Sem jornada aberta: se a última
+  foi encerrada há menos de 24 h devolve ela com `200` (reenvio); senão
+  `409 NO_OPEN_JOURNEY`.
+- `day` da jornada = `todaySp(at)`. Antes de `start` e de `today`, jornadas de
+  dias anteriores ainda abertas são fechadas como na meia-noite (§20.5).
+- **Carimbo de hora:** `at` vale se estiver entre o início da jornada e
+  agora + 2 min, e no máximo 24 h no passado; fora disso vale a hora de
+  recebimento e o ponto/visita fica com `clock_adjusted: true`.
+
+`JourneyView`: `{id, client_id, day, started_at, start_lat, start_lng, ended_at, end_lat, end_lng, auto_closed}`.
+
+`TodayView`:
+
+```json
+{
+  "day": "2026-10-08",
+  "journey": { "id": "uuid", "client_id": "uuid", "day": "2026-10-08", "started_at": "…", "start_lat": -19.92, "start_lng": -43.93, "ended_at": null, "end_lat": null, "end_lng": null, "auto_closed": false },
+  "journeys": [ "JourneyView de hoje, em ordem de início" ],
+  "open_visit": "VisitView | null",
+  "visits": [ "VisitView de hoje, em ordem de check-in" ],
+  "counters": { "visits": 3, "cadastrou_qr": 1 }
+}
+```
+
+### 20.3 Estabelecimentos e visitas
+
+| Método | Rota | Corpo | Resposta |
+|---|---|---|---|
+| GET | `/v1/campo/places?lat=&lng=` | — | `PlaceView[]` com localização num raio de 500 m, por distância (até 30) — **exige jornada aberta** |
+| GET | `/v1/campo/places?q=` | — | `PlaceView[]` por nome (sem acento/caixa), não arquivados, até 20 |
+| GET | `/v1/campo/places/similar?name=&lat=&lng=` | — | `PlaceView[]` com nome parecido a até 100 m — **exige jornada aberta** |
+| POST | `/v1/campo/visits` | multipart (abaixo) | `201 VisitView` |
+| PATCH | `/v1/campo/visits/:ref/answers` | `AnswersBody` parcial | `200 VisitView` |
+| POST | `/v1/campo/visits/:ref/checkout` | `{at, lat, lng, accuracy}` | `200 VisitView` |
+| GET | `/v1/campo/visits/:ref/photo` | — | bytes da foto (`Content-Type` da foto) |
+
+Tudo só na praça do próprio consultor. `/places?lat&lng` e `/places/similar`
+recebem localização e por isso exigem jornada aberta (`409 NO_OPEN_JOURNEY`);
+`/places?q=` (sem posição) não exige. `/places` sem `q` e sem `lat`+`lng` →
+`400 VALIDATION_ERROR`. `:ref` = `id` **ou** `client_id` da visita (a fila offline
+só conhece o `client_id`); visita de outro consultor → `404 NOT_FOUND`.
+
+`PlaceView`: `{id, name, address, stage, lat, lng, distance_m}` (`distance_m`
+`null` quando a busca não tem posição).
+
+**Check-in (`POST /visits`, multipart/form-data):** campos `client_id`, `at`,
+`lat`, `lng`, `accuracy` e **um** de `lead_id` | `new_place` (JSON
+`{"name", "address"}`), mais `confirm_new` (`"true"`/`"false"`, opcional) e o
+arquivo `photo` (JPEG/PNG/WEBP pelos bytes, até 5 MB).
+
+- Sem jornada aberta → `409 NO_OPEN_JOURNEY`; com visita aberta →
+  `409 VISIT_ALREADY_OPEN`; `client_id` já gravado → devolve a mesma visita.
+- Sem arquivo → `400 FILE_REQUIRED`; arquivo que não é JPEG/PNG/WEBP →
+  `400 INVALID_FILE_TYPE`; acima de 5 MB → `413 FILE_TOO_LARGE`.
+- `lead_id` fora da praça do consultor → `404 NOT_FOUND`. Estabelecimento com
+  `lat/lng` a mais de 200 m do check-in → `far_from_place: true` (só marca).
+- `new_place` cria o lead com `origem = "visita de campo"`, `classe = "alvo"`,
+  `stage = 1`, a praça do consultor, `lat/lng` do check-in e o endereço digitado.
+  Sem `confirm_new: true`, se houver nome parecido a até 100 m o lead nasce com
+  `possible_dup: true` (o check-in feito sem sinal não pôde perguntar).
+- Foto sem armazenamento configurado → `503 PHOTO_STORAGE_NOT_CONFIGURED`.
+
+`AnswersBody` (todos opcionais; `null` limpa):
+`interlocutor_name` (≤ 120), `interlocutor_role` (`dono|gerente|outro`),
+`freela_status` (`ja_usa|cadastrou_qr|nao_cadastrou`), `interest`
+(`alto|medio|baixo|nenhum`), `open_vagas` (0–500), `vaga_roles` (string[] ≤ 20),
+`freelas_per_week` (0–1000), `channels` (string[] ≤ 20), `channel_other` (≤ 120),
+`needs_followup` (bool), `followup_what` (≤ 300), `followup_date` (`YYYY-MM-DD`),
+`notes` (≤ 2000). Visita encerrada → `409 VISIT_CLOSED`.
+
+**Checkout:** exige o questionário completo — interlocutor (nome + cargo),
+situação no Freela, interesse, vagas abertas (≥ 0; se > 0, ao menos uma função),
+freelancers por semana (≥ 0), ao menos um canal (ou "outro" preenchido) e retorno
+(sim/não; se sim, o quê + data ≥ hoje). Faltando → `422 ANSWERS_INCOMPLETE` com
+a lista em `message` ("Falta responder: interesse, data do retorno."). Visita já
+com checkout → `200` com ela (reenvio; nada é gravado de novo). Visita fechada à
+meia-noite → `409 VISIT_AUTO_CLOSED`.
+
+No checkout, numa transação: `lead_events` `kind = "visit"`,
+`author_label = "Consultor: <nome>"`, texto com o resumo das respostas;
+`decisor`/`decisor_role` ← interlocutor; `last_contact_at` ← checkout; lead em
+"Lead novo" (1) ou "Contatado" (2) → "Conversa aberta" (3) com `stage_to: 3` no
+evento e `stage_since` = dia do checkout; se pediu retorno, `next_step_what` /
+`next_step_date` ← o pedido.
+
+`VisitView`:
+
+```json
+{
+  "id": "uuid", "client_id": "uuid", "journey_id": "uuid", "lead_id": "uuid",
+  "lead_name": "Bar do Mercado", "possible_dup": false,
+  "checkin_at": "…", "checkin_lat": -19.92, "checkin_lng": -43.93, "checkin_accuracy": 12,
+  "distance_m": 40, "far_from_place": false, "photo_bytes": 412345,
+  "checkout_at": null, "checkout_lat": null, "checkout_lng": null,
+  "auto_closed": false, "clock_adjusted": false,
+  "answers": { "interlocutor_name": null, "interlocutor_role": null, "freela_status": null, "interest": null,
+               "open_vagas": null, "vaga_roles": [], "freelas_per_week": null, "channels": [], "channel_other": null,
+               "needs_followup": null, "followup_what": null, "followup_date": null, "notes": null },
+  "missing": ["nome de quem atendeu", "…"]
+}
+```
+
+### 20.4 Equipe — `/v1/consultores`
+
+Leitura: qualquer pessoa da equipe. Escrita: **admin** (`403 FORBIDDEN`).
+
+| Método | Rota | Corpo | Resposta |
+|---|---|---|---|
+| GET | `/` | — | `ConsultorListItem[]` (ativos primeiro, por nome) |
+| POST | `/` | `{name, email, phone, cpf, praca_id, pix_key_type, pix_key}` | `201 {consultant, temp_password}` |
+| GET | `/settings/channels` | — | `{channels}` |
+| PUT | `/settings/channels` | `{channels}` (1–30, cada 1–80, sem repetir) | `{channels}` |
+| GET | `/visits/:visitId/photo` | — | bytes da foto |
+| GET | `/:id` | — | `ConsultorView` |
+| PATCH | `/:id` | `{name?, email?, phone?, cpf?, praca_id?, pix_key_type?, pix_key?, active?}` | `ConsultorView` |
+| POST | `/:id/reset-password` | — | `200 {temp_password}` |
+| POST | `/:id/freela-sync` | — | `200 ConsultorView` |
+| GET | `/:id/days/:day` | — | `{day, journeys: [JourneyView + points: PointView[]], visits: VisitView[]}` |
+| DELETE | `/:id` | — | `{ok: true}` — apaga de vez (jornadas, pontos, visitas, fotos); para consultor de teste |
+
+- `temp_password` (10 caracteres) aparece **só** nessa resposta; o consultor é
+  obrigado a trocar no primeiro acesso.
+- Erros: `400 INVALID_CPF`, `400 INVALID_PIX`, `409 EMAIL_IN_USE`,
+  `409 CPF_IN_USE`, `404 NOT_FOUND` (praça ou consultor; id malformado também).
+- `active: false` sobe `token_version` (derruba sessões abertas) e desativa o
+  código no Freela; `active: true` reativa lá.
+- `:day` fora de `YYYY-MM-DD` válido → `400 VALIDATION_ERROR`.
+
+`ConsultorView`: `{id, name, email, phone, cpf, praca_id, praca_name, pix_key_type,
+pix_key, active, must_change_password, freela_consultant_id, freela_code,
+freela_sync_error, freela_synced_at, signup_url, created_by, created_at, updated_at}`.
+
+`ConsultorListItem` = `ConsultorView` + `today: {status, visits, cadastros, last_point_at}`,
+com `status` ∈ `em_jornada|encerrou|nao_iniciou` e `cadastros` = visitas de hoje
+com `freela_status = "cadastrou_qr"` (declaração do consultor, não confirmação do Freela).
+
+`PointView`: `{id, at, lat, lng, accuracy, kind, clock_adjusted}` com `kind` ∈
+`start|track|checkin|checkout|end`.
+
+### 20.5 Fechamento da meia-noite
+
+`@Cron` às 00:05 de Brasília (processo único, como os outros relógios): toda
+jornada de dia anterior (`day < todaySp()`) ainda aberta ganha `ended_at` = hora
+do último ponto (ou o início, se não houver ponto) e `auto_closed: true`; as
+visitas dela sem checkout ficam `auto_closed: true` ("sem checkout") e **não**
+mexem no CRM. O mesmo fechamento roda, só para o consultor, antes de
+`journeys/start` e de `today`.
+
+### 20.6 Código no Freela
+
+Ao criar o consultor o Praça chama `POST /v1/admins/consultants` no api-freela
+(`name`, `email`, `phone` em `+55…` quando válido, `city`/`uf` da cobertura da
+praça quando existirem, `notes = "Consultor de campo — Praça"`) e guarda
+`freela_consultant_id` e `freela_code`. O Freela manda ao consultor um e-mail com
+a senha do portal de consultores dele (decisão do dono: aceito).
+
+- Falha (Freela fora, sem permissão `CONSULTANTS`, sem configuração) →
+  `freela_sync_error` com a mensagem; o relógio de 2 min do Freela tenta de novo
+  os pendentes; `POST /:id/freela-sync` tenta na hora.
+- `409` do Freela (e-mail já usado): se o consultor de lá tiver o mesmo e-mail e
+  `notes = "Consultor de campo — Praça"`, ele é adotado (o Freela criou e a
+  resposta se perdeu); senão fica o erro fixo "O e-mail deste consultor já é usado
+  por outro consultor no Freela — troque o e-mail aqui e tente de novo.", que o
+  relógio **não** repete. Trocar o e-mail limpa o erro e tenta de novo.
+- Ativar/desativar no Praça → `PATCH /v1/admins/consultants/:id {isActive}`;
+  falha vira `freela_sync_error` e o relógio repete.
+- Link do QR: `${FREELA_WEB_URL}/cadastro?consultor=${freela_code}`.
+
+### 20.7 Fotos
+
+`PHOTO_STORAGE=s3|disk` (padrão `s3` em produção, `disk` fora dela). S3: bucket
+privado (`S3_BUCKET`, `S3_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` —
+chaves vazias = cadeia padrão do SDK). Disco: `PHOTOS_DIR` (padrão
+`./uploads`, já no `.gitignore`). Chave `campo/<consultant_id>/<day>/<visit_id>.<jpg|png|webp>`.
+A porta `PhotoStorage` tem `put(key, bytes, mime)` (3 argumentos, em toda
+implementação), `get(key)` e `remove(key)`. A foto só sai pela API, que confere quem pede. Sem bucket/região em modo `s3`, a
+API sobe e as rotas de foto respondem `503 PHOTO_STORAGE_NOT_CONFIGURED`.
+
+### 20.8 Privacidade
+
+CPF, chave Pix e localização só aparecem para a equipe e para o próprio
+consultor. Localização só é recebida com jornada aberta.
+
+### 20.9 Desvios propositais em relação ao spec
+
+1. Evento do CRM com `kind = "visit"` (o do catálogo), não `"visita"`: assim conta como contato e tem rótulo.
+2. Rota nova `GET /places/similar` e campo `confirm_new` no check-in; sem `confirm_new: true` o check-in nunca bloqueia, só marca `possible_dup`.
+3. `:ref` das rotas de visita aceita `id` ou `client_id` (sempre do próprio consultor).
+4. Reenvio = `200` com o que já existe: `start`/`visits` pelo `client_id`, `checkout` de visita já fechada, `end` sem jornada aberta (última encerrada há menos de 24 h).
+5. `change-password` pede a senha atual; senha errada é `400 WRONG_PASSWORD` (401 derrubaria a sessão).
+6. `403 PASSWORD_CHANGE_REQUIRED` cobrado no servidor em todo `/v1/campo/*` exceto `change-password` e `GET /me`.
+7. `DELETE /v1/consultores/:id` (admin) apaga de vez, inclusive as fotos; a tela não oferece o botão.
+8. `GET /v1/campo/me` devolve também `channels`.
+9. Extensão da foto pelo tipo real (`.jpg`/`.png`/`.webp`); o `Content-Type` sai da extensão da chave; sem coluna nova.
+10. S3 sem `S3_BUCKET`/`S3_REGION` não derruba o boot: rotas de foto respondem `503 PHOTO_STORAGE_NOT_CONFIGURED` e o log avisa na largada; chaves AWS vazias = cadeia padrão do SDK.
+11. `FreelaClient` passa a lançar `FreelaHttpError` (subclasse de `BadGatewayException` com `freelaStatus`); `409` do Freela adota o consultor se for nosso, senão grava `EMAIL_DUPLICADO_NO_FREELA`, que o relógio não repete.
+12. Ativar/desativar sincroniza com o Freela pelo mesmo caminho do código: falha vira `freela_sync_error` e o relógio de 2 min repete.
+13. `DELETE /v1/pracas/:id` com consultores na praça → `409 PRACA_HAS_CONSULTANTS`.
+14. `PhotoStorage` ganha `remove(key)` além de `put`/`get`.
+15. `vitest@3.2.4` no web (só dev), para a lógica pura (fila offline, completude, redução da foto).
+16. `leads` ganha `lat`/`lng` (como o spec manda), embora `pracas` use `lat`/`lon`.
+17. Índices únicos parciais (`field_journeys_one_open_per_consultant`, `field_visits_one_open_per_consultant`) vivem só no SQL da migração: o Prisma 5.22 não os declara, então qualquer `prisma migrate dev` futura propõe `DROP INDEX` deles — apague essas linhas do SQL gerado antes de aplicar.
