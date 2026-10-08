@@ -1,12 +1,14 @@
 import { Module } from '@nestjs/common';
 import { validateEnv } from '../../common/config/env.validation';
 import { FreelaClientModule } from '../freela/freela-client.module';
+import { CampoAutocloseScheduler } from './campo-autoclose.scheduler';
 import { CampoAuthController } from './campo-auth.controller';
 import { CampoAuthService } from './campo-auth.service';
 import { CampoFreelaService } from './campo-freela.service';
 import { CampoController } from './campo.controller';
 import { ConsultoresController } from './consultores.controller';
 import { ConsultoresService } from './consultores.service';
+import { JourneysService } from './journeys.service';
 import { criarPhotoStorage, PHOTO_STORAGE } from './photo-storage';
 
 /**
@@ -22,6 +24,8 @@ import { criarPhotoStorage, PHOTO_STORAGE } from './photo-storage';
     CampoAuthService,
     CampoFreelaService,
     ConsultoresService,
+    JourneysService,
+    CampoAutocloseScheduler,
     // O `.env` já está em `process.env` (ConfigModule.forRoot) e foi validado na
     // largada; reler pelo mesmo schema dá o PHOTO_STORAGE já resolvido.
     { provide: PHOTO_STORAGE, useFactory: () => criarPhotoStorage(validateEnv(process.env)) },
