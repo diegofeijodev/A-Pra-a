@@ -208,3 +208,35 @@ describe('ConsultoresService.list — situação de hoje', () => {
     });
   });
 });
+
+describe('ConsultoresService — corrida no índice único (P2002)', () => {
+  const { Prisma } = jest.requireActual('@prisma/client') as typeof import('@prisma/client');
+  const p2002 = (target: unknown) =>
+    new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+      code: 'P2002',
+      clientVersion: 'test',
+      meta: { target },
+    });
+
+  const casos: Array<[string, unknown, string]> = [
+    ['e-mail (colunas)', ['email'], 'EMAIL_IN_USE'],
+    ['e-mail (nome do índice)', 'field_consultants_email_key', 'EMAIL_IN_USE'],
+    ['CPF (colunas)', ['cpf'], 'CPF_IN_USE'],
+    ['CPF (nome do índice)', 'field_consultants_cpf_key', 'CPF_IN_USE'],
+  ];
+
+  it.each(casos)('create: %s = 409 %s', async (_n, target, code) => {
+    const p = fakePrisma();
+    p.field_consultants.create.mockRejectedValue(p2002(target));
+    await expect(montar(p).s.create(NOVO, ADMIN)).rejects.toMatchObject({ status: 409, response: { code } });
+  });
+
+  it.each(casos)('update: %s = 409 %s', async (_n, target, code) => {
+    const p = fakePrisma();
+    p.field_consultants.update.mockRejectedValue(p2002(target));
+    await expect(montar(p).s.update(CONS, { name: 'Outro Nome' })).rejects.toMatchObject({
+      status: 409,
+      response: { code },
+    });
+  });
+});

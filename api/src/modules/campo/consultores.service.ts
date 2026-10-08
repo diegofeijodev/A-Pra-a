@@ -19,7 +19,7 @@ import { signupUrl } from './campo-links';
 import { COM_PRACA } from './campo-prisma';
 import { CreateConsultorDto, UpdateConsultorDto } from './dto/consultores.dto';
 import { PHOTO_STORAGE, type PhotoStorage } from './photo-storage';
-import { violouUnico } from './prisma-errors';
+import { colunaUnicaDoConsultor, violouUnico } from './prisma-errors';
 
 export interface ConsultorView {
   id: string;
@@ -75,6 +75,10 @@ export function toConsultorView(c: ConsultorRow): ConsultorView {
 }
 
 const naoAchado = () => new NotFoundException({ code: 'NOT_FOUND', message: 'Consultor não encontrado.' });
+
+const emailEmUso = () =>
+  new ConflictException({ code: 'EMAIL_IN_USE', message: 'Já existe um consultor com este e-mail.' });
+const cpfEmUso = () => new ConflictException({ code: 'CPF_IN_USE', message: 'Já existe um consultor com este CPF.' });
 
 @Injectable()
 export class ConsultoresService {
@@ -153,10 +157,7 @@ export class ConsultoresService {
         },
       });
     } catch (e) {
-      if (violouUnico(e)) {
-        throw new ConflictException({ code: 'CONFLICT', message: 'E-mail ou CPF já cadastrado em outro consultor.' });
-      }
-      throw e;
+      throw this.conflitoUnico(e);
     }
     await this.freela.sync(criado.id);
     return { consultant: await this.get(criado.id), temp_password: temp };
@@ -206,7 +207,11 @@ export class ConsultoresService {
       sincronizar = true;
     }
 
-    await this.prisma.field_consultants.update({ where: { id }, data });
+    try {
+      await this.prisma.field_consultants.update({ where: { id }, data });
+    } catch (e) {
+      throw this.conflitoUnico(e);
+    }
     if (sincronizar) await this.freela.sync(id);
     return this.get(id);
   }
@@ -268,15 +273,26 @@ export class ConsultoresService {
     }
   }
 
+  /** Corrida entre a conferência e a gravação: o índice único decide, com o mesmo código da conferência. */
+  private conflitoUnico(e: unknown): unknown {
+    const coluna = colunaUnicaDoConsultor(e);
+    if (coluna === 'email') return emailEmUso();
+    if (coluna === 'cpf') return cpfEmUso();
+    if (violouUnico(e)) {
+      return new ConflictException({ code: 'CONFLICT', message: 'E-mail ou CPF já cadastrado em outro consultor.' });
+    }
+    return e;
+  }
+
   private async emailLivre(email: string): Promise<void> {
     if (await this.prisma.field_consultants.findUnique({ where: { email }, select: { id: true } })) {
-      throw new ConflictException({ code: 'EMAIL_IN_USE', message: 'Já existe um consultor com este e-mail.' });
+      throw emailEmUso();
     }
   }
 
   private async cpfLivre(cpf: string): Promise<void> {
     if (await this.prisma.field_consultants.findUnique({ where: { cpf }, select: { id: true } })) {
-      throw new ConflictException({ code: 'CPF_IN_USE', message: 'Já existe um consultor com este CPF.' });
+      throw cpfEmUso();
     }
   }
 
