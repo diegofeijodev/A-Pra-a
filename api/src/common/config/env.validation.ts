@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const envSchema = z.object({
+const envBase = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(3014),
   DATABASE_URL: z.string().min(1),
@@ -28,6 +28,15 @@ const envSchema = z.object({
   CAMPO_JWT_EXPIRES_IN: z.string().default('7d'),
   // Endereço público do Freela web — base do link do QR (`/cadastro?consultor=`).
   FREELA_WEB_URL: z.string().default(''),
+  // Fotos das visitas (spec §10). Vazio conta como ausente: o compose declara
+  // `PHOTO_STORAGE: ${PHOTO_STORAGE:-}` e o padrão sai do NODE_ENV abaixo.
+  PHOTO_STORAGE: z.preprocess((v) => (v === '' ? undefined : v), z.enum(['s3', 'disk']).optional()),
+  PHOTOS_DIR: z.string().default('./uploads'),
+  S3_BUCKET: z.string().default(''),
+  S3_REGION: z.string().default(''),
+  // Vazias = cadeia padrão do SDK (papel da instância). Chave dedicada: só este bucket.
+  AWS_ACCESS_KEY_ID: z.string().default(''),
+  AWS_SECRET_ACCESS_KEY: z.string().default(''),
 
   SWAGGER_ENABLED: z.string().optional(),
 
@@ -46,6 +55,15 @@ const envSchema = z.object({
     .default('false')
     .transform((v) => v === 'true'),
 });
+
+/**
+ * Produção grava no bucket privado; disco só com `PHOTO_STORAGE=disk` explícito
+ * (o EC2 é dividido com o Freela de produção e tem pouco espaço — spec §10).
+ */
+const envSchema = envBase.transform((e) => ({
+  ...e,
+  PHOTO_STORAGE: e.PHOTO_STORAGE ?? (e.NODE_ENV === 'production' ? ('s3' as const) : ('disk' as const)),
+}));
 
 export type Env = z.infer<typeof envSchema>;
 

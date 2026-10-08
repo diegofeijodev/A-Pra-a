@@ -22,6 +22,7 @@
     "smoke": "bash scripts/smoke.sh"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1012.0",
     "@fastify/helmet": "^12.0.1",
     "@fastify/multipart": "^9.4.0",
     "@fastify/static": "^10.1.2",
