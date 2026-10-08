@@ -201,4 +201,17 @@ describe('drenarCom — itens dependentes de uma recusa', () => {
     expect(d.aoRecusar).not.toHaveBeenCalled();
     expect(fila).toEqual([]);
   });
+
+  it('check-in recusado: respostas e checkout enfileirados DURANTE o envio também saem, com a mesma mensagem única', async () => {
+    const fila = [checkinItem(1, 'v1')];
+    const d = deps(fila, async (i) => {
+      if (i.kind !== 'checkin') return;
+      fila.push(respostasItem(2, 'v1'), checkoutItem(3, 'v1'));
+      throw erroHttp(409, 'VISIT_ALREADY_OPEN', 'Faça o checkout.');
+    });
+    await drenarCom(d);
+    expect(d.aoRecusar).toHaveBeenCalledTimes(1);
+    expect(fila).toEqual([]);
+    expect(d.enviar).toHaveBeenCalledTimes(1);
+  });
 });

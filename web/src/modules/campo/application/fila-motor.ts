@@ -67,7 +67,8 @@ export async function drenarCom(d: DepsMotor): Promise<ResultadoDrenagem> {
         if (cabeca.kind === 'checkin') {
           // Sem a visita no servidor, respostas e checkout dela virariam 404: saem juntos.
           const ref = cabeca.payload.client_id;
-          for (const dep of fila) {
+          // Relê a fila: respostas/checkout guardados durante o envio demorado também saem.
+          for (const dep of await d.listar()) {
             if (dep.consultant_id === consultor && (dep.kind === 'answers' || dep.kind === 'checkout') && dep.visit_ref === ref) {
               await d.remover(dep.seq as number);
             }

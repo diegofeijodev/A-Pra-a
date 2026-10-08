@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ItemFila, VisitAnswers } from '../campo.types';
-import { checkoutsParaReposicionar, classificar, nomeDaVisita, pontoDeTrilhaUtil, proximaTentativa, substituidos } from '../fila-politica';
+import { planejarRascunho, classificar, nomeDaVisita, pontoDeTrilhaUtil, proximaTentativa, substituidos } from '../fila-politica';
 
 const POS = { at: '2026-10-08T15:00:00.000Z', lat: -19.9, lng: -43.9, accuracy: 10 };
 const R = {} as VisitAnswers;
@@ -61,20 +61,49 @@ describe('trilha', () => {
   });
 });
 
-describe('checkout nunca passa na frente do último rascunho da sua visita', () => {
-  const fila: ItemFila[] = [
-    { ...base, seq: 1, kind: 'checkout', visit_ref: 'v1', payload: POS, bloqueio: 'Falta responder: interesse.' },
-    { ...base, seq: 2, kind: 'checkout', visit_ref: 'v2', payload: POS },
-    { ...base, seq: 3, kind: 'answers', visit_ref: 'v1', payload: R },
-  ];
+describe('rascunho novo: o checkout da visita vem depois dele, o resto da fila mantém a ordem', () => {
+  const novo = { kind: 'answers', visit_ref: 'v1', payload: R } as const;
+  const info = { consultant_id: 'c1', tentativas: 0, proxima_em: 0, criado_em: 5 };
+  const seqs = (l: { seq?: number }[]) => l.map((i) => i.seq);
+  const ck = (seq: number, ref: string, extra = {}): ItemFila => ({ ...base, seq, kind: 'checkout', visit_ref: ref, payload: POS, ...extra });
+  const rs = (seq: number, ref: string): ItemFila => ({ ...base, seq, kind: 'answers', visit_ref: ref, payload: R });
+  const checkin = (seq: number, ref: string): ItemFila =>
+    ({ ...base, seq, kind: 'checkin', payload: { client_id: ref, place_name: 'Bar', ...POS }, foto: new Blob() }) as ItemFila;
+  const forma = (l: { kind: string; visit_ref?: string; payload?: unknown }[]) =>
+    l.map((i) => `${i.kind}:${i.visit_ref ?? (i.payload as { client_id?: string })?.client_id ?? ''}`);
 
-  it('rascunho novo da visita pega o checkout dela (bloqueado ou não)', () => {
-    expect(checkoutsParaReposicionar(fila, { kind: 'answers', visit_ref: 'v1', payload: R }).map((i) => i.seq)).toEqual([1]);
+  it('checkout v1 bloqueado na frente de check-in v2: v1 (rascunho + checkout) primeiro, v2 depois, na ordem', () => {
+    const fila = [ck(1, 'v1', { bloqueio: 'Falta' }), checkin(2, 'v2'), rs(3, 'v2'), ck(4, 'v2')];
+    const plano = planejarRascunho(fila, novo, info);
+    expect(plano.remover.sort()).toEqual([1, 2, 3, 4]);
+    expect(forma(plano.adicionar)).toEqual(['answers:v1', 'checkout:v1', 'checkin:v2', 'answers:v2', 'checkout:v2']);
+    expect(plano.adicionar.some((i) => 'bloqueio' in i && i.bloqueio)).toBe(false);
+    expect(plano.adicionar.every((i) => !('seq' in i))).toBe(true);
   });
 
-  it('outras ações e outras visitas não mexem em checkout', () => {
-    expect(checkoutsParaReposicionar(fila, { kind: 'end', payload: POS })).toEqual([]);
-    expect(checkoutsParaReposicionar(fila, { kind: 'answers', visit_ref: 'v9', payload: R })).toEqual([]);
+  it('um "end" depois do checkout continua depois dele', () => {
+    const fila = [ck(1, 'v1'), { ...base, seq: 2, kind: 'end', payload: POS } as ItemFila];
+    expect(forma(planejarRascunho(fila, novo, info).adicionar)).toEqual(['answers:v1', 'checkout:v1', 'end:']);
+  });
+
+  it('rascunho antigo e não enviado da mesma visita é substituído', () => {
+    const fila = [rs(1, 'v1'), ck(2, 'v1')];
+    const plano = planejarRascunho(fila, novo, info);
+    expect(plano.remover.sort()).toEqual([1, 2]);
+    expect(forma(plano.adicionar)).toEqual(['answers:v1', 'checkout:v1']);
+  });
+
+  it('sem checkout na fila: só acrescenta o rascunho (e troca o antigo)', () => {
+    const fila = [rs(1, 'v1'), rs(2, 'v2'), checkin(3, 'v3')];
+    const plano = planejarRascunho(fila, novo, info);
+    expect(plano.remover).toEqual([1]);
+    expect(forma(plano.adicionar)).toEqual(['answers:v1']);
+    expect(plano.adicionar[0]).toMatchObject({ consultant_id: 'c1', tentativas: 0, proxima_em: 0, criado_em: 5 });
+  });
+
+  it('itens antes do checkout não se mexem', () => {
+    const fila = [checkin(1, 'v1'), ck(2, 'v1')];
+    expect(seqs(fila) && planejarRascunho(fila, novo, info).remover.sort()).toEqual([2]);
   });
 });
 

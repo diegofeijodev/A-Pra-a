@@ -69,9 +69,12 @@ export function montarDia(today: TodayView | null, fila: ItemFila[]): DiaLocal {
       case 'checkout': {
         const v = achar(item.visit_ref);
         // Checkout bloqueado (422) não fecha nada: a visita segue aberta para corrigir.
-        if (v && !v.checkout_at && !item.bloqueio) {
-          v.checkout_at = item.payload.at;
-          v.pendente = true;
+        if (v && !v.checkout_at) {
+          if (item.bloqueio) v.pendente = true;
+          else {
+            v.checkout_at = item.payload.at;
+            v.pendente = true;
+          }
         }
         break;
       }

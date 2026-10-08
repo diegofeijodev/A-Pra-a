@@ -101,3 +101,31 @@ export async function atualizarSeExistir(item: ItemFila): Promise<void> {
   });
   await fim;
 }
+
+/**
+ * Troca atômica de itens: lê a fila do consultor, deixa `planejar` decidir o que
+ * sai e o que entra (nesta ordem) e aplica TUDO numa transação só — aba morta no
+ * meio não perde nada. `get` e escritas em callbacks (Safari fecha entre `await`s).
+ */
+export async function reposicionar(
+  consultantId: string,
+  planejar: (fila: ItemFila[]) => { remover: number[]; adicionar: Omit<ItemFila, 'seq'>[] },
+): Promise<void> {
+  const { s, fim } = await loja('readwrite');
+  await new Promise<void>((resolve, reject) => {
+    const g = s.getAll() as IDBRequest<ItemFila[]>;
+    g.onsuccess = () => {
+      try {
+        const plano = planejar(g.result.filter((i) => i.consultant_id === consultantId));
+        for (const seq of plano.remover) s.delete(seq);
+        for (const item of plano.adicionar) s.add(item);
+        resolve();
+      } catch (e) {
+        s.transaction.abort();
+        reject(e);
+      }
+    };
+    g.onerror = () => reject(g.error);
+  });
+  await fim;
+}

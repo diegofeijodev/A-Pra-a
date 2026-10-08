@@ -4,10 +4,10 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import type { AcaoFila, ItemFila } from '../domain/campo.types';
-import { checkoutsParaReposicionar, substituidos } from '../domain/fila-politica';
+import { planejarRascunho } from '../domain/fila-politica';
 import { getCampoSession } from '../infrastructure/campo-session.storage';
 import { enviarItem } from '../infrastructure/fila';
-import { adicionarNaFila, atualizarSeExistir, listarFila, removerDaFila } from '../infrastructure/fila-idb';
+import { adicionarNaFila, atualizarSeExistir, listarFila, removerDaFila, reposicionar } from '../infrastructure/fila-idb';
 import { drenarCom } from './fila-motor';
 
 interface FilaState {
@@ -80,18 +80,12 @@ export function drenar(): Promise<void> {
 
 /** Toda ação do consultor passa por aqui — com sinal, sai na hora; sem sinal, espera. */
 export async function enfileirar(acao: AcaoFila, consultantId: string): Promise<void> {
-  const fila = (await listarFila()).filter((i) => i.consultant_id === consultantId);
-  for (const seq of substituidos(fila, acao)) await removerDaFila(seq);
-  // O checkout da visita vai para DEPOIS do rascunho novo (e sai do bloqueio, se estava).
-  const checkouts = checkoutsParaReposicionar(fila, acao);
-  for (const c of checkouts) await removerDaFila(c.seq as number);
-  const novo = { consultant_id: consultantId, tentativas: 0, proxima_em: 0, criado_em: Date.now() };
-  await adicionarNaFila({ ...acao, ...novo });
-  for (const c of checkouts) {
-    const copia = { ...c, ...novo } as ItemFila;
-    delete copia.seq;
-    delete copia.bloqueio;
-    await adicionarNaFila(copia);
+  const info = { consultant_id: consultantId, tentativas: 0, proxima_em: 0, criado_em: Date.now() };
+  if (acao.kind === 'answers') {
+    // Atômico: troca do rascunho + checkout (e o que vinha atrás dele) numa transação só.
+    await reposicionar(consultantId, (fila) => planejarRascunho(fila, acao, info));
+  } else {
+    await adicionarNaFila({ ...acao, ...info });
   }
   await recarregar();
   // Duas voltas: se uma drenagem já estava terminando, a segunda pega o item novo.
@@ -106,6 +100,13 @@ async function zerarEspera(consultantId: string): Promise<void> {
   } catch {
     // IndexedDB indisponível agora: a drenagem normal tenta de novo.
   }
+}
+
+/** "Descartar este checkout": a visita fica aberta até o fechamento da meia-noite. */
+export async function descartar(seq: number): Promise<void> {
+  await removerDaFila(seq);
+  await recarregar();
+  void drenar();
 }
 
 /** Montado uma vez, no layout das telas do consultor. */

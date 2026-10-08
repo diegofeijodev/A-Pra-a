@@ -41,13 +41,38 @@ export function substituidos(fila: ItemFila[], nova: AcaoFila): number[] {
 export const PRECISAO_MAXIMA_TRILHA_M = 100;
 export const pontoDeTrilhaUtil = (accuracy: number): boolean => accuracy <= PRECISAO_MAXIMA_TRILHA_M;
 
+export type ItemNovo = Omit<ItemFila, 'seq'>;
+
 /**
- * Rascunho novo de uma visita: o checkout dela ainda na fila (bloqueado ou não)
- * tem de ir DEPOIS dele — o checkout nunca passa na frente do último rascunho.
+ * Rascunho novo (`answers`) de uma visita. Decide, sobre a fila do consultor:
+ * - o rascunho antigo e não enviado da mesma visita é substituído;
+ * - o checkout dela (bloqueado ou não) vai para DEPOIS do rascunho novo (e perde o bloqueio);
+ * - tudo o que estava depois do checkout volta na MESMA ordem, atrás dele — senão
+ *   o check-in da visita seguinte passaria na frente do checkout desta (409).
+ * Sem checkout na fila, só troca o rascunho antigo. `remover` = seqs; `adicionar` = nova ordem.
  */
-export function checkoutsParaReposicionar(fila: ItemFila[], nova: AcaoFila): ItemFila[] {
-  if (nova.kind !== 'answers') return [];
-  return fila.filter((i) => i.kind === 'checkout' && i.visit_ref === nova.visit_ref && i.seq !== undefined);
+export function planejarRascunho(
+  filaDoConsultor: ItemFila[],
+  nova: AcaoFila,
+  info: Pick<ItemFila, 'consultant_id' | 'tentativas' | 'proxima_em' | 'criado_em'>,
+): { remover: number[]; adicionar: ItemNovo[] } {
+  const fila = [...filaDoConsultor].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
+  const velhos = new Set(substituidos(fila, nova));
+  const novoItem = { ...nova, ...info } as ItemNovo;
+  const iCheckout = fila.findIndex((i) => i.kind === 'checkout' && nova.kind === 'answers' && i.visit_ref === nova.visit_ref);
+  if (iCheckout < 0) return { remover: [...velhos], adicionar: [novoItem] };
+
+  const cauda = fila.slice(iCheckout);
+  const remover = new Set<number>([...velhos, ...cauda.map((i) => i.seq as number)]);
+  const semSeq = (i: ItemFila): ItemNovo => {
+    const c = { ...i } as ItemFila;
+    delete c.seq;
+    delete c.bloqueio;
+    return c;
+  };
+  const checkout = semSeq({ ...fila[iCheckout], tentativas: 0, proxima_em: 0 });
+  const resto = cauda.slice(1).filter((i) => !velhos.has(i.seq as number)).map(semSeq);
+  return { remover: [...remover], adicionar: [novoItem, checkout, ...resto] };
 }
 
 /** Nome para avisar o consultor: check-in ainda na fila, senão o retrato do /today, senão "visita". */

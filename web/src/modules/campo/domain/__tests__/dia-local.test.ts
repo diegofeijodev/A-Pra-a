@@ -72,6 +72,6 @@ describe('montarDia — o dia como o consultor vê, com a fila por cima', () => 
   it('checkout bloqueado (422) NÃO fecha a visita: ela segue aberta para o consultor corrigir', () => {
     const fila: ItemFila[] = [{ ...base, seq: 1, kind: 'checkout', visit_ref: 'v1', payload: POS, bloqueio: 'Falta responder: interesse.' }];
     const dia = montarDia(hoje({ journey: JORNADA, visits: [visita({})] }), fila);
-    expect(dia.visitaAberta).toMatchObject({ ref: 'v1', checkout_at: null });
+    expect(dia.visitaAberta).toMatchObject({ ref: 'v1', checkout_at: null, pendente: true });
   });
 });
