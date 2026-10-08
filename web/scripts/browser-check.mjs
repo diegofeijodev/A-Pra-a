@@ -684,6 +684,65 @@ try {
   await cel.goto(`${BASE}/campo`, { waitUntil: 'networkidle' });
   await espera(1200);
   check('e volta para o campo com a sessão dele', new URL(cel.url()).pathname === '/campo');
+
+console.log('-- Campo: GPS negado --');
+  const semGpsCtx = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+    locale: 'pt-BR',
+    timezoneId: 'America/Sao_Paulo',
+  });
+  try {
+    // Negação determinística (o "perguntar" do headless varia por versão).
+    await semGpsCtx.addInitScript(() => {
+      navigator.geolocation.getCurrentPosition = (_ok, erro) =>
+        erro?.({ code: 1, message: 'User denied Geolocation', PERMISSION_DENIED: 1, POSITION_UNAVAILABLE: 2, TIMEOUT: 3 });
+    });
+    const sg = await semGpsCtx.newPage();
+    vigiar(sg, 'campo-sem-gps');
+    await sg.goto(`${BASE}/campo/entrar`, { waitUntil: 'networkidle' });
+    await sg.locator('#email').fill(CAMPO_EMAIL);
+    await sg.locator('#senha').fill(CAMPO_SENHA_NOVA);
+    await sg.getByRole('button', { name: 'Entrar', exact: true }).click();
+    await sg.waitForURL(/\/campo$/, { timeout: 20000 });
+    await sg.getByRole('button', { name: 'Iniciar jornada' }).click();
+    await sg.getByText('A localização está bloqueada para este site').waitFor({ timeout: 15000 });
+    const aviso = await corpo(sg);
+    check('GPS negado: a tela ensina a liberar no iPhone e no Android', aviso.includes('safari') && aviso.includes('chrome'));
+    check('GPS negado: nada foi registrado', (await situacaoCampo())?.status === 'nao_iniciou');
+  } finally {
+    await semGpsCtx.close();
+  }
+
+  console.log('-- Campo: jornada --');
+  check('aviso de privacidade antes de iniciar', (await corpo(cel)).includes('a localização só é registrada com a jornada aberta'));
+  await cel.getByRole('button', { name: 'Iniciar jornada' }).click();
+  await cel.getByRole('button', { name: 'Encerrar jornada' }).waitFor({ timeout: 15000 });
+  await cel.waitForFunction(() => !document.body.innerText.toLowerCase().includes('pendente'), null, { timeout: 20000 });
+  check('equipe vê o consultor em jornada', (await situacaoCampo())?.status === 'em_jornada');
+
+  // ── campo: visitas (Task 11 entra AQUI, antes de encerrar) ──
+
+  console.log('-- Campo: encerrar sem sinal (fila offline) --');
+  offline = true;
+  await celularCtx.setOffline(true);
+  // As telas são visões de /campo: trocar de visão não pode buscar nada no servidor.
+  await cel.getByRole('button', { name: 'QR code' }).click();
+  await cel.getByText('Em construção').waitFor({ timeout: 5000 });
+  check('sem sinal: a visão do QR abre sem navegar (?v=qr)', new URL(cel.url()).search === '?v=qr');
+  await cel.getByRole('button', { name: 'Voltar' }).click();
+  await cel.getByRole('button', { name: 'Encerrar jornada' }).waitFor({ timeout: 5000 });
+  check('sem sinal: voltar à tela de hoje (/campo)', new URL(cel.url()).pathname === '/campo' && new URL(cel.url()).search === '');
+  cel.once('dialog', (d) => void d.accept());
+  await cel.getByRole('button', { name: 'Encerrar jornada' }).click();
+  await cel.getByText('1 envio pendente').waitFor({ timeout: 15000 });
+  check('sem sinal: a faixa avisa que envia quando o sinal voltar', (await corpo(cel)).includes('enviando quando voltar o sinal'));
+  check('sem sinal: a jornada continua aberta no servidor', (await situacaoCampo())?.status === 'em_jornada');
+  await celularCtx.setOffline(false);
+  offline = false;
+  await cel.waitForFunction(() => !document.body.innerText.toLowerCase().includes('pendente'), null, { timeout: 30000 });
+  check('sinal de volta: a fila enviou o encerramento', (await situacaoCampo())?.status === 'encerrou');
 } catch (e) {
   ko('roteiro do campo interrompido', String(e).slice(0, 300));
 } finally {

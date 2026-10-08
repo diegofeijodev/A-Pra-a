@@ -7,6 +7,7 @@ import {
   clearCampoSession,
   clearSnapshots,
   getCampoSession,
+  registrarConsultor,
   storeCampoSession,
 } from '../infrastructure/campo-session.storage';
 
@@ -28,6 +29,8 @@ export const useCampoSession = create<CampoSessionState>((set, get) => ({
   hydrate: () => set({ session: getCampoSession(), hydrated: true }),
   signIn: async (email, password) => {
     const r = await campoLogin(email, password);
+    // Outro consultor no mesmo celular: os retratos do anterior saem antes de a tela montar.
+    registrarConsultor(r.consultant.id);
     const session: CampoSession = { access_token: r.access_token, consultant: r.consultant };
     storeCampoSession(session);
     set({ session, hydrated: true });

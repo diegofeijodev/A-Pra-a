@@ -6,6 +6,7 @@ import type { CampoSession } from '../domain/campo.types';
 
 const CHAVE = 'campoSession';
 const RETRATO = 'campoSnapshot:';
+const ULTIMO = 'campoUltimoConsultor';
 
 function ler<T>(chave: string): T | null {
   if (typeof window === 'undefined') return null;
@@ -14,6 +15,15 @@ function ler<T>(chave: string): T | null {
     return raw ? (JSON.parse(raw) as T) : null;
   } catch {
     return null;
+  }
+}
+
+function remover(chave: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(chave);
+  } catch {
+    // Storage bloqueado: nada a remover.
   }
 }
 
@@ -36,8 +46,7 @@ export function storeCampoSession(sessao: CampoSession): void {
 
 /** Só a sessão: a fila (IndexedDB) fica guardada até o próximo login (spec §9). */
 export function clearCampoSession(): void {
-  if (typeof window === 'undefined') return;
-  window.localStorage.removeItem(CHAVE);
+  remover(CHAVE);
 }
 
 export function getSnapshot<T>(nome: string): T | null {
@@ -49,13 +58,32 @@ export function setSnapshot(nome: string, valor: unknown): void {
 }
 
 export function removeSnapshot(nome: string): void {
-  if (typeof window === 'undefined') return;
-  window.localStorage.removeItem(RETRATO + nome);
+  remover(RETRATO + nome);
 }
 
 export function clearSnapshots(): void {
   if (typeof window === 'undefined') return;
-  for (const k of Object.keys(window.localStorage)) {
-    if (k.startsWith(RETRATO)) window.localStorage.removeItem(k);
+  try {
+    for (const k of Object.keys(window.localStorage)) {
+      if (k.startsWith(RETRATO)) window.localStorage.removeItem(k);
+    }
+  } catch {
+    // Storage bloqueado: nada a limpar.
   }
+}
+
+/**
+ * Registra quem entrou por último neste aparelho. Se for OUTRO consultor, os
+ * retratos do anterior (hoje, /me) saem — senão a tela de hoje mostraria os
+ * dados dele. A fila (IndexedDB) não precisa: já é por `consultant_id`.
+ * Devolve `true` quando houve troca.
+ */
+export function registrarConsultor(id: string): boolean {
+  const anterior = ler<string>(ULTIMO);
+  gravar(ULTIMO, id);
+  if (anterior && anterior !== id) {
+    clearSnapshots();
+    return true;
+  }
+  return false;
 }

@@ -35,5 +35,17 @@ campoApi.interceptors.response.use(undefined, (error) => {
       }
     }
   }
+  // 403 PASSWORD_CHANGE_REQUIRED = senha provisória ainda pendente: a sessão vale,
+  // mas só a troca de senha. Mesmo cuidado contra laço do 401.
+  if (
+    error?.response?.status === 403 &&
+    error.response.data?.error?.code === 'PASSWORD_CHANGE_REQUIRED' &&
+    typeof window !== 'undefined' &&
+    !window.location.pathname.startsWith('/campo/senha') &&
+    !redirecionando
+  ) {
+    redirecionando = true;
+    window.location.replace('/campo/senha');
+  }
   return Promise.reject(error);
 });

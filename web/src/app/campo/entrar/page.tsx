@@ -1,6 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
@@ -21,6 +22,7 @@ type EntrarForm = z.infer<typeof entrarSchema>;
 
 export default function EntrarCampoPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const session = useCampoSession((s) => s.session);
   const hydrated = useCampoSession((s) => s.hydrated);
   const hydrate = useCampoSession((s) => s.hydrate);
@@ -44,6 +46,8 @@ export default function EntrarCampoPage() {
   async function onSubmit(values: EntrarForm) {
     try {
       const s = await signIn(values.email, values.senha);
+      // Cache de outra conta nunca vaza para esta (mesma regra do `signOut`).
+      queryClient.clear();
       router.replace(s.consultant.must_change_password ? '/campo/senha' : '/campo');
     } catch (e) {
       toast.error(apiErrorMessage(e, 'Não foi possível entrar.'));
@@ -51,7 +55,7 @@ export default function EntrarCampoPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-5 py-10">
+    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-5 pb-10 pt-[max(2.5rem,env(safe-area-inset-top))]">
       <p className="font-display text-3xl font-black tracking-tight">
         PRAÇA<span className="text-primary">.</span> <span className="text-lg text-muted-foreground">Campo</span>
       </p>

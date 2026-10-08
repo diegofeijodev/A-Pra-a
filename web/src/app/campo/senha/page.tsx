@@ -60,7 +60,7 @@ export default function SenhaCampoPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-5 py-10">
+    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-5 pb-10 pt-[max(2.5rem,env(safe-area-inset-top))]">
       <h1 className="font-display text-2xl font-black">Troque sua senha</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         {session.consultant.must_change_password

@@ -3,6 +3,18 @@
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { useCampoSession } from '@/modules/campo/application/campo-session.store';
+import { useCampoMe, useDia } from '@/modules/campo/application/use-campo';
+import { useFilaRunner } from '@/modules/campo/application/use-fila';
+import { useRastreio } from '@/modules/campo/application/use-rastreio';
+
+/** Fila, `/me` e trilha rodam enquanto qualquer tela do consultor estiver aberta. */
+function CampoMotor({ consultantId }: { consultantId: string }) {
+  useFilaRunner(consultantId);
+  useCampoMe();
+  const { dia } = useDia();
+  useRastreio(!!dia.jornada, consultantId);
+  return null;
+}
 
 /**
  * Guarda das telas do consultor (mesma regra do `(app)/layout.tsx` da equipe:
@@ -29,5 +41,10 @@ export default function CampoSessaoLayout({ children }: { children: React.ReactN
     return <div className="grid min-h-dvh place-items-center text-sm text-muted-foreground">Carregando…</div>;
   }
 
-  return <div className="mx-auto min-h-dvh max-w-md px-4 pb-36 pt-4">{children}</div>;
+  return (
+    <div className="mx-auto min-h-dvh max-w-md px-4 pb-36 pt-[max(1rem,env(safe-area-inset-top))]">
+      <CampoMotor consultantId={session.consultant.id} />
+      {children}
+    </div>
+  );
 }
