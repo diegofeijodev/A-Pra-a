@@ -1996,7 +1996,7 @@ printf '\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff
 echo "nao e imagem" > /tmp/praca-smoke-campo.txt
 checkin(){ # $1 client_id, $2 lat, $3 campo do lugar (lead_id=… ou new_place=…), $4 arquivo
   curl -s -X POST $API/v1/campo/visits -H "$HC" -F "client_id=$1" -F "at=$AGORA" -F "lat=$2" -F "lng=$LNG" \
-    -F "accuracy=12" --form-string "$3" ${4:+-F "photo=@$4;type=image/jpeg"}
+    -F "accuracy=12" --form-string "$3" ${4:+-F "photo=@$4;type=image/jpeg"} "${@:5}"
 }
 NOVO_LUGAR="new_place={\"name\":\"Campo $SUF\",\"address\":\"Rua de Teste, 10\"}"
 
@@ -2011,8 +2011,8 @@ check "places?q sem jornada aberta = 200 (não exige posição)" "true" \
 INICIO=$(curl -s -X POST $API/v1/campo/journeys/start -H "$J" -H "$HC" -d "{\"client_id\":\"$J1\",$POS_CAMPO}")
 JORNADA_ID=$(echo "$INICIO" | jq -r .id)
 check "jornada aberta com o dia de Brasília" "$HOJE" "$(echo "$INICIO" | jq -r .day)"
-check "reenvio do início devolve a mesma jornada" "$JORNADA_ID" \
-  "$(curl -s -X POST $API/v1/campo/journeys/start -H "$J" -H "$HC" -d "{\"client_id\":\"$J1\",$POS_CAMPO}" | jq -r .id)"
+check "reenvio do início devolve a mesma jornada (201)" "201|$JORNADA_ID" \
+  "$(curl -s -o /tmp/praca-smoke-campo.json -w '%{http_code}' -X POST $API/v1/campo/journeys/start -H "$J" -H "$HC" -d "{\"client_id\":\"$J1\",$POS_CAMPO}")|$(jq -r .id /tmp/praca-smoke-campo.json)"
 check "outra jornada com uma aberta = JOURNEY_ALREADY_OPEN" "JOURNEY_ALREADY_OPEN" \
   "$(curl -s -X POST $API/v1/campo/journeys/start -H "$J" -H "$HC" -d "{\"client_id\":\"$(uuid)\",$POS_CAMPO}" | jq -r .error.code)"
 PONTOS="{\"points\":[{\"client_id\":\"$P1\",$POS_CAMPO},{\"client_id\":\"$P2\",\"at\":\"$FUTURO\",\"lat\":$LAT,\"lng\":$LNG,\"accuracy\":20}]}"
@@ -2041,8 +2041,8 @@ LEAD_CAMPO=$(echo "$VISITA_C" | jq -r .lead_id)
 check "check-in abre a visita" "null" "$(echo "$VISITA_C" | jq -r .checkout_at)"
 check "lead novo do campo: origem e etapa" "visita de campo|1" \
   "$(curl -s $API/v1/leads/$LEAD_CAMPO -H "$HD" | jq -r '"\(.origem)|\(.stage)"')"
-check "reenvio do check-in devolve a mesma visita" "$VISITA_ID" \
-  "$(checkin "$V1" "$LAT" "$NOVO_LUGAR" /tmp/praca-smoke-fachada.jpg | jq -r .id)"
+check "reenvio do check-in devolve a mesma visita (201)" "201|$VISITA_ID" \
+  "$(checkin "$V1" "$LAT" "$NOVO_LUGAR" /tmp/praca-smoke-fachada.jpg -w '%{http_code}' -o /tmp/praca-smoke-campo.json)|$(jq -r .id /tmp/praca-smoke-campo.json)"
 check "segunda visita com uma aberta = VISIT_ALREADY_OPEN" "VISIT_ALREADY_OPEN" \
   "$(checkin "$V2" "$LAT" "lead_id=$LEAD_CAMPO" /tmp/praca-smoke-fachada.jpg | jq -r .error.code)"
 check "parecido a até 100 m acha o lead recém-criado" "$LEAD_CAMPO" \
@@ -2062,8 +2062,8 @@ check "questionário completo: nada falta" "0" \
   "$(curl -s -X PATCH $API/v1/campo/visits/$V1/answers -H "$J" -H "$HC" -d "$RESPOSTAS_C" | jq '.missing | length')"
 SAIDA=$(curl -s -X POST $API/v1/campo/visits/$V1/checkout -H "$J" -H "$HC" -d "{$POS_CAMPO}")
 check "checkout feito" "true" "$(echo "$SAIDA" | jq '.checkout_at != null')"
-check "reenvio do checkout devolve a mesma hora (nada gravado de novo)" "$(echo "$SAIDA" | jq -r .checkout_at)" \
-  "$(curl -s -X POST $API/v1/campo/visits/$V1/checkout -H "$J" -H "$HC" -d "{$POS_CAMPO}" | jq -r .checkout_at)"
+check "reenvio do checkout devolve a mesma hora (200, nada gravado de novo)" "200|$(echo "$SAIDA" | jq -r .checkout_at)" \
+  "$(curl -s -o /tmp/praca-smoke-campo.json -w '%{http_code}' -X POST $API/v1/campo/visits/$V1/checkout -H "$J" -H "$HC" -d "{$POS_CAMPO}")|$(jq -r .checkout_at /tmp/praca-smoke-campo.json)"
 LEAD_DEPOIS=$(curl -s $API/v1/leads/$LEAD_CAMPO -H "$HD")
 check "CRM: lead foi para Conversa aberta" "3" "$(echo "$LEAD_DEPOIS" | jq .stage)"
 check "CRM: decisor é quem atendeu" "João|Dono" "$(echo "$LEAD_DEPOIS" | jq -r '"\(.decisor)|\(.decisor_role)"')"
@@ -2093,8 +2093,8 @@ curl -s -X POST $API/v1/campo/visits/$V2/checkout -H "$J" -H "$HC" -d "{$POS_CAM
 check "segunda visita: etapa ≥ 3 se mantém" "3" "$(curl -s $API/v1/leads/$LEAD_CAMPO -H "$HD" | jq .stage)"
 FIM=$(curl -s -X POST $API/v1/campo/journeys/current/end -H "$J" -H "$HC" -d "{$POS_CAMPO}")
 check "jornada encerrada" "true" "$(echo "$FIM" | jq '.ended_at != null')"
-check "reenvio do encerrar devolve a mesma jornada (200)" "$JORNADA_ID" \
-  "$(curl -s -X POST $API/v1/campo/journeys/current/end -H "$J" -H "$HC" -d "{$POS_CAMPO}" | jq -r .id)"
+check "reenvio do encerrar devolve a mesma jornada (200)" "200|$JORNADA_ID" \
+  "$(curl -s -o /tmp/praca-smoke-campo.json -w '%{http_code}' -X POST $API/v1/campo/journeys/current/end -H "$J" -H "$HC" -d "{$POS_CAMPO}")|$(jq -r .id /tmp/praca-smoke-campo.json)"
 check "hoje: 2 visitas, 1 'cadastrou agora', jornada fechada" "2|1|null" \
   "$(curl -s $API/v1/campo/today -H "$HC" | jq -r '"\(.counters.visits)|\(.counters.cadastrou_qr)|\(.journey)"')"
 
