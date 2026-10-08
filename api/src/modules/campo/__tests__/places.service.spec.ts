@@ -88,4 +88,10 @@ describe('PlacesService', () => {
     await s.list(C, { q: 'bar' });
     expect(p.leads.findMany.mock.calls[0]![0]).toMatchObject({ where: { praca_id: PRACA, archived: false } });
   });
+
+  it('parecidos: com 11+ estabelecimentos a menos de 100 m, o único de nome parecido (o mais longe) ainda aparece', async () => {
+    const outros = Array.from({ length: 12 }, (_, i) => lead(`o${i}`, `Pizzaria ${i}`, -19.92451 - i * 0.00001, -43.9352));
+    const { s } = montar([...outros, lead('far', 'Bar do Zé Moema', -19.9253, -43.9352)]); // ~ 88 m
+    expect((await s.similar(C, { name: 'Bar do Zé', ...AQUI })).map((x) => x.id)).toEqual(['far']);
+  });
 });

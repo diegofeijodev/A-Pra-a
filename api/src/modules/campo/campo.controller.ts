@@ -2,17 +2,17 @@ import {
   Body,
   Controller,
   Get,
-  Header,
   HttpCode,
   Param,
   Patch,
   Post,
   Query,
   Req,
+  Res,
   StreamableFile,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
-import type { FastifyRequest } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { CampoConsultant } from '../../common/auth/campo-consultant';
 import { AllowPendingPassword, CampoRoute } from '../../common/decorators/campo-route.decorator';
 import { CurrentConsultant } from '../../common/decorators/current-consultant.decorator';
@@ -96,9 +96,14 @@ export class CampoController {
   }
 
   @Get('visits/:ref/photo')
-  @Header('Cache-Control', 'private, max-age=86400')
-  async photo(@CurrentConsultant() c: CampoConsultant, @Param('ref') ref: string) {
+  async photo(
+    @CurrentConsultant() c: CampoConsultant,
+    @Param('ref') ref: string,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ) {
     const f = await this.visits.photo(c, ref);
+    // Só no sucesso: erro (404/502/503) não pode ficar 24 h no cache do aparelho.
+    void res.header('Cache-Control', 'private, max-age=86400');
     return new StreamableFile(f.bytes, { type: f.mime, disposition: 'inline' });
   }
 }

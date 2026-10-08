@@ -2997,7 +2997,7 @@ consultor. Localização só é recebida com jornada aberta.
 1. Evento do CRM com `kind = "visit"` (o do catálogo), não `"visita"`: assim conta como contato e tem rótulo.
 2. Rota nova `GET /places/similar` e campo `confirm_new` no check-in; sem `confirm_new: true` o check-in nunca bloqueia, só marca `possible_dup`.
 3. `:ref` das rotas de visita aceita `id` ou `client_id` (sempre do próprio consultor).
-4. Reenvio = `200` com o que já existe: `start`/`visits` pelo `client_id`, `checkout` de visita já fechada, `end` sem jornada aberta (última encerrada há menos de 24 h).
+4. Reenvio: os POSTs que criam (`journeys/start`, `visits`) respondem `201` também no reenvio, com o mesmo objeto (pelo `client_id`); `checkout` de visita já fechada e `end` sem jornada aberta (última encerrada há menos de 24 h) respondem `200`.
 5. `change-password` pede a senha atual; senha errada é `400 WRONG_PASSWORD` (401 derrubaria a sessão).
 6. `403 PASSWORD_CHANGE_REQUIRED` cobrado no servidor em todo `/v1/campo/*` exceto `change-password` e `GET /me`.
 7. `DELETE /v1/consultores/:id` (admin) apaga de vez, inclusive as fotos; a tela não oferece o botão.

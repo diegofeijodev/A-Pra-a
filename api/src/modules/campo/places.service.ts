@@ -84,7 +84,9 @@ export class PlacesService {
   /** "Já existe 'X' a 40 m — é esse?": nome parecido a até 100 m. */
   async similar(c: CampoConsultant, q: { name: string; lat: number; lng: number }): Promise<PlaceView[]> {
     await this.journeys.abertaOuFalha(c.id);
-    const perto = await this.near(c.praca_id, { lat: q.lat, lng: q.lng }, RAIO_DUPLICADO_M, 10);
-    return perto.filter((l) => nomeParecido(l.name, q.name));
+    // Todos os do raio (até o teto de leitura do `near`), filtra por nome e SÓ
+    // então corta: cortar antes esconderia o parecido atrás de vizinhos.
+    const perto = await this.near(c.praca_id, { lat: q.lat, lng: q.lng }, RAIO_DUPLICADO_M, Number.MAX_SAFE_INTEGER);
+    return perto.filter((l) => nomeParecido(l.name, q.name)).slice(0, 10);
   }
 }

@@ -150,6 +150,15 @@ describe('VisitsService.checkin', () => {
     expect(dataDo(p.leads.create)).toMatchObject({ possible_dup: true });
   });
 
+  it('check-in sem confirm_new usa a busca completa de parecidos (places.similar) e marca possible_dup', async () => {
+    const p = fakePrisma();
+    const { s, places } = montar(p);
+    places.similar.mockResolvedValue([{ id: 'longe', name: 'Bar do Zé', distance_m: 95 }]);
+    await s.checkin(C, checkinDto({ new_place: { name: 'Bar do Zé Moema' } }), JPEG, AGORA);
+    expect(places.similar).toHaveBeenCalledWith(C, { name: 'Bar do Zé Moema', lat: POS.lat, lng: POS.lng });
+    expect(dataDo(p.leads.create)).toMatchObject({ possible_dup: true });
+  });
+
   it('"é outro" confirmado: nem procura parecido', async () => {
     const p = fakePrisma();
     const { s, places } = montar(p);
