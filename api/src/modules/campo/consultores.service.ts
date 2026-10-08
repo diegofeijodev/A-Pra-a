@@ -1,0 +1,288 @@
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
+import { AuthUser } from '../../common/auth/auth-user';
+import { PrismaService } from '../../common/database/prisma.service';
+import { isUuid } from '../../common/ids/uuid';
+import { digits } from '../../common/phone/phone';
+import { todaySp } from '../../common/time/dates';
+import {
+  cpfValido,
+  gerarSenhaProvisoria,
+  normalizarPix,
+  pixValido,
+  situacaoHoje,
+  type SituacaoHoje,
+} from '../../domain/campo-rules';
+import { CampoFreelaService } from './campo-freela.service';
+import { signupUrl } from './campo-links';
+import { COM_PRACA } from './campo-prisma';
+import { CreateConsultorDto, UpdateConsultorDto } from './dto/consultores.dto';
+import { PHOTO_STORAGE, type PhotoStorage } from './photo-storage';
+import { violouUnico } from './prisma-errors';
+
+export interface ConsultorView {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  cpf: string;
+  praca_id: string;
+  praca_name: string;
+  pix_key_type: string;
+  pix_key: string;
+  active: boolean;
+  must_change_password: boolean;
+  freela_consultant_id: string | null;
+  freela_code: string | null;
+  freela_sync_error: string | null;
+  freela_synced_at: string | null;
+  signup_url: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConsultorListItem extends ConsultorView {
+  today: { status: SituacaoHoje; visits: number; cadastros: number; last_point_at: string | null };
+}
+
+export type ConsultorRow = Prisma.field_consultantsGetPayload<{ include: { praca: { select: { name: true } } } }>;
+
+/** Projeção da equipe — nunca `password_hash` nem `token_version`. */
+export function toConsultorView(c: ConsultorRow): ConsultorView {
+  return {
+    id: c.id,
+    name: c.name,
+    email: c.email,
+    phone: c.phone,
+    cpf: c.cpf,
+    praca_id: c.praca_id,
+    praca_name: c.praca.name,
+    pix_key_type: c.pix_key_type,
+    pix_key: c.pix_key,
+    active: c.active,
+    must_change_password: c.must_change_password,
+    freela_consultant_id: c.freela_consultant_id,
+    freela_code: c.freela_code,
+    freela_sync_error: c.freela_sync_error,
+    freela_synced_at: c.freela_synced_at?.toISOString() ?? null,
+    signup_url: signupUrl(c.freela_code),
+    created_by: c.created_by,
+    created_at: c.created_at.toISOString(),
+    updated_at: c.updated_at.toISOString(),
+  };
+}
+
+const naoAchado = () => new NotFoundException({ code: 'NOT_FOUND', message: 'Consultor não encontrado.' });
+
+@Injectable()
+export class ConsultoresService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly freela: CampoFreelaService,
+    @Inject(PHOTO_STORAGE) private readonly fotos: PhotoStorage,
+  ) {}
+
+  async list(agora = new Date()): Promise<ConsultorListItem[]> {
+    const hoje = todaySp(agora);
+    const [consultores, jornadas, visitas] = await Promise.all([
+      this.prisma.field_consultants.findMany({ include: COM_PRACA, orderBy: [{ active: 'desc' }, { name: 'asc' }] }),
+      this.prisma.field_journeys.findMany({
+        where: { day: hoje },
+        select: { id: true, consultant_id: true, ended_at: true },
+      }),
+      this.prisma.field_visits.findMany({
+        where: { journey: { day: hoje } },
+        select: { consultant_id: true, freela_status: true },
+      }),
+    ]);
+    const ultimos = jornadas.length
+      ? await this.prisma.field_points.groupBy({
+          by: ['journey_id'],
+          where: { journey_id: { in: jornadas.map((j) => j.id) } },
+          _max: { at: true },
+        })
+      : [];
+    const ultimoPorJornada = new Map(ultimos.map((u) => [u.journey_id, u._max.at]));
+
+    return consultores.map((c) => {
+      const js = jornadas.filter((j) => j.consultant_id === c.id);
+      const vs = visitas.filter((v) => v.consultant_id === c.id);
+      const pontos = js.map((j) => ultimoPorJornada.get(j.id)).filter((d): d is Date => d instanceof Date);
+      const ultimo = pontos.length ? new Date(Math.max(...pontos.map((d) => d.getTime()))) : null;
+      return {
+        ...toConsultorView(c),
+        today: {
+          status: situacaoHoje(js),
+          visits: vs.length,
+          cadastros: vs.filter((v) => v.freela_status === 'cadastrou_qr').length,
+          last_point_at: ultimo?.toISOString() ?? null,
+        },
+      };
+    });
+  }
+
+  async get(id: string): Promise<ConsultorView> {
+    return toConsultorView(await this.findOrFail(id));
+  }
+
+  async create(dto: CreateConsultorDto, admin: AuthUser): Promise<{ consultant: ConsultorView; temp_password: string }> {
+    const email = dto.email.trim().toLowerCase();
+    const cpf = this.cpfOuFalha(dto.cpf);
+    const phone = this.telefoneOuFalha(dto.phone);
+    this.pixOuFalha(dto.pix_key_type, dto.pix_key);
+    await this.pracaOrFail(dto.praca_id);
+    await this.emailLivre(email);
+    await this.cpfLivre(cpf);
+
+    const temp = gerarSenhaProvisoria();
+    let criado: { id: string };
+    try {
+      criado = await this.prisma.field_consultants.create({
+        data: {
+          name: dto.name.trim(),
+          email,
+          phone,
+          cpf,
+          praca_id: dto.praca_id,
+          pix_key_type: dto.pix_key_type,
+          pix_key: normalizarPix(dto.pix_key_type, dto.pix_key),
+          password_hash: await bcrypt.hash(temp, 10),
+          created_by: admin.id,
+        },
+      });
+    } catch (e) {
+      if (violouUnico(e)) {
+        throw new ConflictException({ code: 'CONFLICT', message: 'E-mail ou CPF já cadastrado em outro consultor.' });
+      }
+      throw e;
+    }
+    await this.freela.sync(criado.id);
+    return { consultant: await this.get(criado.id), temp_password: temp };
+  }
+
+  async update(id: string, dto: UpdateConsultorDto): Promise<ConsultorView> {
+    const atual = await this.findOrFail(id);
+    const data: Prisma.field_consultantsUncheckedUpdateInput = {};
+    let sincronizar = false;
+
+    if (dto.name !== undefined) data.name = dto.name.trim();
+    if (dto.phone !== undefined) data.phone = this.telefoneOuFalha(dto.phone);
+    if (dto.email !== undefined) {
+      const email = dto.email.trim().toLowerCase();
+      if (email !== atual.email) {
+        await this.emailLivre(email);
+        data.email = email;
+        // Sem código ainda (talvez pelo e-mail duplicado no Freela): tenta de novo com o e-mail novo.
+        if (!atual.freela_consultant_id) {
+          data.freela_sync_error = null;
+          sincronizar = true;
+        }
+      }
+    }
+    if (dto.cpf !== undefined) {
+      const cpf = this.cpfOuFalha(dto.cpf);
+      if (cpf !== atual.cpf) {
+        await this.cpfLivre(cpf);
+        data.cpf = cpf;
+      }
+    }
+    if (dto.praca_id !== undefined) {
+      await this.pracaOrFail(dto.praca_id);
+      data.praca_id = dto.praca_id;
+    }
+    if (dto.pix_key !== undefined || dto.pix_key_type !== undefined) {
+      const tipo = dto.pix_key_type ?? atual.pix_key_type;
+      const chave = dto.pix_key ?? atual.pix_key;
+      this.pixOuFalha(tipo, chave);
+      data.pix_key_type = tipo;
+      data.pix_key = normalizarPix(tipo, chave);
+    }
+    if (dto.active !== undefined && dto.active !== atual.active) {
+      data.active = dto.active;
+      // Desativar derruba a sessão aberta na hora (o guard compara `tv`).
+      if (!dto.active) data.token_version = { increment: 1 };
+      sincronizar = true;
+    }
+
+    await this.prisma.field_consultants.update({ where: { id }, data });
+    if (sincronizar) await this.freela.sync(id);
+    return this.get(id);
+  }
+
+  async resetPassword(id: string): Promise<{ temp_password: string }> {
+    await this.findOrFail(id);
+    const temp = gerarSenhaProvisoria();
+    await this.prisma.field_consultants.update({
+      where: { id },
+      data: {
+        password_hash: await bcrypt.hash(temp, 10),
+        must_change_password: true,
+        token_version: { increment: 1 },
+      },
+    });
+    return { temp_password: temp };
+  }
+
+  async freelaSync(id: string): Promise<ConsultorView> {
+    await this.findOrFail(id);
+    await this.freela.sync(id);
+    return this.get(id);
+  }
+
+  /** Apaga de vez (limpeza de teste): cascata leva jornadas, pontos e visitas; as fotos saem à mão. */
+  async remove(id: string): Promise<{ ok: true }> {
+    const c = await this.findOrFail(id);
+    const fotos = await this.prisma.field_visits.findMany({ where: { consultant_id: id }, select: { photo_key: true } });
+    await this.freela.desativarAntesDeApagar(c);
+    await this.prisma.field_consultants.delete({ where: { id } });
+    for (const f of fotos) await this.fotos.remove(f.photo_key).catch(() => undefined);
+    return { ok: true };
+  }
+
+  async findOrFail(id: string): Promise<ConsultorRow> {
+    if (!isUuid(id)) throw naoAchado();
+    const c = await this.prisma.field_consultants.findUnique({ where: { id }, include: COM_PRACA });
+    if (!c) throw naoAchado();
+    return c;
+  }
+
+  // ── internos ────────────────────────────────────────────────
+  private cpfOuFalha(valor: string): string {
+    if (!cpfValido(valor)) throw new BadRequestException({ code: 'INVALID_CPF', message: 'CPF inválido.' });
+    return digits(valor);
+  }
+
+  private telefoneOuFalha(valor: string): string {
+    const d = digits(valor);
+    if (d.length < 10 || d.length > 13) {
+      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'phone: informe DDD + número.' });
+    }
+    return d;
+  }
+
+  private pixOuFalha(tipo: string, chave: string): void {
+    if (!pixValido(tipo, chave)) {
+      throw new BadRequestException({ code: 'INVALID_PIX', message: 'A chave Pix não confere com o tipo escolhido.' });
+    }
+  }
+
+  private async emailLivre(email: string): Promise<void> {
+    if (await this.prisma.field_consultants.findUnique({ where: { email }, select: { id: true } })) {
+      throw new ConflictException({ code: 'EMAIL_IN_USE', message: 'Já existe um consultor com este e-mail.' });
+    }
+  }
+
+  private async cpfLivre(cpf: string): Promise<void> {
+    if (await this.prisma.field_consultants.findUnique({ where: { cpf }, select: { id: true } })) {
+      throw new ConflictException({ code: 'CPF_IN_USE', message: 'Já existe um consultor com este CPF.' });
+    }
+  }
+
+  private async pracaOrFail(id: string): Promise<void> {
+    const naoAchada = new NotFoundException({ code: 'NOT_FOUND', message: 'Praça não encontrada.' });
+    if (!isUuid(id)) throw naoAchada;
+    if (!(await this.prisma.pracas.findUnique({ where: { id }, select: { id: true } }))) throw naoAchada;
+  }
+}

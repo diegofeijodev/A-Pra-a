@@ -14,6 +14,7 @@
  */
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { CampoFreelaService } from '../campo/campo-freela.service';
 import { FreelaCampaignsService } from './freela-campaigns.service';
 import { FreelaClient } from './freela-client';
 import { FreelaOutboxService } from './freela-outbox.service';
@@ -27,6 +28,7 @@ export class FreelaSyncScheduler {
     private readonly client: FreelaClient,
     private readonly outbox: FreelaOutboxService,
     private readonly campaigns: FreelaCampaignsService,
+    private readonly campoFreela: CampoFreelaService,
   ) {}
 
   @Cron('*/2 * * * *')
@@ -36,15 +38,26 @@ export class FreelaSyncScheduler {
     if (this.rodando) return;
     this.rodando = true;
     try {
-      const entregue = await this.outbox.flush(new Date());
-      if (entregue.campaigns > 0 || entregue.failed > 0 || entregue.start_pending > 0) {
-        this.log.log(
-          `outbox: ${entregue.campaigns} campanha(s), ${entregue.sends} envio(s), ${entregue.failed} sem telefone, ${entregue.start_pending} esperando começar`,
-        );
+      try {
+        const entregue = await this.outbox.flush(new Date());
+        if (entregue.campaigns > 0 || entregue.failed > 0 || entregue.start_pending > 0) {
+          this.log.log(
+            `outbox: ${entregue.campaigns} campanha(s), ${entregue.sends} envio(s), ${entregue.failed} sem telefone, ${entregue.start_pending} esperando começar`,
+          );
+        }
+        await this.campaigns.syncAll();
+      } catch (e) {
+        this.log.error(`rodada do Freela falhou: ${e instanceof Error ? e.message : String(e)}`);
       }
-      await this.campaigns.syncAll();
-    } catch (e) {
-      this.log.error(`rodada do Freela falhou: ${e instanceof Error ? e.message : String(e)}`);
+      // Consultores de campo (spec §7): código pendente e ativar/desativar que
+      // falhou. `try` próprio: o outbox caído não pode segurar o código do
+      // consultor, e vice-versa.
+      try {
+        const n = await this.campoFreela.retryPending();
+        if (n > 0) this.log.log(`campo: ${n} consultor(es) com o código do Freela pendente — tentado de novo`);
+      } catch (e) {
+        this.log.error(`código do Freela dos consultores falhou: ${e instanceof Error ? e.message : String(e)}`);
+      }
     } finally {
       this.rodando = false;
     }

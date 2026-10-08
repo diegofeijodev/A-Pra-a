@@ -44,6 +44,20 @@ export interface FreelaMultipart {
 
 export type FreelaMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
+/**
+ * Recusa do Freela com o status HTTP DELE. O corpo (o que a tela vê) continua
+ * `{code: 'FREELA_ERROR', message}`; `freelaStatus` é o que deixa o Praça
+ * distinguir "e-mail já usado" (409) de "sem permissão" (403) sem casar texto.
+ */
+export class FreelaHttpError extends BadGatewayException {
+  constructor(
+    readonly freelaStatus: number,
+    message: string,
+  ) {
+    super({ code: 'FREELA_ERROR', message });
+  }
+}
+
 /** Tempo máximo de espera por resposta do Freela. */
 const TIMEOUT_MS = 15_000;
 
@@ -201,8 +215,7 @@ export class FreelaClient {
       }
     }
 
-    if (!res.ok)
-      throw new BadGatewayException({ code: 'FREELA_ERROR', message: this.mensagem(corpo, res.status) });
+    if (!res.ok) throw new FreelaHttpError(res.status, this.mensagem(corpo, res.status));
     if (quebrado) {
       throw new BadGatewayException({
         code: 'FREELA_ERROR',

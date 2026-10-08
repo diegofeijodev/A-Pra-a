@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { AuthUser } from '../../common/auth/auth-user';
 import { PrismaService } from '../../common/database/prisma.service';
@@ -137,6 +137,15 @@ export class PracasService {
    */
   async remove(id: string): Promise<{ ok: true }> {
     await this.findOrFail(id);
+    // `field_consultants.praca_id` é FK Restrict: sem esta guarda o Prisma
+    // estouraria P2003 e a tela veria 500.
+    const consultores = await this.prisma.field_consultants.count({ where: { praca_id: id } });
+    if (consultores > 0) {
+      throw new ConflictException({
+        code: 'PRACA_HAS_CONSULTANTS',
+        message: 'Esta praça tem consultores de campo. Mude-os de praça ou apague-os antes.',
+      });
+    }
     await this.prisma.$transaction([
       this.prisma.users.updateMany({ where: { active_praca_id: id }, data: { active_praca_id: null } }),
       this.prisma.pracas.delete({ where: { id } }),

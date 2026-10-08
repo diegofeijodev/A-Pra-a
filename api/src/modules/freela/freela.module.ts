@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { CampoModule } from '../campo/campo.module';
 import { DisparosModule } from '../disparos/disparos.module';
 import { MessagesModule } from '../messages/messages.module';
 import { FreelaCampaignsService } from './freela-campaigns.service';
@@ -15,7 +16,7 @@ import { FreelaTemplatesService } from './freela-templates.service';
  * variáveis: o modelo que sobe para o Freela é o mesmo que a prévia mostrou.
  */
 @Module({
-  imports: [FreelaClientModule, DisparosModule, MessagesModule],
+  imports: [FreelaClientModule, DisparosModule, MessagesModule, CampoModule],
   controllers: [FreelaController],
   providers: [FreelaCampaignsService, FreelaTemplatesService, FreelaOutboxService, FreelaSyncScheduler],
   exports: [FreelaCampaignsService, FreelaOutboxService],

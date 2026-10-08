@@ -1,5 +1,5 @@
 import { BadGatewayException, ServiceUnavailableException } from '@nestjs/common';
-import { FreelaClient } from '../freela-client';
+import { FreelaClient, FreelaHttpError } from '../freela-client';
 
 const BASE = 'http://freela.local';
 
@@ -266,5 +266,27 @@ describe('FreelaClient — login e chamada', () => {
     expect(init.body).toBeInstanceOf(FormData);
     expect(headers(2)['Content-Type']).toBeUndefined();
     expect(headers(2).Authorization).toBe('Bearer tok-1');
+  });
+});
+
+describe('FreelaClient — status do Freela na recusa', () => {
+  beforeEach(configurar);
+
+  it('409 vira FreelaHttpError com freelaStatus, sem mudar o corpo do erro que a tela vê', async () => {
+    fetchMock
+      .mockResolvedValueOnce(LOGIN_OK)
+      .mockResolvedValueOnce(resp(409, { error: { code: 'CONFLICT', message: 'Já existe um consultor com este e-mail.' } }));
+
+    const erro = await new FreelaClient()
+      .request('POST', '/v1/admins/consultants', { name: 'Ana' })
+      .catch((e: unknown) => e);
+
+    expect(erro).toBeInstanceOf(FreelaHttpError);
+    expect(erro).toBeInstanceOf(BadGatewayException);
+    expect((erro as FreelaHttpError).freelaStatus).toBe(409);
+    expect((erro as FreelaHttpError).getResponse()).toEqual({
+      code: 'FREELA_ERROR',
+      message: 'Já existe um consultor com este e-mail.',
+    });
   });
 });
