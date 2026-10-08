@@ -9,7 +9,12 @@ const config = [
   {
     // A sessão vive só no arquivo de storage — convenção do freela-web-v2.
     files: ['src/**/*.{ts,tsx}'],
-    ignores: ['src/modules/auth/infrastructure/auth.storage.ts'],
+    // Duas sessões, dois arquivos: a da equipe (`authUser`) e a do consultor de
+    // campo (`campoSession`). Nenhum outro arquivo toca o storage.
+    ignores: [
+      'src/modules/auth/infrastructure/auth.storage.ts',
+      'src/modules/campo/infrastructure/campo-session.storage.ts',
+    ],
     rules: {
       'no-restricted-globals': [
         'error',

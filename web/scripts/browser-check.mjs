@@ -54,6 +54,28 @@ const LEAD_NOME = `${LEAD_PREFIXO} ${CARIMBO}`;
 const EMAIL = process.env.PRACA_CHECK_EMAIL ?? 'diego@praca.local';
 const SENHA = process.env.PRACA_CHECK_PASSWORD ?? 'praca123';
 
+/** Consultor de campo criado pelo roteiro — prefixos fixos: é por eles que a faxina acha resíduo. */
+const CAMPO_PREFIXO = 'campo-browser-check-';
+const CAMPO_EMAIL = `${CAMPO_PREFIXO}${CARIMBO}@praca.local`;
+const CAMPO_NOME = `Consultor Check ${CARIMBO}`;
+const CAMPO_SENHA_NOVA = 'campoCheck123';
+const CAMPO_LUGAR_PREFIXO = 'Campo Browser-Check';
+const CAMPO_LUGAR = `${CAMPO_LUGAR_PREFIXO} ${CARIMBO}`;
+/** Posição simulada do celular (Belo Horizonte, praça do seed). */
+const POSICAO = { latitude: -19.9245, longitude: -43.9352, accuracy: 15 };
+
+/** CPF válido a partir de uma semente (o CPF do consultor é único). */
+function cpfValido(semente) {
+  const b = String(semente).replace(/\D/g, '').slice(-9).padStart(9, '1').split('').map(Number);
+  const dv = (a) => {
+    const s = a.reduce((t, d, i) => t + d * (a.length + 1 - i), 0);
+    const r = (s * 10) % 11;
+    return r === 10 ? 0 : r;
+  };
+  const d1 = dv(b);
+  return [...b, d1, dv([...b, d1])].join('');
+}
+
 /**
  * Respostas ≥ 400 que NÃO são o app quebrado. Lista fechada, com motivo — a
  * versão anterior ignorava `/_next/` inteiro, e aí um 404 num
@@ -150,6 +172,8 @@ let indicadorLancado = false;
 /** Ação concluída pelo roteiro: marcada ANTES do desfazer, para o `finally`
  *  reparar mesmo que o clique de "Desfazer conclusão" não ache a linha. */
 let acaoConcluida = null;
+let consultorId = null;
+let leadCampoId = null;
 const HOJE = hojeSp();
 
 /** Apaga o que der para apagar, sem derrubar a rodada por causa da limpeza. */
@@ -191,6 +215,14 @@ try {
   for (const l of restos) {
     console.log(`  faxina: apagando lead residual "${l.name}"`);
     await api('DELETE', `/v1/leads/${l.id}`);
+  }
+  for (const l of leadsAntes.filter((x) => x.name.startsWith(CAMPO_LUGAR_PREFIXO))) {
+    console.log(`  faxina: apagando lead de visita residual "${l.name}"`);
+    await api('DELETE', `/v1/leads/${l.id}`);
+  }
+  for (const c of (await api('GET', '/v1/consultores')).filter((x) => x.email.startsWith(CAMPO_PREFIXO))) {
+    console.log(`  faxina: apagando consultor de campo residual ${c.email}`);
+    await api('DELETE', `/v1/consultores/${c.id}`);
   }
   await apagarFalta();
   // Disparo do seed não existe (a tabela é global e nasce vazia): o que estiver
@@ -245,6 +277,7 @@ try {
     acoes0.every((a) => !a.completed_at && Object.keys(a.completions ?? {}).length === 0),
   );
   check('há ação sem "resultado esperado" para concluir', acoes0.some((a) => !a.expects_result));
+  check('nenhum consultor de campo no banco', (await api('GET', '/v1/consultores')).length === 0);
 } catch (e) {
   ko('faxina/pré-condições', String(e).slice(0, 300));
 }
@@ -560,6 +593,103 @@ try {
   ko('roteiro interrompido', String(e).slice(0, 300));
 }
 
+// ── 13. Campo: o consultor no celular ───────────────────────────
+// Bloco próprio: uma falha no roteiro da equipe não pula o do campo, e vice-versa.
+/** `true` só durante os passos "sem sinal" — e aí só as falhas da lista fechada abaixo são esperadas. */
+let offline = false;
+/**
+ * Lista FECHADA do que é esperado com o aparelho sem rede: a falha de rede em si
+ * (`ERR_INTERNET_DISCONNECTED`) e o websocket de recarga do `next dev`, que cai
+ * junto. Qualquer outra coisa derruba a rodada, offline ou não.
+ */
+const OFFLINE_ESPERADO = [/ERR_INTERNET_DISCONNECTED/, /webpack-hmr|turbopack-hmr|WebSocket/i];
+const esperadoOffline = (...textos) => offline && textos.some((t) => OFFLINE_ESPERADO.some((re) => re.test(t)));
+
+/** Os mesmos vigias da página principal, para cada página do campo. */
+function vigiar(p, rotulo) {
+  p.on('console', (m) => {
+    if (m.type() === 'error' && !esperadoOffline(m.text())) {
+      erros.push(`[console/${rotulo}] ${p.url().replace(BASE, '')}: ${m.text().slice(0, 200)}`);
+    }
+  });
+  p.on('pageerror', (e) => erros.push(`[pageerror/${rotulo}] ${String(e).slice(0, 200)}`));
+  p.on('response', (r) => {
+    if (r.status() >= 400 && !ignorada(r.url())) {
+      erros.push(`[http ${r.status()}/${rotulo}] ${r.request().method()} ${r.url().replace(API, 'api')}`);
+    }
+  });
+  p.on('requestfailed', (r) => {
+    const erro = r.failure()?.errorText ?? '?';
+    if (!redeIgnorada(r.url(), erro) && !esperadoOffline(erro, r.url())) {
+      erros.push(`[rede/${rotulo}] ${r.method()} ${r.url().replace(API, 'api')} — ${erro}`);
+    }
+  });
+}
+
+const celularCtx = await browser.newContext({
+  viewport: { width: 390, height: 844 },
+  isMobile: true,
+  hasTouch: true,
+  geolocation: POSICAO,
+  permissions: ['geolocation'],
+  locale: 'pt-BR',
+  timezoneId: 'America/Sao_Paulo',
+});
+const cel = await celularCtx.newPage();
+vigiar(cel, 'campo');
+/** Situação de hoje do consultor do roteiro, como a equipe vê. */
+const situacaoCampo = async () => (await api('GET', '/v1/consultores')).find((c) => c.id === consultorId)?.today;
+
+try {
+  console.log('-- Campo: entrada e troca de senha --');
+  const criado = await api('POST', '/v1/consultores', {
+    name: CAMPO_NOME,
+    email: CAMPO_EMAIL,
+    phone: '(31) 99999-0000',
+    cpf: cpfValido(Date.now()),
+    praca_id: PRACA,
+    pix_key_type: 'email',
+    pix_key: CAMPO_EMAIL,
+  });
+  consultorId = criado.consultant.id;
+  check('equipe cria o consultor e recebe a senha provisória', criado.temp_password?.length === 10);
+
+  const manifesto = await (await fetch(`${BASE}/campo/manifest.webmanifest`)).json();
+  check('manifest do atalho "Praça Campo" abre em /campo', manifesto.name === 'Praça Campo' && manifesto.start_url === '/campo');
+  const icone = await fetch(`${BASE}/campo/icone/192`);
+  check('ícone do atalho é PNG', icone.status === 200 && (icone.headers.get('content-type') ?? '').includes('image/png'));
+
+  await cel.goto(`${BASE}/campo/entrar`, { waitUntil: 'networkidle' });
+  check('tela de entrada do campo', (await corpo(cel)).includes('entrada do consultor de campo'));
+  await cel.locator('#email').fill(CAMPO_EMAIL);
+  await cel.locator('#senha').fill(criado.temp_password);
+  await cel.getByRole('button', { name: 'Entrar', exact: true }).click();
+  await cel.waitForURL('**/campo/senha', { timeout: 20000 });
+  check('senha provisória leva à troca obrigatória', cel.url().endsWith('/campo/senha'));
+  await cel.locator('#atual').fill(criado.temp_password);
+  await cel.locator('#nova').fill(CAMPO_SENHA_NOVA);
+  await cel.locator('#confirma').fill(CAMPO_SENHA_NOVA);
+  await cel.getByRole('button', { name: 'Salvar senha', exact: true }).click();
+  await cel.waitForURL(/\/campo$/, { timeout: 20000 });
+  await espera(1500);
+  check('depois da troca, a tela de hoje do consultor', (await corpo(cel)).includes(CAMPO_NOME.toLowerCase()));
+  const chaves = await cel.evaluate(() => ({
+    campo: JSON.parse(localStorage.getItem('campoSession') ?? 'null'),
+    equipe: localStorage.getItem('authUser'),
+  }));
+  check('sessão do campo numa chave própria, sem sessão da equipe', !!chaves.campo?.access_token && chaves.equipe === null);
+  await cel.goto(`${BASE}/hoje`, { waitUntil: 'networkidle' });
+  await espera(1200);
+  check('consultor não entra nas telas da equipe (volta para /entrar)', new URL(cel.url()).pathname === '/entrar');
+  await cel.goto(`${BASE}/campo`, { waitUntil: 'networkidle' });
+  await espera(1200);
+  check('e volta para o campo com a sessão dele', new URL(cel.url()).pathname === '/campo');
+} catch (e) {
+  ko('roteiro do campo interrompido', String(e).slice(0, 300));
+} finally {
+  await celularCtx.close();
+}
+
 // ── limpeza: o banco volta ao seed ──────────────────────────────
 // CADA passo no seu próprio `try`: com um `try` só, um erro no primeiro
 // `DELETE` pulava todos os outros e as afirmações de resíduo — que é como a
@@ -594,6 +724,22 @@ if (leadId) {
     check('lead de teste apagado', (await api('DELETE', `/v1/leads/${leadId}`)).ok === true),
   );
 }
+if (consultorId) {
+  await tentar('consultor de campo apagado', async () =>
+    check('consultor de campo apagado', (await api('DELETE', `/v1/consultores/${consultorId}`)).ok === true),
+  );
+}
+if (leadCampoId) {
+  await tentar('lead da visita de campo apagado', async () =>
+    check('lead da visita de campo apagado', (await api('DELETE', `/v1/leads/${leadCampoId}`)).ok === true),
+  );
+}
+await tentar('resíduo: consultores de campo', async () => {
+  for (const c of (await api('GET', '/v1/consultores')).filter((x) => x.email.startsWith(CAMPO_PREFIXO))) {
+    await api('DELETE', `/v1/consultores/${c.id}`);
+  }
+  check('nenhum consultor de campo sobrou', (await api('GET', '/v1/consultores')).length === 0);
+});
 
 await tentar('resíduo: leads', async () => {
   const leadsFim = await api('GET', `/v1/leads?praca_id=${PRACA}&archived=true`);
@@ -602,6 +748,7 @@ await tentar('resíduo: leads', async () => {
     'nenhum lead do browser-check sobrou',
     leadsFim.every((l) => !l.name.startsWith(LEAD_PREFIXO)),
   );
+  check('nenhum lead de visita de campo sobrou', leadsFim.every((l) => !l.name.startsWith(CAMPO_LUGAR_PREFIXO)));
 });
 await tentar('resíduo: disparos', async () =>
   check('nenhum disparo sobrou', (await api('GET', '/v1/disparos')).length === 0),
