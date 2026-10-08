@@ -20,7 +20,19 @@ function abrir(): Promise<IDBDatabase> {
           req.result.createObjectStore(LOJA, { keyPath: 'seq', autoIncrement: true });
         }
       };
-      req.onsuccess = () => resolve(req.result);
+      req.onsuccess = () => {
+        const db = req.result;
+        // iOS derruba a conexão ao ir para segundo plano; sem isso a fila ficaria presa numa conexão morta.
+        const esquecer = () => {
+          aberto = null;
+        };
+        db.onclose = esquecer;
+        db.onversionchange = () => {
+          esquecer();
+          db.close();
+        };
+        resolve(db);
+      };
       req.onerror = () => {
         aberto = null;
         reject(req.error);
@@ -30,8 +42,22 @@ function abrir(): Promise<IDBDatabase> {
   return aberto;
 }
 
-async function loja(modo: IDBTransactionMode): Promise<IDBObjectStore> {
-  return (await abrir()).transaction(LOJA, modo).objectStore(LOJA);
+async function loja(modo: IDBTransactionMode): Promise<{ s: IDBObjectStore; fim: Promise<void> }> {
+  let tx: IDBTransaction;
+  try {
+    tx = (await abrir()).transaction(LOJA, modo);
+  } catch {
+    // Conexão morta (iOS ao voltar do segundo plano): reabre uma vez.
+    aberto = null;
+    tx = (await abrir()).transaction(LOJA, modo);
+  }
+  const fim = new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+  fim.catch(() => undefined);
+  return { s: tx.objectStore(LOJA), fim };
 }
 
 function pedido<T>(r: IDBRequest<T>): Promise<T> {
@@ -41,29 +67,37 @@ function pedido<T>(r: IDBRequest<T>): Promise<T> {
   });
 }
 
+/** Escrita só vale quando a TRANSAÇÃO fecha (`oncomplete`), não quando o pedido responde. */
+async function escrever<T>(acao: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  const { s, fim } = await loja('readwrite');
+  const r = await pedido(acao(s));
+  await fim;
+  return r;
+}
+
 export async function listarFila(): Promise<ItemFila[]> {
-  return pedido((await loja('readonly')).getAll() as IDBRequest<ItemFila[]>);
+  const { s } = await loja('readonly');
+  return pedido(s.getAll() as IDBRequest<ItemFila[]>);
 }
 
 export async function adicionarNaFila(item: ItemFila): Promise<number> {
-  return Number(await pedido((await loja('readwrite')).add(item)));
+  return Number(await escrever((s) => s.add(item)));
 }
 
 export async function removerDaFila(seq: number): Promise<void> {
-  await pedido((await loja('readwrite')).delete(seq));
+  await escrever((s) => s.delete(seq));
 }
 
 /** `get` + `put` na MESMA transação, em callbacks (o Safari fecha a transação entre `await`s). */
 export async function atualizarSeExistir(item: ItemFila): Promise<void> {
-  const s = await loja('readwrite');
+  const { s, fim } = await loja('readwrite');
   await new Promise<void>((resolve, reject) => {
     const g = s.get(item.seq as number);
     g.onsuccess = () => {
-      if (!g.result) return resolve();
-      const p = s.put(item);
-      p.onsuccess = () => resolve();
-      p.onerror = () => reject(p.error);
+      if (g.result) s.put(item).onerror = () => reject(s.transaction.error);
+      resolve();
     };
     g.onerror = () => reject(g.error);
   });
+  await fim;
 }

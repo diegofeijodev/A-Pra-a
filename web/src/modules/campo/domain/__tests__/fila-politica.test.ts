@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ItemFila, VisitAnswers } from '../campo.types';
-import { classificar, pontoDeTrilhaUtil, proximaTentativa, substituidos } from '../fila-politica';
+import { checkoutsParaReposicionar, classificar, nomeDaVisita, pontoDeTrilhaUtil, proximaTentativa, substituidos } from '../fila-politica';
 
 const POS = { at: '2026-10-08T15:00:00.000Z', lat: -19.9, lng: -43.9, accuracy: 10 };
 const R = {} as VisitAnswers;
@@ -58,5 +58,31 @@ describe('trilha', () => {
   it('descarta ponto com precisão pior que 100 m', () => {
     expect(pontoDeTrilhaUtil(100)).toBe(true);
     expect(pontoDeTrilhaUtil(101)).toBe(false);
+  });
+});
+
+describe('checkout nunca passa na frente do último rascunho da sua visita', () => {
+  const fila: ItemFila[] = [
+    { ...base, seq: 1, kind: 'checkout', visit_ref: 'v1', payload: POS, bloqueio: 'Falta responder: interesse.' },
+    { ...base, seq: 2, kind: 'checkout', visit_ref: 'v2', payload: POS },
+    { ...base, seq: 3, kind: 'answers', visit_ref: 'v1', payload: R },
+  ];
+
+  it('rascunho novo da visita pega o checkout dela (bloqueado ou não)', () => {
+    expect(checkoutsParaReposicionar(fila, { kind: 'answers', visit_ref: 'v1', payload: R }).map((i) => i.seq)).toEqual([1]);
+  });
+
+  it('outras ações e outras visitas não mexem em checkout', () => {
+    expect(checkoutsParaReposicionar(fila, { kind: 'end', payload: POS })).toEqual([]);
+    expect(checkoutsParaReposicionar(fila, { kind: 'answers', visit_ref: 'v9', payload: R })).toEqual([]);
+  });
+});
+
+describe('nome da visita para avisar o consultor', () => {
+  it('check-in na fila, depois retrato do /today, depois "visita"', () => {
+    const f = [{ ...base, seq: 1, kind: 'checkin', payload: { client_id: 'v1', place_name: 'Bar Novo', ...POS }, foto: new Blob() }] as ItemFila[];
+    expect(nomeDaVisita('v1', f, [])).toBe('Bar Novo');
+    expect(nomeDaVisita('v2', [], [{ client_id: 'v2', lead_name: 'Padaria' }])).toBe('Padaria');
+    expect(nomeDaVisita('v3', [], [])).toBe('visita');
   });
 });

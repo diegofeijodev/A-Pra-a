@@ -285,6 +285,16 @@ describe('VisitsService.checkout — CRM numa transação', () => {
     });
   });
 
+  it('checkout feito às 23:50 do dia D e enviado às 00:20 de D+1: o retorno marcado para D vale (hoje = dia do carimbo)', async () => {
+    const p = fakePrisma();
+    p.field_visits.findFirst.mockResolvedValue({ ...VISITA, followup_date: '2026-10-08' });
+    const depoisDaMeiaNoite = new Date('2026-10-09T03:20:00.000Z');
+    const pos = { ...POS, at: '2026-10-09T02:50:00.000Z' };
+
+    await expect(montar(p).s.checkout(C, CLIENT, pos, depoisDaMeiaNoite)).resolves.toBeDefined();
+    expect(p.field_visits.updateMany).toHaveBeenCalled();
+  });
+
   it('lead em "Lead novo" vai para "Conversa aberta"; decisor, retorno, contato e evento "visit" do consultor', async () => {
     const p = fakePrisma();
     p.field_visits.findFirst.mockResolvedValue(VISITA);

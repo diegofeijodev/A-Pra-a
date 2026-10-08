@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import type { AcaoFila, ItemFila } from '../domain/campo.types';
-import { substituidos } from '../domain/fila-politica';
+import { checkoutsParaReposicionar, substituidos } from '../domain/fila-politica';
 import { getCampoSession } from '../infrastructure/campo-session.storage';
 import { enviarItem } from '../infrastructure/fila';
 import { adicionarNaFila, atualizarSeExistir, listarFila, removerDaFila } from '../infrastructure/fila-idb';
@@ -39,7 +39,7 @@ async function recarregar(): Promise<void> {
   useFilaStore.getState().setItens(itens);
 }
 
-let aoEnviar: (() => void) | null = null;
+let aoEnviar: (() => Promise<void>) | null = null;
 let drenando: Promise<void> | null = null;
 
 /** Uma drenagem por vez; quem chamar no meio recebe a que já está andando. */
@@ -54,9 +54,15 @@ export function drenar(): Promise<void> {
     consultorAtual: () => getCampoSession()?.consultant.id ?? null,
     online: () => navigator.onLine,
     agora: () => Date.now(),
-    aoEnviar: () => {
-      aoEnviar?.();
-      void recarregar();
+    // Primeiro o `/today` novo, DEPOIS o item sai da lista local: senão a tela
+    // pisca "Pronto para sair?" e convida a um segundo toque (409).
+    aoEnviar: async () => {
+      try {
+        await aoEnviar?.();
+      } catch {
+        // Sem retrato novo agora: o intervalo de 60 s repete.
+      }
+      await recarregar();
     },
     aoRecusar: (mensagem) => loja.addErro(mensagem),
     aoPausar: (pausada) => loja.setPausada(pausada),
@@ -76,10 +82,30 @@ export function drenar(): Promise<void> {
 export async function enfileirar(acao: AcaoFila, consultantId: string): Promise<void> {
   const fila = (await listarFila()).filter((i) => i.consultant_id === consultantId);
   for (const seq of substituidos(fila, acao)) await removerDaFila(seq);
-  await adicionarNaFila({ ...acao, consultant_id: consultantId, tentativas: 0, proxima_em: 0, criado_em: Date.now() });
+  // O checkout da visita vai para DEPOIS do rascunho novo (e sai do bloqueio, se estava).
+  const checkouts = checkoutsParaReposicionar(fila, acao);
+  for (const c of checkouts) await removerDaFila(c.seq as number);
+  const novo = { consultant_id: consultantId, tentativas: 0, proxima_em: 0, criado_em: Date.now() };
+  await adicionarNaFila({ ...acao, ...novo });
+  for (const c of checkouts) {
+    const copia = { ...c, ...novo } as ItemFila;
+    delete copia.seq;
+    delete copia.bloqueio;
+    await adicionarNaFila(copia);
+  }
   await recarregar();
   // Duas voltas: se uma drenagem já estava terminando, a segunda pega o item novo.
   void drenar().then(() => drenar());
+}
+
+async function zerarEspera(consultantId: string): Promise<void> {
+  try {
+    for (const i of await listarFila()) {
+      if (i.consultant_id === consultantId && i.proxima_em > 0) await atualizarSeExistir({ ...i, proxima_em: 0 });
+    }
+  } catch {
+    // IndexedDB indisponível agora: a drenagem normal tenta de novo.
+  }
 }
 
 /** Montado uma vez, no layout das telas do consultor. */
@@ -87,10 +113,11 @@ export function useFilaRunner(consultantId: string | null): void {
   const queryClient = useQueryClient();
   useEffect(() => {
     if (!consultantId) return;
-    aoEnviar = () => void queryClient.invalidateQueries({ queryKey: ['campo', 'today'] });
+    aoEnviar = () => queryClient.refetchQueries({ queryKey: ['campo', 'today'] });
     void recarregar();
     void drenar();
-    const aoVoltarOSinal = () => void drenar();
+    // Voltou o sinal: zera a espera crescente e tenta já (spec §9).
+    const aoVoltarOSinal = () => void zerarEspera(consultantId).then(drenar);
     window.addEventListener('online', aoVoltarOSinal);
     const relogio = window.setInterval(() => void drenar(), 15_000);
     return () => {

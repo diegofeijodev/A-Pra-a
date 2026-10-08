@@ -13,12 +13,13 @@ export interface DepsMotor {
   consultorAtual: () => string | null;
   online: () => boolean;
   agora: () => number;
-  aoEnviar: (item: ItemFila) => void;
+  /** Aguardado antes do próximo passo: a tela precisa do `/today` novo antes de a fila esvaziar o item. */
+  aoEnviar: (item: ItemFila) => void | Promise<void>;
   aoRecusar: (mensagem: string) => void;
   aoPausar: (pausada: boolean) => void;
 }
 
-export type ResultadoDrenagem = 'vazia' | 'esperando' | 'offline' | 'sessao' | 'sem_sessao';
+export type ResultadoDrenagem = 'vazia' | 'esperando' | 'offline' | 'sessao' | 'sem_sessao' | 'bloqueada';
 
 function lerFalha(e: unknown): { status?: number; code?: string } {
   if (!axios.isAxiosError(e)) return {};
@@ -34,9 +35,14 @@ export async function drenarCom(d: DepsMotor): Promise<ResultadoDrenagem> {
   const consultor = d.consultorAtual();
   if (!consultor) return 'sem_sessao';
   for (;;) {
+    // Lido a cada volta: se a conta mudou durante um envio longo, o resto NÃO sai com o token do outro.
+    if (d.consultorAtual() !== consultor) return 'sem_sessao';
     if (!d.online()) return 'offline';
-    const cabeca = (await d.listar()).find((i) => i.consultant_id === consultor);
+    const fila = await d.listar();
+    const cabeca = fila.find((i) => i.consultant_id === consultor);
     if (!cabeca) return 'vazia';
+    // Checkout com questionário incompleto: a fila espera o consultor corrigir.
+    if (cabeca.kind === 'checkout' && cabeca.bloqueio) return 'bloqueada';
     if (cabeca.proxima_em > d.agora()) return 'esperando';
 
     let falha: unknown = null;
@@ -48,11 +54,32 @@ export async function drenarCom(d: DepsMotor): Promise<ResultadoDrenagem> {
     const { status, code } = falha ? lerFalha(falha) : { status: 200, code: undefined };
     const desfecho = classificar(status, code);
 
+    if (desfecho === 'regra' && cabeca.kind === 'checkout' && status === 422) {
+      // Não repete e não apaga: fica marcado e a fila para aqui (a tela mostra o aviso).
+      await d.atualizar({ ...cabeca, bloqueio: apiErrorMessage(falha, 'Falta responder o questionário.') });
+      d.aoPausar(false);
+      return 'bloqueada';
+    }
     if (desfecho === 'ok' || desfecho === 'regra') {
       await d.remover(cabeca.seq as number);
-      if (desfecho === 'regra') d.aoRecusar(apiErrorMessage(falha, 'Um envio foi recusado pelo servidor.'));
+      if (desfecho === 'regra') {
+        const mensagem = apiErrorMessage(falha, 'Um envio foi recusado pelo servidor.');
+        if (cabeca.kind === 'checkin') {
+          // Sem a visita no servidor, respostas e checkout dela virariam 404: saem juntos.
+          const ref = cabeca.payload.client_id;
+          for (const dep of fila) {
+            if (dep.consultant_id === consultor && (dep.kind === 'answers' || dep.kind === 'checkout') && dep.visit_ref === ref) {
+              await d.remover(dep.seq as number);
+            }
+          }
+          d.aoRecusar(`Visita em ${cabeca.payload.place_name} não foi registrada: ${mensagem}`);
+        } else if (cabeca.kind !== 'points') {
+          // Ponto de trilha depois do fechamento da meia-noite é esperado: some em silêncio.
+          d.aoRecusar(mensagem);
+        }
+      }
       d.aoPausar(false);
-      d.aoEnviar(cabeca);
+      await d.aoEnviar(cabeca);
       continue;
     }
     if (desfecho === 'sessao') {

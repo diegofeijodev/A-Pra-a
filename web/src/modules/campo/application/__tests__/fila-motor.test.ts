@@ -113,4 +113,92 @@ describe('drenarCom — a fila offline', () => {
     const d = deps([item(1)], async () => undefined, { consultorAtual: () => null });
     expect(await drenarCom(d)).toBe('sem_sessao');
   });
+
+  it('troca de conta no meio da drenagem: o resto não sai com o token do outro consultor', async () => {
+    const fila = [item(1), item(2)];
+    let atual: string | null = 'c1';
+    const d = deps(fila, async () => {
+      atual = 'c2';
+    }, { consultorAtual: () => atual });
+    expect(await drenarCom(d)).toBe('sem_sessao');
+    expect(d.enviar).toHaveBeenCalledTimes(1);
+    expect(fila.map((i) => i.seq)).toEqual([2]);
+  });
+
+  it('espera o aoEnviar (refetch do /today) antes de seguir', async () => {
+    const fila = [item(1), item(2)];
+    const ordem: string[] = [];
+    const d = deps(
+      fila,
+      async (i) => {
+        ordem.push(`enviar${i.seq}`);
+      },
+      {
+        aoEnviar: vi.fn(async (i: ItemFila) => {
+          await new Promise((r) => setTimeout(r, 5));
+          ordem.push(`enviado${i.seq}`);
+        }),
+      },
+    );
+    await drenarCom(d);
+    expect(ordem).toEqual(['enviar1', 'enviado1', 'enviar2', 'enviado2']);
+  });
+});
+
+const checkinItem = (seq: number, ref: string, nome = 'Bar do Mercado') =>
+  item(seq, { kind: 'checkin', payload: { client_id: ref, place_name: nome, ...POS }, foto: new Blob() } as Partial<ItemFila>);
+const checkoutItem = (seq: number, ref: string, over: Partial<ItemFila> = {}) =>
+  item(seq, { kind: 'checkout', visit_ref: ref, payload: POS, ...over } as Partial<ItemFila>);
+const respostasItem = (seq: number, ref: string) =>
+  item(seq, { kind: 'answers', visit_ref: ref, payload: {} } as Partial<ItemFila>);
+
+describe('drenarCom — itens dependentes de uma recusa', () => {
+  it('check-in recusado leva junto as respostas e o checkout da MESMA visita, com UMA mensagem', async () => {
+    const fila = [checkinItem(1, 'v1'), respostasItem(2, 'v1'), checkoutItem(3, 'v1'), respostasItem(4, 'v2')];
+    const d = deps(fila, async (i) => {
+      if (i.kind === 'checkin') throw erroHttp(409, 'VISIT_ALREADY_OPEN', 'Faça o checkout da visita aberta antes de começar outra.');
+    });
+    await drenarCom(d);
+    expect(d.aoRecusar).toHaveBeenCalledTimes(1);
+    expect(d.aoRecusar).toHaveBeenCalledWith(
+      'Visita em Bar do Mercado não foi registrada: Faça o checkout da visita aberta antes de começar outra.',
+    );
+    expect(vi.mocked(d.enviar).mock.calls.map(([i]) => i.seq)).toEqual([1, 4]);
+    expect(fila).toEqual([]);
+  });
+
+  it('checkout 422: não sai da fila, fica bloqueado e a fila para nele', async () => {
+    const fila = [checkoutItem(1, 'v1'), checkinItem(2, 'v2')];
+    const d = deps(fila, async () => {
+      throw erroHttp(422, 'ANSWERS_INCOMPLETE', 'Falta responder: interesse.');
+    });
+    expect(await drenarCom(d)).toBe('bloqueada');
+    expect(fila).toHaveLength(2);
+    expect(fila[0]).toMatchObject({ seq: 1, bloqueio: 'Falta responder: interesse.' });
+    expect(d.aoRecusar).not.toHaveBeenCalled();
+
+    // Outra volta: não reenvia o bloqueado, não deixa o seguinte passar.
+    expect(await drenarCom(d)).toBe('bloqueada');
+    expect(d.enviar).toHaveBeenCalledTimes(1);
+  });
+
+  it('checkout recusado por outra regra (visita fechada à meia-noite) sai com uma mensagem', async () => {
+    const fila = [checkoutItem(1, 'v1')];
+    const d = deps(fila, async () => {
+      throw erroHttp(409, 'VISIT_AUTO_CLOSED', 'A visita foi fechada automaticamente à meia-noite.');
+    });
+    expect(await drenarCom(d)).toBe('vazia');
+    expect(d.aoRecusar).toHaveBeenCalledTimes(1);
+    expect(fila).toEqual([]);
+  });
+
+  it('ponto de trilha recusado some em silêncio', async () => {
+    const fila = [item(1, { kind: 'points', payload: { points: [] } } as Partial<ItemFila>)];
+    const d = deps(fila, async () => {
+      throw erroHttp(409, 'NO_OPEN_JOURNEY', 'Sem jornada aberta.');
+    });
+    expect(await drenarCom(d)).toBe('vazia');
+    expect(d.aoRecusar).not.toHaveBeenCalled();
+    expect(fila).toEqual([]);
+  });
 });

@@ -148,4 +148,6 @@ export type ItemFila = AcaoFila & {
   /** Epoch ms antes do qual não tenta de novo (espera crescente). */
   proxima_em: number;
   criado_em: number;
+  /** Checkout recusado com 422 (questionário incompleto): mensagem da API; a fila para aqui até o consultor corrigir. */
+  bloqueio?: string;
 };

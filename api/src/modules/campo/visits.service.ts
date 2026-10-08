@@ -224,7 +224,11 @@ export class VisitsService {
     if (v.checkout_at) return visitView(v, todaySp(agora));
     if (v.auto_closed) throw autoFechada();
     const respostas = respostasDe(v);
-    const falta = faltando(respostas, todaySp(agora));
+    // "Hoje" é o dia do carimbo aceito, não o do recebimento: um rascunho
+    // sincronizado depois da meia-noite não pode reprovar o retorno marcado
+    // para o dia da própria visita.
+    const { at, ajustado } = carimbo(dto.at, agora, v.checkin_at);
+    const falta = faltando(respostas, todaySp(at));
     if (falta.length > 0) {
       throw new UnprocessableEntityException({
         code: 'ANSWERS_INCOMPLETE',
@@ -232,7 +236,6 @@ export class VisitsService {
       });
     }
 
-    const { at, ajustado } = carimbo(dto.at, agora, v.checkin_at);
     const lead = await this.prisma.leads.findUniqueOrThrow({
       where: { id: v.lead_id },
       select: { id: true, stage: true },
