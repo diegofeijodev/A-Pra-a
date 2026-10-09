@@ -46,7 +46,7 @@ export type ItemNovo = Omit<ItemFila, 'seq'>;
 /**
  * Rascunho novo (`answers`) de uma visita. Decide, sobre a fila do consultor:
  * - o rascunho antigo e não enviado da mesma visita é substituído;
- * - o checkout dela (bloqueado ou não) vai para DEPOIS do rascunho novo (e perde o bloqueio);
+ * - o checkout dela (bloqueado ou não) vai para DEPOIS do rascunho novo; só perde o bloqueio se o rascunho estiver COMPLETO;
  * - tudo o que estava depois do checkout volta na MESMA ordem, atrás dele — senão
  *   o check-in da visita seguinte passaria na frente do checkout desta (409).
  * Sem checkout na fila, só troca o rascunho antigo. `remover` = seqs; `adicionar` = nova ordem.
@@ -55,6 +55,7 @@ export function planejarRascunho(
   filaDoConsultor: ItemFila[],
   nova: AcaoFila,
   info: Pick<ItemFila, 'consultant_id' | 'tentativas' | 'proxima_em' | 'criado_em'>,
+  completo: boolean,
 ): { remover: number[]; adicionar: ItemNovo[] } {
   const fila = [...filaDoConsultor].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
   const velhos = new Set(substituidos(fila, nova));
@@ -70,7 +71,10 @@ export function planejarRascunho(
     delete c.bloqueio;
     return c;
   };
+  const bloqueioAnterior = fila[iCheckout].bloqueio;
   const checkout = semSeq({ ...fila[iCheckout], tentativas: 0, proxima_em: 0 });
+  // Rascunho incompleto não destrava: o checkout segue parado (a tela continua mostrando o que falta).
+  if (!completo && bloqueioAnterior) checkout.bloqueio = bloqueioAnterior;
   const resto = cauda.slice(1).filter((i) => !velhos.has(i.seq as number)).map(semSeq);
   return { remover: [...remover], adicionar: [novoItem, checkout, ...resto] };
 }
@@ -84,4 +88,14 @@ export function nomeDaVisita(ref: string, fila: ItemFila[], visitasDoServidor: {
 /** O consultor tem `checkin` ou `end` na fila DEPOIS deste checkout? Descartá-lo pode fazer o servidor recusar esses envios. */
 export function temEnvioDepoisDoCheckout(fila: ItemFila[], checkoutSeq: number): boolean {
   return fila.some((i) => (i.seq ?? 0) > checkoutSeq && (i.kind === 'checkin' || i.kind === 'end'));
+}
+
+/**
+ * A conferência de "parecidos" falhou de um jeito que não impede o check-in: sem resposta/timeout
+ * (rede) ou `409 NO_OPEN_JOURNEY` (o início da jornada ainda está na fila). O check-in segue sem
+ * `confirm_new` e o servidor marca `possible_dup` (decisão 2).
+ */
+export function seguirSemConferirParecidos(status: number | undefined, code?: string): boolean {
+  if (status === 409 && code === 'NO_OPEN_JOURNEY') return true;
+  return classificar(status, code) === 'rede';
 }

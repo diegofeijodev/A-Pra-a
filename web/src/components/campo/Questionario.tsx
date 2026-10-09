@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { todaySp } from '@/lib/dates';
 import type { Cargo, FreelaStatus, Interesse, VisitAnswers } from '@/modules/campo/domain/campo.types';
-import { FUNCOES_VAGA } from '@/modules/campo/domain/questionario';
+import { canaisExclusivos, FUNCOES_VAGA } from '@/modules/campo/domain/questionario';
 
 const CARGOS: [Cargo, string][] = [['dono', 'Dono'], ['gerente', 'Gerente'], ['outro', 'Outro']];
 const SITUACOES: [FreelaStatus, string][] = [
@@ -154,7 +154,7 @@ export function Questionario({
 
       <div className="space-y-2">
         <p className="text-sm font-medium">Apps e canais que usa hoje</p>
-        <Chips marcados={valor.channels} opcoes={canais} onTrocar={(l) => mudar({ channels: l })} desabilitado={desabilitado} />
+        <Chips marcados={valor.channels} opcoes={canais} onTrocar={(l) => mudar({ channels: canaisExclusivos(valor.channels, l) })} desabilitado={desabilitado} />
         <Input
           id="q-outro"
           aria-label="Outro app ou canal"

@@ -108,6 +108,8 @@ export function VisitaTela({ refVisita }: { refVisita: string }) {
   async function salvarCorrecoes() {
     setOcupado(true);
     try {
+      // Sem rascunho sujo, manda as respostas atuais: é o que destrava (ou reconfere) o checkout.
+      if (!pendente.current) pendente.current = atual;
       await guardar();
       toast.success('Correções salvas. O checkout será enviado de novo.');
     } catch {
@@ -159,7 +161,7 @@ export function VisitaTela({ refVisita }: { refVisita: string }) {
       <Questionario
         valor={atual}
         canais={me.data?.channels ?? []}
-        desabilitado={fechada}
+        desabilitado={fechada || ocupado}
         onMudar={mudar}
       />
 

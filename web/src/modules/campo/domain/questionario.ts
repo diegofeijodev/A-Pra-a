@@ -44,3 +44,11 @@ export function faltando(r: VisitAnswers, hoje: string): string[] {
   }
   return f;
 }
+
+const NENHUM = 'Nenhum';
+
+/** "Nenhum" é exclusivo: marcá-lo limpa os outros canais; marcar outro canal desmarca "Nenhum". */
+export function canaisExclusivos(anterior: string[], nova: string[]): string[] {
+  if (nova.includes(NENHUM) && !anterior.includes(NENHUM)) return [NENHUM];
+  return nova.length > 1 ? nova.filter((c) => c !== NENHUM) : nova;
+}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import axios from 'axios';
 import { toast } from 'sonner';
 import { AvisoGps } from '@/components/campo/AvisoGps';
 import { CampoTopo } from '@/components/campo/CampoTopo';
@@ -13,6 +14,7 @@ import { useDia } from '@/modules/campo/application/use-campo';
 import { enfileirar } from '@/modules/campo/application/use-fila';
 import { useOnline } from '@/modules/campo/application/use-online';
 import type { PlaceView, Posicao } from '@/modules/campo/domain/campo.types';
+import { seguirSemConferirParecidos } from '@/modules/campo/domain/fila-politica';
 import type { MotivoGps } from '@/modules/campo/domain/gps-mensagens';
 import { campoBuscarLugares, campoLugaresParecidos, campoLugaresPerto } from '@/modules/campo/infrastructure/campo.api';
 import { prepararFoto } from '@/modules/campo/infrastructure/foto-compressao';
@@ -109,7 +111,11 @@ export function NovaVisitaTela() {
       if (achados.length > 0) setParecidos(achados);
       else setEscolhido({ ...novo, confirm_new: true });
     } catch (e) {
-      toast.error(apiErrorMessage(e, 'Não foi possível conferir parecidos.'));
+      const status = axios.isAxiosError(e) ? e.response?.status : undefined;
+      const code = axios.isAxiosError(e) ? (e.response?.data?.error?.code as string | undefined) : undefined;
+      // Sem resposta/timeout ou jornada ainda na fila: segue como o caminho sem sinal.
+      if (seguirSemConferirParecidos(status, code)) setEscolhido(novo);
+      else toast.error(apiErrorMessage(e, 'Não foi possível conferir parecidos.'));
     } finally {
       setOcupado(false);
     }
@@ -278,7 +284,7 @@ export function NovaVisitaTela() {
         <section className="space-y-4">
           <div className="card-surface flex items-center justify-between gap-3 p-4">
             <p className="font-bold">{escolhido.nome}</p>
-            <button onClick={() => { setEscolhido(null); setFoto(null); }} className="text-xs text-primary">
+            <button onClick={() => { setEscolhido(null); setFoto(null); setPrevia(null); }} className="text-xs text-primary">
               trocar
             </button>
           </div>

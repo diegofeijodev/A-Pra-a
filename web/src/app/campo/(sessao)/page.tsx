@@ -17,7 +17,7 @@ function Visao() {
     case 'nova':
       return <NovaVisitaTela />;
     case 'visita':
-      return <VisitaTela refVisita={tela.ref} />;
+      return <VisitaTela key={tela.ref} refVisita={tela.ref} />;
     case 'qr':
       return <QrTela />;
     default:

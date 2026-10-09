@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { VisitAnswers } from '../campo.types';
-import { faltando, RESPOSTAS_VAZIAS } from '../questionario';
+import { canaisExclusivos, faltando, RESPOSTAS_VAZIAS } from '../questionario';
 
 const COMPLETAS: VisitAnswers = {
   interlocutor_name: 'Maria',
@@ -55,5 +55,18 @@ describe('faltando (espelho do servidor)', () => {
       'data do retorno (não pode ser no passado)',
     ]);
     expect(faltando({ ...COMPLETAS, needs_followup: false, followup_what: null, followup_date: null }, '2026-10-08')).toEqual([]);
+  });
+});
+
+describe('canaisExclusivos ("Nenhum")', () => {
+  it('marcar "Nenhum" limpa os outros', () => {
+    expect(canaisExclusivos(['Grupos de WhatsApp'], ['Grupos de WhatsApp', 'Nenhum'])).toEqual(['Nenhum']);
+  });
+  it('marcar outro desmarca "Nenhum"', () => {
+    expect(canaisExclusivos(['Nenhum'], ['Nenhum', 'Indicação de conhecidos'])).toEqual(['Indicação de conhecidos']);
+  });
+  it('desmarcar "Nenhum" deixa vazio; lista comum não muda', () => {
+    expect(canaisExclusivos(['Nenhum'], [])).toEqual([]);
+    expect(canaisExclusivos(['A'], ['A', 'B'])).toEqual(['A', 'B']);
   });
 });

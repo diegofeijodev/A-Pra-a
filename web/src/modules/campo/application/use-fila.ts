@@ -4,7 +4,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import type { AcaoFila, ItemFila } from '../domain/campo.types';
+import { todaySp } from '@/lib/dates';
 import { planejarRascunho } from '../domain/fila-politica';
+import { faltando } from '../domain/questionario';
 import { getCampoSession } from '../infrastructure/campo-session.storage';
 import { enviarItem } from '../infrastructure/fila';
 import { adicionarNaFila, atualizarSeExistir, listarFila, removerDaFila, reposicionar } from '../infrastructure/fila-idb';
@@ -83,7 +85,7 @@ export async function enfileirar(acao: AcaoFila, consultantId: string): Promise<
   const info = { consultant_id: consultantId, tentativas: 0, proxima_em: 0, criado_em: Date.now() };
   if (acao.kind === 'answers') {
     // Atômico: troca do rascunho + checkout (e o que vinha atrás dele) numa transação só.
-    await reposicionar(consultantId, (fila) => planejarRascunho(fila, acao, info));
+    await reposicionar(consultantId, (fila) => planejarRascunho(fila, acao, info, faltando(acao.payload, todaySp()).length === 0));
   } else {
     await adicionarNaFila({ ...acao, ...info });
   }

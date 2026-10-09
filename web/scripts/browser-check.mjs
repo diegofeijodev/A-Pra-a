@@ -174,6 +174,7 @@ let indicadorLancado = false;
 let acaoConcluida = null;
 let consultorId = null;
 let leadCampoId = null;
+let leadCampoId2 = null;
 const HOJE = hojeSp();
 
 /** Apaga o que der para apagar, sem derrubar a rodada por causa da limpeza. */
@@ -804,6 +805,45 @@ console.log('-- Campo: GPS negado --');
       (leadCampo.events ?? []).some((e) => e.kind === 'visit'),
   );
 
+  // Duas visitas no mesmo aparelho: trocar de uma para outra mostra as respostas DA outra (a visão leva `key`).
+  const LUGAR_B = `${CAMPO_LUGAR_PREFIXO} Segundo ${CARIMBO}`;
+  await cel.getByRole('button', { name: 'Nova visita' }).click();
+  await cel.waitForURL(/\/campo\?v=nova/, { timeout: 20000 });
+  await cel.getByRole('tab', { name: 'Novo estabelecimento' }).click();
+  await cel.locator('#novo-nome').fill(LUGAR_B);
+  await cel.getByRole('button', { name: 'Continuar', exact: true }).click();
+  const outro = cel.getByRole('button', { name: 'É outro estabelecimento' });
+  await Promise.race([cel.locator('#foto-fachada').waitFor({ timeout: 15000 }), outro.waitFor({ timeout: 15000 })]);
+  if (await outro.isVisible()) await outro.click();
+  await cel.locator('#foto-fachada').waitFor({ timeout: 15000 });
+  await cel.locator('#foto-fachada').setInputFiles({ name: 'fachada2.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(jpeg) });
+  await cel.getByAltText('Foto da fachada').waitFor({ timeout: 15000 });
+  await cel.getByRole('button', { name: 'Fazer check-in' }).click();
+  await cel.waitForURL(/\/campo\?v=visita&ref=[0-9a-f-]{36}/, { timeout: 20000 });
+  const refB = new URL(cel.url()).searchParams.get('ref');
+  await cel.locator('#q-nome').fill('Beto Segundo');
+  const refA = fechada?.client_id;
+  await cel.evaluate((r) => window.history.pushState(null, '', `/campo?v=visita&ref=${r}`), refA);
+  await cel.waitForFunction((n) => document.querySelector('#q-nome')?.value === n, 'Maria Check', { timeout: 10000 });
+  check('trocar de visita mostra as respostas da outra (A: Maria Check), não as digitadas na B', (await cel.locator('#q-nome').inputValue()) === 'Maria Check');
+  await cel.evaluate((r) => window.history.pushState(null, '', `/campo?v=visita&ref=${r}`), refB);
+  await cel.waitForFunction((n) => document.querySelector('#q-nome')?.value === n, 'Beto Segundo', { timeout: 10000 });
+  check('e de volta à B, o que foi digitado nela foi guardado', (await cel.locator('#q-nome').inputValue()) === 'Beto Segundo');
+  await cel.getByRole('button', { name: 'Dono', exact: true }).click();
+  await cel.getByRole('button', { name: 'Não cadastrou', exact: true }).click();
+  await cel.getByRole('button', { name: 'Baixo', exact: true }).click();
+  await cel.locator('#q-vagas').fill('0');
+  await cel.locator('#q-freelas').fill('1');
+  await cel.getByRole('button', { name: 'Nenhum', exact: true }).last().click();
+  await cel.getByRole('button', { name: 'Não', exact: true }).click();
+  await cel.getByRole('button', { name: 'Fazer checkout' }).click();
+  await cel.waitForURL(/\/campo(\?v=hoje)?$/, { timeout: 20000 });
+  await cel.waitForFunction(() => !document.body.innerText.toLowerCase().includes('pendente'), null, { timeout: 30000 });
+  const fechadaB = (await diaCampo()).visits.find((v) => v.lead_name === LUGAR_B);
+  leadCampoId2 = fechadaB?.lead_id ?? null;
+  check('a visita B fechou com as próprias respostas (Beto Segundo / não cadastrou)', !!fechadaB?.checkout_at && fechadaB.answers.interlocutor_name === 'Beto Segundo' && fechadaB.answers.freela_status === 'nao_cadastrou');
+  check('e a visita A seguiu intacta (Maria Check)', (await diaCampo()).visits.find((v) => v.lead_id === leadCampoId)?.answers.interlocutor_name === 'Maria Check');
+
   console.log('-- Campo: encerrar sem sinal (fila offline) --');
   offline = true;
   await celularCtx.setOffline(true);
@@ -866,6 +906,11 @@ if (leadId) {
 if (consultorId) {
   await tentar('consultor de campo apagado', async () =>
     check('consultor de campo apagado', (await api('DELETE', `/v1/consultores/${consultorId}`)).ok === true),
+  );
+}
+if (leadCampoId2) {
+  await tentar('lead da segunda visita apagado', async () =>
+    check('lead da segunda visita apagado', (await api('DELETE', `/v1/leads/${leadCampoId2}`)).ok === true),
   );
 }
 if (leadCampoId) {

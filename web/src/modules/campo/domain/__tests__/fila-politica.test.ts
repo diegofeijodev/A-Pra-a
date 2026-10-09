@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ItemFila, VisitAnswers } from '../campo.types';
-import { planejarRascunho, classificar, nomeDaVisita, pontoDeTrilhaUtil, proximaTentativa, substituidos, temEnvioDepoisDoCheckout } from '../fila-politica';
+import { planejarRascunho, classificar, nomeDaVisita, pontoDeTrilhaUtil, proximaTentativa, substituidos, seguirSemConferirParecidos, temEnvioDepoisDoCheckout } from '../fila-politica';
 
 const POS = { at: '2026-10-08T15:00:00.000Z', lat: -19.9, lng: -43.9, accuracy: 10 };
 const R = {} as VisitAnswers;
@@ -74,7 +74,7 @@ describe('rascunho novo: o checkout da visita vem depois dele, o resto da fila m
 
   it('checkout v1 bloqueado na frente de check-in v2: v1 (rascunho + checkout) primeiro, v2 depois, na ordem', () => {
     const fila = [ck(1, 'v1', { bloqueio: 'Falta' }), checkin(2, 'v2'), rs(3, 'v2'), ck(4, 'v2')];
-    const plano = planejarRascunho(fila, novo, info);
+    const plano = planejarRascunho(fila, novo, info, true);
     expect(plano.remover.sort()).toEqual([1, 2, 3, 4]);
     expect(forma(plano.adicionar)).toEqual(['answers:v1', 'checkout:v1', 'checkin:v2', 'answers:v2', 'checkout:v2']);
     expect(plano.adicionar.some((i) => 'bloqueio' in i && i.bloqueio)).toBe(false);
@@ -83,27 +83,40 @@ describe('rascunho novo: o checkout da visita vem depois dele, o resto da fila m
 
   it('um "end" depois do checkout continua depois dele', () => {
     const fila = [ck(1, 'v1'), { ...base, seq: 2, kind: 'end', payload: POS } as ItemFila];
-    expect(forma(planejarRascunho(fila, novo, info).adicionar)).toEqual(['answers:v1', 'checkout:v1', 'end:']);
+    expect(forma(planejarRascunho(fila, novo, info, true).adicionar)).toEqual(['answers:v1', 'checkout:v1', 'end:']);
   });
 
   it('rascunho antigo e não enviado da mesma visita é substituído', () => {
     const fila = [rs(1, 'v1'), ck(2, 'v1')];
-    const plano = planejarRascunho(fila, novo, info);
+    const plano = planejarRascunho(fila, novo, info, true);
     expect(plano.remover.sort()).toEqual([1, 2]);
     expect(forma(plano.adicionar)).toEqual(['answers:v1', 'checkout:v1']);
   });
 
   it('sem checkout na fila: só acrescenta o rascunho (e troca o antigo)', () => {
     const fila = [rs(1, 'v1'), rs(2, 'v2'), checkin(3, 'v3')];
-    const plano = planejarRascunho(fila, novo, info);
+    const plano = planejarRascunho(fila, novo, info, true);
     expect(plano.remover).toEqual([1]);
     expect(forma(plano.adicionar)).toEqual(['answers:v1']);
     expect(plano.adicionar[0]).toMatchObject({ consultant_id: 'c1', tentativas: 0, proxima_em: 0, criado_em: 5 });
   });
 
+  it('rascunho INCOMPLETO: fica antes do checkout, que continua bloqueado', () => {
+    const fila = [ck(1, 'v1', { bloqueio: 'Falta' }), checkin(2, 'v2')];
+    const plano = planejarRascunho(fila, novo, info, false);
+    expect(forma(plano.adicionar)).toEqual(['answers:v1', 'checkout:v1', 'checkin:v2']);
+    const co = plano.adicionar[1];
+    expect('bloqueio' in co && co.bloqueio).toBe('Falta');
+  });
+
+  it('rascunho COMPLETO: o checkout perde o bloqueio', () => {
+    const plano = planejarRascunho([ck(1, 'v1', { bloqueio: 'Falta' })], novo, info, true);
+    expect('bloqueio' in plano.adicionar[1]).toBe(false);
+  });
+
   it('itens antes do checkout não se mexem', () => {
     const fila = [checkin(1, 'v1'), ck(2, 'v1')];
-    expect(seqs(fila) && planejarRascunho(fila, novo, info).remover.sort()).toEqual([2]);
+    expect(seqs(fila) && planejarRascunho(fila, novo, info, true).remover.sort()).toEqual([2]);
   });
 });
 
@@ -129,5 +142,17 @@ describe('temEnvioDepoisDoCheckout', () => {
   it('só rascunho ou itens antes: não', () => {
     expect(temEnvioDepoisDoCheckout([co, { kind: 'end', payload: pos, seq: 1, ...base } as ItemFila], 2)).toBe(false);
     expect(temEnvioDepoisDoCheckout([co], 2)).toBe(false);
+  });
+});
+
+describe('seguirSemConferirParecidos', () => {
+  it('rede, timeout, 5xx e NO_OPEN_JOURNEY seguem; outras recusas não', () => {
+    expect(seguirSemConferirParecidos(undefined)).toBe(true);
+    expect(seguirSemConferirParecidos(408)).toBe(true);
+    expect(seguirSemConferirParecidos(503)).toBe(true);
+    expect(seguirSemConferirParecidos(409, 'NO_OPEN_JOURNEY')).toBe(true);
+    expect(seguirSemConferirParecidos(409, 'OTHER')).toBe(false);
+    expect(seguirSemConferirParecidos(400)).toBe(false);
+    expect(seguirSemConferirParecidos(401)).toBe(false);
   });
 });
