@@ -878,7 +878,9 @@ console.log('-- Campo: GPS negado --');
   check('detalhe: linha do tempo com início, a visita e o fim', detalhe.includes('início da jornada') && detalhe.includes(CAMPO_LUGAR.toLowerCase()) && detalhe.includes('fim da jornada'));
   check('detalhe: respostas da visita', detalhe.includes('maria check') && detalhe.includes('cadastrou agora pelo qr'));
   await page.locator('.leaflet-container').waitFor({ timeout: 20000 });
-  check('detalhe: mapa do dia com o trajeto', (await page.locator('.leaflet-container path.leaflet-interactive').count()) > 0);
+  // Os check-ins são <path> de círculo (tooltip); a linha do trajeto é um <path> sem arco ("A"/"a"), com ao menos um segmento "L".
+  const dTrajeto = await page.locator('.leaflet-container path.leaflet-interactive').evaluateAll((ps) => ps.map((x) => x.getAttribute('d') ?? ''));
+  check('detalhe: mapa do dia com a linha do trajeto', dTrajeto.some((d) => /L/.test(d) && !/[Aa]/.test(d)), JSON.stringify(dTrajeto).slice(0, 200));
   const fachada = page.getByAltText(`Fachada — ${CAMPO_LUGAR}`);
   await fachada.waitFor({ timeout: 20000 });
   check('detalhe: foto da fachada carrega pela API', ((await fachada.getAttribute('src')) ?? '').startsWith('blob:'));

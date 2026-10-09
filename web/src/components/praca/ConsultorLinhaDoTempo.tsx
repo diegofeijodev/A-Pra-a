@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { VisitView } from '@/modules/campo/domain/campo.types';
+import { fmtBR } from '@/lib/dates';
 import { duracaoMin, hora } from '@/modules/campo/domain/formatos';
 import { fotoDaVisitaEquipe, type DiaConsultor } from '@/modules/consultores/infrastructure/consultores.api';
 
@@ -73,7 +74,7 @@ export function ConsultorLinhaDoTempo({ dia }: { dia: DiaConsultor }) {
                     )}
                     {a.needs_followup && (
                       <p className="text-xs">
-                        Retorno: {a.followup_what} ({a.followup_date})
+                        Retorno: {a.followup_what} ({fmtBR(a.followup_date ?? undefined)})
                       </p>
                     )}
                     {a.notes && <p className="text-xs text-muted-foreground">{a.notes}</p>}

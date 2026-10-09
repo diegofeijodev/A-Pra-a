@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { todaySp } from '@/lib/dates';
 import { useAuth } from '@/modules/auth/application/use-auth';
+import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 import {
   useConsultor,
   useDiaConsultor,
@@ -27,8 +28,8 @@ export default function ConsultorDetalhePage() {
   const admin = !!user?.is_admin;
   const dark = user?.theme !== 'light';
   const [dia, setDia] = useState(todaySp());
-  const { data: c } = useConsultor(id);
-  const { data: diaDados, isPending } = useDiaConsultor(id, dia);
+  const { data: c, isError: consultorErro, error: erroConsultor, refetch: recarregarConsultor } = useConsultor(id);
+  const { data: diaDados, isPending, isError: diaErro, error: erroDia, refetch: recarregarDia } = useDiaConsultor(id, dia);
   const atualizar = useUpdateConsultor(id);
   const resetar = useResetSenhaConsultor(id);
   const sincronizar = useFreelaSyncConsultor(id);
@@ -37,9 +38,25 @@ export default function ConsultorDetalhePage() {
   const [senhaAberta, setSenhaAberta] = useState(false);
   const [senha, setSenha] = useState<string | null>(null);
 
-  const pontos = useMemo(() => diaDados?.journeys.flatMap((j) => j.points) ?? [], [diaDados]);
+  const fecharSenha = () => {
+    setSenhaAberta(false);
+    setSenha(null);
+    resetar.reset(); // a senha provisória não fica no cache de mutações
+  };
 
-  if (!c) return <p className="text-sm text-muted-foreground">Carregando…</p>;
+  const trilhas = useMemo(() => diaDados?.journeys.map((j) => j.points) ?? [], [diaDados]);
+
+  if (!c) {
+    if (!consultorErro) return <p className="text-sm text-muted-foreground">Carregando…</p>;
+    return (
+      <div className="space-y-2">
+        <p className="text-sm text-destructive">{apiErrorMessage(erroConsultor, 'Não foi possível carregar o consultor.')}</p>
+        <Button variant="outline" onClick={() => void recarregarConsultor()}>
+          Tentar de novo
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -88,12 +105,19 @@ export default function ConsultorDetalhePage() {
           </label>
           <Input id="dia" type="date" max={todaySp()} value={dia} onChange={(e) => e.target.value && setDia(e.target.value)} className="w-44" />
         </div>
-        {isPending || !diaDados ? (
+        {diaErro ? (
+          <div className="space-y-2">
+            <p className="text-sm text-destructive">{apiErrorMessage(erroDia, 'Não foi possível carregar o dia.')}</p>
+            <Button variant="outline" onClick={() => void recarregarDia()}>
+              Tentar de novo
+            </Button>
+          </div>
+        ) : isPending || !diaDados ? (
           <p className="text-sm text-muted-foreground">Carregando…</p>
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
             <ConsultorLinhaDoTempo dia={diaDados} />
-            {(pontos.length > 0 || diaDados.visits.length > 0) && <ConsultorMapa pontos={pontos} visitas={diaDados.visits} dark={dark} />}
+            {(trilhas.some((t) => t.length > 0) || diaDados.visits.length > 0) && <ConsultorMapa trilhas={trilhas} visitas={diaDados.visits} dark={dark} />}
           </div>
         )}
       </section>
@@ -101,7 +125,7 @@ export default function ConsultorDetalhePage() {
       {editando && <ConsultorDialog aberto consultor={c} onFechar={() => setEditando(false)} />}
 
       <Dialog open={qr} onOpenChange={setQr}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>QR code de {c.name}</DialogTitle>
           </DialogHeader>
@@ -112,13 +136,14 @@ export default function ConsultorDetalhePage() {
       <Dialog
         open={senhaAberta}
         onOpenChange={(o) => {
-          if (!o) {
-            setSenhaAberta(false);
-            setSenha(null);
-          }
+          if (!o && !resetar.isPending && !senha) fecharSenha();
         }}
       >
-        <DialogContent>
+        <DialogContent
+          className="max-h-[85vh] overflow-y-auto"
+          onInteractOutside={(e) => (senha || resetar.isPending) && e.preventDefault()}
+          onEscapeKeyDown={(e) => (senha || resetar.isPending) && e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle>Nova senha provisória</DialogTitle>
           </DialogHeader>
@@ -129,10 +154,7 @@ export default function ConsultorDetalhePage() {
                 {senha}
               </p>
               <Button
-                onClick={() => {
-                  setSenhaAberta(false);
-                  setSenha(null);
-                }}
+                onClick={fecharSenha}
                 className="w-full"
               >
                 Fechar

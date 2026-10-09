@@ -42,12 +42,18 @@ export function ConsultorDialog({ aberto, onFechar, consultor }: { aberto: boole
 
   const fechar = () => {
     setSenha(null);
+    criar.reset(); // a senha provisória não fica no cache de mutações
     onFechar();
   };
+  const ocupado = criar.isPending || editar.isPending;
 
   return (
-    <Dialog open={aberto} onOpenChange={(o) => !o && fechar()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto">
+    <Dialog open={aberto} onOpenChange={(o) => !o && !ocupado && !senha && fechar()}>
+      <DialogContent
+        className="max-h-[85vh] overflow-y-auto"
+        onInteractOutside={(e) => (senha || ocupado) && e.preventDefault()}
+        onEscapeKeyDown={(e) => (senha || ocupado) && e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>{consultor ? 'Editar consultor' : 'Novo consultor'}</DialogTitle>
         </DialogHeader>
