@@ -21,8 +21,8 @@ Novo em relação ao protótipo: integração com o sistema de campanhas do Free
 **Status:** port **concluído**. API com 17 módulos (contrato em
 `docs/api-contract.md`) e web com as **9 telas** do protótipo mais três coisas
 que ele não tinha — `/freela`, `/entrar` e o formulário público. Depois do port entrou o bloco A de **consultores de campo** (§ Consultores de
-campo). Verificação de ponta a ponta: 628 testes de unidade na API (43 suítes),
-81 no web (vitest), 858 checagens de smoke contra a API viva e 144 checagens de
+campo). Verificação de ponta a ponta: 640 testes de unidade na API (45 suítes),
+91 no web (vitest), 858 checagens de smoke contra a API viva e 145 checagens de
 navegador (§ Verificação).
 
 ## Como subir
@@ -267,7 +267,7 @@ nem `next build` numa tarefa comum.
 
 ```bash
 cd api
-npm test                 # jest, maxWorkers 1 — 43 suítes, 628 testes
+npm test                 # jest, maxWorkers 1 — 45 suítes, 640 testes
 npm run typecheck        # tsc --noEmit, sozinho
 npm run lint
 
@@ -280,13 +280,13 @@ npm run smoke            # 858 checagens, repetível sem resíduo
 
 ```bash
 cd web
-yarn test                # vitest (fork único) — 8 arquivos, 81 testes
+yarn test                # vitest (fork único) — 8 arquivos, 91 testes
 yarn typecheck
 yarn lint
 
 # navegador: precisa da API na 3014 (start:smoke) e do web na 3024 (yarn dev)
 yarn dev &
-yarn browser-check       # 144 checagens; limpa o que cria e pode repetir
+yarn browser-check       # 145 checagens; limpa o que cria e pode repetir
                          # PRACA_CHECK_FAXINA=1 apaga resíduo de rodada morta (todos os disparos e conclusões da praça do seed)
 ```
 
