@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { campoFotoVisita } from '../infrastructure/campo.api';
+import { liberarUrlDepois } from '../infrastructure/object-url';
 import { useFilaStore } from './use-fila';
 
 /**
@@ -28,10 +29,11 @@ export function useFotoUrl(ref: string): string | null {
     const item = seqNaFila === null ? undefined : useFilaStore.getState().itens.find((x) => x.kind === 'checkin' && x.payload.client_id === ref);
     const blobLocal = item?.kind === 'checkin' ? item.foto : null;
     if (blobLocal) usar(blobLocal);
-    else void campoFotoVisita(ref).then(usar).catch(() => vivo && setUrl(null));
+    else void campoFotoVisita(ref).then(usar).catch(() => undefined);
     return () => {
       vivo = false;
-      if (atual) URL.revokeObjectURL(atual);
+      // Sem revogar já: o <img> ainda aponta para esta URL até o próximo commit.
+      if (atual) liberarUrlDepois(atual);
     };
   }, [ref, seqNaFila]);
 

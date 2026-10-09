@@ -18,6 +18,7 @@ import { seguirSemConferirParecidos } from '@/modules/campo/domain/fila-politica
 import type { MotivoGps } from '@/modules/campo/domain/gps-mensagens';
 import { campoBuscarLugares, campoLugaresParecidos, campoLugaresPerto } from '@/modules/campo/infrastructure/campo.api';
 import { prepararFoto } from '@/modules/campo/infrastructure/foto-compressao';
+import { liberarUrlDepois } from '@/modules/campo/infrastructure/object-url';
 import { ErroGps, lerPosicao } from '@/modules/campo/infrastructure/gps';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 
@@ -57,7 +58,7 @@ export function NovaVisitaTela() {
     if (!foto) return;
     const u = URL.createObjectURL(foto);
     setPrevia(u);
-    return () => URL.revokeObjectURL(u);
+    return () => liberarUrlDepois(u);
   }, [foto]);
 
   // Busca por nome com espera de 300 ms; precisa de sinal.
