@@ -80,3 +80,8 @@ export function nomeDaVisita(ref: string, fila: ItemFila[], visitasDoServidor: {
   for (const i of fila) if (i.kind === 'checkin' && i.payload.client_id === ref) return i.payload.place_name;
   return visitasDoServidor.find((v) => v.client_id === ref)?.lead_name ?? 'visita';
 }
+
+/** O consultor tem `checkin` ou `end` na fila DEPOIS deste checkout? Descartá-lo pode fazer o servidor recusar esses envios. */
+export function temEnvioDepoisDoCheckout(fila: ItemFila[], checkoutSeq: number): boolean {
+  return fila.some((i) => (i.seq ?? 0) > checkoutSeq && (i.kind === 'checkin' || i.kind === 'end'));
+}

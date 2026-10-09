@@ -5,7 +5,7 @@ import { useOnline } from '@/modules/campo/application/use-online';
 import type { TodayView } from '@/modules/campo/domain/campo.types';
 import { irPara } from '@/modules/campo/application/use-tela';
 import { plural } from '@/modules/campo/domain/formatos';
-import { nomeDaVisita } from '@/modules/campo/domain/fila-politica';
+import { nomeDaVisita, temEnvioDepoisDoCheckout } from '@/modules/campo/domain/fila-politica';
 import { getSnapshot } from '@/modules/campo/infrastructure/campo-session.storage';
 
 /** "2 envios pendentes — enviando quando voltar o sinal" + os envios recusados (spec §8.1 e §9). */
@@ -42,7 +42,10 @@ export function FaixaFila() {
               <button
                 type="button"
                 onClick={() => {
-                  if (window.confirm('Descartar o checkout desta visita? Ela fica aberta até o fechamento da meia-noite.')) void descartar(i.seq as number);
+                  const aviso = temEnvioDepoisDoCheckout(itens, i.seq as number)
+                    ? ' As visitas seguintes podem ser recusadas pelo servidor.'
+                    : '';
+                  if (window.confirm(`Descartar o checkout desta visita? Ela fica aberta até o fechamento da meia-noite.${aviso}`)) void descartar(i.seq as number);
                 }}
                 className="rounded-md border border-border px-3 py-2 text-xs text-muted-foreground"
               >

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ItemFila, VisitAnswers } from '../campo.types';
-import { planejarRascunho, classificar, nomeDaVisita, pontoDeTrilhaUtil, proximaTentativa, substituidos } from '../fila-politica';
+import { planejarRascunho, classificar, nomeDaVisita, pontoDeTrilhaUtil, proximaTentativa, substituidos, temEnvioDepoisDoCheckout } from '../fila-politica';
 
 const POS = { at: '2026-10-08T15:00:00.000Z', lat: -19.9, lng: -43.9, accuracy: 10 };
 const R = {} as VisitAnswers;
@@ -113,5 +113,21 @@ describe('nome da visita para avisar o consultor', () => {
     expect(nomeDaVisita('v1', f, [])).toBe('Bar Novo');
     expect(nomeDaVisita('v2', [], [{ client_id: 'v2', lead_name: 'Padaria' }])).toBe('Padaria');
     expect(nomeDaVisita('v3', [], [])).toBe('visita');
+  });
+});
+
+describe('temEnvioDepoisDoCheckout', () => {
+  const base = { consultant_id: 'c', tentativas: 0, proxima_em: 0, criado_em: 0 };
+  const pos = { at: 'x', lat: 0, lng: 0, accuracy: 1 };
+  const co = { kind: 'checkout', visit_ref: 'a', payload: pos, seq: 2, ...base } as ItemFila;
+  it('checkin ou end depois do checkout', () => {
+    expect(temEnvioDepoisDoCheckout([co, { kind: 'end', payload: pos, seq: 3, ...base } as ItemFila], 2)).toBe(true);
+    expect(
+      temEnvioDepoisDoCheckout([co, { kind: 'checkin', payload: { client_id: 'b', place_name: 'B', ...pos }, foto: new Blob(), seq: 3, ...base } as ItemFila], 2),
+    ).toBe(true);
+  });
+  it('só rascunho ou itens antes: não', () => {
+    expect(temEnvioDepoisDoCheckout([co, { kind: 'end', payload: pos, seq: 1, ...base } as ItemFila], 2)).toBe(false);
+    expect(temEnvioDepoisDoCheckout([co], 2)).toBe(false);
   });
 });

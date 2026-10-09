@@ -722,14 +722,94 @@ console.log('-- Campo: GPS negado --');
   await cel.waitForFunction(() => !document.body.innerText.toLowerCase().includes('pendente'), null, { timeout: 20000 });
   check('equipe vê o consultor em jornada', (await situacaoCampo())?.status === 'em_jornada');
 
-  // ── campo: visitas (Task 11 entra AQUI, antes de encerrar) ──
+  console.log('-- Campo: visita (check-in sem sinal, questionário, checkout, CRM) --');
+  await cel.getByRole('button', { name: 'Nova visita' }).click();
+  await cel.waitForURL(/\/campo\?v=nova/, { timeout: 20000 });
+  await cel.getByRole('tab', { name: 'Novo estabelecimento' }).click();
+  await cel.locator('#novo-nome').fill(CAMPO_LUGAR);
+  await cel.locator('#novo-endereco').fill('Rua do Browser-Check, 100');
+  await cel.getByRole('button', { name: 'Continuar', exact: true }).click();
+  // Nome com carimbo: nenhum parecido a 100 m → vai direto para a foto.
+  await cel.locator('#foto-fachada').waitFor({ timeout: 15000 });
+  const jpeg = await cel.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const c = document.createElement('canvas');
+        c.width = 2400;
+        c.height = 1800;
+        const g = c.getContext('2d');
+        g.fillStyle = '#2E6F7E';
+        g.fillRect(0, 0, c.width, c.height);
+        c.toBlob((b) => b.arrayBuffer().then((a) => resolve(Array.from(new Uint8Array(a)))), 'image/jpeg', 0.9);
+      }),
+  );
+  await cel.locator('#foto-fachada').setInputFiles({ name: 'fachada.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(jpeg) });
+  const previa = cel.getByAltText('Foto da fachada');
+  await previa.waitFor({ timeout: 15000 });
+  check('foto da fachada aparece antes do check-in (prévia local)', (await previa.getAttribute('src'))?.startsWith('blob:') === true);
+
+  offline = true;
+  await celularCtx.setOffline(true);
+  await cel.getByRole('button', { name: 'Fazer check-in' }).click();
+  // Sem sinal e SEM navegar: a visita abre como visão de /campo.
+  await cel.waitForURL(/\/campo\?v=visita&ref=[0-9a-f-]{36}/, { timeout: 20000 });
+  await cel.getByText('1 envio pendente').waitFor({ timeout: 15000 });
+  const fotoVisita = cel.getByAltText('Foto da fachada');
+  await fotoVisita.waitFor({ timeout: 15000 });
+  check('sem sinal: o check-in fica na fila e a visita abre com a foto do arquivo local', (await fotoVisita.getAttribute('src'))?.startsWith('blob:') === true);
+  check('checkout bloqueado com o questionário vazio', await cel.getByRole('button', { name: 'Fazer checkout' }).isDisabled());
+  await celularCtx.setOffline(false);
+  offline = false;
+  await cel.waitForFunction(() => !document.body.innerText.toLowerCase().includes('pendente'), null, { timeout: 30000 });
+
+  const diaCampo = async () => api('GET', `/v1/consultores/${consultorId}/days/${HOJE}`);
+  const visitaEnviada = (await diaCampo()).visits.find((v) => v.lead_name === CAMPO_LUGAR);
+  leadCampoId = visitaEnviada?.lead_id ?? null;
+  check('sinal de volta: a visita chegou com foto reduzida (≤ 5 MB)', !!visitaEnviada && visitaEnviada.photo_bytes > 0 && visitaEnviada.photo_bytes <= 5 * 1024 * 1024);
+
+  await cel.locator('#q-nome').fill('Maria Check');
+  await cel.getByRole('button', { name: 'Dono', exact: true }).click();
+  await cel.getByRole('button', { name: 'Cadastrou agora pelo QR', exact: true }).click();
+  await cel.getByRole('button', { name: 'Alto', exact: true }).click();
+  await cel.locator('#q-vagas').fill('2');
+  await cel.getByRole('button', { name: 'Garçom', exact: true }).click();
+  await cel.locator('#q-freelas').fill('5');
+  await cel.getByRole('button', { name: 'Grupos de WhatsApp', exact: true }).click();
+  await cel.getByRole('button', { name: 'Sim', exact: true }).click();
+  await cel.locator('#q-retorno-oque').fill('Voltar com proposta');
+  await cel.locator('#q-retorno-data').fill(HOJE);
+  check('questionário completo libera o checkout', !(await cel.getByRole('button', { name: 'Fazer checkout' }).isDisabled()));
+
+  // Trocar de visão logo depois de digitar (antes da espera do rascunho) não perde nada.
+  await cel.getByRole('button', { name: 'QR code' }).click();
+  await cel.waitForURL(/\/campo\?v=qr/, { timeout: 15000 });
+  check('tela do QR (ou "código pendente" sem Freela configurado)', /aponte a câmera|código no freela ainda está pendente/.test(await corpo(cel)));
+  await cel.getByRole('button', { name: 'Voltar' }).click();
+  await cel.waitForURL(/\/campo\?v=visita&ref=/, { timeout: 15000 });
+  check('ao voltar do QR, o questionário digitado continua preenchido', (await cel.locator('#q-nome').inputValue()) === 'Maria Check');
+
+  await cel.getByRole('button', { name: 'Fazer checkout' }).click();
+  await cel.waitForURL(/\/campo(\?v=hoje)?$/, { timeout: 20000 });
+  await cel.waitForFunction(() => !document.body.innerText.toLowerCase().includes('pendente'), null, { timeout: 30000 });
+  const fechada = (await diaCampo()).visits.find((v) => v.lead_id === leadCampoId);
+  check('checkout gravado com as respostas', !!fechada?.checkout_at && fechada.answers.freela_status === 'cadastrou_qr');
+  check('equipe vê 1 visita e 1 "cadastrou agora" hoje', (await situacaoCampo())?.visits === 1 && (await situacaoCampo())?.cadastros === 1);
+  const leadCampo = await api('GET', `/v1/leads/${leadCampoId}`);
+  check(
+    'CRM: lead "visita de campo" em "Conversa aberta", decisor e próximo passo da visita',
+    leadCampo.origem === 'visita de campo' &&
+      leadCampo.stage === 3 &&
+      leadCampo.decisor === 'Maria Check' &&
+      leadCampo.next_step?.date === HOJE &&
+      (leadCampo.events ?? []).some((e) => e.kind === 'visit'),
+  );
 
   console.log('-- Campo: encerrar sem sinal (fila offline) --');
   offline = true;
   await celularCtx.setOffline(true);
   // As telas são visões de /campo: trocar de visão não pode buscar nada no servidor.
   await cel.getByRole('button', { name: 'QR code' }).click();
-  await cel.getByText('Em construção').waitFor({ timeout: 5000 });
+  await cel.getByText(/aponte a câmera|código no Freela ainda está pendente/i).waitFor({ timeout: 5000 });
   check('sem sinal: a visão do QR abre sem navegar (?v=qr)', new URL(cel.url()).search === '?v=qr');
   await cel.getByRole('button', { name: 'Voltar' }).click();
   await cel.getByRole('button', { name: 'Encerrar jornada' }).waitFor({ timeout: 5000 });

@@ -91,3 +91,9 @@ export async function campoCheckout(ref: string, p: Posicao): Promise<VisitView>
   const { data } = await campoApi.post(`/v1/campo/visits/${ref}/checkout`, p);
   return data as VisitView;
 }
+
+/** `GET /v1/campo/visits/:ref/photo` — só das visitas do próprio consultor (§20.3). */
+export async function campoFotoVisita(ref: string): Promise<Blob> {
+  const { data } = await campoApi.get(`/v1/campo/visits/${encodeURIComponent(ref)}/photo`, { responseType: 'blob' });
+  return data as Blob;
+}
