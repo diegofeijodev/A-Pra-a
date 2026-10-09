@@ -45,7 +45,7 @@ services:
       FREELA_SYNC_ENABLED: ${FREELA_SYNC_ENABLED:-true}
       # Consultores de campo (README, "Consultores de campo"). `PHOTO_STORAGE`
       # vazio = padrão da API (s3 em produção, disk fora); vazio é tratado como
-      # ausente. Sem S3_BUCKET/S3_REGION as rotas de foto respondem 503.
+      # ausente. Sem S3_BUCKET/S3_REGION todo check-in responde 503 (a feature não funciona).
       FREELA_WEB_URL: ${FREELA_WEB_URL:-}
       CAMPO_JWT_EXPIRES_IN: ${CAMPO_JWT_EXPIRES_IN:-7d}
       PHOTO_STORAGE: ${PHOTO_STORAGE:-}

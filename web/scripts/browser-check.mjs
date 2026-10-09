@@ -60,7 +60,8 @@ const CAMPO_EMAIL = `${CAMPO_PREFIXO}${CARIMBO}@praca.local`;
 const CAMPO_NOME = `Consultor Check ${CARIMBO}`;
 const CAMPO_SENHA_NOVA = 'campoCheck123';
 const CAMPO_LUGAR_PREFIXO = 'Campo Browser-Check';
-const CAMPO_LUGAR = `${CAMPO_LUGAR_PREFIXO} ${CARIMBO}`;
+// Markup literal no nome: o nome é digitado pelo consultor e aparece em tooltip do Leaflet (innerHTML) — tem de sair como TEXTO.
+const CAMPO_LUGAR = `${CAMPO_LUGAR_PREFIXO} ${CARIMBO} <b>x</b>`;
 /** Posição simulada do celular (Belo Horizonte, praça do seed). */
 const POSICAO = { latitude: -19.9245, longitude: -43.9352, accuracy: 15 };
 
@@ -881,6 +882,24 @@ console.log('-- Campo: GPS negado --');
   // Os check-ins são <path> de círculo (tooltip); a linha do trajeto é um <path> sem arco ("A"/"a"), com ao menos um segmento "L".
   const dTrajeto = await page.locator('.leaflet-container path.leaflet-interactive').evaluateAll((ps) => ps.map((x) => x.getAttribute('d') ?? ''));
   check('detalhe: mapa do dia com a linha do trajeto', dTrajeto.some((d) => /L/.test(d) && !/[Aa]/.test(d)), JSON.stringify(dTrajeto).slice(0, 200));
+  // XSS armazenado: o nome da visita tem `<b>x</b>`; o tooltip do check-in tem de mostrar o texto literal, sem elemento <b>.
+  // Há um marcador por visita e os dois check-ins caem no MESMO ponto (um cobre o outro): o mouseover vai direto em cada <path>.
+  const marcadores = page.locator('.leaflet-container path.leaflet-interactive[d*="a" i]');
+  let tipTexto = '';
+  let tipBs = -1;
+  for (let k = 0; k < (await marcadores.count()); k++) {
+    await marcadores.nth(k).dispatchEvent('mouseover');
+    const tip = page.locator('.leaflet-tooltip').last();
+    await tip.waitFor({ timeout: 10000 });
+    const t = await tip.innerText();
+    if (t.includes(CARIMBO) && t.includes('<b>')) {
+      tipTexto = t;
+      tipBs = await tip.locator('b').count();
+      break;
+    }
+    await marcadores.nth(k).dispatchEvent('mouseout');
+  }
+  check('detalhe: tooltip do check-in mostra o nome como TEXTO (sem HTML injetado)', tipTexto.includes('<b>x</b>') && tipBs === 0, `${JSON.stringify(tipTexto)} b=${tipBs}`);
   const fachada = page.getByAltText(`Fachada — ${CAMPO_LUGAR}`);
   await fachada.waitFor({ timeout: 20000 });
   check('detalhe: foto da fachada carrega pela API', ((await fachada.getAttribute('src')) ?? '').startsWith('blob:'));

@@ -111,6 +111,13 @@ export async function descartar(seq: number): Promise<void> {
   void drenar();
 }
 
+/** "Descartar este envio": remove o item parado e o que dependia dele (seqs vindos de `seqsParaDescartar`). */
+export async function descartarEnvio(seqs: number[]): Promise<void> {
+  for (const seq of seqs) await removerDaFila(seq);
+  await recarregar();
+  void drenar();
+}
+
 /** Montado uma vez, no layout das telas do consultor. */
 export function useFilaRunner(consultantId: string | null): void {
   const queryClient = useQueryClient();

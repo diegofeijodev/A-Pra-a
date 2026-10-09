@@ -89,6 +89,7 @@ export class PontosDto {
 }
 
 export class NovoLugarDto {
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @Length(2, 120)
   name!: string;

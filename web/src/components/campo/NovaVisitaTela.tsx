@@ -97,7 +97,7 @@ export function NovaVisitaTela() {
 
   async function continuarNovo() {
     const name = novoNome.trim();
-    if (!name) return;
+    if (name.length < 2) return;
     const novo: Escolhido = { nome: name, new_place: { name, address: novoEndereco.trim() || undefined } };
     if (!online) {
       // Sem sinal não dá para perguntar; o servidor marca `possible_dup` se houver parecido (decisão 2).
@@ -241,13 +241,13 @@ export function NovaVisitaTela() {
             <div className="space-y-3">
               <div className="space-y-1">
                 <Label htmlFor="novo-nome">Nome</Label>
-                <Input id="novo-nome" value={novoNome} maxLength={160} onChange={(e) => setNovoNome(e.target.value)} />
+                <Input id="novo-nome" value={novoNome} maxLength={120} onChange={(e) => setNovoNome(e.target.value)} />
               </div>
               <div className="space-y-1">
                 <Label htmlFor="novo-endereco">Endereço</Label>
-                <Input id="novo-endereco" value={novoEndereco} maxLength={240} onChange={(e) => setNovoEndereco(e.target.value)} />
+                <Input id="novo-endereco" value={novoEndereco} maxLength={200} onChange={(e) => setNovoEndereco(e.target.value)} />
               </div>
-              <Button onClick={() => void continuarNovo()} disabled={ocupado || !novoNome.trim()} className="h-12 w-full">
+              <Button onClick={() => void continuarNovo()} disabled={ocupado || novoNome.trim().length < 2} className="h-12 w-full">
                 Continuar
               </Button>
             </div>

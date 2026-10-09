@@ -280,6 +280,8 @@ export class ImportsService {
           where: {
             import_batch_id: id,
             stage: 1,
+            // Visita de campo aberta aponta para o lead: apagar levaria a visita junto (cascata).
+            field_visits: { none: {} },
             events: { none: { kind: { in: CONTACT_KINDS as string[] } } },
           },
         });

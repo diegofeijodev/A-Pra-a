@@ -28,13 +28,16 @@ export default function ConsultorMapa({ trilhas, visitas, dark }: { trilhas: Poi
       L.tileLayer(dark ? TILES : TILES_LIGHT, { maxZoom: 19 }).addTo(map);
       for (const l of linhas) if (l.length > 1) L.polyline(l, { color: '#ECA826', weight: 3, opacity: 0.85 }).addTo(map);
       for (const v of visitas) {
+        // Nome do lugar é digitado pelo consultor: elemento com textContent, nunca string (Leaflet usa innerHTML).
+        const nome = document.createElement('span');
+        nome.textContent = v.lead_name;
         L.circleMarker([v.checkin_lat, v.checkin_lng], {
           radius: 7,
           color: v.far_from_place ? '#B4432E' : '#3E8E5A',
           weight: 2,
           fillOpacity: 0.8,
         })
-          .bindTooltip(v.lead_name)
+          .bindTooltip(nome)
           .addTo(map);
       }
       map.fitBounds(L.latLngBounds(todos), { padding: [24, 24], maxZoom: 17 });

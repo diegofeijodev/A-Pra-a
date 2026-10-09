@@ -1,11 +1,12 @@
 'use client';
 
-import { descartar, useFilaStore } from '@/modules/campo/application/use-fila';
+import { descartar, descartarEnvio, useFilaStore } from '@/modules/campo/application/use-fila';
 import { useOnline } from '@/modules/campo/application/use-online';
 import type { TodayView } from '@/modules/campo/domain/campo.types';
 import { irPara } from '@/modules/campo/application/use-tela';
 import { plural } from '@/modules/campo/domain/formatos';
-import { nomeDaVisita, temEnvioDepoisDoCheckout } from '@/modules/campo/domain/fila-politica';
+import { todaySp } from '@/lib/dates';
+import { AVISO_ENVIOS_GUARDADOS, cabecaParada, itensDeDiaAnterior, nomeDaVisita, seqsParaDescartar, temEnvioDepoisDoCheckout } from '@/modules/campo/domain/fila-politica';
 import { getSnapshot } from '@/modules/campo/infrastructure/campo-session.storage';
 
 /** "2 envios pendentes — enviando quando voltar o sinal" + os envios recusados (spec §8.1 e §9). */
@@ -22,11 +23,34 @@ export function FaixaFila() {
   const parado = itens.some((i) => i.kind === 'checkout' && i.bloqueio);
   const situacao = parado ? 'parado: falta corrigir um checkout' : !online ? 'enviando quando voltar o sinal' : pausada ? 'entre de novo para enviar' : 'enviando…';
 
+  const deOntem = itensDeDiaAnterior(itens, todaySp()).length;
+  const parada = cabecaParada(itens, itens[0]?.consultant_id ?? '');
+
   return (
     <div className="space-y-2">
       {itens.length > 0 && (
-        <div role="status" className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
-          {plural(itens.length, 'envio pendente', 'envios pendentes')} — {situacao}
+        <div role="status" className="space-y-1 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+          <p>
+            {plural(itens.length, 'envio pendente', 'envios pendentes')}
+            {deOntem > 0 ? ` (${deOntem} de ontem)` : ''} — {situacao}
+          </p>
+          <p data-testid="aviso-envios-guardados" className="text-xs text-muted-foreground">
+            {AVISO_ENVIOS_GUARDADOS}
+          </p>
+        </div>
+      )}
+      {parada && (
+        <div role="alert" className="space-y-2 rounded-md border border-danger/40 bg-danger/10 p-3 text-sm">
+          <p>Um envio não sai há várias tentativas. Se a internet está boa e ele continua parado, você pode descartá-lo para liberar os seguintes.</p>
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm('Descartar este envio? O que ele levava não será enviado.')) void descartarEnvio(seqsParaDescartar(itens, parada));
+            }}
+            className="rounded-md border border-border px-3 py-2 text-xs text-muted-foreground"
+          >
+            Descartar este envio
+          </button>
         </div>
       )}
       {bloqueados.map((i) =>

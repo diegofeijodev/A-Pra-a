@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ItemFila, VisitAnswers } from '../campo.types';
-import { planejarRascunho, classificar, nomeDaVisita, pontoDeTrilhaUtil, proximaTentativa, substituidos, seguirSemConferirParecidos, temEnvioDepoisDoCheckout } from '../fila-politica';
+import { AVISO_ENVIOS_GUARDADOS, cabecaParada, itensDeDiaAnterior, seqsParaDescartar, planejarRascunho, classificar, nomeDaVisita, pontoDeTrilhaUtil, proximaTentativa, substituidos, seguirSemConferirParecidos, temEnvioDepoisDoCheckout } from '../fila-politica';
 
 const POS = { at: '2026-10-08T15:00:00.000Z', lat: -19.9, lng: -43.9, accuracy: 10 };
 const R = {} as VisitAnswers;
@@ -154,5 +154,71 @@ describe('seguirSemConferirParecidos', () => {
     expect(seguirSemConferirParecidos(409, 'OTHER')).toBe(false);
     expect(seguirSemConferirParecidos(400)).toBe(false);
     expect(seguirSemConferirParecidos(401)).toBe(false);
+  });
+});
+
+describe('envios de dias anteriores (a meia-noite fecha a jornada de ontem)', () => {
+  const ontem = '2026-10-07T20:00:00.000Z'; // 17h de 07/10 em Brasília
+  const hoje = '2026-10-08T15:00:00.000Z';
+  const checkin = (at: string, seq: number): ItemFila =>
+    ({ ...base, seq, kind: 'checkin', foto: new Blob(), payload: { client_id: `v${seq}`, place_name: 'X', ...POS, at } }) as ItemFila;
+
+  it('usa o dia de Brasília de at; 02h UTC ainda é o dia anterior', () => {
+    const noite = checkin('2026-10-09T02:30:00.000Z', 1); // 23h30 de 08/10 em Brasília
+    expect(itensDeDiaAnterior([noite], '2026-10-08')).toHaveLength(0);
+    expect(itensDeDiaAnterior([noite], '2026-10-09')).toHaveLength(1);
+  });
+  it('separa os de ontem dos de hoje', () => {
+    const fila = [checkin(ontem, 1), checkin(hoje, 2)];
+    expect(itensDeDiaAnterior(fila, '2026-10-08').map((i) => i.seq)).toEqual([1]);
+  });
+  it('sem at (respostas) cai para criado_em', () => {
+    const resp = { ...base, seq: 3, kind: 'answers', visit_ref: 'v1', payload: R, criado_em: Date.parse(ontem) } as ItemFila;
+    expect(itensDeDiaAnterior([resp], '2026-10-08')).toHaveLength(1);
+  });
+  it('points usa o primeiro ponto', () => {
+    const pts = { ...base, seq: 4, kind: 'points', payload: { points: [{ client_id: 'p', ...POS, at: ontem }] } } as ItemFila;
+    expect(itensDeDiaAnterior([pts], '2026-10-08')).toHaveLength(1);
+  });
+});
+
+describe('descartar o envio parado na cabeça da fila', () => {
+  const mk = (seq: number, extra: object, tentativas = 0) => ({ ...base, seq, tentativas, ...extra }) as ItemFila;
+  const checkin = (seq: number, ref: string, tentativas = 0) =>
+    mk(seq, { kind: 'checkin', foto: new Blob(), payload: { client_id: ref, place_name: 'X', ...POS } }, tentativas);
+  const start = (seq: number, tentativas = 0) => mk(seq, { kind: 'start', payload: { client_id: 's', ...POS } }, tentativas);
+
+  it('só oferece com 8 ou mais falhas seguidas na cabeça', () => {
+    expect(cabecaParada([checkin(1, 'a', 7)], 'c1')).toBeNull();
+    expect(cabecaParada([checkin(1, 'a', 8)], 'c1')?.seq).toBe(1);
+  });
+  it('olha só a cabeça do consultor, não itens de trás nem de outro consultor', () => {
+    const outro = { ...checkin(1, 'a', 20), consultant_id: 'c2' } as ItemFila;
+    expect(cabecaParada([outro, checkin(2, 'b', 0), checkin(3, 'c', 9)], 'c1')).toBeNull();
+  });
+  it('checkout bloqueado tem o próprio descarte', () => {
+    const co = mk(1, { kind: 'checkout', visit_ref: 'a', payload: POS, bloqueio: 'falta' }, 9);
+    expect(cabecaParada([co], 'c1')).toBeNull();
+  });
+  it('descartar checkin leva respostas e checkout da mesma visita, só dela', () => {
+    const fila = [
+      checkin(1, 'a', 8),
+      mk(2, { kind: 'answers', visit_ref: 'a', payload: R }),
+      mk(3, { kind: 'checkout', visit_ref: 'a', payload: POS }),
+      mk(4, { kind: 'answers', visit_ref: 'b', payload: R }),
+      mk(5, { kind: 'end', payload: POS }),
+    ];
+    expect(seqsParaDescartar(fila, fila[0])).toEqual([1, 2, 3]);
+  });
+  it('descartar start remove só ele', () => {
+    const fila = [start(1, 8), checkin(2, 'a')];
+    expect(seqsParaDescartar(fila, fila[0])).toEqual([1]);
+  });
+});
+
+describe('guia para quem encerra com envios guardados', () => {
+  it('lista o que fica para trás e cita a meia-noite', () => {
+    expect(AVISO_ENVIOS_GUARDADOS).toMatch(/meia-noite/);
+    expect(AVISO_ENVIOS_GUARDADOS).toMatch(/Praça Campo aberto/);
   });
 });

@@ -8,7 +8,8 @@ import { FaixaFila } from '@/components/campo/FaixaFila';
 import { Button } from '@/components/ui/button';
 import { useCampoSession } from '@/modules/campo/application/campo-session.store';
 import { useDia } from '@/modules/campo/application/use-campo';
-import { enfileirar } from '@/modules/campo/application/use-fila';
+import { enfileirar, useFilaStore } from '@/modules/campo/application/use-fila';
+import { AVISO_ENVIOS_GUARDADOS } from '@/modules/campo/domain/fila-politica';
 import type { Posicao } from '@/modules/campo/domain/campo.types';
 import { duracaoMin, hora } from '@/modules/campo/domain/formatos';
 import type { MotivoGps } from '@/modules/campo/domain/gps-mensagens';
@@ -19,6 +20,7 @@ import { irPara } from '@/modules/campo/application/use-tela';
 export function HojeTela() {
   const consultantId = useCampoSession((s) => s.session?.consultant.id ?? '');
   const { dia, carregando } = useDia();
+  const temFila = useFilaStore((s) => s.itens.length > 0);
   const [gps, setGps] = useState<MotivoGps | null>(null);
   const [ocupado, setOcupado] = useState(false);
 
@@ -39,7 +41,8 @@ export function HojeTela() {
     comPosicao((p) => enfileirar({ kind: 'start', payload: { client_id: crypto.randomUUID(), ...p } }, consultantId));
 
   const encerrar = () => {
-    if (!window.confirm('Encerrar a jornada de hoje? A localização para de ser registrada.')) return;
+    const texto = 'Encerrar a jornada de hoje? A localização para de ser registrada.';
+    if (!window.confirm(temFila ? `${texto}\n\n${AVISO_ENVIOS_GUARDADOS}` : texto)) return;
     void comPosicao((p) => enfileirar({ kind: 'end', payload: p }, consultantId));
   };
 

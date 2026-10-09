@@ -31,12 +31,16 @@ export function ConsultorDialog({ aberto, onFechar, consultor }: { aberto: boole
 
   async function salvar() {
     const dados = { ...form, praca_id: form.praca_id || pracas[0]?.id || '' };
-    if (consultor) {
-      await editar.mutateAsync(dados);
-      onFechar();
-    } else {
-      const r = await criar.mutateAsync(dados);
-      setSenha(r.temp_password);
+    try {
+      if (consultor) {
+        await editar.mutateAsync(dados);
+        onFechar();
+      } else {
+        const r = await criar.mutateAsync(dados);
+        setSenha(r.temp_password);
+      }
+    } catch {
+      // O toast de erro já sai pelo onError da mutação; o diálogo fica aberto para corrigir.
     }
   }
 

@@ -36,6 +36,9 @@ const SP_DAY = new Intl.DateTimeFormat("en-CA", {
 /** "Hoje" em Brasília, no formato "YYYY-MM-DD". Nunca use `toISOString()`. */
 export const todaySp = () => SP_DAY.format(new Date());
 
+/** Dia (Brasília) de um instante — `Date`, epoch ms ou ISO. */
+export const daySp = (quando: Date | number | string) => SP_DAY.format(new Date(quando));
+
 export const fmtBR = (s?: string) => {
   if (!s) return "—";
   const [y, m, d] = s.split("-");

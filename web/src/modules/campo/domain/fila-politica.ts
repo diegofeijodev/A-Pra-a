@@ -1,3 +1,4 @@
+import { daySp } from '@/lib/dates';
 import type { AcaoFila, ItemFila } from './campo.types';
 
 export type Desfecho = 'ok' | 'rede' | 'sessao' | 'regra';
@@ -98,4 +99,49 @@ export function temEnvioDepoisDoCheckout(fila: ItemFila[], checkoutSeq: number):
 export function seguirSemConferirParecidos(status: number | undefined, code?: string): boolean {
   if (status === 409 && code === 'NO_OPEN_JOURNEY') return true;
   return classificar(status, code) === 'rede';
+}
+
+/** Texto de guia quando ainda há envio guardado no celular (a meia-noite fecha a jornada no servidor). */
+export const AVISO_ENVIOS_GUARDADOS =
+  'Ainda há envios guardados no celular. Mantenha o Praça Campo aberto com sinal até a faixa sumir — o que não for enviado até a meia-noite pode ser perdido.';
+
+/** Hora real da ação (`at`); respostas não têm, então vale a hora em que foram guardadas. */
+function instanteDoItem(i: ItemFila): number {
+  if (i.kind === 'points') {
+    const at = i.payload.points[0]?.at;
+    return at ? Date.parse(at) : i.criado_em;
+  }
+  if (i.kind === 'answers') return i.criado_em;
+  return Date.parse(i.payload.at);
+}
+
+/** Itens cujo dia (Brasília) é anterior a `hoje` ("YYYY-MM-DD"): o servidor já pode ter fechado a jornada deles. */
+export function itensDeDiaAnterior(fila: ItemFila[], hoje: string): ItemFila[] {
+  return fila.filter((i) => {
+    const t = instanteDoItem(i);
+    return Number.isFinite(t) && daySp(t) < hoje;
+  });
+}
+
+/** Falhas de rede seguidas na cabeça a partir das quais o descarte é oferecido. */
+export const TENTATIVAS_PARA_DESCARTAR = 8;
+
+/** Cabeça da fila do consultor, se estiver parada (≥ 8 falhas de rede). Checkout bloqueado tem o próprio descarte. */
+export function cabecaParada(fila: ItemFila[], consultantId: string): ItemFila | null {
+  const cabeca = [...fila].filter((i) => i.consultant_id === consultantId).sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))[0];
+  if (!cabeca || cabeca.tentativas < TENTATIVAS_PARA_DESCARTAR) return null;
+  if (cabeca.kind === 'checkout' && cabeca.bloqueio) return null;
+  return cabeca;
+}
+
+/** Seqs a remover ao descartar `item`: check-in leva as respostas e o checkout da MESMA visita (mesma regra do check-in recusado); o resto, só ele. */
+export function seqsParaDescartar(fila: ItemFila[], item: ItemFila): number[] {
+  const seqs = [item.seq as number];
+  if (item.kind === 'checkin') {
+    const ref = item.payload.client_id;
+    for (const d of fila) {
+      if (d.consultant_id === item.consultant_id && (d.kind === 'answers' || d.kind === 'checkout') && d.visit_ref === ref) seqs.push(d.seq as number);
+    }
+  }
+  return seqs;
 }

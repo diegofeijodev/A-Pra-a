@@ -205,9 +205,15 @@ contrato: `docs/api-contract.md` §20.
    A política IAM precisa de `s3:GetObject`, `s3:PutObject` e `s3:DeleteObject`
    nos objetos do bucket **e** `s3:ListBucket` no próprio bucket — sem
    `ListBucket`, uma foto que não existe volta como 403 em vez de 404.
-   Sem bucket, a API sobe e as rotas de foto respondem `503 PHOTO_STORAGE_NOT_CONFIGURED`.
+   **Sem o bucket a funcionalidade NÃO funciona em produção:** a API sobe, mas todo
+   check-in leva uma foto, então ele responde `503 PHOTO_STORAGE_NOT_CONFIGURED` — o
+   celular trata 503 como falta de sinal e os check-ins ficam presos na fila, sem
+   erro visível. **Antes de liberar para os consultores**, faça UM check-in de
+   verdade contra o bucket de produção e abra o link do QR para conferir que o
+   cadastro do Freela mostra o código do consultor.
    Não use `PHOTO_STORAGE=disk` no EC2 compartilhado com o Freela (o disco enche).
-3. `FREELA_WEB_URL` = endereço público do cadastro do Freela web.
+3. `FREELA_WEB_URL` = **URL base** do Freela web, sem `/cadastro` e sem barra no fim
+   (ex.: `https://www.freelaservicos.com.br`). A API acrescenta `/cadastro?consultor=CÓDIGO`.
 
 ## Produção
 

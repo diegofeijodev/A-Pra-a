@@ -7,6 +7,7 @@ import { duracaoMin, hora } from '@/modules/campo/domain/formatos';
 import { fotoDaVisitaEquipe, type DiaConsultor } from '@/modules/consultores/infrastructure/consultores.api';
 
 const SITUACAO: Record<string, string> = { ja_usa: 'Já usa o Freela', cadastrou_qr: 'Cadastrou agora pelo QR', nao_cadastrou: 'Não cadastrou' };
+const CARGO: Record<string, string> = { dono: 'Dono', gerente: 'Gerente', outro: 'Outro' };
 const INTERESSE: Record<string, string> = { alto: 'alto', medio: 'médio', baixo: 'baixo', nenhum: 'nenhum' };
 
 function FotoVisita({ visita }: { visita: VisitView }) {
@@ -61,7 +62,7 @@ export function ConsultorLinhaDoTempo({ dia }: { dia: DiaConsultor }) {
                     </p>
                     {a.interlocutor_name && (
                       <p>
-                        {a.interlocutor_name} ({a.interlocutor_role}) · {a.freela_status ? SITUACAO[a.freela_status] : '—'} · interesse{' '}
+                        {a.interlocutor_name} ({a.interlocutor_role ? CARGO[a.interlocutor_role] : '—'}) · {a.freela_status ? SITUACAO[a.freela_status] : '—'} · interesse{' '}
                         {a.interest ? INTERESSE[a.interest] : '—'}
                       </p>
                     )}
