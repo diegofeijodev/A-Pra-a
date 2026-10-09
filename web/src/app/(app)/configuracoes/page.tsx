@@ -1,5 +1,6 @@
 'use client';
 
+import { CanaisCampo } from '@/components/praca/CanaisCampo';
 import Link from 'next/link';
 import { useState } from 'react';
 import { fmtBR } from '@/lib/dates';
@@ -94,6 +95,7 @@ export default function ConfiguracoesPage() {
     <>
       <h1 className="font-display text-xl font-extrabold">Configurações</h1>
       <Pessoas />
+      <CanaisCampo />
       <DadosDaPraca praca={praca} />
       <VariaveisPadrao />
       <RoteiroModelo praca={praca} />

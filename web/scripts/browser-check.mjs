@@ -605,17 +605,20 @@ let offline = false;
  */
 const OFFLINE_ESPERADO = [/ERR_INTERNET_DISCONNECTED/, /webpack-hmr|turbopack-hmr|WebSocket/i];
 const esperadoOffline = (...textos) => offline && textos.some((t) => OFFLINE_ESPERADO.some((re) => re.test(t)));
+/** `true` só na janela "nova senha derruba a sessão": o 401 de /v1/campo/ é o comportamento testado. */
+let esperado401 = false;
+const e401 = (status, url) => esperado401 && status === 401 && url.includes('/v1/campo/');
 
 /** Os mesmos vigias da página principal, para cada página do campo. */
 function vigiar(p, rotulo) {
   p.on('console', (m) => {
-    if (m.type() === 'error' && !esperadoOffline(m.text())) {
+    if (m.type() === 'error' && !esperadoOffline(m.text()) && !(esperado401 && /401/.test(m.text()))) {
       erros.push(`[console/${rotulo}] ${p.url().replace(BASE, '')}: ${m.text().slice(0, 200)}`);
     }
   });
   p.on('pageerror', (e) => erros.push(`[pageerror/${rotulo}] ${String(e).slice(0, 200)}`));
   p.on('response', (r) => {
-    if (r.status() >= 400 && !ignorada(r.url())) {
+    if (r.status() >= 400 && !ignorada(r.url()) && !e401(r.status(), r.url())) {
       erros.push(`[http ${r.status()}/${rotulo}] ${r.request().method()} ${r.url().replace(API, 'api')}`);
     }
   });
@@ -863,6 +866,42 @@ console.log('-- Campo: GPS negado --');
   offline = false;
   await cel.waitForFunction(() => !document.body.innerText.toLowerCase().includes('pendente'), null, { timeout: 30000 });
   check('sinal de volta: a fila enviou o encerramento', (await situacaoCampo())?.status === 'encerrou');
+
+  console.log('-- Equipe: Consultores --');
+  await page.goto(`${BASE}/consultores`, { waitUntil: 'networkidle' });
+  check('menu tem "Consultores"', (await page.getByRole('link', { name: 'Consultores' }).count()) > 0);
+  check('lista mostra o consultor do roteiro, encerrado hoje', (await corpo(page)).includes(CAMPO_NOME.toLowerCase()) && (await corpo(page)).includes('encerrou'));
+  await page.getByRole('link', { name: CAMPO_NOME }).click();
+  await page.waitForURL(`**/consultores/${consultorId}`, { timeout: 20000 });
+  await page.getByText(CAMPO_LUGAR).first().waitFor({ timeout: 20000 });
+  const detalhe = await corpo(page);
+  check('detalhe: linha do tempo com início, a visita e o fim', detalhe.includes('início da jornada') && detalhe.includes(CAMPO_LUGAR.toLowerCase()) && detalhe.includes('fim da jornada'));
+  check('detalhe: respostas da visita', detalhe.includes('maria check') && detalhe.includes('cadastrou agora pelo qr'));
+  await page.locator('.leaflet-container').waitFor({ timeout: 20000 });
+  check('detalhe: mapa do dia com o trajeto', (await page.locator('.leaflet-container path.leaflet-interactive').count()) > 0);
+  const fachada = page.getByAltText(`Fachada — ${CAMPO_LUGAR}`);
+  await fachada.waitFor({ timeout: 20000 });
+  check('detalhe: foto da fachada carrega pela API', ((await fachada.getAttribute('src')) ?? '').startsWith('blob:'));
+
+  await page.getByRole('button', { name: 'Nova senha provisória' }).click();
+  await page.getByRole('button', { name: 'Gerar', exact: true }).click();
+  await page.getByTestId('senha-provisoria').waitFor({ timeout: 15000 });
+  const novaSenha = (await page.getByTestId('senha-provisoria').innerText()).trim();
+  check('nova senha provisória aparece uma vez (10 caracteres)', novaSenha.length === 10);
+  await page.getByRole('button', { name: 'Fechar', exact: true }).click();
+  // A sessão do celular cai (token_version subiu): o próximo pedido toma 401 e leva a /campo/entrar.
+  // Esse 401 é ESPERADO — só nesta janela e só em /v1/campo/ (ver `esperado401` no vigia).
+  esperado401 = true;
+  try {
+    await cel.reload({ waitUntil: 'networkidle' });
+    await cel.waitForURL('**/campo/entrar', { timeout: 20000 });
+  } finally {
+    esperado401 = false;
+  }
+  check('nova senha derruba a sessão aberta no celular', cel.url().endsWith('/campo/entrar'));
+
+  await page.goto(`${BASE}/configuracoes`, { waitUntil: 'networkidle' });
+  check('Configurações: seção "Apps e canais (campo)" com a lista', (await corpo(page)).includes('apps e canais (campo)') && (await corpo(page)).includes('grupos de whatsapp'));
 } catch (e) {
   ko('roteiro do campo interrompido', String(e).slice(0, 300));
 } finally {

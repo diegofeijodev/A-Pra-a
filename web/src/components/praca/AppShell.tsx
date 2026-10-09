@@ -16,6 +16,7 @@ const I = {
   hoje: "M8 2v3M16 2v3M3.5 9h17M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z",
   praca: "M12 21s-7-5.5-7-11a7 7 0 0114 0c0 5.5-7 11-7 11zM12 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z",
   funil: "M3 4h18l-7 8v6l-4 2v-8L3 4z",
+  consultores: "M9 11a4 4 0 100-8 4 4 0 000 8zM3 21v-1a6 6 0 0112 0v1M18 8s-3 2.5-3 5a3 3 0 006 0c0-2.5-3-5-3-5z",
   entrada: "M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2",
   mensagens: "M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z",
   campanhas: "M3 11l14-5v12L3 13v-2zM17 8a4 4 0 010 8M7 13v5a2 2 0 004 0v-3",
@@ -31,6 +32,7 @@ const I = {
 const NAV: { to: string; label: string; icon: string }[] = [
   { to: "/praca", label: "Praça", icon: I.praca },
   { to: "/funil", label: "Funil", icon: I.funil },
+  { to: "/consultores", label: "Consultores", icon: I.consultores },
   { to: "/entrada", label: "Entrada", icon: I.entrada },
   { to: "/mensagens", label: "Mensagens", icon: I.mensagens },
   { to: "/campanhas", label: "Campanhas", icon: I.campanhas },
