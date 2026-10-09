@@ -44,6 +44,17 @@ Lovable "PRAÇA" para a stack do Freela.
   malformado vira 500 em vez de 404.
 - Guarda de sessão do web vive em `app/(app)/layout.tsx`, não no `AppShell`:
   a página não pode montar (e disparar `useQuery`) sem sessão.
+- **Consultor de campo ≠ equipe.** Token com `aud: "campo"`; rotas `/v1/campo/*`
+  marcadas com `@CampoRoute()` (o `JwtAuthGuard` global delega ao
+  `CampoAuthGuard`). Rota nova do consultor SEM `@CampoRoute()` fica fechada
+  para ele (e aberta só para a equipe) — é o comportamento seguro por padrão.
+  No web, a sessão do consultor é `campoSession` (separada de `authUser`).
+- **Índices únicos parciais (`field_journeys`, `field_visits`) não existem para o
+  Prisma.** Toda `prisma migrate dev` futura vai propor `DROP INDEX` deles:
+  gere com `--create-only`, **apague essas linhas do SQL** e aplique com
+  `migrate deploy`. (Aviso espelhado em comentário na migração
+  `20261008221516_consultores_de_campo`.)
+- Fotos do campo passam pela API (`PhotoStorage`): nunca link público do bucket.
 - Ao rodar verificações nesta máquina: **um build/typecheck por vez** (a
   máquina do usuário trava com builds paralelos). Prefira `tsc --noEmit`, o
   `smoke.sh` e o `browser-check.mjs` a `next build`.
@@ -80,14 +91,15 @@ verificações em `api/`:
 # api/
 npm run start:dev | build | typecheck | lint | test | seed
 npm run start:smoke                # sobe sem watcher (ts-node --transpile-only), pra smoke
-npm run smoke                      # scripts/smoke.sh contra a API viva — 771 checagens, repetível sem resíduo
-                                   # (769 sem o container `praca-postgres`: a limpeza final é por psql)
-npm test                           # jest maxWorkers 1 — 27 suítes, 457 testes
+npm run smoke                      # scripts/smoke.sh contra a API viva — 858 checagens, repetível sem resíduo
+                                   # (menos sem o container `praca-postgres`: a limpeza final é por psql)
+npm test                           # jest maxWorkers 1 — 43 suítes, 628 testes
 npm run prisma:migrate:dev | prisma:generate | prisma:studio
 
 # web/
 yarn dev | typecheck | lint        # `build` só se o dono pedir (ver abaixo)
-yarn browser-check                 # scripts/browser-check.mjs — 97 checagens
+yarn test                          # vitest run (fork único) — 8 arquivos, 81 testes
+yarn browser-check                 # scripts/browser-check.mjs — 144 checagens
                                    # precisa da API na 3014 (start:smoke) e do web na 3024 (yarn dev)
                                    # conta: PRACA_CHECK_EMAIL/PASSWORD (padrão = seed), login pelo formulário
 ```

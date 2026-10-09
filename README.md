@@ -20,9 +20,10 @@ Novo em relação ao protótipo: integração com o sistema de campanhas do Free
 
 **Status:** port **concluído**. API com 17 módulos (contrato em
 `docs/api-contract.md`) e web com as **9 telas** do protótipo mais três coisas
-que ele não tinha — `/freela`, `/entrar` e o formulário público. Verificação de
-ponta a ponta: 457 testes de unidade, 771 checagens de smoke contra a API viva e
-97 checagens de navegador (§ Verificação).
+que ele não tinha — `/freela`, `/entrar` e o formulário público. Depois do port entrou o bloco A de **consultores de campo** (§ Consultores de
+campo). Verificação de ponta a ponta: 628 testes de unidade na API (43 suítes),
+81 no web (vitest), 858 checagens de smoke contra a API viva e 144 checagens de
+navegador (§ Verificação).
 
 ## Como subir
 
@@ -125,7 +126,7 @@ Contrato completo, com corpo/resposta de cada rota, em
 ## Integração com o Freela
 
 O Praça se conecta ao `api-freela` como um **admin dedicado** (papel `ADMIN`,
-permissão `REFERRALS`) — sem chave de API nem conta de serviço própria.
+permissões `REFERRALS` e `CONSULTANTS` — a segunda é a dos consultores de campo) — sem chave de API nem conta de serviço própria.
 
 **Variáveis de ambiente** (`api/.env`):
 
@@ -159,6 +160,54 @@ que o Freela já conhece. O dono decide se/quando mescla; até lá,
 
 Detalhe de como o Praça converte modelo, sincroniza status e lida com as duas
 famílias de campanha: [`docs/api-contract.md` §18](docs/api-contract.md#18-freela).
+
+## Consultores de campo (bloco A)
+
+Pessoas que visitam bares e restaurantes a pé e levam o dono a se cadastrar no
+Freela. Conta **separada** da equipe (tabela `field_consultants`, token com
+`aud: "campo"`, telas em `/campo`). Desenho: `docs/superpowers/specs/2026-10-08-consultores-de-campo-design.md`;
+contrato: `docs/api-contract.md` §20.
+
+- **Equipe** (`/consultores`, menu "Consultores"): admin cria o consultor (nome,
+  e-mail, telefone, CPF, praça, chave Pix) e recebe a senha provisória **uma vez**;
+  vê por dia a linha do tempo (início, visitas com foto e respostas, fim) e o mapa
+  do trajeto; desativa (derruba o acesso na hora), gera nova senha, vê o QR.
+  Configurações → "Apps e canais (campo)" edita a lista do questionário.
+- **Consultor** (`/campo/entrar`, atalho "Praça Campo" na tela inicial do
+  celular): inicia a jornada, faz visitas (foto da fachada + questionário +
+  checkout), mostra o QR code e encerra. Sem sinal, tudo fica numa fila no
+  aparelho (IndexedDB) e é enviado quando o sinal volta. A localização só é
+  gravada com a jornada aberta e com a página aberta (a cada 5 min + check-in,
+  checkout, início e fim) — com a tela apagada, não grava.
+- **Sem sinal:** as telas da sessão são visões do cliente dentro de `/campo`
+  (`?v=nova`, `?v=visita&ref=…`, `?v=qr`), então trocam de tela sem rede.
+  **Limitação conhecida:** recarregar ou abrir a página com o aparelho SEM sinal
+  não carrega (não há service worker); a fila continua guardada e retoma quando a
+  página abrir de novo com sinal.
+- **QR code:** ao criar o consultor, o Praça cria um consultor no api-freela
+  (`POST /v1/admins/consultants`); o link é `${FREELA_WEB_URL}/cadastro?consultor=CÓDIGO`.
+  O Freela manda ao consultor um e-mail de boas-vindas do portal de consultores
+  de lá (decisão do dono: aceito). Freela fora → "código pendente" e nova
+  tentativa a cada 2 min, no mesmo relógio do outbox e sob a mesma chave
+  `FREELA_SYNC_ENABLED` (com ela `false` nada é repetido). E-mail já usado no
+  Freela exige ação do admin.
+- **Meia-noite (00:05 Brasília):** jornadas e visitas esquecidas abertas fecham
+  sozinhas, marcadas ("não encerrada" / "sem checkout").
+- **CRM:** cada checkout vira evento "Visita" no lead; interlocutor → decisor;
+  "Lead novo"/"Contatado" → "Conversa aberta"; pedido de retorno → próximo passo.
+  Estabelecimento novo nasce com origem "visita de campo" e a localização do check-in.
+
+**Produção — o que o dono precisa providenciar:**
+1. Permissão **`CONSULTANTS`** na conta de admin do Freela usada em `FREELA_ADMIN_EMAIL`
+   (além da `REFERRALS` que já era necessária).
+2. **Bucket S3 privado** + chave com acesso só a ele (`S3_BUCKET`, `S3_REGION`,
+   `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) — direto no `.env` do servidor.
+   A política IAM precisa de `s3:GetObject`, `s3:PutObject` e `s3:DeleteObject`
+   nos objetos do bucket **e** `s3:ListBucket` no próprio bucket — sem
+   `ListBucket`, uma foto que não existe volta como 403 em vez de 404.
+   Sem bucket, a API sobe e as rotas de foto respondem `503 PHOTO_STORAGE_NOT_CONFIGURED`.
+   Não use `PHOTO_STORAGE=disk` no EC2 compartilhado com o Freela (o disco enche).
+3. `FREELA_WEB_URL` = endereço público do cadastro do Freela web.
 
 ## Produção
 
@@ -212,25 +261,26 @@ nem `next build` numa tarefa comum.
 
 ```bash
 cd api
-npm test                 # jest, maxWorkers 1 — 27 suítes, 457 testes
+npm test                 # jest, maxWorkers 1 — 43 suítes, 628 testes
 npm run typecheck        # tsc --noEmit, sozinho
 npm run lint
 
 # smoke: sobe a API sem watcher, roda os checks contra ela e mata o processo
 npm run start:smoke &    # espere `curl -s localhost:3014/health` responder
-npm run smoke            # 771 checagens, repetível sem resíduo
-                         # (769 sem o container `praca-postgres` de pé: a última
-                         #  limpeza das contas de teste é por psql)
+npm run smoke            # 858 checagens, repetível sem resíduo
+                         # (sem o container `praca-postgres` de pé a limpeza final
+                         #  das contas de teste, que é por psql, não roda e a contagem cai)
 ```
 
 ```bash
 cd web
+yarn test                # vitest (fork único) — 8 arquivos, 81 testes
 yarn typecheck
 yarn lint
 
 # navegador: precisa da API na 3014 (start:smoke) e do web na 3024 (yarn dev)
 yarn dev &
-yarn browser-check       # 97 checagens; limpa o que cria e pode repetir
+yarn browser-check       # 144 checagens; limpa o que cria e pode repetir
                          # PRACA_CHECK_FAXINA=1 apaga resíduo de rodada morta (todos os disparos e conclusões da praça do seed)
 ```
 
@@ -255,7 +305,7 @@ Depois, mate os dois processos e confirme que as portas ficaram livres:
 
 ## Documentos
 
-- **`docs/api-contract.md`** — contrato canônico da API (§1–§19, com índice no
+- **`docs/api-contract.md`** — contrato canônico da API (§1–§20, com índice no
   topo).
 - **`docs/superpowers/specs/2026-09-09-praca-port-design.md`** — spec de
   design do port.

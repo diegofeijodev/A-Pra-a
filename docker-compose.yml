@@ -43,6 +43,17 @@ services:
       PUBLIC_LEADS_PER_MINUTE: ${PUBLIC_LEADS_PER_MINUTE:-10}
       CADENCE_ENGINE_ENABLED: ${CADENCE_ENGINE_ENABLED:-true}
       FREELA_SYNC_ENABLED: ${FREELA_SYNC_ENABLED:-true}
+      # Consultores de campo (README, "Consultores de campo"). `PHOTO_STORAGE`
+      # vazio = padrão da API (s3 em produção, disk fora); vazio é tratado como
+      # ausente. Sem S3_BUCKET/S3_REGION as rotas de foto respondem 503.
+      FREELA_WEB_URL: ${FREELA_WEB_URL:-}
+      CAMPO_JWT_EXPIRES_IN: ${CAMPO_JWT_EXPIRES_IN:-7d}
+      PHOTO_STORAGE: ${PHOTO_STORAGE:-}
+      PHOTOS_DIR: ${PHOTOS_DIR:-./uploads}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_REGION: ${S3_REGION:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
     ports:
       - '3014:3014'
 
