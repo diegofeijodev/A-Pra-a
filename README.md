@@ -71,7 +71,7 @@ três.
 | E-mail | Papel |
 |---|---|
 | `diego@praca.local` | admin — CEO, visitas às casas grandes |
-| `daniel@praca.local` | operação |
+| `rebeca@praca.local` | operação |
 | `mkt@praca.local` | marketing externo |
 
 Em `NODE_ENV=production` o seed **não** usa essa senha e **não** cria as duas

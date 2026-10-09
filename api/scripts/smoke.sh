@@ -24,13 +24,13 @@ check "UserView não vaza password_hash" "false" "$(echo "$DIEGO" | jq '.user | 
 check "senha errada = INVALID_CREDENTIALS" "INVALID_CREDENTIALS" \
   "$(curl -s -X POST $API/v1/auth/login -H "$J" -d '{"email":"diego@praca.local","password":"errada"}' | jq -r .error.code)"
 
-DANIEL=$(curl -s -X POST $API/v1/auth/login -H "$J" -d '{"email":"daniel@praca.local","password":"praca123"}')
-TN=$(echo "$DANIEL" | jq -r .access_token); HN="Authorization: Bearer $TN"
-[ "$TN" != "null" ] && ok "login do Daniel" || ko "login do Daniel" "$DANIEL"
-DANIEL_ID=$(echo "$DANIEL" | jq -r .user.id)
+REBECA=$(curl -s -X POST $API/v1/auth/login -H "$J" -d '{"email":"rebeca@praca.local","password":"praca123"}')
+TN=$(echo "$REBECA" | jq -r .access_token); HN="Authorization: Bearer $TN"
+[ "$TN" != "null" ] && ok "login do Rebeca" || ko "login do Rebeca" "$REBECA"
+REBECA_ID=$(echo "$REBECA" | jq -r .user.id)
 
 check "sem token em /v1/users = UNAUTHORIZED" "UNAUTHORIZED" "$(curl -s $API/v1/users | jq -r .error.code)"
-check "daniel (não admin) não cria pessoa" "FORBIDDEN" \
+check "rebeca (não admin) não cria pessoa" "FORBIDDEN" \
   "$(curl -s -X POST $API/v1/users -H "$J" -H "$HN" -d "{\"email\":\"$EMAIL_TESTE\",\"password\":\"teste123\",\"name\":\"Teste\"}" | jq -r .error.code)"
 
 CRIA_STATUS=$(curl -s -o /tmp/praca-smoke-cria.json -w '%{http_code}' -X POST $API/v1/users -H "$J" -H "$HD" \
@@ -57,7 +57,7 @@ TESTE_LOGIN=$(curl -s -X POST $API/v1/auth/login -H "$J" -d "{\"email\":\"$EMAIL
 HT="Authorization: Bearer $(echo "$TESTE_LOGIN" | jq -r .access_token)"
 check "a própria pessoa troca a senha" "true" \
   "$(curl -s -X PUT $API/v1/users/$TESTE_ID/password -H "$J" -H "$HT" -d '{"password":"novaSenha123"}' | jq -r .ok)"
-check "daniel não troca senha alheia" "FORBIDDEN" \
+check "rebeca não troca senha alheia" "FORBIDDEN" \
   "$(curl -s -X PUT $API/v1/users/$TESTE_ID/password -H "$J" -H "$HN" -d '{"password":"outra123456"}' | jq -r .error.code)"
 check "admin troca senha de qualquer um" "true" \
   "$(curl -s -X PUT $API/v1/users/$TESTE_ID/password -H "$J" -H "$HD" -d '{"password":"teste123"}' | jq -r .ok)"
@@ -213,8 +213,8 @@ check "ação volta para a data do roteiro" "0" \
 check "recalc-dates limpa o due_override" "null" \
   "$(curl -s $API/v1/actions/$S1A2 -H "$HD" | jq -r '.due_override')"
 
-check "passar a ação para outra pessoa" "$DANIEL_ID" \
-  "$(curl -s -X POST $API/v1/actions/$S1A2/reassign -H "$J" -H "$HD" -d "{\"user_id\":\"$DANIEL_ID\"}" | jq -r '.owners[0]')"
+check "passar a ação para outra pessoa" "$REBECA_ID" \
+  "$(curl -s -X POST $API/v1/actions/$S1A2/reassign -H "$J" -H "$HD" -d "{\"user_id\":\"$REBECA_ID\"}" | jq -r '.owners[0]')"
 SUB=$(curl -s -X POST $API/v1/actions/$S1A2/subitems -H "$J" -H "$HD" -d '{"text":"subitem do smoke"}')
 SUB_ID=$(echo "$SUB" | jq -r '.subitems[-1].id')
 check "marcar subitem" "true" \
@@ -232,9 +232,9 @@ check "ação que não existe = NOT_FOUND" "NOT_FOUND" \
   "$(curl -s $API/v1/actions/00000000-0000-4000-8000-00000000beef -H "$HD" | jq -r .error.code)"
 
 echo "── Roteiro-modelo (só admin escreve) ──"
-check "daniel (não admin) não cria ação-modelo" "FORBIDDEN" \
+check "rebeca (não admin) não cria ação-modelo" "FORBIDDEN" \
   "$(curl -s -X POST $API/v1/template-actions -H "$J" -H "$HN" -d "{\"step\":1,\"title\":\"Não deve entrar\",\"owners\":[\"$DIEGO_ID\"],\"rec\":{\"kind\":\"once\",\"day\":1}}" | jq -r .error.code)"
-check "daniel não apaga praça" "FORBIDDEN" "$(curl -s -X DELETE $API/v1/pracas/$NOVA_ID -H "$HN" | jq -r .error.code)"
+check "rebeca não apaga praça" "FORBIDDEN" "$(curl -s -X DELETE $API/v1/pracas/$NOVA_ID -H "$HN" | jq -r .error.code)"
 MODELO=$(curl -s -X POST $API/v1/template-actions -H "$J" -H "$HD" \
   -d "{\"step\":1,\"title\":\"Ação-modelo do smoke $SUF\",\"owners\":[\"$DIEGO_ID\"],\"rec\":{\"kind\":\"weekly\",\"weekday\":2,\"start_day\":10}}")
 MODELO_ID=$(echo "$MODELO" | jq -r .id)
@@ -288,7 +288,7 @@ check "fila do dia nunca passa da cota" "true" "$(echo "$FILA" | jq '(.items | l
 check "casa grande vem na frente da fila" "grande" "$(echo "$FILA" | jq -r '.items[0].classe')"
 check "fila conta as casas grandes" "true" "$(echo "$FILA" | jq '.grandes >= 1')"
 check "fila de uma pessoa só traz os leads dela" "0" \
-  "$(curl -s "$API/v1/leads/queue?person=$DIEGO_ID" -H "$HD" | jq --arg i "$DANIEL_ID" '[.items[] | select(.owner_id==$i)] | length')"
+  "$(curl -s "$API/v1/leads/queue?person=$DIEGO_ID" -H "$HD" | jq --arg i "$REBECA_ID" '[.items[] | select(.owner_id==$i)] | length')"
 check "person inválido na fila = VALIDATION_ERROR" "VALIDATION_ERROR" \
   "$(curl -s "$API/v1/leads/queue?person=fulano" -H "$HD" | jq -r .error.code)"
 
@@ -368,7 +368,7 @@ check "lead que não existe = NOT_FOUND" "NOT_FOUND" \
   "$(curl -s $API/v1/leads/00000000-0000-4000-8000-00000000beef -H "$HD" | jq -r .error.code)"
 
 echo "── Limpeza do lead de teste ──"
-check "daniel (não admin) não apaga lead" "FORBIDDEN" \
+check "rebeca (não admin) não apaga lead" "FORBIDDEN" \
   "$(curl -s -X DELETE $API/v1/leads/$LEAD_ID -H "$HN" | jq -r .error.code)"
 check "admin apaga o lead de teste (sem resíduo)" "true" \
   "$(curl -s -X DELETE $API/v1/leads/$LEAD_ID -H "$HD" | jq -r .ok)"
@@ -470,7 +470,7 @@ curl -s -X DELETE $API/v1/leads/$IMPORTADO -H "$HD" > /dev/null
 
 # dup_action "criar": entra mesmo duplicado, marcado para conferência.
 cat > /tmp/praca-smoke-import.json <<EOF
-{"file_name":"duplicados-$SUF.csv","columns":$COLS,"rows":[{"Nome":"Duplicado $SUF","Telefone":"+55 $DUP_DIG","Cidade":"Belo Horizonte"}],"map":$MAPA,"origem":"importação","dup_action":"criar","praca_mode":"lote","lote_praca_id":"$PRACA_SEED","owner_mode":"rodizio","rodizio_ids":["$DIEGO_ID","$DANIEL_ID"]}
+{"file_name":"duplicados-$SUF.csv","columns":$COLS,"rows":[{"Nome":"Duplicado $SUF","Telefone":"+55 $DUP_DIG","Cidade":"Belo Horizonte"}],"map":$MAPA,"origem":"importação","dup_action":"criar","praca_mode":"lote","lote_praca_id":"$PRACA_SEED","owner_mode":"rodizio","rodizio_ids":["$DIEGO_ID","$REBECA_ID"]}
 EOF
 RUN_DUP=$(curl -s -X POST $API/v1/imports/run -H "$J" -H "$HD" -d @/tmp/praca-smoke-import.json)
 LOTE_DUP=$(echo "$RUN_DUP" | jq -r .batch_id)
@@ -825,7 +825,7 @@ check "filtro de dias parado tira quem não está parado" "0" \
     -d "{\"filters\":{\"praca_id\":\"$NOVA_ID\",\"stage\":1,\"min_stalled\":1},\"template_id\":\"$TPL_F001\",\"mode\":\"fila\"}" | jq '.audience')"
 check "filtro de dono tira quem é de outra pessoa" "0" \
   "$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
-    -d "{\"filters\":{\"praca_id\":\"$NOVA_ID\",\"owner_id\":\"$DANIEL_ID\"},\"template_id\":\"$TPL_F001\",\"mode\":\"fila\"}" | jq '.audience')"
+    -d "{\"filters\":{\"praca_id\":\"$NOVA_ID\",\"owner_id\":\"$REBECA_ID\"},\"template_id\":\"$TPL_F001\",\"mode\":\"fila\"}" | jq '.audience')"
 check "filtro de origem tira quem veio por outro caminho" "0" \
   "$(curl -s -X POST $API/v1/disparos/preview -H "$J" -H "$HD" \
     -d "{\"filters\":{\"praca_id\":\"$NOVA_ID\",\"origem\":\"importação\"},\"template_id\":\"$TPL_F001\",\"mode\":\"fila\"}" | jq '.audience')"
@@ -1046,7 +1046,7 @@ check "envio com id malformado = NOT_FOUND (não 500)" "NOT_FOUND" \
   "$(curl -s -X POST $API/v1/sends/nao-e-uuid/reply -H "$J" -H "$HD" -d '{"text":"oi"}' | jq -r .error.code)"
 
 # --- limpeza: disparo (cascata na fila), bloqueio automático e casas de teste ---
-check "daniel (não admin) não apaga disparo" "FORBIDDEN" \
+check "rebeca (não admin) não apaga disparo" "FORBIDDEN" \
   "$(curl -s -X DELETE $API/v1/disparos/$DISP_ID -H "$HN" | jq -r .error.code)"
 check "admin apaga o disparo de teste (sem resíduo)" "true" \
   "$(curl -s -X DELETE $API/v1/disparos/$DISP_ID -H "$HD" | jq -r .ok)"
@@ -1754,7 +1754,11 @@ check "perda mensal = 2 perdidos sobre a base de 13" "15.38" \
   "$(echo "$IND" | jq '[.readings[] | select(.key=="perda_mensal")][0].value | (. * 100 | round) / 100')"
 check "passagem por etapa = 9 cadastrados de 21 tocados" "42.86" \
   "$(echo "$IND" | jq '[.readings[] | select(.key=="passagem_etapa")][0].value | (. * 100 | round) / 100')"
-check "nenhuma ação do roteiro do seed está concluída" "0 bad" \
+# A praça do seed abre em 2026-10-12: antes disso nada venceu ainda (playbook
+# sem base = "null none"); atrasadas só passa de 0 depois do dia 12.
+PLAYBOOK_ESPERADO="0 bad"; [[ "$HOJE" < "2026-10-12" ]] && PLAYBOOK_ESPERADO="null none"
+ATRASADAS_ESPERADO=true; [[ "$HOJE" < "2026-10-13" ]] && ATRASADAS_ESPERADO=false
+check "nenhuma ação do roteiro do seed está concluída" "$PLAYBOOK_ESPERADO" \
   "$(echo "$IND" | jq -r '[.readings[] | select(.key=="playbook")][0] | "\(.value) \(.sem)"')"
 check "freelancers sem lançamento cai no resultado 22 da etapa 2" "22" \
   "$(echo "$IND" | jq '[.readings[] | select(.key=="freelancers")][0].value')"
@@ -1809,17 +1813,17 @@ check "o que mudou vem em dois lados, no máximo 3 de cada" "true" \
 echo "── Indicadores: praça, pessoa e canal ──"
 PR_ROWS=$(curl -s "$API/v1/indicators/pracas?period=d90" -H "$HD")
 check "uma linha por praça (só a do seed sobrou)" "1" "$(echo "$PR_ROWS" | jq 'length')"
-check "a linha da praça traz etapa, ativos, freelancers e atrasadas" "Belo Horizonte + Contagem 1 3 22 true" \
+check "a linha da praça traz etapa, ativos, freelancers e atrasadas" "Belo Horizonte + Contagem 1 3 22 $ATRASADAS_ESPERADO" \
   "$(echo "$PR_ROWS" | jq -r '.[0] | "\(.praca.name) \(.step_atual) \(.ativos) \(.freelancers) \(.atrasadas > 0)"')"
 check "a praça sem lançamento de falta mostra nulo, não zero" "null" "$(echo "$PR_ROWS" | jq '.[0].falta')"
 PES_ROWS=$(curl -s "$API/v1/indicators/pessoas?period=d90" -H "$HD")
-check "uma linha por pessoa ativa (Diego, Daniel e Mkt)" "3 Diego Daniel Mkt externo" \
+check "uma linha por pessoa ativa (Diego, Rebeca e Mkt)" "3 Diego Rebeca Mkt externo" \
   "$(echo "$PES_ROWS" | jq -r '"\(length) \([.[].name] | join(" "))"')"
-# Daniel: 10 leads tocados (só msg_out e visita contam — resposta do lead não),
+# Rebeca: 10 leads tocados (só msg_out e visita contam — resposta do lead não),
 # 5 na etapa ≥ 6 e 10 vagas rodadas. O seed não tem evento de mudança de etapa,
 # então "avançaram" é 0 de propósito.
 check "a linha da pessoa conta toque, fechamento e vaga do período" "10 0 5 10" \
-  "$(echo "$PES_ROWS" | jq -r --arg i "$DANIEL_ID" '[.[] | select(.id==$i)][0] | "\(.leads_tocados) \(.leads_avancados) \(.fechados) \(.vagas)"')"
+  "$(echo "$PES_ROWS" | jq -r --arg i "$REBECA_ID" '[.[] | select(.id==$i)][0] | "\(.leads_tocados) \(.leads_avancados) \(.fechados) \(.vagas)"')"
 check "a agência não toca lead nenhum" "0 0 0" \
   "$(echo "$PES_ROWS" | jq -r '.[2] | "\(.leads_tocados) \(.fechados) \(.vagas)"')"
 CAN=$(curl -s "$API/v1/indicators/canais?praca_id=$PRACA_SEED&period=d90" -H "$HD")
@@ -1910,7 +1914,7 @@ check "dispensar de novo é idempotente" "true" \
   "$(curl -s -X POST $API/v1/notifications/dismiss -H "$J" -H "$HD" -d "{\"ids\":[\"$LOCK3\"]}" | jq -r .ok)"
 check "lock-3 dispensado some da lista do Diego" "0" \
   "$(curl -s "$API/v1/notifications?praca_id=$PRACA_SEED" -H "$HD" | jq --arg id "$LOCK3" '[.[] | select(.id == $id)] | length')"
-check "dispensa é POR USUÁRIO — Daniel ainda vê lock-3" "1" \
+check "dispensa é POR USUÁRIO — Rebeca ainda vê lock-3" "1" \
   "$(curl -s "$API/v1/notifications?praca_id=$PRACA_SEED" -H "$HN" | jq --arg id "$LOCK3" '[.[] | select(.id == $id)] | length')"
 
 # Sem resíduo: desfaz a dispensa e confere que a tabela voltou ao estado de antes.
@@ -1934,7 +1938,7 @@ CPF_CAMPO=$(cpf_valido "$SUF")
 CPF_ERRADO="${CPF_CAMPO:0:10}$(( (${CPF_CAMPO:10:1} + 1) % 10 ))"
 CORPO_CAMPO="{\"name\":\"Consultor $SUF\",\"email\":\"$EMAIL_CAMPO\",\"phone\":\"(31) 99999-0000\",\"cpf\":\"$CPF_CAMPO\",\"praca_id\":\"$PRACA_SEED\",\"pix_key_type\":\"cpf\",\"pix_key\":\"$CPF_CAMPO\"}"
 
-check "daniel (não admin) não cria consultor" "FORBIDDEN" \
+check "rebeca (não admin) não cria consultor" "FORBIDDEN" \
   "$(curl -s -X POST $API/v1/consultores -H "$J" -H "$HN" -d "$CORPO_CAMPO" | jq -r .error.code)"
 check "CPF com dígito errado = INVALID_CPF" "INVALID_CPF" \
   "$(curl -s -X POST $API/v1/consultores -H "$J" -H "$HD" -d "$(echo "$CORPO_CAMPO" | jq -c --arg c "$CPF_ERRADO" '.cpf=$c')" | jq -r .error.code)"
@@ -2113,7 +2117,7 @@ check "lista: encerrou, 2 visitas, 1 cadastro declarado" "encerrou|2|1" \
   "$(curl -s $API/v1/consultores -H "$HN" | jq -r --arg i "$CONS_ID" '.[] | select(.id==$i) | "\(.today.status)|\(.today.visits)|\(.today.cadastros)"')"
 CANAIS_ORIGINAIS='{"channels":["Nenhum","Grupos de WhatsApp","Indicação de conhecidos","Agência de mão de obra"]}'
 check "canais: a lista inicial" "4" "$(curl -s $API/v1/consultores/settings/channels -H "$HN" | jq '.channels | length')"
-check "canais: daniel não muda = FORBIDDEN" "FORBIDDEN" \
+check "canais: rebeca não muda = FORBIDDEN" "FORBIDDEN" \
   "$(curl -s -X PUT $API/v1/consultores/settings/channels -H "$J" -H "$HN" -d '{"channels":["X"]}' | jq -r .error.code)"
 check "canais: admin troca aparando e sem repetir" "iFood|Indeed" \
   "$(curl -s -X PUT $API/v1/consultores/settings/channels -H "$J" -H "$HD" -d '{"channels":[" iFood ","ifood","Indeed"]}' | jq -r '.channels | join("|")')"
@@ -2130,7 +2134,7 @@ check "login de consultor desativado = UNAUTHORIZED" "UNAUTHORIZED" \
   "$(curl -s -X POST $API/v1/campo/auth/login -H "$J" -d "{\"email\":\"$EMAIL_CAMPO\",\"password\":\"$NOVA_TEMP\"}" | jq -r .error.code)"
 
 echo "── Campo: limpeza ──"
-check "daniel não apaga consultor = FORBIDDEN" "FORBIDDEN" \
+check "rebeca não apaga consultor = FORBIDDEN" "FORBIDDEN" \
   "$(curl -s -X DELETE $API/v1/consultores/$CONS_ID -H "$HN" | jq -r .error.code)"
 check "admin apaga o consultor de teste (jornadas, visitas e fotos juntos)" "true" \
   "$(curl -s -X DELETE $API/v1/consultores/$CONS_ID -H "$HD" | jq .ok)"
@@ -2238,7 +2242,7 @@ USERS_FINAL=$(curl -s $API/v1/users -H "$HD")
 check "só 3 usuários ativos no total (sem resíduo de um 4º)" "3" \
   "$(echo "$USERS_FINAL" | jq '[.[] | select(.active)] | length')"
 check "os 3 e-mails do seed estão entre os ativos" "true" \
-  "$(echo "$USERS_FINAL" | jq '[.[] | select(.active) | .email] as $ativos | ["diego@praca.local","daniel@praca.local","mkt@praca.local"] | all(. as $e | $ativos | index($e) != null)')"
+  "$(echo "$USERS_FINAL" | jq '[.[] | select(.active) | .email] as $ativos | ["diego@praca.local","rebeca@praca.local","mkt@praca.local"] | all(. as $e | $ativos | index($e) != null)')"
 check "praça do seed continua lá" "$PRACA_SEED" "$(curl -s $API/v1/pracas/$PRACA_SEED -H "$HD" | jq -r .id)"
 
 LEADS_FINAL=$(curl -s "$API/v1/leads?praca_id=$PRACA_SEED&archived=true" -H "$HD")

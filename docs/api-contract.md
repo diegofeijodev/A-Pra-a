@@ -174,7 +174,7 @@ Campos da resposta:
 | `periods` | `indicators.ts` | períodos pré-definidos (hoje, semana, mês, 90 dias, livre) |
 
 `owner_email` (dentro de cada item de `indicators`) é um dos e-mails de
-`shared/users` (`diego@praca.local`, `daniel@praca.local`, `mkt@praca.local`);
+`shared/users` (`diego@praca.local`, `rebeca@praca.local`, `mkt@praca.local`);
 o serviço de indicadores (tarefa futura) resolve para `owner_id` procurando o
 usuário por e-mail, `null` se não existir.
 
@@ -2014,7 +2014,7 @@ do lançamento à mão; o resto é calculado para aquela praça.
 ### `GET /v1/indicators/pessoas`
 
 ```json
-{ "id": "uuid", "name": "Daniel", "no_prazo": 0, "atrasadas": 4,
+{ "id": "uuid", "name": "Rebeca", "no_prazo": 0, "atrasadas": 4,
   "leads_tocados": 10, "leads_avancados": 0, "fechados": 5, "vagas": 10 }
 ```
 

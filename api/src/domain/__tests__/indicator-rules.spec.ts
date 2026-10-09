@@ -59,7 +59,7 @@ const acao = (over: Partial<IndActionRow> = {}): IndActionRow => ({
 const data = (over: Partial<IndData> = {}): IndData => ({
   ...emptyIndData(),
   pracas: [{ id: P1, name: 'Belo Horizonte + Contagem', start_date: '2026-09-01', steps: {} }],
-  users: [{ id: U1, name: 'Daniel', email: 'daniel@praca.local' }],
+  users: [{ id: U1, name: 'Rebeca', email: 'rebeca@praca.local' }],
   ...over,
 });
 
@@ -676,7 +676,7 @@ describe('pracaRows', () => {
 describe('personRows', () => {
   it('conta as conclusões do período e as atrasadas AINDA em aberto', () => {
     const d = data({
-      users: [{ id: U1, name: 'Daniel', email: 'daniel@praca.local' }],
+      users: [{ id: U1, name: 'Rebeca', email: 'rebeca@praca.local' }],
       actions: [
         // concluída: ação concluída nunca conta como atrasada (regra do protótipo)
         acao({ rec: { kind: 'once', day: 0 }, completed_at: '2026-09-05T12:00:00.000Z' }),
@@ -755,10 +755,10 @@ describe('personRows', () => {
     const d = data({
       users: [
         { id: U1, name: 'Diego', email: 'diego@praca.local' },
-        { id: U2, name: 'Daniel', email: 'daniel@praca.local' },
+        { id: U2, name: 'Rebeca', email: 'rebeca@praca.local' },
       ],
     });
-    expect(personRows(d, MES, HOJE).map((r) => r.name)).toEqual(['Diego', 'Daniel']);
+    expect(personRows(d, MES, HOJE).map((r) => r.name)).toEqual(['Diego', 'Rebeca']);
   });
 });
 

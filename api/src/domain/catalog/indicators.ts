@@ -20,7 +20,7 @@ export type IndKey =
 export type IndFreq = 'diária' | 'semanal' | 'mensal';
 export type IndDir = 'gte' | 'lte';
 export type IndSource = 'sistema' | 'manual';
-export type IndOwnerEmail = 'diego@praca.local' | 'daniel@praca.local' | 'mkt@praca.local';
+export type IndOwnerEmail = 'diego@praca.local' | 'rebeca@praca.local' | 'mkt@praca.local';
 
 export interface IndDef {
   key: IndKey;
@@ -48,7 +48,7 @@ export const IND_CATALOG: IndDef[] = [
     unit: '',
     dir: 'gte',
     freq: 'mensal',
-    owner_email: 'daniel@praca.local',
+    owner_email: 'rebeca@praca.local',
     source: 'sistema',
     origem: 'funil',
     hero: true,
@@ -62,7 +62,7 @@ export const IND_CATALOG: IndDef[] = [
     unit: '%',
     dir: 'gte',
     freq: 'mensal',
-    owner_email: 'daniel@praca.local',
+    owner_email: 'rebeca@praca.local',
     source: 'sistema',
     origem: 'funil',
     hero: true,
@@ -76,7 +76,7 @@ export const IND_CATALOG: IndDef[] = [
     unit: 'h',
     dir: 'lte',
     freq: 'semanal',
-    owner_email: 'daniel@praca.local',
+    owner_email: 'rebeca@praca.local',
     source: 'sistema',
     origem: 'aplicativo Freela',
     hero: true,
@@ -90,7 +90,7 @@ export const IND_CATALOG: IndDef[] = [
     unit: '%',
     dir: 'lte',
     freq: 'semanal',
-    owner_email: 'daniel@praca.local',
+    owner_email: 'rebeca@praca.local',
     source: 'manual',
     origem: 'aplicativo Freela',
     hero: true,
@@ -104,7 +104,7 @@ export const IND_CATALOG: IndDef[] = [
     unit: '%',
     dir: 'lte',
     freq: 'mensal',
-    owner_email: 'daniel@praca.local',
+    owner_email: 'rebeca@praca.local',
     source: 'sistema',
     origem: 'funil',
     hero: true,
@@ -132,7 +132,7 @@ export const IND_CATALOG: IndDef[] = [
     unit: '',
     dir: 'gte',
     freq: 'semanal',
-    owner_email: 'daniel@praca.local',
+    owner_email: 'rebeca@praca.local',
     source: 'manual',
     origem: 'praça',
   },
@@ -145,7 +145,7 @@ export const IND_CATALOG: IndDef[] = [
     unit: '',
     dir: 'gte',
     freq: 'mensal',
-    owner_email: 'daniel@praca.local',
+    owner_email: 'rebeca@praca.local',
     source: 'sistema',
     origem: 'entrada de leads',
   },
@@ -158,7 +158,7 @@ export const IND_CATALOG: IndDef[] = [
     unit: '%',
     dir: 'gte',
     freq: 'semanal',
-    owner_email: 'daniel@praca.local',
+    owner_email: 'rebeca@praca.local',
     source: 'sistema',
     origem: 'funil',
   },

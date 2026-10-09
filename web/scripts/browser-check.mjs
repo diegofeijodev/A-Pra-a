@@ -532,7 +532,7 @@ try {
   const valores = await page.locator('input').evaluateAll((els) => els.map((e) => e.value));
   check(
     'as 3 contas do seed nos campos de pessoa',
-    ['Diego', 'Daniel', 'Mkt externo'].every((n) => valores.includes(n)),
+    ['Diego', 'Rebeca', 'Mkt externo'].every((n) => valores.includes(n)),
     valores.filter(Boolean).slice(0, 8).join(' | '),
   );
   check('dados da praça', cfg.includes('dados da praça'));

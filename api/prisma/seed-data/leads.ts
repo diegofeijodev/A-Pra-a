@@ -17,7 +17,7 @@ import { addDays, todaySp } from '../../src/common/time/dates';
 import { SEED_USER_IDS } from '../seed';
 import { SEED_PRACA_ID } from './praca';
 
-type Owner = 'diego' | 'daniel' | 'mkt';
+type Owner = 'diego' | 'rebeca' | 'mkt';
 
 interface LeadSeedRow {
   n: string;
@@ -33,30 +33,30 @@ interface LeadSeedRow {
 }
 
 export const LEAD_ROWS: LeadSeedRow[] = [
-  { n: 'Bar do Mercado', city: 'Belo Horizonte', stage: 1, classe: 'alvo', origem: 'importação', owner: 'daniel', gap: 2, decisor: 'Marcos Vieira', cargo: 'Proprietário' },
-  { n: 'Restaurante Sabor Mineiro', city: 'Contagem', stage: 1, classe: 'depois', origem: 'tráfego', owner: 'daniel', gap: 1, decisor: 'Cleide Ramos', cargo: 'Gerente' },
+  { n: 'Bar do Mercado', city: 'Belo Horizonte', stage: 1, classe: 'alvo', origem: 'importação', owner: 'rebeca', gap: 2, decisor: 'Marcos Vieira', cargo: 'Proprietário' },
+  { n: 'Restaurante Sabor Mineiro', city: 'Contagem', stage: 1, classe: 'depois', origem: 'tráfego', owner: 'rebeca', gap: 1, decisor: 'Cleide Ramos', cargo: 'Gerente' },
   { n: 'Buffet Encanto', city: 'Belo Horizonte', stage: 1, classe: 'grande', origem: 'indicação', owner: 'diego', gap: 9, decisor: 'Rita Andrade', cargo: 'Sócia' },
-  { n: 'Bar Esquina 47', city: 'Belo Horizonte', stage: 1, classe: 'depois', origem: 'prospecção', owner: 'daniel', gap: 3, decisor: 'Ivo Prado', cargo: 'Proprietário' },
+  { n: 'Bar Esquina 47', city: 'Belo Horizonte', stage: 1, classe: 'depois', origem: 'prospecção', owner: 'rebeca', gap: 3, decisor: 'Ivo Prado', cargo: 'Proprietário' },
   { n: 'Hotel Serra Azul', city: 'Contagem', stage: 2, classe: 'grande', origem: 'importação', owner: 'diego', gap: 4, decisor: 'Paulo Nunes', cargo: 'Gerente geral' },
-  { n: 'Cantina da Vila', city: 'Belo Horizonte', stage: 2, classe: 'alvo', origem: 'prospecção', owner: 'daniel', gap: 6, decisor: 'Sandra Lopes', cargo: 'Proprietária' },
+  { n: 'Cantina da Vila', city: 'Belo Horizonte', stage: 2, classe: 'alvo', origem: 'prospecção', owner: 'rebeca', gap: 6, decisor: 'Sandra Lopes', cargo: 'Proprietária' },
   { n: 'Casa de Eventos Aurora', city: 'Contagem', stage: 2, classe: 'grande', origem: 'tráfego', owner: 'diego', gap: 17, decisor: 'Fábio Teles', cargo: 'Diretor' },
-  { n: 'Padaria & Bistrô Central', city: 'Belo Horizonte', stage: 2, classe: 'depois', origem: 'importação', owner: 'daniel', gap: 2, decisor: 'Elias Souza', cargo: 'Sócio' },
+  { n: 'Padaria & Bistrô Central', city: 'Belo Horizonte', stage: 2, classe: 'depois', origem: 'importação', owner: 'rebeca', gap: 2, decisor: 'Elias Souza', cargo: 'Sócio' },
   { n: 'Churrascaria Boi Dourado', city: 'Contagem', stage: 3, classe: 'grande', origem: 'indicação', owner: 'diego', gap: 3, decisor: 'Wagner Melo', cargo: 'Proprietário' },
-  { n: 'Bar Rooftop 12', city: 'Belo Horizonte', stage: 3, classe: 'alvo', origem: 'tráfego', owner: 'daniel', gap: 1, decisor: 'Tatiana Reis', cargo: 'Gerente' },
-  { n: 'Restaurante Pátio Sul', city: 'Belo Horizonte', stage: 3, classe: 'alvo', origem: 'prospecção', owner: 'daniel', gap: 11, decisor: 'Hélio Braga', cargo: 'Proprietário' },
+  { n: 'Bar Rooftop 12', city: 'Belo Horizonte', stage: 3, classe: 'alvo', origem: 'tráfego', owner: 'rebeca', gap: 1, decisor: 'Tatiana Reis', cargo: 'Gerente' },
+  { n: 'Restaurante Pátio Sul', city: 'Belo Horizonte', stage: 3, classe: 'alvo', origem: 'prospecção', owner: 'rebeca', gap: 11, decisor: 'Hélio Braga', cargo: 'Proprietário' },
   { n: 'Buffet Primavera', city: 'Contagem', stage: 4, classe: 'grande', origem: 'indicação', owner: 'diego', gap: 2, decisor: 'Célia Martins', cargo: 'Sócia' },
   { n: 'Hotel Portal Mineiro', city: 'Belo Horizonte', stage: 4, classe: 'grande', origem: 'importação', owner: 'diego', gap: 5, decisor: 'Renato Dias', cargo: 'Gerente de A&B' },
-  { n: 'Bar Quintal do Lago', city: 'Contagem', stage: 4, classe: 'alvo', origem: 'tráfego', owner: 'daniel', gap: 1, decisor: 'Juliana Paiva', cargo: 'Proprietária' },
-  { n: 'Espaço Bela Vista', city: 'Belo Horizonte', stage: 5, classe: 'alvo', origem: 'prospecção', owner: 'daniel', gap: 3, decisor: 'Otávio Lima', cargo: 'Coordenador' },
-  { n: 'Restaurante Forno & Brasa', city: 'Contagem', stage: 5, classe: 'depois', origem: 'importação', owner: 'daniel', gap: 4, decisor: 'Márcia Coelho', cargo: 'Gerente' },
+  { n: 'Bar Quintal do Lago', city: 'Contagem', stage: 4, classe: 'alvo', origem: 'tráfego', owner: 'rebeca', gap: 1, decisor: 'Juliana Paiva', cargo: 'Proprietária' },
+  { n: 'Espaço Bela Vista', city: 'Belo Horizonte', stage: 5, classe: 'alvo', origem: 'prospecção', owner: 'rebeca', gap: 3, decisor: 'Otávio Lima', cargo: 'Coordenador' },
+  { n: 'Restaurante Forno & Brasa', city: 'Contagem', stage: 5, classe: 'depois', origem: 'importação', owner: 'rebeca', gap: 4, decisor: 'Márcia Coelho', cargo: 'Gerente' },
   { n: 'Casa de Show Beira Trilho', city: 'Belo Horizonte', stage: 5, classe: 'grande', origem: 'indicação', owner: 'diego', gap: 8, decisor: 'Bruno Vasques', cargo: 'Sócio' },
-  { n: 'Buffet Jardim das Flores', city: 'Contagem', stage: 6, classe: 'alvo', origem: 'tráfego', owner: 'daniel', gap: 2, decisor: 'Leandro Pires', cargo: 'Proprietário' },
-  { n: 'Bar Mangueira', city: 'Belo Horizonte', stage: 6, classe: 'depois', origem: 'prospecção', owner: 'daniel', gap: 6, decisor: 'Ana Clara Freitas', cargo: 'Gerente' },
+  { n: 'Buffet Jardim das Flores', city: 'Contagem', stage: 6, classe: 'alvo', origem: 'tráfego', owner: 'rebeca', gap: 2, decisor: 'Leandro Pires', cargo: 'Proprietário' },
+  { n: 'Bar Mangueira', city: 'Belo Horizonte', stage: 6, classe: 'depois', origem: 'prospecção', owner: 'rebeca', gap: 6, decisor: 'Ana Clara Freitas', cargo: 'Gerente' },
   { n: 'Hotel Mirante Norte', city: 'Belo Horizonte', stage: 6, classe: 'grande', origem: 'importação', owner: 'diego', gap: 3, decisor: 'Silvio Rocha', cargo: 'Gerente geral' },
   { n: 'Restaurante Casa Cheia', city: 'Contagem', stage: 7, classe: 'grande', origem: 'indicação', owner: 'diego', gap: 2, decisor: 'Nadia Campos', cargo: 'Proprietária' },
-  { n: 'Buffet Villa Real', city: 'Belo Horizonte', stage: 7, classe: 'alvo', origem: 'tráfego', owner: 'daniel', gap: 1, decisor: 'Gustavo Amaral', cargo: 'Sócio' },
-  { n: 'Bar Trilho Velho', city: 'Belo Horizonte', stage: 7, classe: 'alvo', origem: 'prospecção', owner: 'daniel', gap: 4, decisor: 'Priscila Nogueira', cargo: 'Gerente' },
-  { n: 'Pizzaria Fornalha', city: 'Contagem', stage: 8, classe: 'depois', origem: 'importação', owner: 'daniel', gap: 22, decisor: 'Roberto Kina', cargo: 'Proprietário' },
+  { n: 'Buffet Villa Real', city: 'Belo Horizonte', stage: 7, classe: 'alvo', origem: 'tráfego', owner: 'rebeca', gap: 1, decisor: 'Gustavo Amaral', cargo: 'Sócio' },
+  { n: 'Bar Trilho Velho', city: 'Belo Horizonte', stage: 7, classe: 'alvo', origem: 'prospecção', owner: 'rebeca', gap: 4, decisor: 'Priscila Nogueira', cargo: 'Gerente' },
+  { n: 'Pizzaria Fornalha', city: 'Contagem', stage: 8, classe: 'depois', origem: 'importação', owner: 'rebeca', gap: 22, decisor: 'Roberto Kina', cargo: 'Proprietário' },
   { n: 'Espaço Céu Aberto', city: 'Belo Horizonte', stage: 8, classe: 'alvo', origem: 'tráfego', owner: 'diego', gap: 30, decisor: 'Dora Menezes', cargo: 'Sócia' },
 ];
 

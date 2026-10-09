@@ -1,6 +1,6 @@
 /**
  * Praça de demonstração — a mesma do protótipo (`store.tsx:120-127`):
- * "Belo Horizonte + Contagem", de 01/09 a 08/12/2026, com o resultado 22 na
+ * "Belo Horizonte + Contagem", de 12/10/2026 a 18/01/2027, com o resultado 22 na
  * etapa 2 (abaixo do portão de 40, então a etapa 3 nasce travada) e o roteiro
  * inteiro já instanciado como ações.
  *
@@ -22,8 +22,8 @@ export async function seedPraca(prisma: PrismaClient) {
       id: SEED_PRACA_ID,
       name: 'Belo Horizonte + Contagem',
       city: 'Belo Horizonte · MG',
-      start_date: '2026-09-01',
-      end_date: '2026-12-08',
+      start_date: '2026-10-12',
+      end_date: '2027-01-18',
     },
   });
 

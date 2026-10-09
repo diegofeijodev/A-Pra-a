@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
-import { fmtBR } from '@/lib/dates';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import {
   useDismissNotifications,
@@ -98,7 +97,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const path = usePathname();
   const router = useRouter();
   const { user, signOut } = useAuth();
-  const { praca, isPending: pracasPending } = useActivePraca();
+  const { praca } = useActivePraca();
   const updateMe = useUpdateMe();
   const [mobileOpen, setMobileOpen] = useState(false);
   const theme = user?.theme ?? 'dark';
@@ -109,9 +108,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         <Link href="/hoje" className="font-display text-xl font-black tracking-tight" onClick={() => setMobileOpen(false)}>
           PRAÇA<span className="text-primary">.</span>
         </Link>
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          {pracasPending ? 'Carregando…' : praca ? `${praca.name} · início ${fmtBR(praca.start_date)}` : 'Nenhuma praça aberta ainda'}
-        </p>
       </div>
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-2">
         {NAV.map((n) => {

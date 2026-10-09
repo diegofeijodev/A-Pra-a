@@ -2,7 +2,7 @@
  * Seed das contas (pessoas) do PRAÇA.
  *
  * `seedUsers()` cria — idempotente por e-mail — as três contas fixas do time:
- * Diego (CEO, admin), Daniel (comercial/CS) e o contato de Marketing externo
+ * Diego (CEO, admin), Rebeca (comercial/CS) e o contato de Marketing externo
  * (agência). IDs fixos (`SEED_USER_IDS`) para as próximas tarefas referenciarem
  * donos (ex.: `owner_id` de leads/actions) sem precisar reconsultar o banco.
  *
@@ -41,7 +41,7 @@ const MIN_SENHA = 8;
 
 export const SEED_USER_IDS = {
   diego: '00000000-0000-4000-8000-000000000001',
-  daniel: '00000000-0000-4000-8000-000000000002',
+  rebeca: '00000000-0000-4000-8000-000000000002',
   mkt: '00000000-0000-4000-8000-000000000003',
 } as const;
 
@@ -56,9 +56,9 @@ const SEED_USERS = [
     sort: 0,
   },
   {
-    id: SEED_USER_IDS.daniel,
-    email: 'daniel@praca.local',
-    name: 'Daniel',
+    id: SEED_USER_IDS.rebeca,
+    email: 'rebeca@praca.local',
+    name: 'Rebeca',
     role_label: 'Comercial e Sucesso do Cliente — prospecção, operação das vagas, retenção',
     color: '#2E6F7E',
     is_admin: false,
@@ -81,7 +81,7 @@ type SeedUser = (typeof SEED_USERS)[number];
  * Senha e contas a criar, conforme o ambiente.
  *
  * - produção: `SEED_ADMIN_PASSWORD` obrigatória (mínimo 8) e **só o admin** —
- *   as duas contas de demonstração (Daniel e Mkt externo) ficam de fora;
+ *   as duas contas de demonstração (Rebeca e Mkt externo) ficam de fora;
  * - resto: as três contas com a senha de demonstração.
  */
 function planoDoSeed(): { senha: string; users: readonly SeedUser[] } {

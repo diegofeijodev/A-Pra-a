@@ -121,7 +121,7 @@ describe('domain/catalog — indicators', () => {
   });
   it('owner do protótipo virou owner_email', () => {
     const clientesAtivos = IND_CATALOG.find((d) => d.key === 'clientes_ativos');
-    expect(clientesAtivos?.owner_email).toBe('daniel@praca.local');
+    expect(clientesAtivos?.owner_email).toBe('rebeca@praca.local');
     const custoCliente = IND_CATALOG.find((d) => d.key === 'custo_cliente');
     expect(custoCliente?.owner_email).toBe('mkt@praca.local');
     const contratosRede = IND_CATALOG.find((d) => d.key === 'contratos_rede');
