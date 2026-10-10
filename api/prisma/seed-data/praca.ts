@@ -10,11 +10,12 @@
  */
 import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
-import { SEED_USER_IDS } from '../seed';
+import { SEED_USER_IDS } from '../seed-plan';
 
 export const SEED_PRACA_ID = '00000000-0000-4000-8000-0000000000aa';
 
-export async function seedPraca(prisma: PrismaClient) {
+/** `demo: false` (produção) = sem o resultado de exemplo da etapa 2: a praça começa do zero. */
+export async function seedPraca(prisma: PrismaClient, { demo = true }: { demo?: boolean } = {}) {
   await prisma.pracas.upsert({
     where: { id: SEED_PRACA_ID },
     update: {},
@@ -27,11 +28,13 @@ export async function seedPraca(prisma: PrismaClient) {
     },
   });
 
-  await prisma.praca_step_states.upsert({
-    where: { praca_id_step_n: { praca_id: SEED_PRACA_ID, step_n: 2 } },
-    update: {},
-    create: { praca_id: SEED_PRACA_ID, step_n: 2, actual: 22 },
-  });
+  if (demo) {
+    await prisma.praca_step_states.upsert({
+      where: { praca_id_step_n: { praca_id: SEED_PRACA_ID, step_n: 2 } },
+      update: {},
+      create: { praca_id: SEED_PRACA_ID, step_n: 2, actual: 22 },
+    });
+  }
 
   const jaTem = await prisma.actions.count({ where: { praca_id: SEED_PRACA_ID } });
   if (jaTem === 0) {

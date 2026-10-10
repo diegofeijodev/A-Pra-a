@@ -1,0 +1,49 @@
+# Produção do PRAÇA no EC2 do Freela (mesma máquina do api-freela, do gestao-de-time e do Meu Funil).
+# Sobe em /opt/praca:  docker compose -f docker-compose.prod.yml up -d --build
+# Segredos e chaves vêm do .env ao lado (nunca versionado; modelo em docs/deploy/.env.prod.example).
+# A API só escuta em 127.0.0.1:3014; quem expõe é o nginx (docs/deploy/nginx-api-praca.conf).
+# Tetos de memória: a máquina é dividida com o Freela de produção — o Praça nunca pode sufocá-lo
+# (estourou o teto = o contêiner reinicia sozinho, o resto da máquina segue).
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: praca-postgres
+    restart: unless-stopped
+    mem_limit: 320m
+    environment:
+      POSTGRES_USER: praca
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: praca
+    volumes:
+      - praca_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U praca -d praca']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./api
+    image: praca-api:${IMAGE_TAG:-latest}
+    container_name: praca-api
+    restart: unless-stopped
+    mem_limit: 768m
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 3014
+      NODE_OPTIONS: --max-old-space-size=512
+      DATABASE_URL: postgresql://praca:${POSTGRES_PASSWORD}@praca-postgres:5432/praca?schema=public
+      # Navegador -> nginx -> API: o nginx sobrescreve o X-Forwarded-For com o IP real (ver nginx-api-praca.conf).
+      TRUST_PROXY: 'true'
+      # Uma instância só: o motor de cadências e o outbox do Freela rodam aqui (README, "Produção").
+      CADENCE_ENGINE_ENABLED: 'true'
+      FREELA_SYNC_ENABLED: 'true'
+    ports:
+      - '127.0.0.1:3014:3014'
+
+volumes:
+  praca_pgdata:

@@ -14,7 +14,7 @@
 import { PrismaClient } from '@prisma/client';
 import { phoneKey } from '../../src/common/phone/phone';
 import { addDays, todaySp } from '../../src/common/time/dates';
-import { SEED_USER_IDS } from '../seed';
+import { SEED_USER_IDS } from '../seed-plan';
 import { SEED_PRACA_ID } from './praca';
 
 type Owner = 'diego' | 'rebeca' | 'mkt';
@@ -71,8 +71,6 @@ export async function seedLeads(prisma: PrismaClient) {
     });
     if (jaTem) continue;
 
-    // `SEED_USER_IDS` vem de `../seed` (import circular, lido só aqui
-    // dentro, em tempo de chamada — nunca no topo do módulo).
     const owner = SEED_USER_IDS[r.owner];
     const contact = addDays(today, -r.gap);
     const phone = `(31) 9${String(8000 + i * 37).slice(0, 4)}-${String(1000 + i * 91).slice(0, 4)}`;

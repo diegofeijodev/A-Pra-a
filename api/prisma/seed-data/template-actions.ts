@@ -9,7 +9,7 @@
  */
 import { PrismaClient } from '@prisma/client';
 import { recToRow, type Rec } from '../../src/domain/recurrence';
-import { SEED_USER_IDS } from '../seed';
+import { SEED_USER_IDS } from '../seed-plan';
 
 type Owner = keyof typeof SEED_USER_IDS;
 
@@ -570,8 +570,6 @@ export const TEMPLATE_ACTIONS: TemplateActionSeed[] = [
 
 export async function seedTemplateActions(prisma: PrismaClient) {
   for (const [sort, a] of TEMPLATE_ACTIONS.entries()) {
-    // `SEED_USER_IDS` vem de `../seed` (import circular, resolvido só aqui
-    // dentro, em tempo de chamada — nunca no topo do módulo).
     const owners = a.owners.map((o) => SEED_USER_IDS[o]);
     await prisma.template_actions.upsert({
       where: { key: a.key },
