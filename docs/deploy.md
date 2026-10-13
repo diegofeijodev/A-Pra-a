@@ -45,7 +45,11 @@ sudo certbot --nginx -d api-praca.freelaservicosapp.com.br --redirect -m tecnolo
 - Tetos de memória no compose (API 768 MB, Postgres 320 MB): a máquina é do Freela de produção.
 - **Seed de produção** (`api/prisma/seed-plan.ts`): cria a praça real "Belo Horizonte + Contagem" (12/10/2026–18/01/2027)
   com o roteiro inteiro, sem leads, mídia nem progresso de exemplo; o admin entra com `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD`;
-  Rebeca e Mkt externo nascem com senha aleatória (o admin define em Configurações → Pessoas). Nunca rode o seed sem `NODE_ENV=production`
+  Rebeca e Mkt externo nascem com senha aleatória (o admin define em Configurações → Pessoas). A praça nasce **sem
+  cobertura** (cidade-centro + vizinhas, usada no recorte das campanhas do Freela) e a tela não edita isso depois: na
+  produção ela foi preenchida direto no banco em 13/10 (Belo Horizonte, IBGE 3106200, raio 50 km = 30 cidades, valores
+  calculados pelo próprio `GeoService` dentro do contêiner). O e-mail de uma pessoa também não se edita pela tela — corrigir
+  no banco (`users.email`). Nunca rode o seed sem `NODE_ENV=production`
   num servidor de verdade (criaria as contas com a senha de demonstração) — o compose de produção já fixa `NODE_ENV`.
 - `docker compose run` dentro de `ssh … <<heredoc` engole o stdin: use `run -T … < /dev/null`.
 
