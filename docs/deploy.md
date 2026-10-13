@@ -75,7 +75,11 @@ Depois ponha a URL de produção da Vercel em `APP_URL` e `CORS_ORIGINS` no `.en
 
 1. **Freela**: `FREELA_ADMIN_EMAIL`/`FREELA_ADMIN_PASSWORD` de uma conta admin do Freela com as permissões `REFERRALS` e
    `CONSULTANTS`. Sem elas, a tela Freela e o código do consultor ficam "não configurado".
-2. **Fotos dos consultores**: bucket S3 privado + chave (README, "Consultores de campo"). Sem ele, o check-in do consultor não sai do celular.
+2. **Fotos dos consultores**: desde 13/10 a produção usa o **bucket do Freela** (`freela-uploads`, `sa-east-1`, privado, sem ACL
+   pública) na pasta `praca/` (`S3_PREFIX=praca/`), com a **mesma chave do Freela** — decisão do dono, ciente de que essa chave
+   lê e apaga todos os arquivos do Freela. A chave foi copiada do `.env` do Freela para o do Praça dentro do servidor (nunca
+   passou por chat). Se um dia trocarem por uma chave só de `praca/*`, basta trocar `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`
+   e recriar a API. Sem armazenamento, o check-in do consultor não sai do celular (README, "Consultores de campo").
 
 ## 5. Verificação
 

@@ -34,6 +34,9 @@ const envBase = z.object({
   PHOTOS_DIR: z.string().default('./uploads'),
   S3_BUCKET: z.string().default(''),
   S3_REGION: z.string().default(''),
+  // Pasta dentro do bucket (ex.: `praca/` no bucket do Freela). Só o S3 vê o prefixo:
+  // a chave guardada no banco continua `campo/...`. Vazio = raiz do bucket.
+  S3_PREFIX: z.string().default(''),
   // Vazias = cadeia padrão do SDK (papel da instância). Chave dedicada: só este bucket.
   AWS_ACCESS_KEY_ID: z.string().default(''),
   AWS_SECRET_ACCESS_KEY: z.string().default(''),

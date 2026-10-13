@@ -9,6 +9,7 @@ import {
   DiskPhotoStorage,
   mimeDaChave,
   PhotoStorageNaoConfigurado,
+  prefixoS3,
   S3PhotoStorage,
   tipoDaImagem,
 } from '../photo-storage';
@@ -112,6 +113,37 @@ describe('S3PhotoStorage', () => {
     await new S3PhotoStorage('fotos-praca', { send } as unknown as S3Client).remove(k);
     expect(send.mock.calls[0]![0]).toBeInstanceOf(DeleteObjectCommand);
   });
+
+  it('com prefixo (bucket do Freela), put/get/remove usam praca/<chave>; quem chama segue com a chave do banco', async () => {
+    const send = jest
+      .fn()
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ Body: { transformToByteArray: async () => new Uint8Array(JPEG) }, ContentType: 'image/jpeg' })
+      .mockResolvedValueOnce({});
+    const s = new S3PhotoStorage('freela-uploads', { send } as unknown as S3Client, 'praca/');
+
+    await s.put(k, JPEG, 'image/jpeg');
+    await expect(s.get(k)).resolves.toEqual({ bytes: JPEG, mime: 'image/jpeg' });
+    await s.remove(k);
+
+    const comandos = send.mock.calls.map((c) => c[0] as PutObjectCommand | GetObjectCommand | DeleteObjectCommand);
+    expect(comandos.map((c) => c.constructor)).toEqual([PutObjectCommand, GetObjectCommand, DeleteObjectCommand]);
+    for (const c of comandos) expect(c.input).toMatchObject({ Bucket: 'freela-uploads', Key: `praca/${k}` });
+  });
+});
+
+describe('prefixoS3', () => {
+  it.each([
+    ['', ''],
+    ['  ', ''],
+    ['/', ''],
+    ['praca', 'praca/'],
+    ['praca/', 'praca/'],
+    ['/praca//', 'praca/'],
+    ['apps/praca', 'apps/praca/'],
+  ])('%j → %j', (entrada, saida) => {
+    expect(prefixoS3(entrada)).toBe(saida);
+  });
 });
 
 describe('criarPhotoStorage', () => {
@@ -119,6 +151,7 @@ describe('criarPhotoStorage', () => {
     PHOTOS_DIR: './uploads',
     S3_BUCKET: '',
     S3_REGION: '',
+    S3_PREFIX: '',
     AWS_ACCESS_KEY_ID: '',
     AWS_SECRET_ACCESS_KEY: '',
   };

@@ -122,6 +122,8 @@ export class S3PhotoStorage implements PhotoStorage {
   constructor(
     private readonly bucket: string,
     private readonly client: S3Client,
+    /** Pasta no bucket (`praca/`), já normalizada por `prefixoS3`. O banco guarda a chave sem ela. */
+    private readonly prefix = '',
   ) {}
 
   async put(key: string, bytes: Buffer, mime: string): Promise<void> {
@@ -129,14 +131,14 @@ export class S3PhotoStorage implements PhotoStorage {
       await this.client.send(
         new PutObjectCommand({
           Bucket: this.bucket,
-          Key: key,
+          Key: this.prefix + key,
           Body: bytes,
           ContentType: mime,
           ServerSideEncryption: 'AES256',
         }),
       );
     } catch (e) {
-      this.log.error(`S3 put falhou (${key}): ${e instanceof Error ? e.message : String(e)}`);
+      this.log.error(`S3 put falhou (${this.prefix + key}): ${e instanceof Error ? e.message : String(e)}`);
       throw new BadGatewayException({
         code: 'PHOTO_STORAGE_ERROR',
         message: 'Não foi possível guardar a foto agora — tente de novo.',
@@ -146,7 +148,7 @@ export class S3PhotoStorage implements PhotoStorage {
 
   async get(key: string): Promise<FotoLida | null> {
     try {
-      const r = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+      const r = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: this.prefix + key }));
       if (!r.Body) return null;
       return {
         bytes: Buffer.from(await r.Body.transformToByteArray()),
@@ -159,7 +161,7 @@ export class S3PhotoStorage implements PhotoStorage {
   }
 
   async remove(key: string): Promise<void> {
-    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: this.prefix + key }));
   }
 }
 
@@ -183,8 +185,14 @@ export class PhotoStorageNaoConfigurado implements PhotoStorage {
 
 type EnvFotos = Pick<
   Env,
-  'PHOTO_STORAGE' | 'PHOTOS_DIR' | 'S3_BUCKET' | 'S3_REGION' | 'AWS_ACCESS_KEY_ID' | 'AWS_SECRET_ACCESS_KEY'
+  'PHOTO_STORAGE' | 'PHOTOS_DIR' | 'S3_BUCKET' | 'S3_REGION' | 'S3_PREFIX' | 'AWS_ACCESS_KEY_ID' | 'AWS_SECRET_ACCESS_KEY'
 >;
+
+/** `praca`, `/praca/` ou `praca/` → `praca/`; vazio = raiz do bucket. */
+export function prefixoS3(p: string): string {
+  const limpo = p.trim().replace(/^\/+|\/+$/g, '');
+  return limpo ? `${limpo}/` : '';
+}
 
 export function criarPhotoStorage(env: EnvFotos, log = new Logger('PhotoStorage')): PhotoStorage {
   if (env.PHOTO_STORAGE === 'disk') return new DiskPhotoStorage(env.PHOTOS_DIR);
@@ -199,6 +207,7 @@ export function criarPhotoStorage(env: EnvFotos, log = new Logger('PhotoStorage'
   return new S3PhotoStorage(
     env.S3_BUCKET,
     new S3Client({ region: env.S3_REGION, ...(credentials ? { credentials } : {}) }),
+    prefixoS3(env.S3_PREFIX),
   );
 }
 

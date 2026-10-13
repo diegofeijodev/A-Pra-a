@@ -202,6 +202,8 @@ contrato: `docs/api-contract.md` §20.
    (além da `REFERRALS` que já era necessária).
 2. **Bucket S3 privado** + chave com acesso só a ele (`S3_BUCKET`, `S3_REGION`,
    `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) — direto no `.env` do servidor.
+   `S3_PREFIX` (opcional) põe as fotos numa pasta do bucket — é como a produção usa o
+   bucket do Freela (`praca/`; ver `docs/deploy.md` §4). A chave no banco não leva o prefixo.
    A política IAM precisa de `s3:GetObject`, `s3:PutObject` e `s3:DeleteObject`
    nos objetos do bucket **e** `s3:ListBucket` no próprio bucket — sem
    `ListBucket`, uma foto que não existe volta como 403 em vez de 404.
