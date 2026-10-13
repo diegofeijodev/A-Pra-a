@@ -29,9 +29,11 @@ cd /opt/praca && tar xzf /tmp/praca-src.tgz && rm /tmp/praca-src.tgz
 cp docs/deploy/.env.prod.example .env && chmod 600 .env    # preencha (segredos com openssl rand -hex 32; senhas via read -s)
 docker compose -f docker-compose.prod.yml up -d --build    # build no EC2; as migrations rodam no boot
 curl -s http://127.0.0.1:3014/health
-# seed da primeira subida (precisa de SEED_ADMIN_EMAIL e SEED_ADMIN_PASSWORD no .env)
-docker compose -f docker-compose.prod.yml run --rm -T api npm run seed < /dev/null
-# depois de rodar, apague SEED_ADMIN_PASSWORD do .env (o seed não sobrescreve nada ao rodar de novo)
+# seed da primeira subida: o script pede e-mail/senha do admin (e a conta do Freela), grava no .env,
+# roda o seed e apaga SEED_ADMIN_PASSWORD do .env se o seed passar. Rode de um terminal SEU (o `!` do
+# Claude Code não abre terminal e o script recusa):  ssh -t ubuntu@56.124.127.54 'bash /opt/praca/docs/deploy/definir-segredos.sh'
+# (equivale a: pôr SEED_ADMIN_EMAIL/SEED_ADMIN_PASSWORD no .env, `docker compose -f docker-compose.prod.yml run --rm -T api
+#  npm run seed < /dev/null` e apagar SEED_ADMIN_PASSWORD; o seed não sobrescreve nada ao rodar de novo)
 # nginx + TLS (depois do DNS)
 sudo cp docs/deploy/nginx-api-praca.conf /etc/nginx/sites-available/praca-api
 sudo ln -sf /etc/nginx/sites-available/praca-api /etc/nginx/sites-enabled/praca-api
