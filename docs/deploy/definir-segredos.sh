@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
 # Grava no /opt/praca/.env as senhas que não podem passar por chat e cria a conta de admin (seed de produção).
-# Rode do SEU terminal (as senhas são digitadas sem aparecer na tela):
+# Rode do SEU terminal, fora do Claude Code — o `!` não abre terminal (as senhas são digitadas sem aparecer na tela):
 #   ssh -t ubuntu@56.124.127.54 'bash /opt/praca/docs/deploy/definir-segredos.sh'
 # Pode rodar de novo: Enter vazio mantém o que já está gravado; o seed não duplica nem sobrescreve nada.
 set -euo pipefail
+# Sem terminal (ex.: `!` do Claude Code, que não abre um) o primeiro `read` recebe EOF e o script morreria calado.
+if [[ ! -t 0 ]]; then
+  echo "✗ Este script precisa de um terminal para você digitar as senhas — nada foi alterado." >&2
+  echo "  Abra um terminal seu (fora do Claude Code) e rode:" >&2
+  echo "    ssh -t ubuntu@56.124.127.54 'bash /opt/praca/docs/deploy/definir-segredos.sh'" >&2
+  exit 1
+fi
 cd /opt/praca
 COMPOSE="docker compose -f docker-compose.prod.yml"
 
