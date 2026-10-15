@@ -2,7 +2,11 @@
 
 Mesmo desenho do gestao-de-time e do Meu Funil: **web na Vercel** (pasta `web/`), **API + Postgres em contêineres no EC2
 do Freela** (`56.124.127.54`, mesma máquina do api-freela). Código no GitHub em `diegofeijodev/A-Pra-a`, branch
-**`stack-freela`**. Hosts: `api-praca.freelaservicosapp.com.br` (API) e a URL `*.vercel.app` do projeto (web).
+**`stack-freela`**. Hosts: `api-praca.freelaservicosapp.com.br` (API) e **`aberturademercado.com.br`** (web, projeto Vercel
+`praca`; `www` redireciona 308 para o domínio sem www; `praca-ebon.vercel.app` continua respondendo). DNS do domínio na
+Locaweb (o e-mail/MX continua lá): `@` A `216.198.79.1` e `64.29.17.1`; `www` CNAME `17d297bf210db37a.vercel-dns-017.com.`
+(valores que a Vercel recomendou em 15/10 — confira com `vercel domains verify <domínio> --scope freelas-projects-ccf14064`).
+`CORS_ORIGINS` da API lista os três endereços do web.
 
 ## 1. DNS (Locaweb, zona `freelaservicosapp.com.br`)
 
