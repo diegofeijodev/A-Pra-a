@@ -125,3 +125,7 @@
   .print-only * { color: black !important; border-color: #ccc !important; }
 }
 .print-only { display: none; }
+
+/* Mapa base OSM (só existe claro): no tema escuro, inverte as cores da camada de mapa
+   — não dos marcadores nem da linha do trajeto. Ver `lib/map-tiles.ts`. */
+.tiles-escuros { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9) saturate(0.5); }

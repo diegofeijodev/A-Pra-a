@@ -2,10 +2,8 @@
 
 import { useEffect, useRef } from 'react';
 import 'leaflet/dist/leaflet.css';
+import { TILES_URL, tilesOptions } from '@/lib/map-tiles';
 import type { PointView, VisitView } from '@/modules/campo/domain/campo.types';
-
-const TILES = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-const TILES_LIGHT = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
 
 /** Mapa do dia (spec §8.2): pontos ligados na ordem gravada + check-ins destacados. Entra por `next/dynamic({ ssr: false })`. */
 export default function ConsultorMapa({ trilhas, visitas, dark }: { trilhas: PointView[][]; visitas: VisitView[]; dark: boolean }) {
@@ -24,8 +22,9 @@ export default function ConsultorMapa({ trilhas, visitas, dark }: { trilhas: Poi
       const checkins = visitas.map((v) => [v.checkin_lat, v.checkin_lng] as [number, number]);
       const todos = [...linhas.flat(), ...checkins];
       if (todos.length === 0) return;
-      map = L.map(ref.current, { zoomControl: true, attributionControl: false });
-      L.tileLayer(dark ? TILES : TILES_LIGHT, { maxZoom: 19 }).addTo(map);
+      map = L.map(ref.current, { zoomControl: true });
+      map.attributionControl.setPrefix(false);
+      L.tileLayer(TILES_URL, tilesOptions(dark, 19)).addTo(map);
       for (const l of linhas) if (l.length > 1) L.polyline(l, { color: '#ECA826', weight: 3, opacity: 0.85 }).addTo(map);
       for (const v of visitas) {
         // Nome do lugar é digitado pelo consultor: elemento com textContent, nunca string (Leaflet usa innerHTML).

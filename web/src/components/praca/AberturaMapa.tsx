@@ -3,13 +3,12 @@
 import { useEffect, useRef } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { fmtPop, RADIUS_KM } from '@/lib/geo';
+import { TILES_URL, tilesOptions } from '@/lib/map-tiles';
 import type { Municipio, Vizinha } from '@/modules/geo/application/use-geo';
 
 // Fatiado do `AberturaPraca` do protótipo para poder entrar por
 // `next/dynamic({ ssr: false })`: o Leaflet mexe em `window` no import e não
 // sobrevive à renderização no servidor.
-const TILES = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
-const TILES_LIGHT = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
 
 export default function AberturaMapa({
   centro,
@@ -28,8 +27,9 @@ export default function AberturaMapa({
     void (async () => {
       const L = await import("leaflet");
       if (!alive || !ref.current) return;
-      map = L.map(ref.current, { zoomControl: true, attributionControl: false }).setView([centro.lat, centro.lon], 9);
-      L.tileLayer(dark ? TILES : TILES_LIGHT, { maxZoom: 18 }).addTo(map);
+      map = L.map(ref.current, { zoomControl: true }).setView([centro.lat, centro.lon], 9);
+      map.attributionControl.setPrefix(false);
+      L.tileLayer(TILES_URL, tilesOptions(dark, 18)).addTo(map);
       L.circle([centro.lat, centro.lon], {
         radius: RADIUS_KM * 1000,
         color: "#e8a020", weight: 1.5, dashArray: "6 6", fillColor: "#e8a020", fillOpacity: 0.06,
