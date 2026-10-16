@@ -1989,6 +1989,77 @@ check "/me: praça do consultor" "Belo Horizonte + Contagem" "$(echo "$ME_CAMPO"
 check "/me: sem código ainda, link do QR nulo" "null" "$(echo "$ME_CAMPO" | jq -r .consultant.signup_url)"
 check "/me: os 4 canais iniciais" "4" "$(echo "$ME_CAMPO" | jq '.channels | length')"
 
+echo "── Representantes: nascimento e área (§21.1) ──"
+check "idade fora de 14–100 = INVALID_BIRTH_DATE" "INVALID_BIRTH_DATE" \
+  "$(curl -s -X PATCH $API/v1/consultores/$CONS_ID -H "$J" -H "$HD" -d '{"birth_date":"2020-01-01"}' | jq -r .error.code)"
+check "raio sem centro = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s -X PATCH $API/v1/consultores/$CONS_ID -H "$J" -H "$HD" -d '{"area_radius_km":2}' | jq -r .error.code)"
+AREA=$(curl -s -X PATCH $API/v1/consultores/$CONS_ID -H "$J" -H "$HD" \
+  -d '{"birth_date":"1990-05-20","area_lat":-19.9245,"area_lng":-43.9352,"area_radius_km":5,"area_bairros":[" Centro ","centro","Savassi"]}')
+check "nascimento vira idade; bairros sem repetir; raio guardado" "true|Centro,Savassi|5" \
+  "$(echo "$AREA" | jq -r '"\(.age >= 35)|\(.area_bairros | join(","))|\(.area_radius_km)"')"
+
+echo "── Base de estabelecimentos por planilha (§21.3) ──"
+COLS_B='["Nome","Endereço","Bairro","CNAE","Latitude","Longitude"]'
+LINHAS_B="[{\"Nome\":\"Rota A $SUF\",\"Endereço\":\"Rua A, 1\",\"Bairro\":\"Centro\",\"CNAE\":\"5611-2/01\",\"Latitude\":\"-19,9250\",\"Longitude\":\"-43,9350\"},{\"Nome\":\"Rota B $SUF\",\"Endereço\":\"Rua B, 2\",\"Bairro\":\"Centro\",\"CNAE\":\"5611204\",\"Latitude\":\"-19.9260\",\"Longitude\":\"-43.9360\"},{\"Nome\":\"Hotel $SUF\",\"Endereço\":\"Rua C, 3\",\"Bairro\":\"Centro\",\"CNAE\":\"9999999\",\"Latitude\":\"-19.9270\",\"Longitude\":\"-43.9370\"}]"
+MAPA_B='{"name":"Nome","address":"Endereço","bairro":"Bairro","cnae":"CNAE","lat":"Latitude","lng":"Longitude"}'
+CORPO_B="{\"columns\":$COLS_B,\"rows\":$LINHAS_B,\"map\":$MAPA_B,\"origem\":\"importação\",\"dup_action\":\"ignorar\",\"praca_mode\":\"lote\",\"lote_praca_id\":\"$PRACA_SEED\",\"cnaes\":[\"5611201\",\"5611-2/04\"],\"allow_no_phone\":true}"
+check "mapeamento adivinha bairro, CNAE, latitude e longitude" "Bairro|CNAE|Latitude|Longitude" \
+  "$(curl -s -X POST $API/v1/imports/evaluate -H "$J" -H "$HD" -d "$(echo "$CORPO_B" | jq -c '.map={}')" | jq -r '.guessed_map | "\(.bairro)|\(.cnae)|\(.lat)|\(.lng)"')"
+check "sem telefone passa; CNAE fora da lista fica de fora" "2|1|0" \
+  "$(curl -s -X POST $API/v1/imports/evaluate -H "$J" -H "$HD" -d "$CORPO_B" | jq -r '"\(.will_import)|\(.fora_cnae)|\(.no_phone)"')"
+check "sem allow_no_phone, linha sem telefone continua barrada" "0" \
+  "$(curl -s -X POST $API/v1/imports/evaluate -H "$J" -H "$HD" -d "$(echo "$CORPO_B" | jq -c 'del(.allow_no_phone)')" | jq .will_import)"
+RUN_B=$(curl -s -X POST $API/v1/imports/run -H "$J" -H "$HD" \
+  -d "$(echo "$CORPO_B" | jq -c --arg f "base-$SUF.xlsx" --arg o "$DIEGO_ID" '. + {file_name:$f, owner_mode:"lote", lote_owner_id:$o}')")
+LOTE_B=$(echo "$RUN_B" | jq -r .batch_id)
+check "importação grava as 2 e explica o CNAE" "2|1 CNAE fora da lista" "$(echo "$RUN_B" | jq -r '"\(.imported)|\(.reasons | join(";"))"')"
+IMP_A=$(curl -s "$API/v1/leads?q=Rota%20A%20$SUF" -H "$HD" | jq -r '.[0].id')
+IMP_B=$(curl -s "$API/v1/leads?q=Rota%20B%20$SUF" -H "$HD" | jq -r '.[0].id')
+MAPA=$(curl -s "$API/v1/pracas/$PRACA_SEED/mapa?cnae=5611201,5611204" -H "$HD")
+check "mapa: os 2 importados com localização, não visitados" "nao_visitado|-19.925" \
+  "$(echo "$MAPA" | jq -r --arg i "$IMP_A" '.points[] | select(.id==$i) | "\(.status)|\(.lat)"')"
+check "mapa: contagem por CNAE da configuração" "1" "$(echo "$MAPA" | jq '[.cnaes[] | select(.code=="5611204")][0].count')"
+check "mapa: CNAE malformado = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s "$API/v1/pracas/$PRACA_SEED/mapa?cnae=5611-2/01" -H "$HD" | jq -r .error.code)"
+check "geocodificação: importado com lat/lng já nasce localizado" "true" \
+  "$(curl -s "$API/v1/pracas/$PRACA_SEED/geo" -H "$HD" | jq '.ok >= 2')"
+check "geo/retry: rebeca não pode = FORBIDDEN" "FORBIDDEN" \
+  "$(curl -s -X POST "$API/v1/pracas/$PRACA_SEED/geo/retry" -H "$HN" | jq -r .error.code)"
+check "CNAEs da configuração: os 6 do catálogo" "6" "$(curl -s $API/v1/consultores/settings/cnaes -H "$HN" | jq '.cnaes | length')"
+check "CNAEs: rebeca não muda = FORBIDDEN" "FORBIDDEN" \
+  "$(curl -s -X PUT $API/v1/consultores/settings/cnaes -H "$J" -H "$HN" -d '{"cnaes":[{"code":"5611201","label":"X"}]}' | jq -r .error.code)"
+check "CNAEs: código repetido = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s -X PUT $API/v1/consultores/settings/cnaes -H "$J" -H "$HD" -d '{"cnaes":[{"code":"5611201","label":"A"},{"code":"5611201","label":"B"}]}' | jq -r .error.code)"
+check "praça: meta de 20 por dia, das 9h às 18h" "20|9|18" \
+  "$(curl -s $API/v1/pracas/$PRACA_SEED -H "$HD" | jq -r '"\(.route_daily_goal)|\(.route_start_hour)|\(.route_end_hour)"')"
+check "praça: fim antes do início = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s -X PATCH $API/v1/pracas/$PRACA_SEED -H "$J" -H "$HD" -d '{"route_start_hour":18,"route_end_hour":9}' | jq -r .error.code)"
+
+echo "── Rotas da semana (§21.5) ──"
+# Domingo pertence à semana que acabou: gera a semana seguinte para ter dias pela frente.
+DOW=$(TZ=America/Sao_Paulo date +%u)
+if [ "$DOW" = 7 ]; then SEMANA=$(TZ=America/Sao_Paulo date -d '+1 day' +%F); else SEMANA=$HOJE; fi
+check "rebeca não gera rotas = FORBIDDEN" "FORBIDDEN" \
+  "$(curl -s -X POST $API/v1/consultores/routes/generate -H "$J" -H "$HN" -d "{\"week\":\"$SEMANA\"}" | jq -r .error.code)"
+GERA=$(curl -s -X POST $API/v1/consultores/routes/generate -H "$J" -H "$HD" -d "{\"week\":\"$SEMANA\",\"consultant_ids\":[\"$CONS_ID\"]}")
+check "gera de hoje até sábado (seg–sáb)" "6" "$(echo "$GERA" | jq '.generated + .skipped_past')"
+check "os 2 estabelecimentos da área entram na semana" "2" \
+  "$(echo "$GERA" | jq --arg a "$IMP_A" --arg b "$IMP_B" '[.routes[].stops[] | select(.lead_id==$a or .lead_id==$b)] | length')"
+check "rotas da semana pela equipe" "true" \
+  "$(curl -s "$API/v1/consultores/routes?week=$SEMANA&consultant_id=$CONS_ID" -H "$HN" | jq 'length >= 1 and all(.[]; .status=="aberta")')"
+ROTA_COM=$(echo "$GERA" | jq -r --arg a "$IMP_A" '[.routes[] | select(any(.stops[]; .lead_id==$a))][0].id')
+EDITA=$(curl -s -X PATCH $API/v1/consultores/routes/$ROTA_COM -H "$J" -H "$HD" -d "{\"stops\":[{\"lead_id\":\"$IMP_A\"}]}")
+check "edição: a lista nova vira a ordem e a rota fica 'ajustada pela equipe'" "admin|1|$IMP_A" \
+  "$(echo "$EDITA" | jq -r '"\(.source)|\([.stops[] | select(.removed|not)] | length)|\(.stops[0].lead_id)"')"
+check "edição com lead de outra praça = NOT_FOUND" "NOT_FOUND" \
+  "$(curl -s -X PATCH $API/v1/consultores/routes/$ROTA_COM -H "$J" -H "$HD" -d "{\"stops\":[{\"lead_id\":\"$(uuid)\"}]}" | jq -r .error.code)"
+# A rota de HOJE (seg–sáb) fica só com o estabelecimento A — é nele que o check-in "da rota" acontece.
+if [ "$DOW" != 7 ]; then
+  ROTA_HOJE=$(echo "$GERA" | jq -r --arg d "$HOJE" '.routes[] | select(.day==$d) | .id')
+  curl -s -X PATCH $API/v1/consultores/routes/$ROTA_HOJE -H "$J" -H "$HD" -d "{\"stops\":[{\"lead_id\":\"$IMP_A\"}]}" > /dev/null
+fi
+
 echo "── Campo: jornada ──"
 AGORA=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
 FUTURO=$(date -u -d '+1 hour' +%Y-%m-%dT%H:%M:%S.000Z)
@@ -2055,26 +2126,60 @@ check "perto de mim acha o lead a 0 m" "0" \
   "$(curl -s "$API/v1/campo/places?lat=$LAT&lng=$LNG" -H "$HC" | jq --arg i "$LEAD_CAMPO" '.[] | select(.id==$i) | .distance_m')"
 check "encerrar a jornada com visita aberta = VISIT_OPEN" "VISIT_OPEN" \
   "$(curl -s -X POST $API/v1/campo/journeys/current/end -H "$J" -H "$HC" -d "{$POS_CAMPO}" | jq -r .error.code)"
-check "checkout com questionário vazio = ANSWERS_INCOMPLETE (422)" "422|ANSWERS_INCOMPLETE" \
+check "visita nova é do formulário v2" "2" "$(echo "$VISITA_C" | jq .form_version)"
+if [ "$DOW" != 7 ]; then
+  check "estabelecimento novo, fora da rota do dia: marca" "true" "$(echo "$VISITA_C" | jq .off_route)"
+fi
+check "checkout com formulário vazio = ANSWERS_INCOMPLETE (422)" "422|ANSWERS_INCOMPLETE" \
   "$(curl -s -o /tmp/praca-smoke-campo.json -w '%{http_code}' -X POST $API/v1/campo/visits/$V1/checkout -H "$J" -H "$HC" -d "{$POS_CAMPO}")|$(jq -r .error.code /tmp/praca-smoke-campo.json)"
-check "rascunho parcial salvo pelo client_id: faltam 6 itens" "6" \
+check "campo do questionário antigo numa visita v2 = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s -X PATCH $API/v1/campo/visits/$V1/answers -H "$J" -H "$HC" -d '{"interest":"alto"}' | jq -r .error.code)"
+check "rascunho parcial salvo pelo client_id: faltam 3 itens" "3" \
   "$(curl -s -X PATCH $API/v1/campo/visits/$V1/answers -H "$J" -H "$HC" -d '{"interlocutor_name":"João","interlocutor_role":"dono"}' | jq '.missing | length')"
+check "função 'outro' não existe no v2 = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s -X PATCH $API/v1/campo/visits/$V1/answers -H "$J" -H "$HC" -d '{"interlocutor_role":"outro"}' | jq -r .error.code)"
 check "cargo fora da lista = VALIDATION_ERROR" "VALIDATION_ERROR" \
   "$(curl -s -X PATCH $API/v1/campo/visits/$V1/answers -H "$J" -H "$HC" -d '{"interlocutor_role":"chefe"}' | jq -r .error.code)"
-RESPOSTAS_C="{\"freela_status\":\"cadastrou_qr\",\"interest\":\"alto\",\"open_vagas\":2,\"vaga_roles\":[\"Garçom\"],\"freelas_per_week\":4,\"channels\":[\"Grupos de WhatsApp\"],\"needs_followup\":true,\"followup_what\":\"Ligar na sexta\",\"followup_date\":\"$HOJE3\"}"
-check "questionário completo: nada falta" "0" \
-  "$(curl -s -X PATCH $API/v1/campo/visits/$V1/answers -H "$J" -H "$HC" -d "$RESPOSTAS_C" | jq '.missing | length')"
+curl -s -X PATCH $API/v1/campo/visits/$V1/answers -H "$J" -H "$HC" -d '{"hires_freelancer":true,"channels":["Grupos de WhatsApp"],"freelas_per_week":5}' > /dev/null
+check "5 freelancers por semana não ganha voucher = VOUCHER_NOT_ELIGIBLE" "VOUCHER_NOT_ELIGIBLE" \
+  "$(curl -s -X POST $API/v1/campo/visits/$V1/voucher -H "$HC" | jq -r .error.code)"
+check "acima de 5: a oferta do voucher entra no que falta" "true" \
+  "$(curl -s -X PATCH $API/v1/campo/visits/$V1/answers -H "$J" -H "$HC" -d '{"freelas_per_week":8}' | jq '.missing | index("resposta da oferta do voucher") != null')"
+check "aceitou: falta pedir o voucher e abrir a vaga" "true|true" \
+  "$(curl -s -X PATCH $API/v1/campo/visits/$V1/answers -H "$J" -H "$HC" -d '{"voucher_accepted":true}' | jq -r '"\(.missing | index("pedir o voucher ao gestor") != null)|\(.missing | index("abrir a vaga do voucher") != null)"')"
+SABADO=$(TZ=America/Sao_Paulo date -d "$HOJE +$(( DOW == 7 ? 6 : 6 - DOW )) days" +%F)
+VOUCHER=$(curl -s -X POST $API/v1/campo/visits/$V1/voucher -H "$HC")
+VOUCHER_CODE=$(echo "$VOUCHER" | jq -r .voucher.code)
+VOUCHER_ID=$(echo "$VOUCHER" | jq -r .voucher.id)
+check "voucher pedido ao gestor, válido até o sábado" "solicitado|$SABADO|true" \
+  "$(echo "$VOUCHER" | jq -r '"\(.voucher.status)|\(.voucher.valid_until)|\(.voucher.code | test("^PRC-[2-9A-HJ-NP-Z]{6}$"))"')"
+check "reenvio do pedido devolve o mesmo voucher" "$VOUCHER_CODE" \
+  "$(curl -s -X POST $API/v1/campo/visits/$V1/voucher -H "$HC" | jq -r .voucher.code)"
+VAGA_C=$(uuid)
+check "vaga no passado = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/campo/visits/$V1/vagas -H "$J" -H "$HC" -d "{\"client_id\":\"$(uuid)\",\"date\":\"2020-01-01\",\"funcao\":\"Garçom\"}" | jq -r .error.code)"
+check "vaga aberta na visita" "1|Garçom" \
+  "$(curl -s -X POST $API/v1/campo/visits/$V1/vagas -H "$J" -H "$HC" -d "{\"client_id\":\"$VAGA_C\",\"date\":\"$HOJE3\",\"funcao\":\"Garçom\"}" | jq -r '"\(.vagas | length)|\(.vagas[0].funcao)"')"
+check "reenvio da vaga (mesmo client_id) não duplica" "1" \
+  "$(curl -s -X POST $API/v1/campo/visits/$V1/vagas -H "$J" -H "$HC" -d "{\"client_id\":\"$VAGA_C\",\"date\":\"$HOJE3\",\"funcao\":\"Garçom\"}" | jq '.vagas | length')"
+check "status final 'cadastrou' sem abrir o cadastro não fecha" "true" \
+  "$(curl -s -X PATCH $API/v1/campo/visits/$V1/answers -H "$J" -H "$HC" -d '{"signup_mode":"nao_abriu","final_status":"cadastrou"}' | jq '.missing | index("como abriu o cadastro (cadastrou sem abrir?)") != null')"
+check "formulário completo: nada falta" "0" \
+  "$(curl -s -X PATCH $API/v1/campo/visits/$V1/answers -H "$J" -H "$HC" -d '{"signup_mode":"qr"}' | jq '.missing | length')"
 SAIDA=$(curl -s -X POST $API/v1/campo/visits/$V1/checkout -H "$J" -H "$HC" -d "{$POS_CAMPO}")
 check "checkout feito" "true" "$(echo "$SAIDA" | jq '.checkout_at != null')"
 check "reenvio do checkout devolve a mesma hora (200, nada gravado de novo)" "200|$(echo "$SAIDA" | jq -r .checkout_at)" \
   "$(curl -s -o /tmp/praca-smoke-campo.json -w '%{http_code}' -X POST $API/v1/campo/visits/$V1/checkout -H "$J" -H "$HC" -d "{$POS_CAMPO}")|$(jq -r .checkout_at /tmp/praca-smoke-campo.json)"
+check "vaga depois do checkout = VISIT_CLOSED" "VISIT_CLOSED" \
+  "$(curl -s -X POST $API/v1/campo/visits/$V1/vagas -H "$J" -H "$HC" -d "{\"client_id\":\"$(uuid)\",\"date\":\"$HOJE3\",\"funcao\":\"Garçom\"}" | jq -r .error.code)"
 LEAD_DEPOIS=$(curl -s $API/v1/leads/$LEAD_CAMPO -H "$HD")
-check "CRM: lead foi para Conversa aberta" "3" "$(echo "$LEAD_DEPOIS" | jq .stage)"
-check "CRM: decisor é quem atendeu" "João|Dono" "$(echo "$LEAD_DEPOIS" | jq -r '"\(.decisor)|\(.decisor_role)"')"
-check "CRM: próximo passo é o retorno pedido" "Ligar na sexta|$HOJE3" \
-  "$(echo "$LEAD_DEPOIS" | jq -r '"\(.next_step.what)|\(.next_step.date)"')"
-check "CRM: UM evento de visita do consultor, com a etapa nova" "1|3" \
-  "$(echo "$LEAD_DEPOIS" | jq -r --arg a "Consultor: Consultor $SUF" '[.events[] | select(.kind=="visit" and .author_label==$a)] | "\(length)|\(.[0].stage_to)"')"
+check "CRM: 'cadastrou' leva o lead para Cadastrado" "5" "$(echo "$LEAD_DEPOIS" | jq .stage)"
+check "CRM: decisor é o contato" "João|Dono" "$(echo "$LEAD_DEPOIS" | jq -r '"\(.decisor)|\(.decisor_role)"')"
+check "CRM: a vaga da visita entrou nas vagas do lead" "1" "$(echo "$LEAD_DEPOIS" | jq '.vagas | length')"
+check "CRM: UM evento de visita do representante, com a etapa nova" "1|5" \
+  "$(echo "$LEAD_DEPOIS" | jq -r --arg a "Representante: Consultor $SUF" '[.events[] | select(.kind=="visit" and .author_label==$a)] | "\(length)|\(.[0].stage_to)"')"
+check "CRM: o resumo leva o voucher" "true" \
+  "$(echo "$LEAD_DEPOIS" | jq --arg c "$VOUCHER_CODE" '[.events[] | select(.kind=="visit")][0].text | contains($c)')"
 check "foto da visita para o consultor" "image/jpeg" \
   "$(curl -s -o /dev/null -w '%{content_type}' $API/v1/campo/visits/$V1/photo -H "$HC")"
 check "foto do consultor: Cache-Control privado só no 200" "private, max-age=86400" \
@@ -2092,28 +2197,56 @@ VISITA_2=$(checkin "$V2" "$LONGE_LAT" "lead_id=$LEAD_CAMPO" /tmp/praca-smoke-fac
 check "check-in a mais de 200 m marca 'longe do local'" "true|278" \
   "$(echo "$VISITA_2" | jq -r '"\(.far_from_place)|\(.distance_m)"')"
 curl -s -X PATCH $API/v1/campo/visits/$V2/answers -H "$J" -H "$HC" \
-  -d '{"interlocutor_name":"Maria","interlocutor_role":"gerente","freela_status":"ja_usa","interest":"medio","open_vagas":0,"freelas_per_week":0,"channels":["Nenhum"],"needs_followup":false}' > /dev/null
+  -d "{\"interlocutor_name\":\"Maria\",\"interlocutor_role\":\"gerente\",\"hires_freelancer\":false,\"signup_mode\":\"nao_abriu\",\"final_status\":\"ligar_depois\",\"final_date\":\"$HOJE3\",\"callback_phone\":\"(31) 98888-0000\"}" > /dev/null
 curl -s -X POST $API/v1/campo/visits/$V2/checkout -H "$J" -H "$HC" -d "{$POS_CAMPO}" > /dev/null
-check "segunda visita: etapa ≥ 3 se mantém" "3" "$(curl -s $API/v1/leads/$LEAD_CAMPO -H "$HD" | jq .stage)"
+check "'ligar depois' vira próximo passo e não rebaixa o Cadastrado" "5|Ligar ((31) 98888-0000)|$HOJE3" \
+  "$(curl -s $API/v1/leads/$LEAD_CAMPO -H "$HD" | jq -r '"\(.stage)|\(.next_step.what)|\(.next_step.date)"')"
+
+V3=$(uuid)
+VISITA_3=$(checkin "$V3" "-19.9250" "lead_id=$IMP_A" /tmp/praca-smoke-fachada.jpg)
+check "check-in no estabelecimento da rota não marca 'fora da rota'" "false" "$(echo "$VISITA_3" | jq .off_route)"
+if [ "$DOW" != 7 ]; then
+  check "a parada da rota de hoje recebe a visita" "$(echo "$VISITA_3" | jq -r .id)" \
+    "$(curl -s $API/v1/campo/routes/today -H "$HC" | jq -r --arg a "$IMP_A" '.stops[] | select(.lead_id==$a) | .visit.id')"
+  check "rota de hoje: 1 de 1 visitado, rota iniciada" "1|1|iniciada" \
+    "$(curl -s $API/v1/campo/routes/today -H "$HC" | jq -r '"\(.counts.visitados)|\(.counts.total)|\(.status)"')"
+  check "parada visitada não sai da rota = STOP_VISITED" "STOP_VISITED" \
+    "$(curl -s -X PATCH $API/v1/consultores/routes/$ROTA_HOJE -H "$J" -H "$HD" -d '{"stops":[]}' | jq -r .error.code)"
+fi
+check "rota da semana do representante" "true" "$(curl -s $API/v1/campo/routes/week -H "$HC" | jq '.routes | length >= 1')"
+curl -s -X PATCH $API/v1/campo/visits/$V3/answers -H "$J" -H "$HC" \
+  -d '{"interlocutor_name":"Zé","interlocutor_role":"dono","hires_freelancer":false,"signup_mode":"nao_abriu","final_status":"nao_quis","final_reason":"Já tem equipe fixa"}' > /dev/null
+curl -s -X POST $API/v1/campo/visits/$V3/checkout -H "$J" -H "$HC" -d "{$POS_CAMPO}" > /dev/null
+check "'não quis' leva para Perdido com o motivo" "8|Já tem equipe fixa" \
+  "$(curl -s $API/v1/leads/$IMP_A -H "$HD" | jq -r '"\(.stage)|\(.lost_reason)"')"
 FIM=$(curl -s -X POST $API/v1/campo/journeys/current/end -H "$J" -H "$HC" -d "{$POS_CAMPO}")
 check "jornada encerrada" "true" "$(echo "$FIM" | jq '.ended_at != null')"
 check "reenvio do encerrar devolve a mesma jornada (200)" "200|$JORNADA_ID" \
   "$(curl -s -o /tmp/praca-smoke-campo.json -w '%{http_code}' -X POST $API/v1/campo/journeys/current/end -H "$J" -H "$HC" -d "{$POS_CAMPO}")|$(jq -r .id /tmp/praca-smoke-campo.json)"
-check "hoje: 2 visitas, 1 'cadastrou agora', jornada fechada" "2|1|null" \
+check "hoje: 3 visitas, 1 cadastrou, jornada fechada" "3|1|null" \
   "$(curl -s $API/v1/campo/today -H "$HC" | jq -r '"\(.counters.visits)|\(.counters.cadastrou_qr)|\(.journey)"')"
+MEUS=$(curl -s "$API/v1/campo/painel?periodo=dia" -H "$HC")
+check "Meus números: 1 cadastrado, 1 vaga, 1 voucher" "1|1|1" \
+  "$(echo "$MEUS" | jq -r '"\(.numbers.cadastrados)|\(.numbers.vagas)|\(.numbers.vouchers)"')"
+check "Meus números: o cliente que cadastrou e abriu vaga" "$LEAD_CAMPO|$LEAD_CAMPO|0" \
+  "$(echo "$MEUS" | jq -r '"\(.cadastrou[0].lead_id)|\(.abriu_vaga[0].lead_id)|\(.nunca_abriu | length)"')"
+check "Meus números: período inválido = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s "$API/v1/campo/painel?periodo=ano" -H "$HC" | jq -r .error.code)"
 
 echo "── Campo: telas da equipe ──"
 DIA_CAMPO=$(curl -s $API/v1/consultores/$CONS_ID/days/$HOJE -H "$HN")
-check "dia: pontos de início, trilha, check-ins, checkouts e fim" "checkin:2,checkout:2,end:1,start:1,track:2" \
+check "dia: pontos de início, trilha, check-ins, checkouts e fim" "checkin:3,checkout:3,end:1,start:1,track:2" \
   "$(echo "$DIA_CAMPO" | jq -r '[.journeys[0].points[].kind] | group_by(.) | map("\(.[0]):\(length)") | join(",")')"
 check "dia: o ponto do futuro ficou com a hora ajustada" "1" \
   "$(echo "$DIA_CAMPO" | jq '[.journeys[0].points[] | select(.clock_adjusted)] | length')"
 # As duas visitas têm o mesmo `checkin_at` ($AGORA): ordena antes de comparar.
-check "dia: 2 visitas, uma longe do local" "2|false,true" \
+check "dia: 3 visitas, uma longe do local" "3|false,false,true" \
   "$(echo "$DIA_CAMPO" | jq -r '"\(.visits | length)|\([.visits[].far_from_place] | sort | map(tostring) | join(","))"')"
+check "rastro: 3 paradas, todas com tempo no local" "3|true" \
+  "$(echo "$DIA_CAMPO" | jq -r '"\(.stops | length)|\(all(.stops[]; .minutes_on_site != null))"')"
 check "dia inexistente no calendário = VALIDATION_ERROR" "VALIDATION_ERROR" \
   "$(curl -s $API/v1/consultores/$CONS_ID/days/2026-02-31 -H "$HN" | jq -r .error.code)"
-check "lista: encerrou, 2 visitas, 1 cadastro declarado" "encerrou|2|1" \
+check "lista: encerrou, 3 visitas, 1 cadastro declarado" "encerrou|3|1" \
   "$(curl -s $API/v1/consultores -H "$HN" | jq -r --arg i "$CONS_ID" '.[] | select(.id==$i) | "\(.today.status)|\(.today.visits)|\(.today.cadastros)"')"
 CANAIS_ORIGINAIS='{"channels":["Nenhum","Grupos de WhatsApp","Indicação de conhecidos","Agência de mão de obra"]}'
 check "canais: a lista inicial" "4" "$(curl -s $API/v1/consultores/settings/channels -H "$HN" | jq '.channels | length')"
@@ -2123,6 +2256,35 @@ check "canais: admin troca aparando e sem repetir" "iFood|Indeed" \
   "$(curl -s -X PUT $API/v1/consultores/settings/channels -H "$J" -H "$HD" -d '{"channels":[" iFood ","ifood","Indeed"]}' | jq -r '.channels | join("|")')"
 check "canais: volta à lista inicial (sem resíduo)" "4" \
   "$(curl -s -X PUT $API/v1/consultores/settings/channels -H "$J" -H "$HD" -d "$CANAIS_ORIGINAIS" | jq '.channels | length')"
+echo "── Vouchers e painel (§21.7, §21.9) ──"
+check "sino da equipe avisa o voucher pedido" "true" \
+  "$(curl -s "$API/v1/notifications?praca_id=$PRACA_SEED" -H "$HD" | jq --arg i "$PRACA_SEED:voucher-$VOUCHER_ID" '[.[] | select(.id==$i)] | length == 1')"
+check "fila de vouchers: o pedido aparece primeiro" "$VOUCHER_CODE|solicitado" \
+  "$(curl -s "$API/v1/consultores/vouchers?status=solicitado" -H "$HN" | jq -r --arg c "$VOUCHER_CODE" '.[] | select(.code==$c) | "\(.code)|\(.status)"')"
+check "rebeca não libera voucher = FORBIDDEN" "FORBIDDEN" \
+  "$(curl -s -X POST $API/v1/consultores/vouchers/$VOUCHER_ID/decide -H "$J" -H "$HN" -d '{"decision":"liberado"}' | jq -r .error.code)"
+check "recusar sem motivo = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s -X POST $API/v1/consultores/vouchers/$VOUCHER_ID/decide -H "$J" -H "$HD" -d '{"decision":"recusado"}' | jq -r .error.code)"
+check "usado antes de liberar = VOUCHER_STATE" "VOUCHER_STATE" \
+  "$(curl -s -X POST $API/v1/consultores/vouchers/$VOUCHER_ID/used -H "$HD" | jq -r .error.code)"
+check "gestor libera com a referência do Freela" "liberado|cupom $SUF|Diego" \
+  "$(curl -s -X POST $API/v1/consultores/vouchers/$VOUCHER_ID/decide -H "$J" -H "$HD" -d "{\"decision\":\"liberado\",\"freela_ref\":\"cupom $SUF\"}" | jq -r '"\(.status)|\(.freela_ref)|\(.decided_by_name | split(" ")[0])"')"
+check "decidir de novo = VOUCHER_STATE" "VOUCHER_STATE" \
+  "$(curl -s -X POST $API/v1/consultores/vouchers/$VOUCHER_ID/decide -H "$J" -H "$HD" -d '{"decision":"liberado"}' | jq -r .error.code)"
+check "gestor marca usado" "usado" "$(curl -s -X POST $API/v1/consultores/vouchers/$VOUCHER_ID/used -H "$HD" | jq -r .status)"
+check "voucher id malformado = NOT_FOUND" "NOT_FOUND" "$(curl -s -X POST $API/v1/consultores/vouchers/xx/used -H "$HD" | jq -r .error.code)"
+PAINEL=$(curl -s "$API/v1/consultores/painel?consultant_id=$CONS_ID" -H "$HN")
+check "painel do dia: visitas, cadastros, vouchers e vagas do representante" "3|1|1|1|1|1" \
+  "$(echo "$PAINEL" | jq -r '.por_representante[0] | "\(.visitas)|\(.cadastros)|\(.vouchers_solicitados)|\(.vouchers_liberados)|\(.vouchers_usados)|\(.vagas)"')"
+if [ "$DOW" != 7 ]; then
+  check "painel do dia: rota iniciada e % da meta" "1|1|15" \
+    "$(echo "$PAINEL" | jq -r '.totals | "\(.rotas)|\(.rotas_iniciadas)|\(.pct_meta)"')"
+fi
+check "painel: período invertido = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s "$API/v1/consultores/painel?from=$HOJE3&to=$HOJE" -H "$HN" | jq -r .error.code)"
+check "trilhas do dia: o representante com 3 paradas" "3" \
+  "$(curl -s "$API/v1/consultores/painel/trilhas?day=$HOJE" -H "$HN" | jq --arg i "$CONS_ID" '.consultants[] | select(.id==$i) | .stops | length')"
+
 NOVA_TEMP=$(curl -s -X POST $API/v1/consultores/$CONS_ID/reset-password -H "$HD" | jq -r .temp_password)
 check "nova senha provisória" "10" "${#NOVA_TEMP}"
 check "nova senha derruba a sessão aberta" "UNAUTHORIZED" "$(curl -s $API/v1/campo/me -H "$HC" | jq -r .error.code)"
@@ -2140,6 +2302,9 @@ check "admin apaga o consultor de teste (jornadas, visitas e fotos juntos)" "tru
   "$(curl -s -X DELETE $API/v1/consultores/$CONS_ID -H "$HD" | jq .ok)"
 check "consultor apagado = NOT_FOUND" "NOT_FOUND" "$(curl -s $API/v1/consultores/$CONS_ID -H "$HD" | jq -r .error.code)"
 check "lead criado pela visita apagado" "true" "$(curl -s -X DELETE $API/v1/leads/$LEAD_CAMPO -H "$HD" | jq .ok)"
+check "desfazer a base importada tira o estabelecimento que ninguém visitou" "1" \
+  "$(curl -s -X POST $API/v1/imports/$LOTE_B/undo -H "$HD" | jq .removed)"
+check "estabelecimento visitado da base apagado" "true" "$(curl -s -X DELETE $API/v1/leads/$IMP_A -H "$HD" | jq .ok)"
 # Fotos em disco (PHOTO_STORAGE=disk, PHOTOS_DIR=./uploads, relativo a api/).
 check "nenhuma foto de teste sobrou no disco" "nao" "$([ -e "uploads/campo/$CONS_ID" ] && echo sim || echo nao)"
 rm -f /tmp/praca-smoke-h.txt /tmp/praca-smoke-fachada.jpg /tmp/praca-smoke-campo.txt /tmp/praca-smoke-campo.json

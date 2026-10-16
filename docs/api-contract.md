@@ -3194,8 +3194,10 @@ Faltando → `422 ANSWERS_INCOMPLETE` (como no §20.3).
   da semana.
 
 `VisitView` ganha `form_version`, `off_route`, `off_hours`, `voucher`
-(`VoucherView | null`), `vagas: [{id, date, funcao, filled}]` e, em `answers`, os
-campos v2.
+(`{id, code, status, valid_until, freela_ref, decision_note} | null` — o recorte do
+`VoucherView` que a visita precisa), `vagas: [{id, date, funcao, filled}]` e, em
+`answers`, os campos v2 lado a lado com os do v1 (só os da versão da visita valem).
+No checkout v2 o evento leva `author_label = "Representante: <nome>"`.
 
 **Checkout v2 no CRM** (na transação do §20.3): evento `visit` com o resumo v2;
 `decisor` ← contato; e por status final:
@@ -3236,8 +3238,9 @@ check-in (`null` sem checkout); `minutes_travel` = check-in − checkout anterio
 primeira, desde o início da jornada; `null` se a anterior não tem checkout).
 Minutos arredondados.
 
-`GET /v1/consultores/:id/days/:day` ganha `stops: StopTiming[]` e `route:
-RouteView | null`.
+`GET /v1/consultores/:id/days/:day` ganha `stops: StopTiming[]` (o deslocamento da
+primeira parada conta do início da primeira jornada do dia) e `route:
+{id, goal, total, visitados} | null` (resumo da rota do dia).
 
 ### 21.9 Painéis
 
@@ -3276,7 +3279,18 @@ RouteView | null`.
 
 `ClienteItem`: `{lead_id, name, address, phone, lat, lng, stage, vagas,
 last_vaga_at}`. Os clientes dele são os leads com `field_consultant_id` = ele.
+`numbers.cadastrados` conta os checkouts v2 dele com `cadastrou` no período (mesmo
+quando o crédito do cliente ficou com outro representante, que cadastrou antes).
 `cadastrou`/`abriu_vaga` = no período; `nunca_abriu` = clientes dele sem nenhuma
 vaga; `sem_vaga_30d` = clientes dele com vaga, mas nenhuma criada nos últimos 30
 dias. `clientes_na_rota` = paradas não removidas das rotas dele no período;
 `visitados` = dessas, as com visita.
+
+### 21.10 O que muda no §20
+
+- `ConsultorListItem.today.cadastros` e `TodayView.counters.cadastrou_qr` contam
+  também o status final `cadastrou` das visitas v2.
+- Na interface, "consultor" virou "representante" e "jornada" virou "rota"
+  ("Iniciar rota", "Encerrar rota"); wire, tabelas e rotas não mudaram.
+- `PATCH /v1/consultores/routes/:id` com o mesmo `lead_id` repetido na lista:
+  vale a primeira posição.

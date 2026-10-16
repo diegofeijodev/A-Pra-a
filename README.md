@@ -21,8 +21,8 @@ Novo em relação ao protótipo: integração com o sistema de campanhas do Free
 **Status:** port **concluído**. API com 17 módulos (contrato em
 `docs/api-contract.md`) e web com as **9 telas** do protótipo mais três coisas
 que ele não tinha — `/freela`, `/entrar` e o formulário público. Depois do port entrou o bloco A de **consultores de campo** (§ Consultores de
-campo). Verificação de ponta a ponta: 640 testes de unidade na API (45 suítes),
-91 no web (vitest), 858 checagens de smoke contra a API viva e 145 checagens de
+campo), e em seguida o bloco B de **representantes e rotas** (§ Representantes e rotas). Verificação de ponta a ponta: 727 testes de unidade na API (52 suítes),
+100 no web (vitest), 919 checagens de smoke contra a API viva e 153 checagens de
 navegador (§ Verificação).
 
 ## Como subir
@@ -88,14 +88,16 @@ públicas. Os textos são os do protótipo Lovable, portados 1:1.
 | `/` | — | redireciona para `/hoje` |
 | `/entrar` | Entrada | login por e-mail e senha; `?demo=1` preenche a conta de demonstração **só** com `NEXT_PUBLIC_DEMO_LOGIN=1` |
 | `/hoje` | Ações | agenda do dia: atrasadas, para hoje, próximos 7 dias, carga por pessoa e os leads do funil que precisam de toque hoje. Concluir/desfazer direto na linha |
-| `/praca` | Praça | as 11 etapas do roteiro de abertura com portão por resultado, cobertura geográfica e progresso por etapa |
+| `/praca` | Praça | as 11 etapas do roteiro de abertura com portão por resultado, cobertura geográfica, progresso por etapa e o **mapa de calor** dos estabelecimentos por CNAE |
 | `/funil` | Funil | quadro de 8 etapas com os contratantes: métricas do topo, filtros, cartão arrastável, ficha lateral (linha do tempo, próximo passo, mudança de etapa) |
-| `/entrada` | Entrada de leads | importar planilha/XML com mapeamento de campos e regra de duplicidade, endereço do formulário público, fila "para tocar hoje" e desfazer importação |
+| `/entrada` | Entrada de leads | importar Excel (.xlsx)/CSV/XML com mapeamento de campos (inclusive CNAE, bairro e lat/lng) e regra de duplicidade, endereço do formulário público, fila "para tocar hoje" e desfazer importação |
 | `/mensagens` | Mensagens | modelos com variação A/B e prévia real, disparos em lote (público, prévia, agendamento, fila manual) e cadências que rodam sozinhas |
 | `/campanhas` | Campanhas | mídia paga: briefing com portão, quadro de criativos, tráfego dia a dia e calendário de publicação |
 | `/calendario` | Calendário | mês/semana das ações, com marcos das etapas e remanejamento por arrastar |
 | `/indicadores` | Indicadores | os 12 indicadores nas visões empresa / praça / pessoa / canal, metas por horizonte e lançamento à mão |
 | `/configuracoes` | Configurações | pessoas e acessos, dados da praça, variáveis padrão das mensagens e roteiro-modelo das próximas praças |
+| `/consultores` | Representantes | painel (rotas, visitas, cadastros, vouchers, vagas), cadastro dos representantes, rotas da semana e fila de vouchers |
+| `/campo` | Praça Campo (celular) | rota do dia, check-in com foto, formulário da visita, voucher, rota da semana e "Meus números" — sessão própria do representante |
 | `/freela` | Freela | campanhas de WhatsApp no Freela (normais e automáticas) e o estado da conexão |
 | `/formulario/[pracaId]` | Formulário público | captura sem login por praça (`?origem=` e `?camp=`), com limite por IP |
 
@@ -197,6 +199,53 @@ contrato: `docs/api-contract.md` §20.
   "Lead novo"/"Contatado" → "Conversa aberta"; pedido de retorno → próximo passo.
   Estabelecimento novo nasce com origem "visita de campo" e a localização do check-in.
 
+## Representantes e rotas (bloco B)
+
+Na interface o consultor de campo virou **representante comercial**; no banco e
+no código os nomes `field_*`/`campo` continuam. Desenho e respostas do dono:
+`docs/superpowers/specs/2026-10-16-representantes-e-rotas-design.md`; contrato:
+`docs/api-contract.md` §21.
+
+- **Cadastro:** nome, data de nascimento (a idade é calculada), cidade (praça),
+  área de atuação (bairros e/ou raio no mapa), e-mail, telefone, CPF e Pix.
+- **Base de estabelecimentos:** o dono manda a planilha em **Excel** (Entrada de
+  leads). CNAE, bairro e lat/lng entram no mapeamento; dá para filtrar pelos
+  CNAEs da configuração e aceitar linha sem telefone. Endereço sem lat/lng vai
+  para a **fila de geocodificação** (relógio de 1 min; `GEOCODER=nominatim`
+  por padrão, 1 consulta/s — uma cidade de 2.000 endereços leva ~35 min).
+- **Mapa de calor** na tela Praça, com filtro de CNAE e os pontos pintados pela
+  situação (não visitado, visitado, cadastrado, com vaga).
+- **Rotas:** segunda a sábado, das 9h às 18h, meta de 20 visitas por dia (por
+  praça). Toda **segunda às 7h** o relógio abre a semana de cada representante
+  ativo; a equipe pode gerar de novo (dias já iniciados ficam) e ajustar no mapa.
+  Entram primeiro os retornos combinados para o dia, depois os pendentes da
+  semana anterior, casas grandes e alvos ainda não visitados. "Não quis" volta
+  depois de 30 dias. Áreas sobrepostas não são exclusivas: **quem abre o
+  cadastro ganha** o cliente.
+- **Visita (formulário v2):** contato, função (dono/gerente), contrata
+  freelancer (como e quantos), oferta de **voucher** para quem contrata mais de 5
+  por semana, vagas abertas na hora, cadastro (QR ou assistido) e status final
+  (cadastrou → Cadastrado; vai cadastrar depois e ligar depois → próximo passo;
+  não quis → Perdido com reaquecimento em 30 dias). Tudo funciona sem sinal.
+- **Voucher:** o representante pede; o **gestor** lança no Freela e libera
+  (Representantes → Vouchers), depois marca usado. Vale até o sábado da semana
+  do pedido; o fechamento da meia-noite expira os vencidos.
+- **Rastro:** tempo em cada parada e deslocamento entre elas, no dia do
+  representante e no mapa do painel.
+- **Painéis:** o do admin (rotas iniciadas, visitas e % da meta, cadastros,
+  vouchers, vagas, ranking e trajetos do dia) e o "Meus números" do
+  representante (quem cadastrou, quem abriu vaga, quem nunca abriu, quem está
+  sem vaga há 30 dias).
+
+**Variáveis novas** (`api/.env`): `FIELD_ROUTES_ENABLED` (relógio da segunda,
+padrão `true`), `GEOCODER` (`nominatim` | `google` | `off`),
+`GEOCODER_USER_AGENT` (a política do Nominatim pede um contato) e
+`GOOGLE_MAPS_API_KEY` (só com `GEOCODER=google`).
+
+**Limitação conhecida:** criar contratante, vaga ou voucher **dentro do
+Freela** não é possível pela API que o Praça usa hoje. O cadastro vai pelo
+link/QR do Freela, e vaga e voucher ficam registrados no Praça (spec do bloco B, §9).
+
 **Produção — o que o dono precisa providenciar:**
 1. Permissão **`CONSULTANTS`** na conta de admin do Freela usada em `FREELA_ADMIN_EMAIL`
    (além da `REFERRALS` que já era necessária).
@@ -269,26 +318,26 @@ nem `next build` numa tarefa comum.
 
 ```bash
 cd api
-npm test                 # jest, maxWorkers 1 — 45 suítes, 640 testes
+npm test                 # jest, maxWorkers 1 — 52 suítes, 727 testes
 npm run typecheck        # tsc --noEmit, sozinho
 npm run lint
 
 # smoke: sobe a API sem watcher, roda os checks contra ela e mata o processo
 npm run start:smoke &    # espere `curl -s localhost:3014/health` responder
-npm run smoke            # 858 checagens, repetível sem resíduo
+npm run smoke            # 919 checagens, repetível sem resíduo
                          # (sem o container `praca-postgres` de pé a limpeza final
                          #  das contas de teste, que é por psql, não roda e a contagem cai)
 ```
 
 ```bash
 cd web
-yarn test                # vitest (fork único) — 8 arquivos, 91 testes
+yarn test                # vitest (fork único) — 9 arquivos, 100 testes
 yarn typecheck
 yarn lint
 
 # navegador: precisa da API na 3014 (start:smoke) e do web na 3024 (yarn dev)
 yarn dev &
-yarn browser-check       # 145 checagens; limpa o que cria e pode repetir
+yarn browser-check       # 153 checagens; limpa o que cria e pode repetir
                          # PRACA_CHECK_FAXINA=1 apaga resíduo de rodada morta (todos os disparos e conclusões da praça do seed)
 ```
 

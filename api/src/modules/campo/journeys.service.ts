@@ -51,7 +51,8 @@ export class JourneysService {
       visits: views,
       counters: {
         visits: views.length,
-        cadastrou_qr: views.filter((v) => v.answers.freela_status === 'cadastrou_qr').length,
+        // v1: "cadastrou agora pelo QR"; v2 (§21.6): status final "cadastrou".
+        cadastrou_qr: views.filter((v) => v.answers.freela_status === 'cadastrou_qr' || v.answers.final_status === 'cadastrou').length,
       },
     };
   }

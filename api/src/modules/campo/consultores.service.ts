@@ -150,7 +150,7 @@ export class ConsultoresService {
       }),
       this.prisma.field_visits.findMany({
         where: { journey: { day: hoje } },
-        select: { consultant_id: true, freela_status: true },
+        select: { consultant_id: true, freela_status: true, final_status: true },
       }),
     ]);
     const ultimos = jornadas.length
@@ -172,7 +172,8 @@ export class ConsultoresService {
         today: {
           status: situacaoHoje(js),
           visits: vs.length,
-          cadastros: vs.filter((v) => v.freela_status === 'cadastrou_qr').length,
+          // v1: "cadastrou agora pelo QR"; v2 (§21.6): status final "cadastrou".
+          cadastros: vs.filter((v) => v.freela_status === 'cadastrou_qr' || v.final_status === 'cadastrou').length,
           last_point_at: ultimo?.toISOString() ?? null,
         },
       };
