@@ -24,9 +24,11 @@ import {
   PontosDto,
   PosicaoDto,
   SimilarQueryDto,
+  PainelCampoQueryDto,
   StartJourneyDto,
   VagaDaVisitaDto,
 } from './dto/campo.dto';
+import { PainelService } from './painel.service';
 import { JourneysService } from './journeys.service';
 import { lerCheckinMultipart } from './multipart-checkin';
 import { PlacesService } from './places.service';
@@ -45,6 +47,7 @@ export class CampoController {
     private readonly places: PlacesService,
     private readonly visits: VisitsService,
     private readonly routes: RoutesService,
+    private readonly painel: PainelService,
   ) {}
 
   @AllowPendingPassword()
@@ -67,6 +70,11 @@ export class CampoController {
   @Get('routes/week')
   routeWeek(@CurrentConsultant() c: CampoConsultant) {
     return this.routes.week(c);
+  }
+
+  @Get('painel')
+  meusNumeros(@CurrentConsultant() c: CampoConsultant, @Query() q: PainelCampoQueryDto) {
+    return this.painel.campo(c, (q.periodo as 'dia' | 'semana' | '30d' | undefined) ?? 'dia');
   }
 
   // ── jornada ─────────────────────────────────────────────────

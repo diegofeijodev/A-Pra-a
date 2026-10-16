@@ -25,12 +25,15 @@ import {
   DecideVoucherDto,
   EditRouteDto,
   GenerateRoutesDto,
+  PainelQueryDto,
+  TrilhasQueryDto,
   RoutesQueryDto,
   UpdateConsultorDto,
   VouchersQueryDto,
 } from './dto/consultores.dto';
 import { RoutesService } from './routes.service';
 import { VouchersService } from './vouchers.service';
+import { PainelService } from './painel.service';
 
 /**
  * Telas da equipe sobre os consultores de campo (`/v1/consultores`, §20.4).
@@ -45,6 +48,7 @@ export class ConsultoresController {
     private readonly consultores: ConsultoresService,
     private readonly routes: RoutesService,
     private readonly vouchers: VouchersService,
+    private readonly painel: PainelService,
   ) {}
 
   @Get()
@@ -79,6 +83,17 @@ export class ConsultoresController {
   @Put('settings/cnaes')
   setCnaes(@Body() dto: CnaesDto) {
     return this.consultores.setCnaes(dto);
+  }
+
+  // ── painel (§21.9) ──
+  @Get('painel')
+  painelAdmin(@Query() q: PainelQueryDto) {
+    return this.painel.admin(q);
+  }
+
+  @Get('painel/trilhas')
+  trilhas(@Query() q: TrilhasQueryDto) {
+    return this.painel.trilhas(q);
   }
 
   // ── rotas (§21.5) ──

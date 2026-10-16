@@ -21,6 +21,7 @@ import {
   type SituacaoHoje,
 } from '../../domain/campo-rules';
 import { idade } from '../../domain/route-rules';
+import { SELECAO_RASTRO, stopTimings, type StopTiming } from './painel.service';
 import { CampoFreelaService } from './campo-freela.service';
 import { lerCanais } from './campo-canais';
 import { lerCnaes } from './campo-cnaes';
@@ -309,7 +310,13 @@ export class ConsultoresService {
   async day(
     id: string,
     day: string,
-  ): Promise<{ day: string; journeys: (JourneyView & { points: PointView[] })[]; visits: VisitView[] }> {
+  ): Promise<{
+    day: string;
+    journeys: (JourneyView & { points: PointView[] })[];
+    visits: VisitView[];
+    stops: StopTiming[];
+    route: { id: string; goal: number; total: number; visitados: number } | null;
+  }> {
     await this.findOrFail(id);
     if (!isDateString(day)) {
       throw new BadRequestException({
@@ -317,7 +324,7 @@ export class ConsultoresService {
         message: 'day: deve ser uma data válida no formato YYYY-MM-DD',
       });
     }
-    const [jornadas, visitas] = await Promise.all([
+    const [jornadas, visitas, rastro, rota] = await Promise.all([
       this.prisma.field_journeys.findMany({
         where: { consultant_id: id, day },
         orderBy: { started_at: 'asc' },
@@ -328,12 +335,22 @@ export class ConsultoresService {
         include: COM_LEAD,
         orderBy: { checkin_at: 'asc' },
       }),
+      this.prisma.field_visits.findMany({ where: { consultant_id: id, journey: { day } }, select: SELECAO_RASTRO }),
+      this.prisma.field_routes.findUnique({
+        where: { consultant_id_day: { consultant_id: id, day } },
+        select: { id: true, goal: true, stops: { where: { removed: false }, select: { visit_id: true } } },
+      }),
     ]);
     const hoje = todaySp();
     return {
       day,
       journeys: jornadas.map((j) => ({ ...journeyView(j), points: j.points.map(pointView) })),
       visits: visitas.map((v) => visitView(v, hoje)),
+      // Tempo em cada parada (§21.8): o deslocamento da primeira conta do início do dia.
+      stops: stopTimings(rastro, jornadas[0]?.started_at ?? null),
+      route: rota
+        ? { id: rota.id, goal: rota.goal, total: rota.stops.length, visitados: rota.stops.filter((s) => s.visit_id).length }
+        : null,
     };
   }
 
