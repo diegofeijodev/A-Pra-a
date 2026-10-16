@@ -1,6 +1,6 @@
 # Representantes comerciais e rotas de visita — design (bloco B)
 
-Data: 16/10/2026 · Status: **rascunho, aguardando respostas do dono (§14)** · Base: bloco A
+Data: 16/10/2026 · Status: **aprovado — respostas do dono em §14** · Base: bloco A
 (`2026-10-08-consultores-de-campo-design.md`, contrato §20), que fica de pé e é estendido aqui.
 
 ## 1. Contexto e objetivo
@@ -34,11 +34,22 @@ nas rotas da API os nomes `field_*`, `campo` e `consultores` **não mudam** (nad
 8. Rastro mostra **quanto tempo ficou em cada ponto**.
 9. Acompanhamento dos PDVs já visitados na cidade para abrir novas rotas.
 10. Painel do admin e painel do representante (§8).
+11. **A base de estabelecimentos vem do dono em Excel** (endereço e o resto). O Praça lê o `.xlsx`, acha a localização
+    pelo endereço (geocodificação, §7.0) e monta as rotas.
+12. **Voucher vale para a semana** (até o sábado da semana em que foi pedido) e **o gestor libera**: o representante
+    pede na visita, o gestor (admin) confere, coloca no Freela e marca "liberado" no Praça; depois marca "usado".
+13. **Rotas de segunda a sábado, das 9h às 18h.**
+14. **"Cadastrou" move o lead para Cadastrado** no funil na hora (declaração do representante).
+15. **"Não quis" volta para rota depois de 30 dias.**
+16. **Mapa de calor dentro da tela Praça.**
+17. As duas listas de "não abriu vaga" (§8.2) estão aprovadas.
+18. **As telas atuais continuam** no menu.
+19. **Áreas sobrepostas: quem abre o cadastro ganha.** O mesmo PDV pode estar na rota de mais de um representante; o
+    crédito do cliente é de quem fechar o primeiro "cadastrou", e a partir daí ele sai da rota de todos.
 
 ## 3. Fora de escopo (neste bloco)
 
-- **Geocodificação em massa** de endereços sem lat/lng (depende da fonte escolhida em §14.1; a importação aceita
-  lat/lng prontos desde já).
+- Busca automática de estabelecimentos (Receita, Apify, Google Maps): a base vem do dono, em Excel.
 - Criar contratante, vaga ou voucher **de verdade no Freela** — hoje o Praça não tem endpoint para isso (§9). Aqui o
   cadastro é pelo link/QR do Freela e a vaga e o voucher ficam registrados no Praça.
 - Confirmação dos cadastros pelo Freela (o "cadastrou" continua sendo declaração do representante).
@@ -70,7 +81,7 @@ api/src/modules/campo/
 api/src/modules/imports/              + colunas cnae, bairro, lat, lng
 web/src/app/campo/(sessao)/           + rota do dia, painel, formulário novo, voucher
 web/src/app/(app)/consultores/        + área no mapa, rotas da semana, painel, rastro com tempos
-web/src/app/(app)/praca/ (ou /mapa)   + mapa de calor por CNAE (§14.6)
+web/src/app/(app)/praca/            + mapa de calor por CNAE (decisão 16)
 ```
 
 Mapa no web: **Leaflet** (já é dependência do `web/`) + **`leaflet.heat`** (dependência nova, pequena) com tiles do
@@ -90,11 +101,16 @@ legíveis. **Migração com `--create-only`, apagando do SQL os `DROP INDEX` dos
   - Sem nenhum dos dois → área = a praça inteira.
 - A cidade é a praça (`praca_id`, já existe).
 
-**`pracas`** (existente) ganha `route_daily_goal Int @default(20)` e `route_weekdays Int @default(5)` (5 = seg–sex,
-6 = seg–sáb; §14.3).
+**`pracas`** (existente) ganha `route_daily_goal Int @default(20)`, `route_start_hour Int @default(9)` e
+`route_end_hour Int @default(18)`. A semana de rota é sempre **segunda a sábado** (decisão 13).
 
-**`leads`** (existente) ganha `cnae String?` (7 dígitos, sem máscara) e `bairro String?`. Novo índice
-`[praca_id, cnae]`.
+**`leads`** (existente) ganha:
+- `cnae String?` (7 dígitos, sem máscara) e `bairro String?`;
+- `geo_status String?` (`pendente|ok|falhou`; nulo = sem endereço ou lead antigo) e `geo_error String?`;
+- `field_consultant_id String?` (FK `field_consultants`, `SetNull`) — o representante que fechou o primeiro
+  "cadastrou" (decisão 19).
+
+Novos índices `[praca_id, cnae]` e `[geo_status]`.
 
 **`app_settings`** (existente) ganha `field_cnaes Json` com a lista editável `{code, label}[]`, nascendo com:
 `5611201` Restaurantes e similares · `5611203` Lanchonetes, casas de chá, de sucos e similares · `5611204` Bares e
@@ -127,12 +143,14 @@ novas):
 - `final_reason String?` (para `nao_quis`)
 - `callback_phone String?` (para `ligar_depois`)
 - `off_route Boolean @default(false)` — visita a estabelecimento que não estava na rota do dia.
+- `off_hours Boolean @default(false)` — check-in fora das 9h–18h da praça (marca, não bloqueia).
 - `form_version Int @default(1)` — `2` nas visitas novas; a tela escolhe o formulário e o resumo por ela.
 
 **`field_vouchers`** (nova):
 id · code (único, `PRC-` + 6 caracteres sem ambiguidade) · visit_id (único) · lead_id · consultant_id · praca_id ·
-status (`liberado|usado|expirado|cancelado`) · valid_until (`YYYY-MM-DD`) · used_at? · vaga_id? (`lead_vagas.id`) ·
-created_at · updated_at.
+status (`solicitado|liberado|recusado|usado|expirado`) · valid_until (`YYYY-MM-DD`, o sábado da semana do pedido) ·
+freela_ref? (o que o gestor lançou no Freela, texto livre) · decided_by? (`users.id`) · decided_at? · decision_note? ·
+used_at? · vaga_id? (`lead_vagas.id`) · created_at · updated_at.
 
 **`lead_vagas`** (existente) ganha `source String @default("manual")` (`manual|campo`), `visit_id String?`,
 `created_at DateTime @default(now())`. "Vaga aberta" no painel = linha em `lead_vagas`; `filled` continua dizendo se
@@ -147,7 +165,7 @@ rodou. Assim as vagas do campo entram nos indicadores que já leem `lead_vagas`.
 | GET | `/routes/today` | rota do dia com as paradas em ordem (nome, endereço, lat/lng, motivo, visitado?, status final) |
 | GET | `/routes/week` | as rotas da semana corrente (seg → último dia útil) |
 | GET | `/painel?periodo=dia\|semana\|30d` | números e listas do §8.2 |
-| POST | `/visits/:id/voucher` | emite o voucher da visita (só se a regra do §7.4 permitir) |
+| POST | `/visits/:id/voucher` | pede o voucher da visita ao gestor (só se a regra do §7.4 permitir) |
 | POST | `/visits/:id/vagas` | registra a vaga aberta na hora (`{date, funcao}`) |
 
 `journeys/start` passa a ligar `route_id` quando há rota no dia. `visits/checkin` marca a parada (`visit_id`) se o
@@ -164,6 +182,9 @@ lead estiver na rota, senão `off_route = true`. `PATCH visits/:id` e `checkout`
 | POST | `/routes/generate` | `{week, consultant_ids?}` — gera ou regera (§7.2) |
 | PATCH | `/routes/:id` | `{stops: [{lead_id, removed?}]}` na ordem nova — reordenar, tirar, incluir |
 | GET | `/settings/cnaes` · PUT | lista de CNAEs da praça (`field_cnaes`) |
+| GET | `/vouchers?status&praca_id` | fila de vouchers (pedidos primeiro) |
+| POST | `/vouchers/:id/decide` | `{decision: "liberado"\|"recusado", freela_ref?, note?}` — o gestor libera ou recusa |
+| POST | `/vouchers/:id/used` | marca usado |
 | GET | `/:id/days/:day` | (existente) ganha `stops` com tempo parado e deslocamento (§7.5) |
 
 `POST`/`PATCH /:id` (existente) aceitam `birth_date`, `area_lat`, `area_lng`, `area_radius_km`, `area_bairros`.
@@ -175,9 +196,27 @@ Rotas estáticas (`/painel`, `/routes`, `/settings/cnaes`) declaradas **antes** 
   ∈ `nao_visitado|visitado|cadastrado|com_vaga` (o mais avançado vence). Só leads com lat/lng.
 - `/v1/imports` ganha os campos `cnae`, `bairro`, `lat`, `lng` no mapeamento (com dicas `cnae`, `cnae_fiscal`,
   `bairro`, `latitude`, `longitude`…) e filtro opcional `cnaes` no `run`: linhas com CNAE fora da lista são ignoradas
-  com o motivo "CNAE fora da lista". CNAE aceito com ou sem máscara (`5611-2/01` → `5611201`).
+  com o motivo "CNAE fora da lista". CNAE aceito com ou sem máscara (`5611-2/01` → `5611201`). Novo
+  `allow_no_phone` (ausente = `false`, o comportamento de hoje): a base de visita costuma vir sem telefone.
+- O web passa a ler **`.xlsx`** (primeira planilha, primeira linha = cabeçalho), além de CSV e XML.
+- Lead criado com endereço e sem lat/lng nasce `geo_status = "pendente"`.
+- `GET /v1/pracas/:id/geo` → `{pendente, ok, falhou, sem_endereco}` e `POST /v1/pracas/:id/geo/retry` (volta os
+  `falhou` para `pendente`).
 
 ## 7. Regras
+
+### 7.0 Geocodificação (endereço → lat/lng)
+
+- Relógio de 1 min (`GeocodeScheduler`, processo único, liga/desliga por `GEOCODER`): pega até 50 leads
+  `geo_status = "pendente"` (mais antigos primeiro) e consulta o provedor um por vez.
+- Provedor por `GEOCODER`: `nominatim` (OpenStreetMap, padrão, grátis, **no máximo 1 consulta por segundo** e
+  `User-Agent` identificado por `GEOCODER_USER_AGENT` — a política deles proíbe mais que isso), `google` (exige
+  `GOOGLE_MAPS_API_KEY`, pago por consulta) ou `off` (não consulta nada; os leads ficam pendentes).
+- Consulta: `endereço, bairro, cidade, Brasil`. Achou → `lat/lng`, `geo_status = "ok"`. Não achou ou endereço vazio
+  → `falhou` com o motivo em `geo_error`. Erro de rede/limite → continua `pendente` e o lote para (tenta no próximo
+  minuto).
+- Uma cidade de 2.000 estabelecimentos leva ~35 min no Nominatim. A tela da Praça mostra o andamento (§6.3).
+- Lat/lng vindos na planilha valem mais que a geocodificação (o lead já nasce `ok`).
 
 ### 7.1 Área de atuação
 
@@ -190,9 +229,9 @@ lat/lng não entram em rota (aparecem num aviso "N estabelecimentos sem localiza
 Função pura `planejarSemana(candidatos, dias, meta, centro)` em `route-rules.ts`.
 
 **Candidatos** = leads na área, não arquivados, com CNAE na lista (ou sem CNAE, se vieram por outra porta), e que:
-- não estão em etapa ≥ 5 (Cadastrado em diante);
-- não têm visita com status final `cadastrou` ou `nao_quis` nos últimos 60 dias (§14.5);
-- não estão em rota de **outro** representante na mesma semana (áreas que se sobrepõem não duplicam visita).
+- não estão em etapa ≥ 5 (Cadastrado em diante) — quem cadastrou sai da rota de todos;
+- não têm visita com status final `nao_quis` nos últimos **30 dias**;
+- áreas sobrepostas **não** são exclusivas: o PDV pode cair na rota de dois representantes (decisão 19).
 
 **Prioridade:** (0) **retorno** — `cadastra_depois`/`ligar_depois` cuja `final_date` cai no dia: vai para aquele dia,
 fora da cota de vizinhança; (1) **pendente** — parada de rota anterior que não foi visitada; (2) casa grande nunca
@@ -203,7 +242,8 @@ volta do centro da área (varredura em leque) e cortados em blocos de `meta`, um
 região. Dentro do dia, a ordem é por **vizinho mais próximo**, partindo do ponto da parada mais próxima do centro. O
 corte é determinístico (mesma entrada, mesma rota) e coberto por testes.
 
-**Segunda-feira:** `@Cron('0 6 * * 1', { timeZone: 'America/Sao_Paulo' })` gera a semana de todo representante ativo
+**Segunda-feira:** `@Cron('0 7 * * 1', { timeZone: 'America/Sao_Paulo' })` (antes das 9h) gera a semana — **segunda a
+sábado** — de todo representante ativo
 que ainda não tem rota nela. Idempotente pelo único `(consultant_id, day)`. Processo único (premissa já documentada).
 Liga/desliga por `FIELD_ROUTES_ENABLED` (default `true`, declarada nos dois `docker-compose`).
 
@@ -218,24 +258,28 @@ Editar à mão marca `source = "admin"`.
 3. **Nome do contato**.
 4. **Função:** dono ou gerente.
 5. **Contrata freelancer?** Se sim: **como** (canais, lista editável já existente) e **quantos por semana** (≥ 1).
-6. **Voucher:** se `freelas_per_week > 5`, a tela mostra a oferta. Aceitou → emite o voucher (§7.4) e segue para o
-   cadastro e a vaga na hora.
+6. **Voucher:** se `freelas_per_week > 5`, a tela mostra a oferta. Aceitou → pede o voucher ao gestor (§7.4) e segue
+   para o cadastro e a vaga na hora.
 7. **Abrir o cadastro:** QR na tela do representante ou **cadastro assistido** (abre o link do Freela com o código do
    representante no próprio celular e preenche junto com o dono). Com voucher aceito, registrar a vaga aberta (data e
    função) é obrigatório.
 8. **Status final** (obrigatório para o checkout): `cadastrou` · `cadastra_depois` (+ data ≥ hoje) · `nao_quis`
    (+ motivo) · `ligar_depois` (+ data ≥ hoje e telefone).
 
-Rascunho salvo a cada campo, como hoje; tudo funciona na fila sem sinal (o voucher emitido sem sinal recebe o código
-quando o envio sobe — §14.2).
+Rascunho salvo a cada campo, como hoje; tudo funciona na fila sem sinal (o pedido de voucher feito sem sinal sobe
+quando o sinal volta; o código vem do servidor).
 
 ### 7.4 Voucher
 
 - Só para visita `form_version 2` com `hires_freelancer = true` e `freelas_per_week > 5` ("acima de 5" — 5 não ganha).
-- Um por visita e **um ativo por estabelecimento** (outro `liberado` no mesmo lead → `409 VOUCHER_ACTIVE`).
-- Validade padrão: 30 dias (§14.2). O relógio das 00:05 marca `expirado` os vencidos.
-- "Usado": quando a vaga ligada ao voucher é marcada `filled` ou o admin marca à mão (até o Freela confirmar —
-  fora de escopo).
+- **Fluxo:** o representante **pede** na visita (`solicitado`) → o gestor (admin) confere, lança no Freela e marca
+  **liberado** (com `freela_ref`) ou **recusado** (com motivo) → depois marca **usado**. O representante vê o status
+  na visita e no painel dele; um pedido novo acende o sino da equipe.
+- Um por visita e **um em aberto por estabelecimento** (`solicitado` ou `liberado` no mesmo lead →
+  `409 VOUCHER_ACTIVE`).
+- **Validade: a semana** — `valid_until` = sábado da semana do pedido (segunda a sábado). O relógio das 00:05 marca
+  `expirado` os `solicitado`/`liberado` vencidos.
+- Liberar ou marcar usado depois do vencimento → `409 VOUCHER_EXPIRED`.
 
 ### 7.5 Rastro e tempo por parada
 
@@ -250,7 +294,7 @@ Evento `kind = "visita"` com o resumo novo e `decisor` ← contato (como hoje), 
 
 | Status final | Funil | Próximo passo |
 |---|---|---|
-| `cadastrou` | vai para **5 — Cadastrado** se estava abaixo (§14.4) | — |
+| `cadastrou` | vai para **5 — Cadastrado** se estava abaixo; `field_consultant_id` ← o representante, se vazio | — |
 | `cadastra_depois` | 1/2 → 3, como hoje | "Confirmar cadastro" na data |
 | `ligar_depois` | 1/2 → 3, como hoje | "Ligar" na data, com o telefone |
 | `nao_quis` | vai para **8 — Perdido / reaquecer** com `lost_reason` = motivo | — |
@@ -275,9 +319,9 @@ colunas. Mapa do dia com o rastro e as paradas de todos (uma cor por representan
   - **Cadastrou** — visitas dele com `cadastrou`;
   - **Abriu vaga** — e quantas;
   - **Cadastrou e nunca abriu vaga** — nenhuma linha em `lead_vagas`;
-  - **Sem vaga nos últimos 30 dias** — já abriu antes, mas nenhuma vaga criada nos últimos 30 dias (§14.7).
+  - **Sem vaga nos últimos 30 dias** — já abriu antes, mas nenhuma vaga criada nos últimos 30 dias.
 
-"Clientes do representante" = leads em que a visita com `cadastrou` é dele (a primeira, se houver mais de uma).
+"Clientes do representante" = leads com `field_consultant_id` = ele (quem fechou o primeiro "cadastrou").
 
 ## 9. Integração com o Freela — o que existe e o que falta
 
@@ -301,14 +345,14 @@ registro no Praça. Quando o Freela ganhar esses endpoints, entra um bloco C de 
 - **Equipe — `/consultores`**: abas **Painel** · **Rotas da semana** (grade representante × dia, com contagem, e
   editor de paradas no mapa) · **Representantes** (a lista de hoje). Ficha do representante: data de nascimento/idade
   e área no mapa (círculo arrastável + bairros). Dia do representante: rastro com tempo parado e deslocamento.
-- **Mapa da praça**: mapa de calor com filtro de CNAE e camadas de status (§6.3).
+- **Praça → mapa**: mapa de calor com filtro de CNAE e camadas de status (§6.3).
 - **Configurações → Apps e canais (campo)** ganha a lista de CNAEs.
 - Textos "consultor" → "representante" em toda a interface.
 
 ## 11. Offline
 
 A rota da semana é baixada ao abrir a sessão e fica em cache no aparelho; o formulário v2 entra na mesma fila do
-IndexedDB do bloco A. Voucher pedido sem sinal fica "pendente" na tela até o envio subir (o código vem do servidor).
+IndexedDB do bloco A. Voucher pedido sem sinal fica "enviando" na tela até o envio subir (o código vem do servidor).
 
 ## 12. Testes e verificação
 
@@ -326,26 +370,16 @@ IndexedDB do bloco A. Voucher pedido sem sinal fica "pendente" na tela até o en
 (c) rotas + geração da segunda · (d) formulário v2 + voucher + reflexo no CRM · (e) rastro com tempos ·
 (f) painel do admin · (g) painel do representante.
 
-## 14. Perguntas abertas para o dono
+## 14. Respostas do dono (16/10)
 
-1. **Fonte dos estabelecimentos por CNAE.** (a) Dados abertos de CNPJ da Receita: grátis, traz CNAE e bairro, mas não
-   traz lat/lng — precisa de geocodificação (o serviço gratuito do OpenStreetMap não permite uso em massa; um pago
-   custa por endereço). (b) Apify/Google Maps: já vem com lat/lng e telefone, mas não traz CNAE confiável e é pago.
-   (c) As duas, casando por CNPJ/nome. **Recomendação:** (c) — Receita para a lista e o CNAE, Apify para a
-   localização. A importação deste bloco aceita qualquer uma; a geocodificação fica para depois da resposta.
-2. **Voucher:** validade (sugestão: 30 dias)? Um por estabelecimento para sempre ou um ativo por vez? Quem confirma
-   que foi usado enquanto o Freela não tem integração — a vaga marcada como rodada basta?
-3. **Semana de rotas:** segunda a sexta ou segunda a sábado? Horário em que abrem (sugestão: 6h da segunda)?
-4. **"Cadastrou" vai direto para Cadastrado no funil?** O bloco A deixou isso para quando o Freela confirmasse. Com o
-   pedido de hoje, a sugestão é mover na declaração e marcar o evento como "declarado pelo representante".
-5. **Quando um PDV volta para rota:** quem disse "não quis" volta depois de quantos dias (sugestão: 60)? E quem
-   cadastrou sai das rotas de vez?
-6. **Onde fica o mapa de calor:** dentro da tela Praça (etapa 1, "Mapear a região") ou numa tela própria "Mapa" no
-   menu? Sugestão: dentro da Praça.
-7. **"Não abriu vaga nos últimos 30 dias":** a leitura proposta separa duas listas — "cadastrou e nunca abriu vaga"
-   e "já abriu, mas está parado há 30 dias". Está certo?
-8. **O resto do Praça:** quando você diz "vamos desenhar o Praça assim inicialmente", as telas atuais (funil,
-   mensagens, campanhas, indicadores) continuam no menu ou ficam escondidas por enquanto? Este desenho não mexe
-   nelas.
-9. **Área sobreposta:** se dois representantes cobrem o mesmo bairro, o PDV vai para quem? Sugestão: para quem tiver
-   o centro da área mais perto; nunca para os dois na mesma semana.
+| # | Pergunta | Resposta | Onde entrou |
+|---|---|---|---|
+| 1 | Fonte dos estabelecimentos | o dono manda a base em **Excel** com endereço; o Praça faz a rota | §2.11, §6.3, §7.0 |
+| 2 | Voucher | **vale para a semana**; o **gestor** coloca (libera) | §2.12, §5, §7.4 |
+| 3 | Semana de rotas | **segunda a sábado, 9h às 18h** | §2.13, §5, §7.2 |
+| 4 | "Cadastrou" → Cadastrado | **sim** | §7.6 |
+| 5 | Volta de quem "não quis" | **30 dias** | §7.2 |
+| 6 | Onde fica o mapa de calor | **dentro da tela Praça** | §10 |
+| 7 | As duas listas de "não abriu vaga" | **sim** | §8.2 |
+| 8 | Telas atuais | **continuam** | §2.18 |
+| 9 | Área sobreposta | **quem abre o cadastro ganha** | §2.19, §5, §7.2 |
