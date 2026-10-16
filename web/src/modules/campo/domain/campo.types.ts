@@ -160,6 +160,49 @@ export interface TodayView {
   counters: { visits: number; cadastrou_qr: number };
 }
 
+/** Tempo em cada parada (§21.8). */
+export interface StopTiming {
+  visit_id: string;
+  lead_id: string;
+  lead_name: string;
+  lat: number;
+  lng: number;
+  checkin_at: string;
+  checkout_at: string | null;
+  minutes_on_site: number | null;
+  minutes_travel: number | null;
+  far_from_place: boolean;
+  off_route: boolean;
+  off_hours: boolean;
+  auto_closed: boolean;
+  clock_adjusted: boolean;
+  final_status: string | null;
+}
+
+/** "Meus números" (§21.9). */
+export interface ClienteItem {
+  lead_id: string;
+  name: string;
+  address: string;
+  phone: string;
+  lat: number | null;
+  lng: number | null;
+  stage: number;
+  vagas: number;
+  last_vaga_at: string | null;
+}
+
+export interface PainelCampo {
+  periodo: 'dia' | 'semana' | '30d';
+  from: string;
+  to: string;
+  numbers: { clientes_na_rota: number; visitados: number; cadastrados: number; vouchers: number; vagas: number };
+  cadastrou: ClienteItem[];
+  abriu_vaga: ClienteItem[];
+  nunca_abriu: ClienteItem[];
+  sem_vaga_30d: ClienteItem[];
+}
+
 /** Rota de visita (§21.5). */
 export type MotivoParada = 'novo' | 'retorno' | 'pendente' | 'incluido';
 export type StatusRota = 'aberta' | 'iniciada' | 'encerrada';

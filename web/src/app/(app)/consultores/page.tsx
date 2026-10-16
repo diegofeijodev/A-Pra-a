@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { ConsultorDialog } from '@/components/praca/ConsultorDialog';
+import { PainelRepresentantes } from '@/components/praca/PainelRepresentantes';
 import { RotasSemana } from '@/components/praca/RotasSemana';
 import { VouchersLista } from '@/components/praca/VouchersLista';
 import { Button } from '@/components/ui/button';
@@ -14,6 +15,7 @@ import { useConsultores } from '@/modules/consultores/application/use-consultore
 const SITUACAO = { em_jornada: 'em rota agora', encerrou: 'encerrou', nao_iniciou: 'não começou' } as const;
 
 const ABAS = [
+  ['painel', 'Painel'],
   ['representantes', 'Representantes'],
   ['rotas', 'Rotas da semana'],
   ['vouchers', 'Vouchers'],
@@ -22,7 +24,7 @@ type Aba = (typeof ABAS)[number][0];
 
 export default function ConsultoresPage() {
   const { user } = useAuth();
-  const [aba, setAba] = useState<Aba>('representantes');
+  const [aba, setAba] = useState<Aba>('painel');
   const [novo, setNovo] = useState(false);
 
   return (
@@ -45,6 +47,7 @@ export default function ConsultoresPage() {
         ))}
       </div>
       <div className="mt-4">
+        {aba === 'painel' && <PainelRepresentantes />}
         {aba === 'representantes' && <Representantes />}
         {aba === 'rotas' && <RotasSemana />}
         {aba === 'vouchers' && <VouchersLista />}

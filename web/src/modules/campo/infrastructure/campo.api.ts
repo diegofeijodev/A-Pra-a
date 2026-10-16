@@ -3,6 +3,7 @@ import type {
   CampoMeResponse,
   CheckinPayload,
   JourneyView,
+  PainelCampo,
   PlaceView,
   Posicao,
   RouteView,
@@ -44,6 +45,11 @@ export async function campoRotaHoje(): Promise<RouteView | null> {
 export async function campoRotaSemana(): Promise<{ week_start: string; routes: RouteView[] }> {
   const { data } = await campoApi.get('/v1/campo/routes/week');
   return data as { week_start: string; routes: RouteView[] };
+}
+
+export async function campoPainel(periodo: PainelCampo['periodo']): Promise<PainelCampo> {
+  const { data } = await campoApi.get('/v1/campo/painel', { params: { periodo } });
+  return data as PainelCampo;
 }
 
 export async function campoIniciarJornada(p: { client_id: string } & Posicao): Promise<JourneyView> {

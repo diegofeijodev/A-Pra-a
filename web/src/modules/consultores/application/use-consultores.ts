@@ -11,6 +11,8 @@ import {
   editarRota,
   gerarRotas,
   listRotas,
+  getPainel,
+  getTrilhas,
   listVouchers,
   decidirVoucher,
   voucherUsado,
@@ -120,6 +122,14 @@ export function useEditarRota() {
     },
     onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível salvar a rota.')),
   });
+}
+
+export function usePainel(params: { from: string; to: string; praca_id?: string; consultant_id?: string }) {
+  return useQuery({ queryKey: [...CHAVE, 'painel', params], queryFn: () => getPainel(params), refetchInterval: 60_000 });
+}
+
+export function useTrilhas(params: { day: string; praca_id?: string }, enabled: boolean) {
+  return useQuery({ queryKey: [...CHAVE, 'trilhas', params], queryFn: () => getTrilhas(params), enabled, refetchInterval: 60_000 });
 }
 
 export function useVouchers(status?: StatusVoucher) {

@@ -1,5 +1,5 @@
 import { api } from '@/modules/shared/infrastructure/http';
-import type { JourneyView, PointView, RouteView, VisitView } from '@/modules/campo/domain/campo.types';
+import type { JourneyView, PointView, RouteView, StopTiming, VisitView } from '@/modules/campo/domain/campo.types';
 
 export type { RouteView };
 
@@ -42,6 +42,45 @@ export interface DiaConsultor {
   day: string;
   journeys: (JourneyView & { points: PointView[] })[];
   visits: VisitView[];
+  stops: StopTiming[];
+  route: { id: string; goal: number; total: number; visitados: number } | null;
+}
+
+// ── painel (§21.9) ──
+export interface NumerosPainel {
+  rotas: number;
+  rotas_iniciadas: number;
+  rotas_abertas: number;
+  visitas: number;
+  meta: number;
+  pct_meta: number | null;
+  cadastros: number;
+  vouchers_solicitados: number;
+  vouchers_liberados: number;
+  vouchers_usados: number;
+  vagas: number;
+}
+
+export interface PainelAdmin {
+  from: string;
+  to: string;
+  totals: NumerosPainel;
+  por_representante: (NumerosPainel & { consultant_id: string; name: string })[];
+}
+
+export interface Trilhas {
+  day: string;
+  consultants: { id: string; name: string; points: { lat: number; lng: number; at: string }[]; stops: StopTiming[] }[];
+}
+
+export async function getPainel(params: { from?: string; to?: string; praca_id?: string; consultant_id?: string }): Promise<PainelAdmin> {
+  const { data } = await api.get('/v1/consultores/painel', { params });
+  return data as PainelAdmin;
+}
+
+export async function getTrilhas(params: { day?: string; praca_id?: string }): Promise<Trilhas> {
+  const { data } = await api.get('/v1/consultores/painel/trilhas', { params });
+  return data as Trilhas;
 }
 
 export interface CreateConsultorInput {

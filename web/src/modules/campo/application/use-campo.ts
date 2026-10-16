@@ -3,9 +3,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
 import { todaySp } from '@/lib/dates';
-import type { CampoMeResponse, RouteView, TodayView } from '../domain/campo.types';
+import type { CampoMeResponse, PainelCampo, RouteView, TodayView } from '../domain/campo.types';
 import { montarDia, type DiaLocal } from '../domain/dia-local';
-import { campoHoje, campoMe, campoRotaHoje, campoRotaSemana } from '../infrastructure/campo.api';
+import { campoHoje, campoMe, campoPainel, campoRotaHoje, campoRotaSemana } from '../infrastructure/campo.api';
 import { getSnapshot, setSnapshot } from '../infrastructure/campo-session.storage';
 import { useCampoSession } from './campo-session.store';
 import { useFilaStore } from './use-fila';
@@ -67,6 +67,10 @@ export function useRotaHoje() {
     initialDataUpdatedAt: 0,
     refetchInterval: 120_000,
   });
+}
+
+export function usePainelCampo(periodo: PainelCampo['periodo']) {
+  return useQuery({ queryKey: ['campo', 'painel', periodo], queryFn: () => campoPainel(periodo) });
 }
 
 export function useRotaSemana() {

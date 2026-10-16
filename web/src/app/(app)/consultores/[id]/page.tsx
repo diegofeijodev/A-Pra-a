@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react';
 import { QrDoFreela } from '@/components/campo/QrDoFreela';
 import { ConsultorDialog } from '@/components/praca/ConsultorDialog';
 import { ConsultorLinhaDoTempo } from '@/components/praca/ConsultorLinhaDoTempo';
+import { RastroParadas } from '@/components/praca/RastroParadas';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -127,7 +128,10 @@ export default function ConsultorDetalhePage() {
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
             <ConsultorLinhaDoTempo dia={diaDados} />
-            {(trilhas.some((t) => t.length > 0) || diaDados.visits.length > 0) && <ConsultorMapa trilhas={trilhas} visitas={diaDados.visits} dark={dark} />}
+            <div className="space-y-4">
+              {(trilhas.some((t) => t.length > 0) || diaDados.visits.length > 0) && <ConsultorMapa trilhas={trilhas} visitas={diaDados.visits} dark={dark} />}
+              <RastroParadas paradas={diaDados.stops ?? []} rota={diaDados.route ?? null} />
+            </div>
           </div>
         )}
       </section>

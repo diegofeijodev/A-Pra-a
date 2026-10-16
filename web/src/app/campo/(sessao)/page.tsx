@@ -3,6 +3,7 @@
 import { Suspense } from 'react';
 import { HojeTela } from '@/components/campo/HojeTela';
 import { NovaVisitaTela } from '@/components/campo/NovaVisitaTela';
+import { NumerosTela } from '@/components/campo/NumerosTela';
 import { QrTela } from '@/components/campo/QrTela';
 import { RotaTela } from '@/components/campo/RotaTela';
 import { VisitaTela } from '@/components/campo/VisitaTela';
@@ -23,6 +24,8 @@ function Visao() {
       return <QrTela />;
     case 'rota':
       return <RotaTela />;
+    case 'numeros':
+      return <NumerosTela />;
     default:
       return <HojeTela />;
   }
