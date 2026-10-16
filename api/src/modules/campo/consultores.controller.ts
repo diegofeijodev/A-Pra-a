@@ -22,12 +22,15 @@ import {
   ChannelsDto,
   CnaesDto,
   CreateConsultorDto,
+  DecideVoucherDto,
   EditRouteDto,
   GenerateRoutesDto,
   RoutesQueryDto,
   UpdateConsultorDto,
+  VouchersQueryDto,
 } from './dto/consultores.dto';
 import { RoutesService } from './routes.service';
+import { VouchersService } from './vouchers.service';
 
 /**
  * Telas da equipe sobre os consultores de campo (`/v1/consultores`, §20.4).
@@ -41,6 +44,7 @@ export class ConsultoresController {
   constructor(
     private readonly consultores: ConsultoresService,
     private readonly routes: RoutesService,
+    private readonly vouchers: VouchersService,
   ) {}
 
   @Get()
@@ -94,6 +98,26 @@ export class ConsultoresController {
   @Patch('routes/:routeId')
   editRoute(@Param('routeId') routeId: string, @Body() dto: EditRouteDto) {
     return this.routes.edit(routeId, dto);
+  }
+
+  // ── vouchers (§21.7) ──
+  @Get('vouchers')
+  listVouchers(@Query() q: VouchersQueryDto) {
+    return this.vouchers.list(q);
+  }
+
+  @AdminOnly()
+  @HttpCode(200)
+  @Post('vouchers/:voucherId/decide')
+  decideVoucher(@CurrentUser() user: AuthUser, @Param('voucherId') voucherId: string, @Body() dto: DecideVoucherDto) {
+    return this.vouchers.decide(voucherId, dto, user);
+  }
+
+  @AdminOnly()
+  @HttpCode(200)
+  @Post('vouchers/:voucherId/used')
+  voucherUsed(@Param('voucherId') voucherId: string) {
+    return this.vouchers.markUsed(voucherId);
   }
 
   @Get('visits/:visitId/photo')

@@ -54,6 +54,8 @@ export interface BuildNotificationsInput {
   fill_hours: number | null;
   /** Campanhas ATIVAS da praça que já passaram do teto de custo por cliente novo. */
   campanhas_acima_teto: NotifCampanha[];
+  /** Bloco B (§21.7): vouchers pedidos pelos representantes, esperando o gestor. */
+  vouchers_pedidos?: { id: string; code: string; lead_name: string; consultant_name: string }[];
 }
 
 export interface NotifItem {
@@ -131,6 +133,15 @@ export function buildNotifications(input: BuildNotificationsInput): NotifItem[] 
       id: `teto-${c.id}`,
       text: `${c.name} passou do teto de custo por cliente novo`,
       tone: 'warn',
+    });
+  }
+
+  // Representantes: voucher pedido esperando o gestor liberar no Freela.
+  for (const v of input.vouchers_pedidos ?? []) {
+    out.push({
+      id: `voucher-${v.id}`,
+      text: `Voucher ${v.code} pedido por ${v.consultant_name} para ${v.lead_name} — liberar em Representantes → Vouchers`,
+      tone: 'info',
     });
   }
 

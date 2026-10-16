@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Param,
@@ -17,7 +18,15 @@ import { CampoConsultant } from '../../common/auth/campo-consultant';
 import { AllowPendingPassword, CampoRoute } from '../../common/decorators/campo-route.decorator';
 import { CurrentConsultant } from '../../common/decorators/current-consultant.decorator';
 import { CampoAuthService } from './campo-auth.service';
-import { AnswersDto, PlacesQueryDto, PontosDto, PosicaoDto, SimilarQueryDto, StartJourneyDto } from './dto/campo.dto';
+import {
+  AnswersDto,
+  PlacesQueryDto,
+  PontosDto,
+  PosicaoDto,
+  SimilarQueryDto,
+  StartJourneyDto,
+  VagaDaVisitaDto,
+} from './dto/campo.dto';
 import { JourneysService } from './journeys.service';
 import { lerCheckinMultipart } from './multipart-checkin';
 import { PlacesService } from './places.service';
@@ -106,6 +115,23 @@ export class CampoController {
   @Post('visits/:ref/checkout')
   checkout(@CurrentConsultant() c: CampoConsultant, @Param('ref') ref: string, @Body() dto: PosicaoDto) {
     return this.visits.checkout(c, ref, dto);
+  }
+
+  // ── vagas e voucher da visita (§21.6–21.7) ──
+  @Post('visits/:ref/vagas')
+  addVaga(@CurrentConsultant() c: CampoConsultant, @Param('ref') ref: string, @Body() dto: VagaDaVisitaDto) {
+    return this.visits.addVaga(c, ref, dto);
+  }
+
+  @HttpCode(200)
+  @Delete('visits/:ref/vagas/:vagaId')
+  removeVaga(@CurrentConsultant() c: CampoConsultant, @Param('ref') ref: string, @Param('vagaId') vagaId: string) {
+    return this.visits.removeVaga(c, ref, vagaId);
+  }
+
+  @Post('visits/:ref/voucher')
+  voucher(@CurrentConsultant() c: CampoConsultant, @Param('ref') ref: string) {
+    return this.visits.requestVoucher(c, ref);
   }
 
   @Get('visits/:ref/photo')

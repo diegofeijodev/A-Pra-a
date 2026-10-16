@@ -195,3 +195,14 @@ describe('buildNotifications — ordem', () => {
     expect(out.map((n) => n.id)).toEqual(['tmw-a1', 'lock-3', 'lead-l1', `fill-${PRACA_ID}`, 'teto-c1']);
   });
 });
+
+describe('voucher pedido pelo representante (§21.7)', () => {
+  it('vira aviso info com o código, quem pediu e para quem', () => {
+    const out = buildNotifications(base({ vouchers_pedidos: [{ id: 'v1', code: 'PRC-ABCDEF', lead_name: 'Bar do Zé', consultant_name: 'Ana' }] }));
+    expect(out).toContainEqual({
+      id: 'voucher-v1',
+      text: 'Voucher PRC-ABCDEF pedido por Ana para Bar do Zé — liberar em Representantes → Vouchers',
+      tone: 'info',
+    });
+  });
+});

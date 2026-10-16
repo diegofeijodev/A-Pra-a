@@ -6,6 +6,7 @@ import type { CheckinDto } from '../dto/campo.dto';
 import type { JourneysService } from '../journeys.service';
 import type { PhotoStorage } from '../photo-storage';
 import type { PlacesService } from '../places.service';
+import { COM_LEAD } from '../campo-views';
 import { VisitsService } from '../visits.service';
 
 const CONS = '44444444-4444-4444-8444-444444444444';
@@ -56,7 +57,19 @@ const VISITA = {
   auto_closed: false,
   clock_adjusted: false,
   ...RESPOSTAS,
+  form_version: 1,
+  off_route: false,
+  off_hours: false,
+  hires_freelancer: null,
+  voucher_accepted: null,
+  signup_mode: null,
+  final_status: null,
+  final_date: null,
+  final_reason: null,
+  callback_phone: null,
   lead: { name: 'Bar do Mercado', possible_dup: false },
+  vagas: [] as { id: string; date: string; funcao: string; filled: boolean }[],
+  voucher: null as null | { id: string; code: string; status: string; valid_until: string; freela_ref: string | null; decision_note: string | null },
 };
 
 const POS = { at: '2026-10-08T14:59:00.000Z', lat: -19.9245, lng: -43.9352, accuracy: 12 };
@@ -81,7 +94,22 @@ function fakePrisma() {
       update: jest.fn().mockResolvedValue({}),
     },
     lead_events: { create: jest.fn().mockResolvedValue({}) },
-    pracas: { findUnique: jest.fn().mockResolvedValue({ cobertura_cidade: 'Belo Horizonte' }) },
+    pracas: {
+      findUnique: jest.fn().mockResolvedValue({ cobertura_cidade: 'Belo Horizonte', route_start_hour: 9, route_end_hour: 18 }),
+    },
+    field_routes: { findUnique: jest.fn().mockResolvedValue(null) },
+    field_route_stops: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    field_vouchers: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      findUnique: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockResolvedValue({}),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
+    lead_vagas: {
+      findUnique: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockResolvedValue({ id: 'vaga-1' }),
+      delete: jest.fn().mockResolvedValue({}),
+    },
   };
   p.$transaction.mockImplementation(async (arg: unknown) =>
     Array.isArray(arg) ? Promise.all(arg) : (arg as (tx: unknown) => Promise<unknown>)(p),
@@ -252,7 +280,7 @@ describe('VisitsService.saveAnswers', () => {
 
     expect(p.field_visits.findFirst).toHaveBeenCalledWith({
       where: { consultant_id: CONS, OR: [{ id: CLIENT }, { client_id: CLIENT }] },
-      include: { lead: { select: { name: true, possible_dup: true } } },
+      include: COM_LEAD,
     });
     expect(p.field_visits.update).toHaveBeenCalledWith({
       where: { id: 'v1' },
@@ -433,5 +461,155 @@ describe('VisitsService.photo', () => {
     const { s } = montar(fakePrisma());
     await expect(s.photo(C, 'nao-e-uuid')).rejects.toMatchObject({ response: { code: 'NOT_FOUND' } });
     await expect(s.photo(C, CLIENT)).rejects.toMatchObject({ response: { code: 'NOT_FOUND' } });
+  });
+});
+
+// ── bloco B: formulário v2, rota, vagas e voucher (§21.5–21.7) ──
+const V2 = {
+  ...VISITA,
+  form_version: 2,
+  freela_status: null,
+  interest: null,
+  open_vagas: null,
+  vaga_roles: [],
+  needs_followup: null,
+  followup_what: null,
+  followup_date: null,
+  interlocutor_name: 'João',
+  interlocutor_role: 'dono',
+  hires_freelancer: true,
+  channels: ['Grupos de WhatsApp'],
+  freelas_per_week: 3,
+  signup_mode: 'qr',
+  final_status: 'cadastrou',
+};
+
+describe('VisitsService — check-in ligado à rota (§21.5)', () => {
+  it('lead da rota: a parada recebe a visita; fora do horário só marca', async () => {
+    const p = fakePrisma();
+    p.leads.findFirst.mockResolvedValue({ id: LEAD, lat: null, lng: null });
+    p.field_routes.findUnique.mockResolvedValue({ stops: [{ id: 'parada-1', lead_id: LEAD }] });
+    p.pracas.findUnique.mockResolvedValue({ cobertura_cidade: 'BH', route_start_hour: 13, route_end_hour: 18 });
+    const { s } = montar(p);
+    await s.checkin(C, checkinDto({ lead_id: LEAD }), JPEG, AGORA); // 11h59 em Brasília
+    expect(dataDo(p.field_visits.create)).toMatchObject({ form_version: 2, off_route: false, off_hours: true });
+    expect(p.field_route_stops.updateMany).toHaveBeenCalledWith({ where: { id: 'parada-1', visit_id: null }, data: { visit_id: expect.any(String) } });
+  });
+
+  it('com rota no dia e lead fora dela: off_route', async () => {
+    const p = fakePrisma();
+    p.leads.findFirst.mockResolvedValue({ id: LEAD, lat: null, lng: null });
+    p.field_routes.findUnique.mockResolvedValue({ stops: [{ id: 'parada-1', lead_id: 'outro-lead' }] });
+    const { s } = montar(p);
+    await s.checkin(C, checkinDto({ lead_id: LEAD }), JPEG, AGORA);
+    expect(dataDo(p.field_visits.create)).toMatchObject({ off_route: true });
+    expect(p.field_route_stops.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('VisitsService — respostas v2', () => {
+  it('campo do v1 numa visita v2 = 400', async () => {
+    const p = fakePrisma();
+    p.field_visits.findFirst.mockResolvedValue(V2);
+    const { s } = montar(p);
+    await expect(s.saveAnswers(C, CLIENT, { interest: 'alto' })).rejects.toMatchObject({ response: { code: 'VALIDATION_ERROR' } });
+  });
+
+  it('função "outro" não existe no v2', async () => {
+    const p = fakePrisma();
+    p.field_visits.findFirst.mockResolvedValue(V2);
+    const { s } = montar(p);
+    await expect(s.saveAnswers(C, CLIENT, { interlocutor_role: 'outro' })).rejects.toMatchObject({ response: { code: 'VALIDATION_ERROR' } });
+  });
+
+  it('grava os campos v2 aparando texto', async () => {
+    const p = fakePrisma();
+    p.field_visits.findFirst.mockResolvedValue(V2);
+    const { s } = montar(p);
+    await s.saveAnswers(C, CLIENT, { final_status: 'nao_quis', final_reason: '  já tem equipe fixa ' });
+    expect(dataDo(p.field_visits.update)).toEqual({ final_status: 'nao_quis', final_reason: 'já tem equipe fixa' });
+  });
+});
+
+describe('VisitsService — checkout v2 no CRM (§21.6)', () => {
+  it('cadastrou: lead vai para 5 e o cliente fica com quem cadastrou', async () => {
+    const p = fakePrisma();
+    p.field_visits.findFirst.mockResolvedValue(V2);
+    p.field_visits.findUniqueOrThrow.mockResolvedValue({ ...V2, checkout_at: AGORA });
+    p.leads.findUniqueOrThrow.mockResolvedValue({ id: LEAD, stage: 2, field_consultant_id: null });
+    const { s } = montar(p);
+    await s.checkout(C, CLIENT, POS, AGORA);
+    expect(dataDo(p.leads.update)).toMatchObject({ stage: 5, field_consultant_id: CONS, decisor: 'João' });
+    expect(dataDo(p.lead_events.create)).toMatchObject({ kind: 'visit', stage_to: 5, author_label: 'Representante: Ana Souza' });
+  });
+
+  it('cadastrou num cliente que já é de outro representante: o primeiro fica', async () => {
+    const p = fakePrisma();
+    p.field_visits.findFirst.mockResolvedValue(V2);
+    p.field_visits.findUniqueOrThrow.mockResolvedValue({ ...V2, checkout_at: AGORA });
+    p.leads.findUniqueOrThrow.mockResolvedValue({ id: LEAD, stage: 5, field_consultant_id: OUTRO });
+    const { s } = montar(p);
+    await s.checkout(C, CLIENT, POS, AGORA);
+    expect(dataDo(p.leads.update)).not.toHaveProperty('field_consultant_id');
+  });
+
+  it('não quis: lead para 8 com o motivo e reaquecimento em 30 dias', async () => {
+    const p = fakePrisma();
+    const v = { ...V2, final_status: 'nao_quis', final_reason: 'Já tem equipe fixa', signup_mode: 'nao_abriu' };
+    p.field_visits.findFirst.mockResolvedValue(v);
+    p.field_visits.findUniqueOrThrow.mockResolvedValue({ ...v, checkout_at: AGORA });
+    p.leads.findUniqueOrThrow.mockResolvedValue({ id: LEAD, stage: 3, field_consultant_id: null });
+    const { s } = montar(p);
+    await s.checkout(C, CLIENT, POS, AGORA);
+    expect(dataDo(p.leads.update)).toMatchObject({ stage: 8, lost_reason: 'Já tem equipe fixa', reheat_at: '2026-11-07' });
+  });
+
+  it('ligar depois sem telefone = 422 com a lista do que falta', async () => {
+    const p = fakePrisma();
+    p.field_visits.findFirst.mockResolvedValue({ ...V2, final_status: 'ligar_depois', final_date: '2026-10-09' });
+    const { s } = montar(p);
+    await expect(s.checkout(C, CLIENT, POS, AGORA)).rejects.toMatchObject({
+      response: { code: 'ANSWERS_INCOMPLETE', message: 'Falta responder: telefone para ligar.' },
+    });
+  });
+});
+
+describe('VisitsService — vagas e voucher (§21.6–21.7)', () => {
+  const ELEGIVEL = { ...V2, freelas_per_week: 8, voucher_accepted: true };
+
+  it('pede o voucher: válido até o sábado da semana, status solicitado', async () => {
+    const p = fakePrisma();
+    p.field_visits.findFirst.mockResolvedValue(ELEGIVEL);
+    p.field_visits.findUniqueOrThrow.mockResolvedValue(ELEGIVEL);
+    const { s } = montar(p);
+    await s.requestVoucher(C, CLIENT, AGORA); // quinta 08/10
+    expect(dataDo(p.field_vouchers.create)).toMatchObject({ status: 'solicitado', valid_until: '2026-10-10', lead_id: LEAD, consultant_id: CONS });
+    expect(String(dataDo(p.field_vouchers.create).code)).toMatch(/^PRC-[2-9A-HJ-NP-Z]{6}$/);
+  });
+
+  it('5 por semana não ganha voucher', async () => {
+    const p = fakePrisma();
+    p.field_visits.findFirst.mockResolvedValue({ ...V2, freelas_per_week: 5 });
+    const { s } = montar(p);
+    await expect(s.requestVoucher(C, CLIENT, AGORA)).rejects.toMatchObject({ response: { code: 'VOUCHER_NOT_ELIGIBLE' } });
+  });
+
+  it('outro voucher em aberto no estabelecimento = 409', async () => {
+    const p = fakePrisma();
+    p.field_visits.findFirst.mockResolvedValue(ELEGIVEL);
+    p.field_vouchers.findFirst.mockResolvedValue({ code: 'PRC-ABCDEF' });
+    const { s } = montar(p);
+    await expect(s.requestVoucher(C, CLIENT, AGORA)).rejects.toMatchObject({ response: { code: 'VOUCHER_ACTIVE' } });
+  });
+
+  it('vaga da visita entra como fonte "campo"; vaga no passado = 400', async () => {
+    const p = fakePrisma();
+    p.field_visits.findFirst.mockResolvedValue(V2);
+    const { s } = montar(p);
+    await s.addVaga(C, CLIENT, { client_id: CLIENT, date: '2026-10-09', funcao: 'Garçom' }, AGORA);
+    expect(dataDo(p.lead_vagas.create)).toMatchObject({ source: 'campo', visit_id: 'v1', lead_id: LEAD, filled: false });
+    await expect(s.addVaga(C, CLIENT, { client_id: OUTRO, date: '2026-10-01', funcao: 'Garçom' }, AGORA)).rejects.toMatchObject({
+      response: { code: 'VALIDATION_ERROR' },
+    });
   });
 });

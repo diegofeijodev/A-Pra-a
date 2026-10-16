@@ -23,6 +23,7 @@ import {
 } from 'class-validator';
 import { IsDayString } from '../../../common/validation/is-day.decorator';
 import { CARGOS, FREELA_STATUS, INTERESSES } from '../../../domain/campo-rules';
+import { FINAIS, MODOS_CADASTRO } from '../../../domain/visit-rules';
 
 export class CampoLoginDto {
   @IsEmail()
@@ -187,6 +188,57 @@ export class AnswersDto {
   @IsString()
   @MaxLength(2000)
   notes?: string | null;
+
+  // ── formulário v2 (bloco B, §21.6) ──
+  @IsOptional()
+  @IsBoolean()
+  hires_freelancer?: boolean | null;
+
+  @IsOptional()
+  @IsBoolean()
+  voucher_accepted?: boolean | null;
+
+  @IsOptional()
+  @IsIn([...MODOS_CADASTRO])
+  signup_mode?: string | null;
+
+  @IsOptional()
+  @IsIn([...FINAIS])
+  final_status?: string | null;
+
+  @IsOptional()
+  @IsDayString()
+  final_date?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  final_reason?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  callback_phone?: string | null;
+}
+
+/** Vaga aberta na visita (§21.6). `client_id` = idempotência da fila offline. */
+export class VagaDaVisitaDto {
+  @IsUUID()
+  client_id!: string;
+
+  @IsDayString()
+  date!: string;
+
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @Length(1, 60)
+  funcao!: string;
+}
+
+export class PainelCampoQueryDto {
+  @IsOptional()
+  @IsIn(['dia', 'semana', '30d'])
+  periodo?: string;
 }
 
 export class PlacesQueryDto {

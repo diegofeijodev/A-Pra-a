@@ -25,7 +25,7 @@ export class NotificationsService {
    */
   async list(pracaId: string, user: AuthUser): Promise<NotifItem[]> {
     const praca = await this.pracas.get(pracaId);
-    const [steps, actions, leadsDaPraca, fill, campanhas, dispensadas] = await Promise.all([
+    const [steps, actions, leadsDaPraca, fill, campanhas, dispensadas, vouchers] = await Promise.all([
       this.pracas.steps(pracaId),
       this.actions.list(pracaId),
       this.leads.list({ praca_id: pracaId }),
@@ -34,6 +34,11 @@ export class NotificationsService {
       this.prisma.user_dismissed_notifs.findMany({
         where: { user_id: user.id },
         select: { notif_id: true },
+      }),
+      this.prisma.field_vouchers.findMany({
+        where: { praca_id: pracaId, status: 'solicitado', valid_until: { gte: todaySp() } },
+        select: { id: true, code: true, lead: { select: { name: true } }, consultant: { select: { name: true } } },
+        orderBy: { created_at: 'asc' },
       }),
     ]);
 
@@ -61,6 +66,7 @@ export class NotificationsService {
       campanhas_acima_teto: campanhas
         .filter((c) => c.status === 'ativa' && c.metrics.acima_teto)
         .map((c) => ({ id: c.id, name: c.name })),
+      vouchers_pedidos: vouchers.map((v) => ({ id: v.id, code: v.code, lead_name: v.lead.name, consultant_name: v.consultant.name })),
     });
 
     // Prefixo por praça (RULING): o mesmo `lock-3` de duas praças não pode
