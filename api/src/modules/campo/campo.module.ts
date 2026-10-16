@@ -11,6 +11,8 @@ import { ConsultoresService } from './consultores.service';
 import { JourneysService } from './journeys.service';
 import { criarPhotoStorage, PHOTO_STORAGE } from './photo-storage';
 import { PlacesService } from './places.service';
+import { RoutesScheduler } from './routes.scheduler';
+import { RoutesService } from './routes.service';
 import { VisitsService } from './visits.service';
 
 /**
@@ -30,6 +32,8 @@ import { VisitsService } from './visits.service';
     CampoAutocloseScheduler,
     PlacesService,
     VisitsService,
+    RoutesService,
+    RoutesScheduler,
     // O `.env` já está em `process.env` (ConfigModule.forRoot) e foi validado na
     // largada; reler pelo mesmo schema dá o PHOTO_STORAGE já resolvido.
     { provide: PHOTO_STORAGE, useFactory: () => criarPhotoStorage(validateEnv(process.env)) },

@@ -5,6 +5,7 @@ import type {
   JourneyView,
   PlaceView,
   Posicao,
+  RouteView,
   TodayView,
   VisitAnswers,
   VisitView,
@@ -32,6 +33,16 @@ export async function campoMe(): Promise<CampoMeResponse> {
 export async function campoHoje(): Promise<TodayView> {
   const { data } = await campoApi.get('/v1/campo/today');
   return data as TodayView;
+}
+
+export async function campoRotaHoje(): Promise<RouteView | null> {
+  const { data } = await campoApi.get('/v1/campo/routes/today');
+  return (data as RouteView | null) ?? null;
+}
+
+export async function campoRotaSemana(): Promise<{ week_start: string; routes: RouteView[] }> {
+  const { data } = await campoApi.get('/v1/campo/routes/week');
+  return data as { week_start: string; routes: RouteView[] };
 }
 
 export async function campoIniciarJornada(p: { client_id: string } & Posicao): Promise<JourneyView> {

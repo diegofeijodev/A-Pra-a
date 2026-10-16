@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   Res,
   StreamableFile,
 } from '@nestjs/common';
@@ -17,7 +18,16 @@ import { AuthUser } from '../../common/auth/auth-user';
 import { AdminOnly } from '../../common/decorators/admin-only.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ConsultoresService } from './consultores.service';
-import { ChannelsDto, CnaesDto, CreateConsultorDto, UpdateConsultorDto } from './dto/consultores.dto';
+import {
+  ChannelsDto,
+  CnaesDto,
+  CreateConsultorDto,
+  EditRouteDto,
+  GenerateRoutesDto,
+  RoutesQueryDto,
+  UpdateConsultorDto,
+} from './dto/consultores.dto';
+import { RoutesService } from './routes.service';
 
 /**
  * Telas da equipe sobre os consultores de campo (`/v1/consultores`, §20.4).
@@ -28,7 +38,10 @@ import { ChannelsDto, CnaesDto, CreateConsultorDto, UpdateConsultorDto } from '.
 @ApiBearerAuth()
 @Controller('v1/consultores')
 export class ConsultoresController {
-  constructor(private readonly consultores: ConsultoresService) {}
+  constructor(
+    private readonly consultores: ConsultoresService,
+    private readonly routes: RoutesService,
+  ) {}
 
   @Get()
   list() {
@@ -62,6 +75,25 @@ export class ConsultoresController {
   @Put('settings/cnaes')
   setCnaes(@Body() dto: CnaesDto) {
     return this.consultores.setCnaes(dto);
+  }
+
+  // ── rotas (§21.5) ──
+  @Get('routes')
+  listRoutes(@Query() q: RoutesQueryDto) {
+    return this.routes.list(q);
+  }
+
+  @AdminOnly()
+  @HttpCode(200)
+  @Post('routes/generate')
+  generateRoutes(@CurrentUser() user: AuthUser, @Body() dto: GenerateRoutesDto) {
+    return this.routes.generate(dto, user.id);
+  }
+
+  @AdminOnly()
+  @Patch('routes/:routeId')
+  editRoute(@Param('routeId') routeId: string, @Body() dto: EditRouteDto) {
+    return this.routes.edit(routeId, dto);
   }
 
   @Get('visits/:visitId/photo')

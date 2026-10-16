@@ -1,5 +1,7 @@
 import { api } from '@/modules/shared/infrastructure/http';
-import type { JourneyView, PointView, VisitView } from '@/modules/campo/domain/campo.types';
+import type { JourneyView, PointView, RouteView, VisitView } from '@/modules/campo/domain/campo.types';
+
+export type { RouteView };
 
 export type PixKeyType = 'cpf' | 'email' | 'telefone' | 'aleatoria';
 
@@ -102,6 +104,30 @@ export async function fotoDaVisitaEquipe(visitId: string): Promise<Blob> {
 export async function getCanaisCampo(): Promise<string[]> {
   const { data } = await api.get('/v1/consultores/settings/channels');
   return (data as { channels: string[] }).channels;
+}
+
+// ── rotas (§21.5) ──
+export interface GenerateRoutesResult {
+  generated: number;
+  kept_started: number;
+  skipped_past: number;
+  sem_localizacao: number;
+  routes: RouteView[];
+}
+
+export async function listRotas(params: { week: string; praca_id?: string; consultant_id?: string }): Promise<RouteView[]> {
+  const { data } = await api.get('/v1/consultores/routes', { params });
+  return data as RouteView[];
+}
+
+export async function gerarRotas(input: { week: string; consultant_ids?: string[] }): Promise<GenerateRoutesResult> {
+  const { data } = await api.post('/v1/consultores/routes/generate', input);
+  return data as GenerateRoutesResult;
+}
+
+export async function editarRota(id: string, stops: { lead_id: string; removed?: boolean }[]): Promise<RouteView> {
+  const { data } = await api.patch(`/v1/consultores/routes/${id}`, { stops });
+  return data as RouteView;
 }
 
 export interface CnaeItem {

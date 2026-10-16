@@ -10,6 +10,12 @@ export interface CampoConsultantMe {
   must_change_password: boolean;
   freela_code: string | null;
   signup_url: string | null;
+  /** Bloco B (§21.1) — opcionais: a sessão guardada antes do bloco B não traz. */
+  area_lat?: number | null;
+  area_lng?: number | null;
+  area_radius_km?: number | null;
+  area_bairros?: string[];
+  praca_route_hours?: { start: number; end: number };
 }
 
 export interface CampoSession {
@@ -109,6 +115,40 @@ export interface TodayView {
   open_visit: VisitView | null;
   visits: VisitView[];
   counters: { visits: number; cadastrou_qr: number };
+}
+
+/** Rota de visita (§21.5). */
+export type MotivoParada = 'novo' | 'retorno' | 'pendente' | 'incluido';
+export type StatusRota = 'aberta' | 'iniciada' | 'encerrada';
+
+export interface StopView {
+  id: string;
+  position: number;
+  lead_id: string;
+  lead_name: string;
+  address: string;
+  bairro: string | null;
+  phone: string;
+  lat: number | null;
+  lng: number | null;
+  classe: string;
+  stage: number;
+  reason: MotivoParada;
+  removed: boolean;
+  visit: { id: string; checkin_at: string; checkout_at: string | null; final_status: string | null } | null;
+}
+
+export interface RouteView {
+  id: string;
+  consultant_id: string;
+  consultant_name: string;
+  praca_id: string;
+  day: string;
+  goal: number;
+  source: 'auto' | 'admin';
+  status: StatusRota;
+  counts: { total: number; visitados: number };
+  stops: StopView[];
 }
 
 export interface PlaceView {

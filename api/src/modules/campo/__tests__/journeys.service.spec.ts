@@ -50,6 +50,7 @@ function fakePrisma() {
       findMany: jest.fn().mockResolvedValue([]),
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
+    field_routes: { findUnique: jest.fn().mockResolvedValue(null) },
   };
   p.$transaction.mockImplementation(async (arg: unknown) =>
     Array.isArray(arg) ? Promise.all(arg) : (arg as (tx: unknown) => Promise<unknown>)(p),
@@ -291,5 +292,14 @@ describe('JourneysService.today', () => {
 
     expect(t.journey).toBeNull();
     expect(t.journeys).toHaveLength(1);
+  });
+});
+
+describe('JourneysService.start — liga a rota do dia (§21.5)', () => {
+  it('com rota no dia, a jornada nasce com route_id', async () => {
+    const p = fakePrisma();
+    p.field_routes.findUnique.mockResolvedValue({ id: 'rota-1' });
+    await montar(p).start(C, { client_id: '99999999-9999-4999-8999-999999999999', ...POS }, new Date('2026-10-08T15:00:00.000Z'));
+    expect(p.field_journeys.create.mock.calls[0]![0].data).toMatchObject({ route_id: 'rota-1' });
   });
 });

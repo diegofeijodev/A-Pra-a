@@ -7,7 +7,8 @@ import { CampoTopo } from '@/components/campo/CampoTopo';
 import { FaixaFila } from '@/components/campo/FaixaFila';
 import { Button } from '@/components/ui/button';
 import { useCampoSession } from '@/modules/campo/application/campo-session.store';
-import { useDia } from '@/modules/campo/application/use-campo';
+import { RotaParadas } from '@/components/campo/RotaParadas';
+import { useDia, useRotaHoje } from '@/modules/campo/application/use-campo';
 import { enfileirar, useFilaStore } from '@/modules/campo/application/use-fila';
 import { AVISO_ENVIOS_GUARDADOS } from '@/modules/campo/domain/fila-politica';
 import type { Posicao } from '@/modules/campo/domain/campo.types';
@@ -16,10 +17,11 @@ import type { MotivoGps } from '@/modules/campo/domain/gps-mensagens';
 import { ErroGps, lerPosicao } from '@/modules/campo/infrastructure/gps';
 import { irPara } from '@/modules/campo/application/use-tela';
 
-/** Visão `hoje` de `/campo`:  do consultor (spec §8.1): iniciar/encerrar, visitas do dia, contadores, QR a um toque. */
+/** Visão `hoje` de `/campo` (spec §8.1 + §21.5): iniciar/encerrar a rota, paradas do dia, visitas, contadores, QR a um toque. */
 export function HojeTela() {
   const consultantId = useCampoSession((s) => s.session?.consultant.id ?? '');
   const { dia, carregando } = useDia();
+  const { data: rota } = useRotaHoje();
   const temFila = useFilaStore((s) => s.itens.length > 0);
   const [gps, setGps] = useState<MotivoGps | null>(null);
   const [ocupado, setOcupado] = useState(false);
@@ -41,7 +43,7 @@ export function HojeTela() {
     comPosicao((p) => enfileirar({ kind: 'start', payload: { client_id: crypto.randomUUID(), ...p } }, consultantId));
 
   const encerrar = () => {
-    const texto = 'Encerrar a jornada de hoje? A localização para de ser registrada.';
+    const texto = 'Encerrar a rota de hoje? A localização para de ser registrada.';
     if (!window.confirm(temFila ? `${texto}\n\n${AVISO_ENVIOS_GUARDADOS}` : texto)) return;
     void comPosicao((p) => enfileirar({ kind: 'end', payload: p }, consultantId));
   };
@@ -58,7 +60,9 @@ export function HojeTela() {
         <p className="text-sm text-muted-foreground">Carregando…</p>
       ) : !dia.jornada ? (
         <section className="card-surface space-y-2 p-5">
-          <p className="text-base font-bold">Pronto para sair?</p>
+          <p className="text-base font-bold">
+            {rota ? `Rota de hoje: ${rota.counts.total} ${rota.counts.total === 1 ? 'parada' : 'paradas'}` : 'Pronto para sair?'}
+          </p>
           <p className="text-sm text-muted-foreground">
             A localização só é registrada com a jornada aberta: no início, a cada 5 minutos com esta tela
             aberta, em cada check-in e checkout e no fim. Antes de iniciar e depois de encerrar, nada é
@@ -96,6 +100,20 @@ export function HojeTela() {
             </button>
           )}
 
+          {rota && rota.stops.length > 0 && (
+            <section>
+              <h2 className="flex items-baseline justify-between">
+                <span className="tag text-muted-foreground">Rota de hoje</span>
+                <span className="text-xs text-muted-foreground">
+                  {rota.counts.visitados} de {rota.counts.total} · meta {rota.goal}
+                </span>
+              </h2>
+              <div className="mt-2">
+                <RotaParadas paradas={rota.stops} podeVisitar={!aberta} />
+              </div>
+            </section>
+          )}
+
           <section>
             <h2 className="tag text-muted-foreground">Visitas de hoje</h2>
             {dia.visitas.length === 0 ? (
@@ -130,6 +148,15 @@ export function HojeTela() {
         </>
       )}
 
+      <nav className="grid grid-cols-2 gap-2 pb-24">
+        <button type="button" onClick={() => irPara({ v: 'rota' })} className="flex h-12 items-center justify-center rounded-md border border-border text-sm font-bold">
+          Rota da semana
+        </button>
+        <button type="button" onClick={() => irPara({ v: 'numeros' })} className="flex h-12 items-center justify-center rounded-md border border-border text-sm font-bold">
+          Meus números
+        </button>
+      </nav>
+
       <div className="fixed inset-x-0 bottom-0 border-t border-border bg-background/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
         <div className="mx-auto flex max-w-md gap-3">
           <button type="button" onClick={() => irPara({ v: 'qr' })} className="flex h-14 w-28 items-center justify-center rounded-md border border-border text-sm font-bold">
@@ -137,11 +164,11 @@ export function HojeTela() {
           </button>
           {!dia.jornada ? (
             <Button onClick={() => void iniciar()} disabled={ocupado || carregando} className="h-14 flex-1 text-base">
-              {ocupado ? 'Pegando a localização…' : 'Iniciar jornada'}
+              {ocupado ? 'Pegando a localização…' : 'Iniciar rota'}
             </Button>
           ) : (
             <Button variant="outline" onClick={encerrar} disabled={ocupado || !!dia.visitaAberta} className="h-14 flex-1 text-base">
-              Encerrar jornada
+              Encerrar rota
             </Button>
           )}
         </div>

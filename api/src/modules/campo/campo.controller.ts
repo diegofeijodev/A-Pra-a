@@ -21,6 +21,7 @@ import { AnswersDto, PlacesQueryDto, PontosDto, PosicaoDto, SimilarQueryDto, Sta
 import { JourneysService } from './journeys.service';
 import { lerCheckinMultipart } from './multipart-checkin';
 import { PlacesService } from './places.service';
+import { RoutesService } from './routes.service';
 import { VisitsService } from './visits.service';
 
 /** Rotas do dia a dia do consultor (`/v1/campo/*`) — §20 do contrato. */
@@ -34,6 +35,7 @@ export class CampoController {
     private readonly journeys: JourneysService,
     private readonly places: PlacesService,
     private readonly visits: VisitsService,
+    private readonly routes: RoutesService,
   ) {}
 
   @AllowPendingPassword()
@@ -45,6 +47,17 @@ export class CampoController {
   @Get('today')
   today(@CurrentConsultant() c: CampoConsultant) {
     return this.journeys.today(c);
+  }
+
+  // ── rota (§21.5) ────────────────────────────────────────────
+  @Get('routes/today')
+  routeToday(@CurrentConsultant() c: CampoConsultant) {
+    return this.routes.today(c);
+  }
+
+  @Get('routes/week')
+  routeWeek(@CurrentConsultant() c: CampoConsultant) {
+    return this.routes.week(c);
   }
 
   // ── jornada ─────────────────────────────────────────────────

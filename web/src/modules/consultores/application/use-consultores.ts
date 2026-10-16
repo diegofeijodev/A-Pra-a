@@ -8,6 +8,9 @@ import {
   diaDoConsultor,
   freelaSyncConsultor,
   getCanaisCampo,
+  editarRota,
+  gerarRotas,
+  listRotas,
   getCnaes,
   putCnaes,
   type CnaeItem,
@@ -77,6 +80,41 @@ export function useFreelaSyncConsultor(id: string) {
       else toast.success('Código no Freela pronto.');
     },
     onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível falar com o Freela.')),
+  });
+}
+
+export function useRotas(week: string, pracaId?: string) {
+  return useQuery({
+    queryKey: [...CHAVE, 'rotas', week, pracaId ?? ''],
+    queryFn: () => listRotas({ week, ...(pracaId ? { praca_id: pracaId } : {}) }),
+    refetchInterval: 120_000,
+  });
+}
+
+export function useGerarRotas() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { week: string; consultant_ids?: string[] }) => gerarRotas(input),
+    onSuccess: (r) => {
+      void qc.invalidateQueries({ queryKey: [...CHAVE, 'rotas'] });
+      const partes = [`${r.generated} rota(s) gerada(s)`];
+      if (r.kept_started) partes.push(`${r.kept_started} dia(s) já iniciado(s) mantido(s)`);
+      if (r.sem_localizacao) partes.push(`${r.sem_localizacao} estabelecimento(s) da área ainda sem localização`);
+      toast.success(partes.join(' · '));
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível gerar as rotas.')),
+  });
+}
+
+export function useEditarRota() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, stops }: { id: string; stops: { lead_id: string; removed?: boolean }[] }) => editarRota(id, stops),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: [...CHAVE, 'rotas'] });
+      toast.success('Rota salva.');
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível salvar a rota.')),
   });
 }
 
