@@ -50,7 +50,7 @@ export default function ConsultorDetalhePage() {
     if (!consultorErro) return <p className="text-sm text-muted-foreground">Carregando…</p>;
     return (
       <div className="space-y-2">
-        <p className="text-sm text-destructive">{apiErrorMessage(erroConsultor, 'Não foi possível carregar o consultor.')}</p>
+        <p className="text-sm text-destructive">{apiErrorMessage(erroConsultor, 'Não foi possível carregar o representante.')}</p>
         <Button variant="outline" onClick={() => void recarregarConsultor()}>
           Tentar de novo
         </Button>
@@ -62,7 +62,17 @@ export default function ConsultorDetalhePage() {
     <>
       <h1 className="font-display text-xl font-extrabold">{c.name}</h1>
       <p className="mt-1 text-xs text-muted-foreground">
-        {c.praca_name} · {c.email} · {c.phone} · {c.active ? 'ativo' : 'desativado'}
+        {c.praca_name} · {c.email} · {c.phone}
+        {c.age != null ? ` · ${c.age} anos` : ''} · Pix {c.pix_key} · {c.active ? 'ativo' : 'desativado'}
+      </p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Área:{' '}
+        {[
+          c.area_radius_km ? `raio de ${String(c.area_radius_km).replace('.', ',')} km` : null,
+          c.area_bairros.length ? `bairros ${c.area_bairros.join(', ')}` : null,
+        ]
+          .filter(Boolean)
+          .join(' + ') || 'praça inteira'}
       </p>
       <p className="mt-1 text-xs">
         {c.freela_code ? `Código Freela: ${c.freela_code}` : `Código pendente${c.freela_sync_error ? ` — ${c.freela_sync_error}` : ''}`}
@@ -80,7 +90,7 @@ export default function ConsultorDetalhePage() {
             <Button
               variant="outline"
               onClick={() => {
-                const msg = c.active ? 'Desativar? O acesso dele para na hora e o código no Freela deixa de vincular cadastros.' : 'Reativar o consultor?';
+                const msg = c.active ? 'Desativar? O acesso dele para na hora e o código no Freela deixa de vincular cadastros.' : 'Reativar o representante?';
                 if (window.confirm(msg)) atualizar.mutate({ active: !c.active });
               }}
             >
@@ -162,7 +172,7 @@ export default function ConsultorDetalhePage() {
             </div>
           ) : (
             <div className="space-y-3">
-              <p className="text-sm">Gera uma senha nova e derruba o acesso aberto no celular do consultor.</p>
+              <p className="text-sm">Gera uma senha nova e derruba o acesso aberto no celular do representante.</p>
               <Button onClick={() => resetar.mutate(undefined, { onSuccess: (r) => setSenha(r.temp_password) })} disabled={resetar.isPending} className="w-full">
                 Gerar
               </Button>

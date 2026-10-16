@@ -18,20 +18,20 @@ export default function ConsultoresPage() {
   return (
     <>
       <div className="flex items-center justify-between gap-3">
-        <h1 className="font-display text-xl font-extrabold">Consultores de campo</h1>
-        {user?.is_admin && <Button onClick={() => setNovo(true)}>Novo consultor</Button>}
+        <h1 className="font-display text-xl font-extrabold">Representantes comerciais</h1>
+        {user?.is_admin && <Button onClick={() => setNovo(true)}>Novo representante</Button>}
       </div>
       {isPending ? (
         <p className="mt-4 text-sm text-muted-foreground">Carregando…</p>
       ) : isError ? (
         <div className="mt-4 space-y-2">
-          <p className="text-sm text-destructive">{apiErrorMessage(error, 'Não foi possível carregar os consultores.')}</p>
+          <p className="text-sm text-destructive">{apiErrorMessage(error, 'Não foi possível carregar os representantes.')}</p>
           <Button variant="outline" onClick={() => void refetch()}>
             Tentar de novo
           </Button>
         </div>
       ) : !consultores?.length ? (
-        <p className="mt-4 text-sm text-muted-foreground">Nenhum consultor ainda.</p>
+        <p className="mt-4 text-sm text-muted-foreground">Nenhum representante ainda.</p>
       ) : (
         <ul className="mt-4 space-y-2">
           {consultores.map((c) => (

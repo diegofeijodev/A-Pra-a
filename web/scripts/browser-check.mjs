@@ -665,7 +665,7 @@ try {
   check('ícone do atalho é PNG', icone.status === 200 && (icone.headers.get('content-type') ?? '').includes('image/png'));
 
   await cel.goto(`${BASE}/campo/entrar`, { waitUntil: 'networkidle' });
-  check('tela de entrada do campo', (await corpo(cel)).includes('entrada do consultor de campo'));
+  check('tela de entrada do campo', (await corpo(cel)).includes('entrada do representante comercial'));
   await cel.locator('#email').fill(CAMPO_EMAIL);
   await cel.locator('#senha').fill(criado.temp_password);
   await cel.getByRole('button', { name: 'Entrar', exact: true }).click();
@@ -868,9 +868,9 @@ console.log('-- Campo: GPS negado --');
   await cel.waitForFunction(() => !document.body.innerText.toLowerCase().includes('pendente'), null, { timeout: 30000 });
   check('sinal de volta: a fila enviou o encerramento', (await situacaoCampo())?.status === 'encerrou');
 
-  console.log('-- Equipe: Consultores --');
+  console.log('-- Equipe: Representantes --');
   await page.goto(`${BASE}/consultores`, { waitUntil: 'networkidle' });
-  check('menu tem "Consultores"', (await page.getByRole('link', { name: 'Consultores' }).count()) > 0);
+  check('menu tem "Representantes"', (await page.getByRole('link', { name: 'Representantes' }).count()) > 0);
   check('lista mostra o consultor do roteiro, encerrado hoje', (await corpo(page)).includes(CAMPO_NOME.toLowerCase()) && (await corpo(page)).includes('encerrou'));
   await page.getByRole('link', { name: CAMPO_NOME }).click();
   await page.waitForURL(`**/consultores/${consultorId}`, { timeout: 20000 });

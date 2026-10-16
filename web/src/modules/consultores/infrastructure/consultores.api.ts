@@ -21,6 +21,12 @@ export interface ConsultorView {
   freela_sync_error: string | null;
   freela_synced_at: string | null;
   signup_url: string | null;
+  birth_date: string | null;
+  age: number | null;
+  area_lat: number | null;
+  area_lng: number | null;
+  area_radius_km: number | null;
+  area_bairros: string[];
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -44,6 +50,11 @@ export interface CreateConsultorInput {
   praca_id: string;
   pix_key_type: PixKeyType;
   pix_key: string;
+  birth_date?: string | null;
+  area_lat?: number | null;
+  area_lng?: number | null;
+  area_radius_km?: number | null;
+  area_bairros?: string[];
 }
 
 export type UpdateConsultorInput = Partial<CreateConsultorInput> & { active?: boolean };

@@ -31,7 +31,7 @@ const I = {
 const NAV: { to: string; label: string; icon: string }[] = [
   { to: "/praca", label: "Praça", icon: I.praca },
   { to: "/funil", label: "Funil", icon: I.funil },
-  { to: "/consultores", label: "Consultores", icon: I.consultores },
+  { to: "/consultores", label: "Representantes", icon: I.consultores },
   { to: "/entrada", label: "Entrada", icon: I.entrada },
   { to: "/mensagens", label: "Mensagens", icon: I.mensagens },
   { to: "/campanhas", label: "Campanhas", icon: I.campanhas },

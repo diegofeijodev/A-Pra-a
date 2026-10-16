@@ -60,7 +60,7 @@ export default function EntrarCampoPage() {
         PRAÇA<span className="text-primary">.</span> <span className="text-lg text-muted-foreground">Campo</span>
       </p>
       <p className="mt-1 text-sm text-muted-foreground">
-        Entrada do consultor de campo. O acesso é criado pela equipe do Praça.
+        Entrada do representante comercial. O acesso é criado pela equipe do Praça.
       </p>
       <form className="card-surface mt-6 space-y-4 p-5" onSubmit={handleSubmit(onSubmit)}>
         <div className="space-y-2">
