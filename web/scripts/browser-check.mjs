@@ -367,6 +367,7 @@ try {
   check('faixa de etapas do roteiro', praca.includes('mapear a região') && praca.includes('preparar'));
   check('etapa travada pelo portão aparece', praca.includes('🔒'));
   check('contagem de ações por etapa', /\d+ de \d+/.test(praca));
+  check('mapa dos estabelecimentos na tela da Praça (bloco B)', praca.includes('mapa dos estabelecimentos'));
 
   // ── 4. Calendário ─────────────────────────────────────────────
   console.log('-- Calendário --');
@@ -665,7 +666,7 @@ try {
   check('ícone do atalho é PNG', icone.status === 200 && (icone.headers.get('content-type') ?? '').includes('image/png'));
 
   await cel.goto(`${BASE}/campo/entrar`, { waitUntil: 'networkidle' });
-  check('tela de entrada do campo', (await corpo(cel)).includes('entrada do consultor de campo'));
+  check('tela de entrada do campo', (await corpo(cel)).includes('entrada do representante comercial'));
   await cel.locator('#email').fill(CAMPO_EMAIL);
   await cel.locator('#senha').fill(criado.temp_password);
   await cel.getByRole('button', { name: 'Entrar', exact: true }).click();
@@ -711,7 +712,7 @@ console.log('-- Campo: GPS negado --');
     await sg.locator('#senha').fill(CAMPO_SENHA_NOVA);
     await sg.getByRole('button', { name: 'Entrar', exact: true }).click();
     await sg.waitForURL(/\/campo$/, { timeout: 20000 });
-    await sg.getByRole('button', { name: 'Iniciar jornada' }).click();
+    await sg.getByRole('button', { name: 'Iniciar rota' }).click();
     await sg.getByText('A localização está bloqueada para este site').waitFor({ timeout: 15000 });
     const aviso = await corpo(sg);
     check('GPS negado: a tela ensina a liberar no iPhone e no Android', aviso.includes('safari') && aviso.includes('chrome'));
@@ -722,8 +723,8 @@ console.log('-- Campo: GPS negado --');
 
   console.log('-- Campo: jornada --');
   check('aviso de privacidade antes de iniciar', (await corpo(cel)).includes('a localização só é registrada com a jornada aberta'));
-  await cel.getByRole('button', { name: 'Iniciar jornada' }).click();
-  await cel.getByRole('button', { name: 'Encerrar jornada' }).waitFor({ timeout: 15000 });
+  await cel.getByRole('button', { name: 'Iniciar rota' }).click();
+  await cel.getByRole('button', { name: 'Encerrar rota' }).waitFor({ timeout: 15000 });
   await cel.waitForFunction(() => !document.body.innerText.toLowerCase().includes('pendente'), null, { timeout: 20000 });
   check('equipe vê o consultor em jornada', (await situacaoCampo())?.status === 'em_jornada');
 
@@ -772,40 +773,46 @@ console.log('-- Campo: GPS negado --');
   leadCampoId = visitaEnviada?.lead_id ?? null;
   check('sinal de volta: a visita chegou com foto reduzida (≤ 5 MB)', !!visitaEnviada && visitaEnviada.photo_bytes > 0 && visitaEnviada.photo_bytes <= 5 * 1024 * 1024);
 
-  await cel.locator('#q-nome').fill('Maria Check');
+  // Formulário v2 (bloco B, §21.6), na ordem do dono.
+  await cel.locator('#v2-contato').fill('Maria Check');
   await cel.getByRole('button', { name: 'Dono', exact: true }).click();
-  await cel.getByRole('button', { name: 'Cadastrou agora pelo QR', exact: true }).click();
-  await cel.getByRole('button', { name: 'Alto', exact: true }).click();
-  await cel.locator('#q-vagas').fill('2');
-  await cel.getByRole('button', { name: 'Garçom', exact: true }).click();
-  await cel.locator('#q-freelas').fill('5');
-  await cel.getByRole('button', { name: 'Grupos de WhatsApp', exact: true }).click();
   await cel.getByRole('button', { name: 'Sim', exact: true }).click();
-  await cel.locator('#q-retorno-oque').fill('Voltar com proposta');
-  await cel.locator('#q-retorno-data').fill(HOJE);
-  check('questionário completo libera o checkout', !(await cel.getByRole('button', { name: 'Fazer checkout' }).isDisabled()));
+  await cel.getByRole('button', { name: 'Grupos de WhatsApp', exact: true }).click();
+  await cel.locator('#v2-quantos').fill('8');
+  check('acima de 5 por semana: a oferta do voucher aparece', (await corpo(cel)).includes('abre uma vaga e contrata 1 freelancer grátis'));
+  await cel.getByRole('button', { name: 'Aceitou', exact: true }).click();
+  await cel.getByRole('button', { name: 'Pedir voucher ao gestor' }).click();
+  await cel.getByText(/Voucher PRC-[A-Z0-9]{6}: pedido ao gestor/).waitFor({ timeout: 20000 });
+  check('voucher pedido ao gestor aparece com o código', true);
+  await cel.getByRole('button', { name: 'Abrir vaga', exact: true }).click();
+  await cel.getByText('Garçom ·').first().waitFor({ timeout: 15000 });
+  await cel.getByRole('button', { name: 'Pelo QR code', exact: true }).click();
+  await cel.getByRole('button', { name: 'Cadastrou', exact: true }).click();
+  check('formulário completo libera o checkout', !(await cel.getByRole('button', { name: 'Fazer checkout' }).isDisabled()));
 
   // Trocar de visão logo depois de digitar (antes da espera do rascunho) não perde nada.
-  await cel.getByRole('button', { name: 'QR code' }).click();
+  await cel.getByRole('button', { name: 'QR code', exact: true }).click();
   await cel.waitForURL(/\/campo\?v=qr/, { timeout: 15000 });
   check('tela do QR (ou "código pendente" sem Freela configurado)', /aponte a câmera|código no freela ainda está pendente/.test(await corpo(cel)));
   await cel.getByRole('button', { name: 'Voltar' }).click();
   await cel.waitForURL(/\/campo\?v=visita&ref=/, { timeout: 15000 });
-  check('ao voltar do QR, o questionário digitado continua preenchido', (await cel.locator('#q-nome').inputValue()) === 'Maria Check');
+  check('ao voltar do QR, o formulário digitado continua preenchido', (await cel.locator('#v2-contato').inputValue()) === 'Maria Check');
 
   await cel.getByRole('button', { name: 'Fazer checkout' }).click();
   await cel.waitForURL(/\/campo(\?v=hoje)?$/, { timeout: 20000 });
   await cel.waitForFunction(() => !document.body.innerText.toLowerCase().includes('pendente'), null, { timeout: 30000 });
   const fechada = (await diaCampo()).visits.find((v) => v.lead_id === leadCampoId);
-  check('checkout gravado com as respostas', !!fechada?.checkout_at && fechada.answers.freela_status === 'cadastrou_qr');
+  check(
+    'checkout gravado com as respostas, a vaga e o voucher',
+    !!fechada?.checkout_at && fechada.answers.final_status === 'cadastrou' && fechada.vagas?.length === 1 && fechada.voucher?.status === 'solicitado',
+  );
   check('equipe vê 1 visita e 1 "cadastrou agora" hoje', (await situacaoCampo())?.visits === 1 && (await situacaoCampo())?.cadastros === 1);
   const leadCampo = await api('GET', `/v1/leads/${leadCampoId}`);
   check(
-    'CRM: lead "visita de campo" em "Conversa aberta", decisor e próximo passo da visita',
+    'CRM: lead "visita de campo" em "Cadastrado", decisor e evento da visita',
     leadCampo.origem === 'visita de campo' &&
-      leadCampo.stage === 3 &&
+      leadCampo.stage === 5 &&
       leadCampo.decisor === 'Maria Check' &&
-      leadCampo.next_step?.date === HOJE &&
       (leadCampo.events ?? []).some((e) => e.kind === 'visit'),
   );
 
@@ -825,41 +832,39 @@ console.log('-- Campo: GPS negado --');
   await cel.getByRole('button', { name: 'Fazer check-in' }).click();
   await cel.waitForURL(/\/campo\?v=visita&ref=[0-9a-f-]{36}/, { timeout: 20000 });
   const refB = new URL(cel.url()).searchParams.get('ref');
-  await cel.locator('#q-nome').fill('Beto Segundo');
+  await cel.locator('#v2-contato').fill('Beto Segundo');
   const refA = fechada?.client_id;
   await cel.evaluate((r) => window.history.pushState(null, '', `/campo?v=visita&ref=${r}`), refA);
-  await cel.waitForFunction((n) => document.querySelector('#q-nome')?.value === n, 'Maria Check', { timeout: 10000 });
-  check('trocar de visita mostra as respostas da outra (A: Maria Check), não as digitadas na B', (await cel.locator('#q-nome').inputValue()) === 'Maria Check');
+  await cel.waitForFunction((n) => document.querySelector('#v2-contato')?.value === n, 'Maria Check', { timeout: 10000 });
+  check('trocar de visita mostra as respostas da outra (A: Maria Check), não as digitadas na B', (await cel.locator('#v2-contato').inputValue()) === 'Maria Check');
   await cel.evaluate((r) => window.history.pushState(null, '', `/campo?v=visita&ref=${r}`), refB);
-  await cel.waitForFunction((n) => document.querySelector('#q-nome')?.value === n, 'Beto Segundo', { timeout: 10000 });
-  check('e de volta à B, o que foi digitado nela foi guardado', (await cel.locator('#q-nome').inputValue()) === 'Beto Segundo');
-  await cel.getByRole('button', { name: 'Dono', exact: true }).click();
-  await cel.getByRole('button', { name: 'Não cadastrou', exact: true }).click();
-  await cel.getByRole('button', { name: 'Baixo', exact: true }).click();
-  await cel.locator('#q-vagas').fill('0');
-  await cel.locator('#q-freelas').fill('1');
-  await cel.getByRole('button', { name: 'Nenhum', exact: true }).last().click();
+  await cel.waitForFunction((n) => document.querySelector('#v2-contato')?.value === n, 'Beto Segundo', { timeout: 10000 });
+  check('e de volta à B, o que foi digitado nela foi guardado', (await cel.locator('#v2-contato').inputValue()) === 'Beto Segundo');
+  await cel.getByRole('button', { name: 'Gerente', exact: true }).click();
   await cel.getByRole('button', { name: 'Não', exact: true }).click();
+  await cel.getByRole('button', { name: 'Não abriu', exact: true }).click();
+  await cel.getByRole('button', { name: 'Não quis', exact: true }).click();
+  await cel.locator('#v2-motivo').fill('Sem interesse agora');
   await cel.getByRole('button', { name: 'Fazer checkout' }).click();
   await cel.waitForURL(/\/campo(\?v=hoje)?$/, { timeout: 20000 });
   await cel.waitForFunction(() => !document.body.innerText.toLowerCase().includes('pendente'), null, { timeout: 30000 });
   const fechadaB = (await diaCampo()).visits.find((v) => v.lead_name === LUGAR_B);
   leadCampoId2 = fechadaB?.lead_id ?? null;
-  check('a visita B fechou com as próprias respostas (Beto Segundo / não cadastrou)', !!fechadaB?.checkout_at && fechadaB.answers.interlocutor_name === 'Beto Segundo' && fechadaB.answers.freela_status === 'nao_cadastrou');
+  check('a visita B fechou com as próprias respostas (Beto Segundo / não quis)', !!fechadaB?.checkout_at && fechadaB.answers.interlocutor_name === 'Beto Segundo' && fechadaB.answers.final_status === 'nao_quis');
   check('e a visita A seguiu intacta (Maria Check)', (await diaCampo()).visits.find((v) => v.lead_id === leadCampoId)?.answers.interlocutor_name === 'Maria Check');
 
   console.log('-- Campo: encerrar sem sinal (fila offline) --');
   offline = true;
   await celularCtx.setOffline(true);
   // As telas são visões de /campo: trocar de visão não pode buscar nada no servidor.
-  await cel.getByRole('button', { name: 'QR code' }).click();
+  await cel.getByRole('button', { name: 'QR code', exact: true }).click();
   await cel.getByText(/aponte a câmera|código no Freela ainda está pendente/i).waitFor({ timeout: 5000 });
   check('sem sinal: a visão do QR abre sem navegar (?v=qr)', new URL(cel.url()).search === '?v=qr');
   await cel.getByRole('button', { name: 'Voltar' }).click();
-  await cel.getByRole('button', { name: 'Encerrar jornada' }).waitFor({ timeout: 5000 });
+  await cel.getByRole('button', { name: 'Encerrar rota' }).waitFor({ timeout: 5000 });
   check('sem sinal: voltar à tela de hoje (/campo)', new URL(cel.url()).pathname === '/campo' && new URL(cel.url()).search === '');
   cel.once('dialog', (d) => void d.accept());
-  await cel.getByRole('button', { name: 'Encerrar jornada' }).click();
+  await cel.getByRole('button', { name: 'Encerrar rota' }).click();
   await cel.getByText('1 envio pendente').waitFor({ timeout: 15000 });
   check('sem sinal: a faixa avisa que envia quando o sinal voltar', (await corpo(cel)).includes('enviando quando voltar o sinal'));
   check('sem sinal: a jornada continua aberta no servidor', (await situacaoCampo())?.status === 'em_jornada');
@@ -868,16 +873,32 @@ console.log('-- Campo: GPS negado --');
   await cel.waitForFunction(() => !document.body.innerText.toLowerCase().includes('pendente'), null, { timeout: 30000 });
   check('sinal de volta: a fila enviou o encerramento', (await situacaoCampo())?.status === 'encerrou');
 
-  console.log('-- Equipe: Consultores --');
+  console.log('-- Equipe: Representantes --');
   await page.goto(`${BASE}/consultores`, { waitUntil: 'networkidle' });
-  check('menu tem "Consultores"', (await page.getByRole('link', { name: 'Consultores' }).count()) > 0);
+  check('menu tem "Representantes"', (await page.getByRole('link', { name: 'Representantes' }).count()) > 0);
+  await page.getByText('cadastros feitos').waitFor({ timeout: 20000 });
+  const painelEquipe = await corpo(page);
+  check('painel: números do dia e o representante no ranking', painelEquipe.includes('visitas no dia') && painelEquipe.includes(CAMPO_NOME.toLowerCase()));
+  await page.getByRole('tab', { name: 'Rotas da semana' }).click();
+  await page.getByText('Semana de').waitFor({ timeout: 15000 });
+  check('aba Rotas da semana abre', (await corpo(page)).includes('representante'));
+  await page.getByRole('tab', { name: 'Vouchers' }).click();
+  await page.getByText(/PRC-[A-Z0-9]{6}/).first().waitFor({ timeout: 15000 });
+  check('aba Vouchers mostra o pedido do representante', (await corpo(page)).includes('pedido — aguardando'));
+  await page.getByRole('button', { name: 'Liberar', exact: true }).first().click();
+  // O filtro "liberado" já está na tela: espera a confirmação da própria ação.
+  await page.getByText(/Voucher PRC-[A-Z0-9]{6} liberado\./).waitFor({ timeout: 15000 });
+  check('gestor libera o voucher pela tela', (await api('GET', `/v1/consultores/vouchers`)).some((v) => v.consultant_id === consultorId && v.status === 'liberado'));
+  await page.getByRole('tab', { name: 'Representantes' }).click();
+  await page.getByText(CAMPO_NOME).first().waitFor({ timeout: 15000 });
   check('lista mostra o consultor do roteiro, encerrado hoje', (await corpo(page)).includes(CAMPO_NOME.toLowerCase()) && (await corpo(page)).includes('encerrou'));
   await page.getByRole('link', { name: CAMPO_NOME }).click();
   await page.waitForURL(`**/consultores/${consultorId}`, { timeout: 20000 });
   await page.getByText(CAMPO_LUGAR).first().waitFor({ timeout: 20000 });
   const detalhe = await corpo(page);
   check('detalhe: linha do tempo com início, a visita e o fim', detalhe.includes('início da jornada') && detalhe.includes(CAMPO_LUGAR.toLowerCase()) && detalhe.includes('fim da jornada'));
-  check('detalhe: respostas da visita', detalhe.includes('maria check') && detalhe.includes('cadastrou agora pelo qr'));
+  check('detalhe: respostas da visita (formulário v2)', detalhe.includes('maria check') && detalhe.includes('cadastrou') && detalhe.includes('pelo qr'));
+  check('detalhe: rastro do dia com o tempo em cada parada', detalhe.includes('rastro do dia') && detalhe.includes('no local'));
   await page.locator('.leaflet-container').waitFor({ timeout: 20000 });
   // Os check-ins são <path> de círculo (tooltip); a linha do trajeto é um <path> sem arco ("A"/"a"), com ao menos um segmento "L".
   const dTrajeto = await page.locator('.leaflet-container path.leaflet-interactive').evaluateAll((ps) => ps.map((x) => x.getAttribute('d') ?? ''));

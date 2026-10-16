@@ -24,6 +24,7 @@ function montar() {
       findMany: jest.fn().mockResolvedValue([]),
       findUnique: jest.fn().mockResolvedValue({ photo_key: `campo/${CONS}/2026-10-08/${VISITA}.jpg` }),
     },
+    field_routes: { findUnique: jest.fn().mockResolvedValue(null) },
     app_settings: {
       findUnique: jest.fn().mockResolvedValue({ field_channels: ['Nenhum', 'iFood'] }),
       upsert: jest.fn().mockResolvedValue({}),
@@ -47,6 +48,8 @@ describe('ConsultoresService — leitura da equipe', () => {
     expect(r.day).toBe('2026-10-08');
     expect(r.journeys[0]).toMatchObject({ id: 'j1', points: [{ id: 'p1', kind: 'start', at: '2026-10-08T12:00:00.000Z' }] });
     expect(r.visits).toEqual([]);
+    expect(r.stops).toEqual([]);
+    expect(r.route).toBeNull();
   });
 
   it('dia inexistente no calendário = 400 VALIDATION_ERROR', async () => {

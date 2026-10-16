@@ -25,6 +25,7 @@ aqui primeiro. Swagger interativo em `/docs` (fora de produção).
 18. [Freela — `/v1/freela`](#18-freela)
 19. [Desvios propositais em relação ao protótipo](#19-desvios)
 20. [Consultores de campo — `/v1/campo`, `/v1/consultores`](#20-campo)
+21. [Representantes e rotas — `/v1/campo`, `/v1/consultores`, `/v1/pracas`](#21-representantes)
 
 <a id="1-convencoes"></a>
 
@@ -3011,3 +3012,285 @@ consultor. Localização só é recebida com jornada aberta.
 15. `vitest@3.2.4` no web (só dev), para a lógica pura (fila offline, completude, redução da foto).
 16. `leads` ganha `lat`/`lng` (como o spec manda), embora `pracas` use `lat`/`lon`.
 17. Índices únicos parciais (`field_journeys_one_open_per_consultant`, `field_visits_one_open_per_consultant`) vivem só no SQL da migração: o Prisma 5.22 não os declara, então qualquer `prisma migrate dev` futura propõe `DROP INDEX` deles — apague essas linhas do SQL gerado antes de aplicar.
+
+<a id="21-representantes"></a>
+
+## 21. Representantes e rotas — `/v1/campo`, `/v1/consultores`, `/v1/pracas`
+
+Bloco B. Desenho e decisões do dono: `docs/superpowers/specs/2026-10-16-representantes-e-rotas-design.md`.
+Na interface o consultor de campo passa a se chamar **representante**; no banco,
+no código e nas rotas os nomes `field_*`, `campo` e `consultores` continuam. Tudo
+do §20 continua valendo; aqui está só o que muda ou é novo.
+
+### 21.1 Cadastro do representante
+
+`POST /v1/consultores` e `PATCH /v1/consultores/:id` aceitam também:
+
+| Campo | Regra |
+|---|---|
+| `birth_date` | `YYYY-MM-DD` válido, idade entre 14 e 100 anos (`400 INVALID_BIRTH_DATE`); `null` limpa |
+| `area_lat`, `area_lng` | centro do raio; os dois juntos ou nenhum (`400 VALIDATION_ERROR`) |
+| `area_radius_km` | 0,2–100; exige `area_lat`/`area_lng`; `null` limpa o raio inteiro |
+| `area_bairros` | string[] ≤ 50, cada 1–80, sem repetir (comparação sem acento/caixa) |
+
+`ConsultorView` ganha `birth_date`, `age` (calculada com `todaySp()`; `null` sem
+data), `area_lat`, `area_lng`, `area_radius_km`, `area_bairros`. `CampoMeView` ganha
+`area_*` e `praca_route_hours: {start, end}`.
+
+### 21.2 Mapa da praça e geocodificação
+
+| Método | Rota | Resposta |
+|---|---|---|
+| GET | `/v1/pracas/:id/mapa?cnae=5611201,5611204` | `{points: MapPoint[], sem_localizacao, cnaes: [{code, label, count}]}` |
+| GET | `/v1/pracas/:id/geo` | `{pendente, ok, falhou, sem_endereco, geocoder}` |
+| POST | `/v1/pracas/:id/geo/retry` | `{requeued}` — volta os `falhou` da praça para `pendente` (admin) |
+
+`MapPoint`: `{id, name, lat, lng, cnae, classe, status}` com `status` ∈
+`nao_visitado|visitado|cadastrado|com_vaga` (o mais avançado vence:
+`com_vaga` = tem `lead_vagas`; `cadastrado` = etapa ≥ 5; `visitado` = tem visita
+com checkout). Só leads não arquivados da praça com lat/lng; `sem_localizacao`
+conta os outros. `cnae` vazio = todos; código fora de 7 dígitos → `400 VALIDATION_ERROR`.
+`cnaes` lista os CNAEs da configuração com a contagem na praça (mais um item
+`{code: null, label: "sem CNAE"}` quando houver).
+
+**Geocodificação** (relógio de 1 min, processo único): até 50 leads
+`geo_status = "pendente"` por rodada, um por vez. `GEOCODER` = `nominatim`
+(padrão; 1 consulta/s, `User-Agent` = `GEOCODER_USER_AGENT`) | `google`
+(`GOOGLE_MAPS_API_KEY`) | `off`. Achou → `lat/lng` + `ok`; não achou → `falhou`
+com `geo_error`; erro de rede ou limite → fica `pendente` e a rodada para.
+Consulta = `endereço, bairro, cidade, Brasil`.
+
+Lead novo (importação, `POST /v1/leads`, formulário público) com endereço e sem
+lat/lng nasce `pendente`; com lat/lng nasce `ok`; sem endereço, `geo_status`
+fica `null`.
+
+### 21.3 Importação (`/v1/imports`, §10)
+
+- Campos novos no mapeamento: `cnae`, `bairro`, `lat`, `lng` (dicas: `cnae`,
+  `cnae_fiscal`, `atividade`, `bairro`, `latitude`, `lat`, `longitude`, `lng`, `lon`).
+- `cnae` aceito com ou sem máscara (`5611-2/01` → `5611201`); fora de 7 dígitos
+  vira `null`. `lat`/`lng` aceitam vírgula decimal; fora de faixa viram `null`.
+- `evaluate` e `run` aceitam `cnaes?: string[]` (só esses entram; o resto conta
+  em `fora_cnae` e no motivo "CNAE fora da lista"; linha sem CNAE passa) e
+  `allow_no_phone?: boolean` (ausente = `false`, o comportamento de antes).
+- `EvaluateView` ganha `fora_cnae`.
+- O web lê `.xlsx` (primeira planilha; primeira linha = cabeçalho) além de CSV e XML.
+
+### 21.4 Configurações do campo
+
+| Método | Rota | Corpo | Resposta |
+|---|---|---|---|
+| GET | `/v1/consultores/settings/cnaes` | — | `{cnaes: [{code, label}]}` |
+| PUT | `/v1/consultores/settings/cnaes` | `{cnaes}` (1–40; `code` 7 dígitos sem repetir; `label` 1–120) | `{cnaes}` — admin |
+| GET | `/v1/pracas/:id` | — | `PracaView` ganha `route_daily_goal`, `route_start_hour`, `route_end_hour` |
+| PATCH | `/v1/pracas/:id` | `{route_daily_goal? (1–60), route_start_hour? (0–23), route_end_hour? (1–24, > início)}` | `PracaView` |
+
+### 21.5 Rotas
+
+Semana de rota = **segunda a sábado** (Brasília). `week` em qualquer rota pode ser
+qualquer dia da semana; a API normaliza para a segunda.
+
+`RouteView`:
+
+```json
+{
+  "id": "uuid", "consultant_id": "uuid", "consultant_name": "Ana Souza", "praca_id": "uuid",
+  "day": "2026-10-19", "goal": 20, "source": "auto", "status": "aberta",
+  "counts": { "total": 20, "visitados": 0 },
+  "stops": [
+    { "id": "uuid", "position": 1, "lead_id": "uuid", "lead_name": "Bar do Zé", "address": "Rua A, 10",
+      "bairro": "Centro", "phone": "31999990000", "lat": -19.92, "lng": -43.93, "classe": "grande", "stage": 1,
+      "reason": "novo", "removed": false,
+      "visit": { "id": "uuid", "checkin_at": "…", "checkout_at": "…", "final_status": "cadastrou" } }
+  ]
+}
+```
+
+`status` (derivado): `aberta` (sem jornada no dia), `iniciada` (jornada aberta),
+`encerrada` (jornada encerrada). `reason` ∈ `novo|retorno|pendente|incluido`.
+`stops` vêm em ordem de `position`; as removidas (`removed: true`) só aparecem
+para a equipe.
+
+**Representante (`@CampoRoute()`):**
+
+| Método | Rota | Resposta |
+|---|---|---|
+| GET | `/v1/campo/routes/today` | `RouteView \| null` |
+| GET | `/v1/campo/routes/week` | `{week_start, routes: RouteView[]}` |
+
+**Equipe (leitura: equipe; escrita: admin):**
+
+| Método | Rota | Corpo | Resposta |
+|---|---|---|---|
+| GET | `/v1/consultores/routes?week&praca_id&consultant_id` | — | `RouteView[]` (por representante, dia) |
+| POST | `/v1/consultores/routes/generate` | `{week, consultant_ids?}` | `{generated, kept_started, skipped_past, sem_localizacao, routes: RouteView[]}` |
+| PATCH | `/v1/consultores/routes/:id` | `{stops: [{lead_id, removed?}]}` | `RouteView` |
+
+**Geração** (mesma função no relógio e no `generate`):
+
+- Dias: segunda a sábado da `week`, só de hoje em diante (`skipped_past`). Dia
+  que já tem jornada do representante é mantido (`kept_started`); os outros são
+  (re)criados.
+- **Candidatos:** leads da praça, não arquivados, com lat/lng, na área (§21.1:
+  raio **ou** bairro; sem área = praça inteira), com CNAE na lista ou sem CNAE,
+  em etapa < 5, e sem visita `nao_quis` nos últimos 30 dias. Áreas sobrepostas
+  **não** são exclusivas. `sem_localizacao` conta os da área sem lat/lng.
+- **Prioridade:** `retorno` (última visita `cadastra_depois`/`ligar_depois` com
+  `final_date` no dia — vai para aquele dia; vencido antes da semana vai para o
+  primeiro dia), `pendente` (parada de rota passada sem visita e não removida),
+  casa grande nunca visitada, alvo nunca visitado, depois/visitado.
+- **Divisão:** os `goal × dias` primeiros pela prioridade (retornos já fixos no
+  seu dia), ordenados pelo ângulo em volta do centro (centro da área; sem área,
+  média dos pontos) e cortados em blocos de `goal`, um por dia. Dentro do dia,
+  vizinho mais próximo a partir da parada mais perto do centro. Determinístico
+  (empate por id).
+- `PATCH`: a lista é a ordem nova. `lead_id` novo (da praça, `404 NOT_FOUND` se
+  não) entra com `reason = "incluido"`; parada que já tem visita não pode ser
+  removida (`409 STOP_VISITED`). Marca `source = "admin"`.
+- **Relógio:** `@Cron('0 7 * * 1', America/Sao_Paulo)` gera a semana de todo
+  representante ativo que ainda não tem nenhuma rota nela. `FIELD_ROUTES_ENABLED`
+  (padrão `true`).
+
+**Jornada e check-in:** `journeys/start` liga `route_id` à rota do dia, se
+houver. No check-in, se o lead estiver numa parada (não removida, sem visita) da
+rota do dia, a parada recebe a visita; havendo rota e o lead fora dela,
+`off_route: true`. Check-in fora de `route_start_hour`–`route_end_hour` da praça
+→ `off_hours: true` (só marca).
+
+### 21.6 Visita — formulário versão 2
+
+Toda visita criada a partir deste bloco tem `form_version: 2`. As antigas
+(`1`) continuam com as regras do §20.3.
+
+`AnswersBody` v2 (todos opcionais; `null` limpa): `interlocutor_name` (≤ 120),
+`interlocutor_role` (`dono|gerente`), `hires_freelancer` (bool), `channels`,
+`channel_other`, `freelas_per_week` (0–1000), `voucher_accepted` (bool),
+`signup_mode` (`qr|assistido|nao_abriu`), `final_status`
+(`cadastrou|cadastra_depois|nao_quis|ligar_depois`), `final_date`
+(`YYYY-MM-DD`), `final_reason` (≤ 300), `callback_phone` (≤ 30), `notes` (≤ 2000).
+Campo v1 numa visita v2 (ou o contrário) → `400 VALIDATION_ERROR`.
+
+**Completude v2 (checkout):** nome do contato; função; contrata freelancer?; se
+sim, como (ao menos um canal ou "outro") e quantos por semana (≥ 1); se
+`freelas_per_week > 5`, a resposta da oferta de voucher; se aceitou, o voucher
+pedido **e** ao menos uma vaga registrada; como abriu o cadastro; status final;
+`cadastrou` exige `signup_mode` ≠ `nao_abriu`; `cadastra_depois`/`ligar_depois`
+exigem data ≥ hoje; `ligar_depois` exige telefone; `nao_quis` exige motivo.
+Faltando → `422 ANSWERS_INCOMPLETE` (como no §20.3).
+
+| Método | Rota | Corpo | Resposta |
+|---|---|---|---|
+| POST | `/v1/campo/visits/:ref/vagas` | `{client_id, date, funcao}` | `201 VisitView` (idempotente por `client_id`) |
+| DELETE | `/v1/campo/visits/:ref/vagas/:vagaId` | — | `200 VisitView` (só com a visita aberta) |
+| POST | `/v1/campo/visits/:ref/voucher` | — | `201 VisitView` — pede o voucher; idempotente por visita |
+
+- Vaga: `date` `YYYY-MM-DD` ≥ hoje, `funcao` 1–60; grava em `lead_vagas` com
+  `source = "campo"`, `visit_id`, `filled = false`. Visita fechada →
+  `409 VISIT_CLOSED`.
+- Voucher: exige visita v2 aberta com `hires_freelancer = true` e
+  `freelas_per_week > 5` (`422 VOUCHER_NOT_ELIGIBLE`); outro voucher
+  `solicitado`/`liberado` no mesmo lead → `409 VOUCHER_ACTIVE`. Grava
+  `voucher_accepted = true` e cria o voucher `solicitado` com `valid_until` = sábado
+  da semana.
+
+`VisitView` ganha `form_version`, `off_route`, `off_hours`, `voucher`
+(`{id, code, status, valid_until, freela_ref, decision_note} | null` — o recorte do
+`VoucherView` que a visita precisa), `vagas: [{id, date, funcao, filled}]` e, em
+`answers`, os campos v2 lado a lado com os do v1 (só os da versão da visita valem).
+No checkout v2 o evento leva `author_label = "Representante: <nome>"`.
+
+**Checkout v2 no CRM** (na transação do §20.3): evento `visit` com o resumo v2;
+`decisor` ← contato; e por status final:
+
+| `final_status` | Funil | Também |
+|---|---|---|
+| `cadastrou` | etapa < 5 → **5** (`stage_to: 5`) | `field_consultant_id` ← o representante, se vazio |
+| `cadastra_depois` | 1/2 → 3 | `next_step_what = "Confirmar cadastro"`, `next_step_date = final_date` |
+| `ligar_depois` | 1/2 → 3 | `next_step_what = "Ligar (<telefone>)"`, `next_step_date = final_date` |
+| `nao_quis` | → **8** (`stage_to: 8`), `lost_reason` ← motivo | — |
+
+### 21.7 Voucher
+
+`VoucherView`: `{id, code, status, valid_until, lead_id, lead_name, consultant_id,
+consultant_name, visit_id, praca_id, freela_ref, decision_note, decided_by_name,
+decided_at, used_at, created_at}`; `status` ∈
+`solicitado|liberado|recusado|usado|expirado`. `code` = `PRC-` + 6 caracteres
+(sem 0/O/1/I).
+
+| Método | Rota | Corpo | Resposta |
+|---|---|---|---|
+| GET | `/v1/consultores/vouchers?status&praca_id` | — | `VoucherView[]` (`solicitado` primeiro, depois mais novos) |
+| POST | `/v1/consultores/vouchers/:id/decide` | `{decision: "liberado"\|"recusado", freela_ref?, note?}` | `VoucherView` — admin |
+| POST | `/v1/consultores/vouchers/:id/used` | — | `VoucherView` — admin |
+
+- `decide` só de `solicitado` (`409 VOUCHER_STATE`); `recusado` exige `note`
+  (`400 VALIDATION_ERROR`). `used` só de `liberado`.
+- Vencido (`valid_until < hoje`) → `409 VOUCHER_EXPIRED`. O fechamento das 00:05
+  (§20.5) marca `expirado` os `solicitado`/`liberado` vencidos.
+- Voucher `solicitado` acende o sino da equipe (`voucher-<id>`, `info`).
+
+### 21.8 Rastro com tempo por parada
+
+`StopTiming`: `{visit_id, lead_id, lead_name, lat, lng, checkin_at, checkout_at,
+minutes_on_site, minutes_travel, far_from_place, off_route, off_hours,
+auto_closed, clock_adjusted, final_status}`. `minutes_on_site` = checkout −
+check-in (`null` sem checkout); `minutes_travel` = check-in − checkout anterior (a
+primeira, desde o início da jornada; `null` se a anterior não tem checkout).
+Minutos arredondados.
+
+`GET /v1/consultores/:id/days/:day` ganha `stops: StopTiming[]` (o deslocamento da
+primeira parada conta do início da primeira jornada do dia) e `route:
+{id, goal, total, visitados} | null` (resumo da rota do dia).
+
+### 21.9 Painéis
+
+**Admin** — `GET /v1/consultores/painel?from&to&praca_id&consultant_id`
+(`from`/`to` `YYYY-MM-DD`, padrão hoje; até 62 dias):
+
+```json
+{
+  "from": "2026-10-19", "to": "2026-10-19",
+  "totals": { "rotas": 4, "rotas_iniciadas": 3, "rotas_abertas": 1, "visitas": 51, "meta": 80, "pct_meta": 64,
+              "cadastros": 9, "vouchers_solicitados": 2, "vouchers_liberados": 1, "vouchers_usados": 0, "vagas": 3 },
+  "por_representante": [ { "consultant_id": "uuid", "name": "Ana Souza", "...": "as mesmas chaves de totals" } ]
+}
+```
+
+`visitas` = check-ins no período; `meta` = soma de `goal` das rotas;
+`cadastros` = checkouts v2 com `cadastrou`; vouchers por `created_at` (pedidos),
+`decided_at` (liberados) e `used_at` (usados); `vagas` = `lead_vagas` com
+`source = "campo"` criadas no período.
+
+`GET /v1/consultores/painel/trilhas?day&praca_id` →
+`{day, consultants: [{id, name, points: [{lat, lng, at}], stops: StopTiming[]}]}`.
+
+**Representante** — `GET /v1/campo/painel?periodo=dia|semana|30d` (padrão `dia`):
+
+```json
+{
+  "periodo": "semana", "from": "2026-10-19", "to": "2026-10-24",
+  "numbers": { "clientes_na_rota": 120, "visitados": 64, "cadastrados": 11, "vouchers": 2, "vagas": 4 },
+  "cadastrou": [ "ClienteItem" ],
+  "abriu_vaga": [ "ClienteItem" ],
+  "nunca_abriu": [ "ClienteItem" ],
+  "sem_vaga_30d": [ "ClienteItem" ]
+}
+```
+
+`ClienteItem`: `{lead_id, name, address, phone, lat, lng, stage, vagas,
+last_vaga_at}`. Os clientes dele são os leads com `field_consultant_id` = ele.
+`numbers.cadastrados` conta os checkouts v2 dele com `cadastrou` no período (mesmo
+quando o crédito do cliente ficou com outro representante, que cadastrou antes).
+`cadastrou`/`abriu_vaga` = no período; `nunca_abriu` = clientes dele sem nenhuma
+vaga; `sem_vaga_30d` = clientes dele com vaga, mas nenhuma criada nos últimos 30
+dias. `clientes_na_rota` = paradas não removidas das rotas dele no período;
+`visitados` = dessas, as com visita.
+
+### 21.10 O que muda no §20
+
+- `ConsultorListItem.today.cadastros` e `TodayView.counters.cadastrou_qr` contam
+  também o status final `cadastrou` das visitas v2.
+- Na interface, "consultor" virou "representante" e "jornada" virou "rota"
+  ("Iniciar rota", "Encerrar rota"); wire, tabelas e rotas não mudaram.
+- `PATCH /v1/consultores/routes/:id` com o mesmo `lead_id` repetido na lista:
+  vale a primeira posição.

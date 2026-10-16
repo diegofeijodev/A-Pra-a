@@ -6,7 +6,7 @@ import { create } from 'zustand';
 import type { AcaoFila, ItemFila } from '../domain/campo.types';
 import { todaySp } from '@/lib/dates';
 import { planejarRascunho } from '../domain/fila-politica';
-import { faltando } from '../domain/questionario';
+import { ehV2, faltando, faltandoV2 } from '../domain/questionario';
 import { getCampoSession } from '../infrastructure/campo-session.storage';
 import { enviarItem } from '../infrastructure/fila';
 import { adicionarNaFila, atualizarSeExistir, listarFila, removerDaFila, reposicionar } from '../infrastructure/fila-idb';
@@ -85,7 +85,12 @@ export async function enfileirar(acao: AcaoFila, consultantId: string): Promise<
   const info = { consultant_id: consultantId, tentativas: 0, proxima_em: 0, criado_em: Date.now() };
   if (acao.kind === 'answers') {
     // Atômico: troca do rascunho + checkout (e o que vinha atrás dele) numa transação só.
-    await reposicionar(consultantId, (fila) => planejarRascunho(fila, acao, info, faltando(acao.payload, todaySp()).length === 0));
+    // v2: vaga e voucher podem estar no servidor (fora da vista daqui) — a conferência deles fica com a API.
+    const p = acao.payload;
+    const completo = ehV2(p)
+      ? faltandoV2(p, todaySp(), { voucherPedido: true, vagas: 1 }).length === 0
+      : faltando(p, todaySp()).length === 0;
+    await reposicionar(consultantId, (fila) => planejarRascunho(fila, acao, info, completo));
   } else {
     await adicionarNaFila({ ...acao, ...info });
   }

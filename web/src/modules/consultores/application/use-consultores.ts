@@ -8,6 +8,18 @@ import {
   diaDoConsultor,
   freelaSyncConsultor,
   getCanaisCampo,
+  editarRota,
+  gerarRotas,
+  listRotas,
+  getPainel,
+  getTrilhas,
+  listVouchers,
+  decidirVoucher,
+  voucherUsado,
+  type StatusVoucher,
+  getCnaes,
+  putCnaes,
+  type CnaeItem,
   getConsultor,
   listConsultores,
   putCanaisCampo,
@@ -42,7 +54,7 @@ export function useCreateConsultor() {
   return useMutation({
     mutationFn: (input: CreateConsultorInput) => createConsultor(input),
     onSuccess: invalidar,
-    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível criar o consultor.')),
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível criar o representante.')),
   });
 }
 
@@ -74,6 +86,98 @@ export function useFreelaSyncConsultor(id: string) {
       else toast.success('Código no Freela pronto.');
     },
     onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível falar com o Freela.')),
+  });
+}
+
+export function useRotas(week: string, pracaId?: string) {
+  return useQuery({
+    queryKey: [...CHAVE, 'rotas', week, pracaId ?? ''],
+    queryFn: () => listRotas({ week, ...(pracaId ? { praca_id: pracaId } : {}) }),
+    refetchInterval: 120_000,
+  });
+}
+
+export function useGerarRotas() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { week: string; consultant_ids?: string[] }) => gerarRotas(input),
+    onSuccess: (r) => {
+      void qc.invalidateQueries({ queryKey: [...CHAVE, 'rotas'] });
+      const partes = [`${r.generated} rota(s) gerada(s)`];
+      if (r.kept_started) partes.push(`${r.kept_started} dia(s) já iniciado(s) mantido(s)`);
+      if (r.sem_localizacao) partes.push(`${r.sem_localizacao} estabelecimento(s) da área ainda sem localização`);
+      toast.success(partes.join(' · '));
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível gerar as rotas.')),
+  });
+}
+
+export function useEditarRota() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, stops }: { id: string; stops: { lead_id: string; removed?: boolean }[] }) => editarRota(id, stops),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: [...CHAVE, 'rotas'] });
+      toast.success('Rota salva.');
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível salvar a rota.')),
+  });
+}
+
+export function usePainel(params: { from: string; to: string; praca_id?: string; consultant_id?: string }) {
+  return useQuery({ queryKey: [...CHAVE, 'painel', params], queryFn: () => getPainel(params), refetchInterval: 60_000 });
+}
+
+export function useTrilhas(params: { day: string; praca_id?: string }, enabled: boolean) {
+  return useQuery({ queryKey: [...CHAVE, 'trilhas', params], queryFn: () => getTrilhas(params), enabled, refetchInterval: 60_000 });
+}
+
+export function useVouchers(status?: StatusVoucher) {
+  return useQuery({
+    queryKey: [...CHAVE, 'vouchers', status ?? ''],
+    queryFn: () => listVouchers(status ? { status } : {}),
+    refetchInterval: 60_000,
+  });
+}
+
+export function useDecidirVoucher() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: { id: string; decision: 'liberado' | 'recusado'; freela_ref?: string; note?: string }) => decidirVoucher(id, input),
+    onSuccess: (v) => {
+      void qc.invalidateQueries({ queryKey: [...CHAVE, 'vouchers'] });
+      void qc.invalidateQueries({ queryKey: ['notifications'] });
+      toast.success(v.status === 'liberado' ? `Voucher ${v.code} liberado.` : `Voucher ${v.code} recusado.`);
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível decidir o voucher.')),
+  });
+}
+
+export function useVoucherUsado() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => voucherUsado(id),
+    onSuccess: (v) => {
+      void qc.invalidateQueries({ queryKey: [...CHAVE, 'vouchers'] });
+      toast.success(`Voucher ${v.code} marcado como usado.`);
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível marcar o voucher.')),
+  });
+}
+
+export function useCnaes() {
+  return useQuery({ queryKey: [...CHAVE, 'cnaes'], queryFn: getCnaes });
+}
+
+export function useSalvarCnaes() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (cnaes: CnaeItem[]) => putCnaes(cnaes),
+    onSuccess: (cnaes) => {
+      qc.setQueryData([...CHAVE, 'cnaes'], cnaes);
+      toast.success('Lista de CNAEs salva.');
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível salvar os CNAEs.')),
   });
 }
 

@@ -20,8 +20,11 @@ import {
   situacaoHoje,
   type SituacaoHoje,
 } from '../../domain/campo-rules';
+import { idade } from '../../domain/route-rules';
+import { SELECAO_RASTRO, stopTimings, type StopTiming } from './painel.service';
 import { CampoFreelaService } from './campo-freela.service';
 import { lerCanais } from './campo-canais';
+import { lerCnaes } from './campo-cnaes';
 import { signupUrl } from './campo-links';
 import { COM_PRACA } from './campo-prisma';
 import {
@@ -33,7 +36,13 @@ import {
   type PointView,
   type VisitView,
 } from './campo-views';
-import { ChannelsDto, CreateConsultorDto, UpdateConsultorDto } from './dto/consultores.dto';
+import {
+  AreaFieldsDto,
+  ChannelsDto,
+  CnaesDto,
+  CreateConsultorDto,
+  UpdateConsultorDto,
+} from './dto/consultores.dto';
 import { lerFotoOuFalha, PHOTO_STORAGE, type FotoLida, type PhotoStorage } from './photo-storage';
 import { colunaUnicaDoConsultor, violouUnico } from './prisma-errors';
 
@@ -54,6 +63,12 @@ export interface ConsultorView {
   freela_sync_error: string | null;
   freela_synced_at: string | null;
   signup_url: string | null;
+  birth_date: string | null;
+  age: number | null;
+  area_lat: number | null;
+  area_lng: number | null;
+  area_radius_km: number | null;
+  area_bairros: string[];
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -68,7 +83,7 @@ export type ConsultorRow = Prisma.field_consultantsGetPayload<{
 }>;
 
 /** Projeção da equipe — nunca `password_hash` nem `token_version`. */
-export function toConsultorView(c: ConsultorRow): ConsultorView {
+export function toConsultorView(c: ConsultorRow, hoje = todaySp()): ConsultorView {
   return {
     id: c.id,
     name: c.name,
@@ -86,10 +101,25 @@ export function toConsultorView(c: ConsultorRow): ConsultorView {
     freela_sync_error: c.freela_sync_error,
     freela_synced_at: c.freela_synced_at?.toISOString() ?? null,
     signup_url: signupUrl(c.freela_code),
+    birth_date: c.birth_date,
+    age: c.birth_date ? idade(c.birth_date, hoje) : null,
+    area_lat: c.area_lat,
+    area_lng: c.area_lng,
+    area_radius_km: c.area_radius_km,
+    area_bairros: c.area_bairros,
     created_by: c.created_by,
     created_at: c.created_at.toISOString(),
     updated_at: c.updated_at.toISOString(),
   };
+}
+
+/** O que `areaOuFalha` grava — serve à criação e à edição. */
+interface CamposDaArea {
+  birth_date?: string | null;
+  area_lat?: number | null;
+  area_lng?: number | null;
+  area_radius_km?: number | null;
+  area_bairros?: string[];
 }
 
 const naoAchado = () => new NotFoundException({ code: 'NOT_FOUND', message: 'Consultor não encontrado.' });
@@ -120,7 +150,7 @@ export class ConsultoresService {
       }),
       this.prisma.field_visits.findMany({
         where: { journey: { day: hoje } },
-        select: { consultant_id: true, freela_status: true },
+        select: { consultant_id: true, freela_status: true, final_status: true },
       }),
     ]);
     const ultimos = jornadas.length
@@ -142,7 +172,8 @@ export class ConsultoresService {
         today: {
           status: situacaoHoje(js),
           visits: vs.length,
-          cadastros: vs.filter((v) => v.freela_status === 'cadastrou_qr').length,
+          // v1: "cadastrou agora pelo QR"; v2 (§21.6): status final "cadastrou".
+          cadastros: vs.filter((v) => v.freela_status === 'cadastrou_qr' || v.final_status === 'cadastrou').length,
           last_point_at: ultimo?.toISOString() ?? null,
         },
       };
@@ -164,6 +195,7 @@ export class ConsultoresService {
     await this.pracaOrFail(dto.praca_id);
     await this.emailLivre(email);
     await this.cpfLivre(cpf);
+    const area = this.areaOuFalha(dto, null);
 
     const temp = gerarSenhaProvisoria();
     let criado: { id: string };
@@ -179,6 +211,7 @@ export class ConsultoresService {
           pix_key: normalizarPix(dto.pix_key_type, dto.pix_key),
           password_hash: await bcrypt.hash(temp, 10),
           created_by: admin.id,
+          ...area,
         },
       });
     } catch (e) {
@@ -190,7 +223,7 @@ export class ConsultoresService {
 
   async update(id: string, dto: UpdateConsultorDto): Promise<ConsultorView> {
     const atual = await this.findOrFail(id);
-    const data: Prisma.field_consultantsUncheckedUpdateInput = {};
+    const data: Prisma.field_consultantsUncheckedUpdateInput = { ...this.areaOuFalha(dto, atual) };
     let sincronizar = false;
 
     if (dto.name !== undefined) data.name = dto.name.trim();
@@ -278,7 +311,13 @@ export class ConsultoresService {
   async day(
     id: string,
     day: string,
-  ): Promise<{ day: string; journeys: (JourneyView & { points: PointView[] })[]; visits: VisitView[] }> {
+  ): Promise<{
+    day: string;
+    journeys: (JourneyView & { points: PointView[] })[];
+    visits: VisitView[];
+    stops: StopTiming[];
+    route: { id: string; goal: number; total: number; visitados: number } | null;
+  }> {
     await this.findOrFail(id);
     if (!isDateString(day)) {
       throw new BadRequestException({
@@ -286,7 +325,7 @@ export class ConsultoresService {
         message: 'day: deve ser uma data válida no formato YYYY-MM-DD',
       });
     }
-    const [jornadas, visitas] = await Promise.all([
+    const [jornadas, visitas, rastro, rota] = await Promise.all([
       this.prisma.field_journeys.findMany({
         where: { consultant_id: id, day },
         orderBy: { started_at: 'asc' },
@@ -297,12 +336,22 @@ export class ConsultoresService {
         include: COM_LEAD,
         orderBy: { checkin_at: 'asc' },
       }),
+      this.prisma.field_visits.findMany({ where: { consultant_id: id, journey: { day } }, select: SELECAO_RASTRO }),
+      this.prisma.field_routes.findUnique({
+        where: { consultant_id_day: { consultant_id: id, day } },
+        select: { id: true, goal: true, stops: { where: { removed: false }, select: { visit_id: true } } },
+      }),
     ]);
     const hoje = todaySp();
     return {
       day,
       journeys: jornadas.map((j) => ({ ...journeyView(j), points: j.points.map(pointView) })),
       visits: visitas.map((v) => visitView(v, hoje)),
+      // Tempo em cada parada (§21.8): o deslocamento da primeira conta do início do dia.
+      stops: stopTimings(rastro, jornadas[0]?.started_at ?? null),
+      route: rota
+        ? { id: rota.id, goal: rota.goal, total: rota.stops.length, visitados: rota.stops.filter((s) => s.visit_id).length }
+        : null,
     };
   }
 
@@ -352,6 +401,31 @@ export class ConsultoresService {
     return { channels: lista };
   }
 
+  async cnaes(): Promise<{ cnaes: { code: string; label: string }[] }> {
+    return { cnaes: await lerCnaes(this.prisma) };
+  }
+
+  /** Lista de CNAEs da base (§21.4): código sem repetir, rótulo aparado. */
+  async setCnaes(dto: CnaesDto): Promise<{ cnaes: { code: string; label: string }[] }> {
+    const vistos = new Set<string>();
+    const cnaes = dto.cnaes.map((c) => ({ code: c.code, label: c.label.trim() }));
+    for (const c of cnaes) {
+      if (vistos.has(c.code) || !c.label) {
+        throw new BadRequestException({
+          code: 'VALIDATION_ERROR',
+          message: vistos.has(c.code) ? `cnaes: o código ${c.code} aparece duas vezes.` : 'cnaes: todo CNAE precisa de um nome.',
+        });
+      }
+      vistos.add(c.code);
+    }
+    await this.prisma.app_settings.upsert({
+      where: { id: 1 },
+      update: { field_cnaes: cnaes },
+      create: { id: 1, field_cnaes: cnaes },
+    });
+    return { cnaes };
+  }
+
   async findOrFail(id: string): Promise<ConsultorRow> {
     if (!isUuid(id)) throw naoAchado();
     const c = await this.prisma.field_consultants.findUnique({ where: { id }, include: COM_PRACA });
@@ -360,6 +434,57 @@ export class ConsultoresService {
   }
 
   // ── internos ────────────────────────────────────────────────
+  /**
+   * Nascimento e área (§21.1). Devolve só o que mudou; `atual` nulo = criação.
+   * Raio exige centro; centro sem raio é recusado (o centro só serve ao raio).
+   */
+  private areaOuFalha(
+    dto: AreaFieldsDto,
+    atual: Pick<ConsultorRow, 'area_lat' | 'area_lng' | 'area_radius_km'> | null,
+  ): CamposDaArea {
+    const data: CamposDaArea = {};
+    if (dto.birth_date !== undefined) {
+      if (dto.birth_date !== null) {
+        const anos = idade(dto.birth_date, todaySp());
+        if (anos < 14 || anos > 100) {
+          throw new BadRequestException({
+            code: 'INVALID_BIRTH_DATE',
+            message: 'Data de nascimento inválida: a idade precisa ficar entre 14 e 100 anos.',
+          });
+        }
+      }
+      data.birth_date = dto.birth_date;
+    }
+    if (dto.area_bairros !== undefined) {
+      const vistos = new Set<string>();
+      data.area_bairros = (dto.area_bairros ?? [])
+        .map((b) => b.trim())
+        .filter((b) => {
+          const k = b.toLowerCase();
+          if (!b || vistos.has(k)) return false;
+          vistos.add(k);
+          return true;
+        });
+    }
+    const tocouRaio =
+      dto.area_lat !== undefined || dto.area_lng !== undefined || dto.area_radius_km !== undefined;
+    if (!tocouRaio) return data;
+    if (dto.area_radius_km === null) {
+      // `null` no raio limpa o círculo inteiro.
+      return { ...data, area_lat: null, area_lng: null, area_radius_km: null };
+    }
+    const lat = dto.area_lat !== undefined ? dto.area_lat : (atual?.area_lat ?? null);
+    const lng = dto.area_lng !== undefined ? dto.area_lng : (atual?.area_lng ?? null);
+    const raio = dto.area_radius_km !== undefined ? dto.area_radius_km : (atual?.area_radius_km ?? null);
+    if ((lat == null) !== (lng == null) || (raio != null && lat == null) || (raio == null && lat != null)) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Área: informe o centro (latitude e longitude) e o raio juntos.',
+      });
+    }
+    return { ...data, area_lat: lat, area_lng: lng, area_radius_km: raio };
+  }
+
   private cpfOuFalha(valor: string): string {
     if (!cpfValido(valor)) throw new BadRequestException({ code: 'INVALID_CPF', message: 'CPF inválido.' });
     return digits(valor);

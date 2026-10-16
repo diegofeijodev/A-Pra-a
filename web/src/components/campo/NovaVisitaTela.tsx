@@ -33,7 +33,7 @@ interface Escolhido {
 const metros = (m: number | null) => (m == null ? '' : m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
 
 /** Visão `nova` de `/campo`: nova visita (spec §8.1): estabelecimento → foto da fachada → check-in (pela fila). */
-export function NovaVisitaTela() {
+export function NovaVisitaTela({ doRoteiro = null }: { doRoteiro?: { lead_id: string; nome: string } | null }) {
   const online = useOnline();
   const consultantId = useCampoSession((s) => s.session?.consultant.id ?? '');
   const { dia, carregando } = useDia();
@@ -43,7 +43,8 @@ export function NovaVisitaTela() {
   const [novoNome, setNovoNome] = useState('');
   const [novoEndereco, setNovoEndereco] = useState('');
   const [parecidos, setParecidos] = useState<PlaceView[] | null>(null);
-  const [escolhido, setEscolhido] = useState<Escolhido | null>(null);
+  // Vindo da rota (§21.5): o estabelecimento já está escolhido — falta só a foto.
+  const [escolhido, setEscolhido] = useState<Escolhido | null>(doRoteiro ? { nome: doRoteiro.nome, lead_id: doRoteiro.lead_id } : null);
   const [foto, setFoto] = useState<Blob | null>(null);
   const [previa, setPrevia] = useState<string | null>(null);
   const [gps, setGps] = useState<MotivoGps | null>(null);

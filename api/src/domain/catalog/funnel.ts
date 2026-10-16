@@ -103,6 +103,11 @@ export const LEAD_FIELDS: LeadFieldDef[] = [
   },
   { id: 'origem', label: 'Origem', hints: ['origem', 'fonte', 'source', 'canal'] },
   { id: 'cnpj', label: 'CNPJ', hints: ['cnpj', 'documento', 'doc'] },
+  // Bloco B (§21.3): base de estabelecimentos para as rotas.
+  { id: 'cnae', label: 'CNAE', hints: ['cnae', 'cnaefiscal', 'atividade'] },
+  { id: 'bairro', label: 'Bairro', hints: ['bairro', 'distrito', 'neighborhood'] },
+  { id: 'lat', label: 'Latitude', hints: ['latitude'] },
+  { id: 'lng', label: 'Longitude', hints: ['longitude', 'lng'] },
 ];
 
 export const CLASSE_ORDER: Record<string, number> = { grande: 0, alvo: 1, depois: 2 };

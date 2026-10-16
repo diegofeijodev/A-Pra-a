@@ -70,3 +70,23 @@ describe('canaisExclusivos ("Nenhum")', () => {
     expect(canaisExclusivos(['A'], ['A', 'B'])).toEqual(['A', 'B']);
   });
 });
+
+import { faltandoV2, respostasV1De, respostasV2De, RESPOSTAS_V2_VAZIAS } from '../questionario';
+
+describe('formulário v2 (espelho da API)', () => {
+  const completo = { ...RESPOSTAS_V2_VAZIAS, interlocutor_name: 'João', interlocutor_role: 'dono' as const, hires_freelancer: false, signup_mode: 'qr' as const, final_status: 'cadastrou' as const };
+  const ctx = { voucherPedido: false, vagas: 0 };
+
+  it('completo não falta nada; acima de 5 pede o voucher', () => {
+    expect(faltandoV2(completo, '2026-10-08', ctx)).toEqual([]);
+    const muitos = { ...completo, hires_freelancer: true, channels: ['Agência'], freelas_per_week: 6 };
+    expect(faltandoV2(muitos, '2026-10-08', ctx)).toEqual(['resposta da oferta do voucher']);
+    expect(faltandoV2({ ...muitos, voucher_accepted: true }, '2026-10-08', ctx)).toEqual(['pedir o voucher ao gestor', 'abrir a vaga do voucher']);
+  });
+
+  it('separa os campos de cada versão (o PATCH recusa os da outra)', () => {
+    const doServidor = { ...completo, freela_status: null, interest: null };
+    expect(Object.keys(respostasV2De(doServidor))).not.toContain('freela_status');
+    expect(Object.keys(respostasV1De(doServidor as never))).not.toContain('final_status');
+  });
+});

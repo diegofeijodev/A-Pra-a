@@ -18,7 +18,7 @@ const LINHA = {
   phone: '31999990000',
   cpf: '52998224725',
   praca_id: PRACA,
-  praca: { name: 'Belo Horizonte + Contagem' },
+  praca: { name: 'Belo Horizonte + Contagem', route_start_hour: 9, route_end_hour: 18 },
   pix_key: '52998224725',
   pix_key_type: 'cpf',
   password_hash: 'x',
@@ -29,6 +29,11 @@ const LINHA = {
   freela_code: null as string | null,
   freela_sync_error: null as string | null,
   freela_synced_at: null as Date | null,
+  birth_date: null as string | null,
+  area_lat: null as number | null,
+  area_lng: null as number | null,
+  area_radius_km: null as number | null,
+  area_bairros: [] as string[],
   created_by: DIEGO,
   created_at: new Date('2026-10-08T12:00:00.000Z'),
   updated_at: new Date('2026-10-08T12:00:00.000Z'),
@@ -238,5 +243,46 @@ describe('ConsultoresService — corrida no índice único (P2002)', () => {
       status: 409,
       response: { code },
     });
+  });
+});
+
+describe('ConsultoresService — nascimento e área (§21.1)', () => {
+  it('cria com nascimento, bairros sem repetir e raio completo', async () => {
+    const p = fakePrisma();
+    const { s } = montar(p);
+    await s.create(
+      { ...NOVO, birth_date: '1990-05-20', area_bairros: [' Centro ', 'centro', 'Savassi'], area_lat: -19.93, area_lng: -43.94, area_radius_km: 3 },
+      ADMIN,
+    );
+    const d = dataDo(p.field_consultants.create);
+    expect(d).toMatchObject({ birth_date: '1990-05-20', area_bairros: ['Centro', 'Savassi'], area_lat: -19.93, area_lng: -43.94, area_radius_km: 3 });
+  });
+
+  it('recusa idade fora de 14–100 anos', async () => {
+    const { s } = montar(fakePrisma());
+    await expect(s.create({ ...NOVO, birth_date: '2020-01-01' }, ADMIN)).rejects.toMatchObject({
+      response: { code: 'INVALID_BIRTH_DATE' },
+    });
+  });
+
+  it('raio sem centro é recusado', async () => {
+    const { s } = montar(fakePrisma());
+    await expect(s.update(CONS, { area_radius_km: 2 })).rejects.toMatchObject({ response: { code: 'VALIDATION_ERROR' } });
+  });
+
+  it('raio nulo limpa o círculo inteiro', async () => {
+    const p = fakePrisma();
+    const { s } = montar(p);
+    await s.update(CONS, { area_radius_km: null });
+    expect(dataDo(p.field_consultants.update)).toMatchObject({ area_lat: null, area_lng: null, area_radius_km: null });
+  });
+
+  it('a visão traz a idade calculada', async () => {
+    const p = fakePrisma();
+    p.field_consultants.findUnique.mockResolvedValue({ ...LINHA, birth_date: '1990-05-20' });
+    const { s } = montar(p);
+    const v = await s.get(CONS);
+    expect(v.birth_date).toBe('1990-05-20');
+    expect(typeof v.age).toBe('number');
   });
 });

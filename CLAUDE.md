@@ -36,8 +36,15 @@ Lovable "PRAÇA" para a stack do Freela.
   "ausente = X no POST, mantém o atual no PUT". Com default no DTO, o
   `class-transformer` preenche o campo e o `PUT` não distingue "omitido" de
   "mandou o valor" — foi assim que o `PUT` de cadência despausava a trilha.
-- A API roda em **uma** instância: os dois `@Cron` (motor de cadências e outbox
-  do Freela) duplicariam mensagem com duas réplicas. Ver README, "Produção".
+- A API roda em **uma** instância: os `@Cron` (motor de cadências, outbox do
+  Freela, meia-noite do campo, rotas da segunda e geocodificação) duplicariam
+  trabalho com duas réplicas. Ver README, "Produção".
+- **Representante comercial = consultor de campo** (bloco B, contrato §21): na
+  interface é "representante", no código/banco continua `field_*`/`campo`.
+  Visita nova é `form_version = 2`; as antigas (1) seguem o questionário do
+  bloco A — o PATCH recusa campo da outra versão. Regras puras em
+  `src/domain/route-rules.ts` e `src/domain/visit-rules.ts` (o web espelha o
+  "o que falta" em `modules/campo/domain/questionario.ts`).
 - Throttle é por rota + IP, e `req.ip` atrás de nginx é o IP do proxy: flag
   `TRUST_PROXY`.
 - Id que vem da URL passa por `isUuid()` antes do Prisma: sem isso, id
@@ -91,15 +98,15 @@ verificações em `api/`:
 # api/
 npm run start:dev | build | typecheck | lint | test | seed
 npm run start:smoke                # sobe sem watcher (ts-node --transpile-only), pra smoke
-npm run smoke                      # scripts/smoke.sh contra a API viva — 858 checagens, repetível sem resíduo
+npm run smoke                      # scripts/smoke.sh contra a API viva — 919 checagens, repetível sem resíduo
                                    # (menos sem o container `praca-postgres`: a limpeza final é por psql)
-npm test                           # jest maxWorkers 1 — 45 suítes, 640 testes
+npm test                           # jest maxWorkers 1 — 52 suítes, 727 testes
 npm run prisma:migrate:dev | prisma:generate | prisma:studio
 
 # web/
 yarn dev | typecheck | lint        # `build` só se o dono pedir (ver abaixo)
-yarn test                          # vitest run (fork único) — 8 arquivos, 91 testes
-yarn browser-check                 # scripts/browser-check.mjs — 145 checagens
+yarn test                          # vitest run (fork único) — 9 arquivos, 100 testes
+yarn browser-check                 # scripts/browser-check.mjs — 153 checagens
                                    # precisa da API na 3014 (start:smoke) e do web na 3024 (yarn dev)
                                    # conta: PRACA_CHECK_EMAIL/PASSWORD (padrão = seed), login pelo formulário
 ```

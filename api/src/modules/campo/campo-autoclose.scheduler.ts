@@ -7,13 +7,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { JourneysService } from './journeys.service';
+import { VouchersService } from './vouchers.service';
 
 @Injectable()
 export class CampoAutocloseScheduler {
   private readonly log = new Logger(CampoAutocloseScheduler.name);
   private rodando = false;
 
-  constructor(private readonly journeys: JourneysService) {}
+  constructor(
+    private readonly journeys: JourneysService,
+    private readonly vouchers: VouchersService,
+  ) {}
 
   @Cron('5 0 * * *', { timeZone: 'America/Sao_Paulo' })
   async tick(): Promise<void> {
@@ -24,6 +28,9 @@ export class CampoAutocloseScheduler {
       if (r.journeys > 0) {
         this.log.log(`meia-noite: ${r.journeys} jornada(s) e ${r.visits} visita(s) sem checkout fechadas`);
       }
+      // Voucher vale a semana do pedido (§21.7).
+      const vencidos = await this.vouchers.expire(new Date());
+      if (vencidos > 0) this.log.log(`meia-noite: ${vencidos} voucher(s) vencido(s)`);
     } catch (e) {
       this.log.error(`fechamento da meia-noite falhou: ${e instanceof Error ? e.message : String(e)}`);
     } finally {

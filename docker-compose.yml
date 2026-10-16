@@ -43,6 +43,10 @@ services:
       PUBLIC_LEADS_PER_MINUTE: ${PUBLIC_LEADS_PER_MINUTE:-10}
       CADENCE_ENGINE_ENABLED: ${CADENCE_ENGINE_ENABLED:-true}
       FREELA_SYNC_ENABLED: ${FREELA_SYNC_ENABLED:-true}
+      FIELD_ROUTES_ENABLED: ${FIELD_ROUTES_ENABLED:-true}
+      GEOCODER: ${GEOCODER:-nominatim}
+      GEOCODER_USER_AGENT: ${GEOCODER_USER_AGENT:-praca-freela/1.0}
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
       # Consultores de campo (README, "Consultores de campo"). `PHOTO_STORAGE`
       # vazio = padrão da API (s3 em produção, disk fora); vazio é tratado como
       # ausente. Sem S3_BUCKET/S3_REGION todo check-in responde 503 (a feature não funciona).

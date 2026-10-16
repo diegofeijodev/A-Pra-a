@@ -19,6 +19,11 @@ export interface CampoMeView {
   must_change_password: boolean;
   freela_code: string | null;
   signup_url: string | null;
+  area_lat: number | null;
+  area_lng: number | null;
+  area_radius_km: number | null;
+  area_bairros: string[];
+  praca_route_hours: { start: number; end: number };
 }
 
 export interface CampoLoginView {
@@ -33,9 +38,13 @@ export function toMeView(c: {
   email: string;
   phone: string;
   praca_id: string;
-  praca: { name: string };
+  praca: { name: string; route_start_hour: number; route_end_hour: number };
   must_change_password: boolean;
   freela_code: string | null;
+  area_lat: number | null;
+  area_lng: number | null;
+  area_radius_km: number | null;
+  area_bairros: string[];
 }): CampoMeView {
   return {
     id: c.id,
@@ -47,6 +56,11 @@ export function toMeView(c: {
     must_change_password: c.must_change_password,
     freela_code: c.freela_code,
     signup_url: signupUrl(c.freela_code),
+    area_lat: c.area_lat,
+    area_lng: c.area_lng,
+    area_radius_km: c.area_radius_km,
+    area_bairros: c.area_bairros,
+    praca_route_hours: { start: c.praca.route_start_hour, end: c.praca.route_end_hour },
   };
 }
 

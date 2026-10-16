@@ -1,5 +1,6 @@
 /** Projeções do wire (contrato §20) — uma só para o consultor e para a equipe. */
 import { faltando, type RespostasVisita } from '../../domain/campo-rules';
+import { faltandoV2, type RespostasV2 } from '../../domain/visit-rules';
 
 export interface JourneyView {
   id: string;
@@ -62,10 +63,33 @@ export function pointView(p: {
   return { id: p.id, at: p.at.toISOString(), lat: p.lat, lng: p.lng, accuracy: p.accuracy, kind: p.kind, clock_adjusted: p.clock_adjusted };
 }
 
-/** Include do lead que a visita mostra. */
-export const COM_LEAD = { lead: { select: { name: true, possible_dup: true } } } as const;
+/** Include da visita: o lead, as vagas abertas nela e o voucher (bloco B, §21.6). */
+export const COM_LEAD = {
+  lead: { select: { name: true, possible_dup: true } },
+  vagas: { select: { id: true, date: true, funcao: true, filled: true }, orderBy: { created_at: 'asc' } },
+  voucher: { select: { id: true, code: true, status: true, valid_until: true, freela_ref: true, decision_note: true } },
+} as const;
 
-export interface VisitRow extends RespostasVisita {
+export interface VagaDaVisita {
+  id: string;
+  date: string;
+  funcao: string;
+  filled: boolean;
+}
+
+export interface VoucherDaVisita {
+  id: string;
+  code: string;
+  status: string;
+  valid_until: string;
+  freela_ref: string | null;
+  decision_note: string | null;
+}
+
+/** Respostas como saem no wire: as do v1 e as do v2 lado a lado (só as da versão da visita são usadas). */
+export type Respostas = RespostasVisita & RespostasV2;
+
+export interface VisitRow extends RespostasVisita, Omit<RespostasV2, keyof RespostasVisita> {
   id: string;
   client_id: string;
   journey_id: string;
@@ -82,7 +106,12 @@ export interface VisitRow extends RespostasVisita {
   checkout_lng: number | null;
   auto_closed: boolean;
   clock_adjusted: boolean;
+  form_version: number;
+  off_route: boolean;
+  off_hours: boolean;
   lead: { name: string; possible_dup: boolean };
+  vagas: VagaDaVisita[];
+  voucher: VoucherDaVisita | null;
 }
 
 export interface VisitView {
@@ -104,8 +133,38 @@ export interface VisitView {
   checkout_lng: number | null;
   auto_closed: boolean;
   clock_adjusted: boolean;
-  answers: RespostasVisita;
+  form_version: number;
+  off_route: boolean;
+  off_hours: boolean;
+  vagas: VagaDaVisita[];
+  voucher: VoucherDaVisita | null;
+  answers: Respostas;
   missing: string[];
+}
+
+export function respostasV2De(v: RespostasV2): RespostasV2 {
+  return {
+    interlocutor_name: v.interlocutor_name,
+    interlocutor_role: v.interlocutor_role,
+    hires_freelancer: v.hires_freelancer,
+    channels: v.channels,
+    channel_other: v.channel_other,
+    freelas_per_week: v.freelas_per_week,
+    voucher_accepted: v.voucher_accepted,
+    signup_mode: v.signup_mode,
+    final_status: v.final_status,
+    final_date: v.final_date,
+    final_reason: v.final_reason,
+    callback_phone: v.callback_phone,
+    notes: v.notes,
+  };
+}
+
+/** O que falta para o checkout, pela versão do formulário. */
+export function faltaDaVisita(v: VisitRow, hoje: string): string[] {
+  return v.form_version >= 2
+    ? faltandoV2(respostasV2De(v), hoje, { voucherPedido: !!v.voucher, vagas: v.vagas.length })
+    : faltando(respostasDe(v), hoje);
 }
 
 export function respostasDe(v: RespostasVisita): RespostasVisita {
@@ -127,7 +186,7 @@ export function respostasDe(v: RespostasVisita): RespostasVisita {
 }
 
 export function visitView(v: VisitRow, hoje: string): VisitView {
-  const answers = respostasDe(v);
+  const answers: Respostas = { ...respostasDe(v), ...respostasV2De(v) };
   return {
     id: v.id,
     client_id: v.client_id,
@@ -147,8 +206,13 @@ export function visitView(v: VisitRow, hoje: string): VisitView {
     checkout_lng: v.checkout_lng,
     auto_closed: v.auto_closed,
     clock_adjusted: v.clock_adjusted,
+    form_version: v.form_version,
+    off_route: v.off_route,
+    off_hours: v.off_hours,
+    vagas: v.vagas,
+    voucher: v.voucher,
     answers,
     // Visita fechada não "falta" nada: a lista é para o botão de checkout.
-    missing: v.checkout_at || v.auto_closed ? [] : faltando(answers, hoje),
+    missing: v.checkout_at || v.auto_closed ? [] : faltaDaVisita(v, hoje),
   };
 }

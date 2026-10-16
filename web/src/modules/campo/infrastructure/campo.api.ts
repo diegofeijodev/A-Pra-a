@@ -3,10 +3,13 @@ import type {
   CampoMeResponse,
   CheckinPayload,
   JourneyView,
+  PainelCampo,
   PlaceView,
   Posicao,
+  RouteView,
   TodayView,
   VisitAnswers,
+  VisitAnswersV2,
   VisitView,
 } from '../domain/campo.types';
 import { campoApi } from './campo-http';
@@ -32,6 +35,21 @@ export async function campoMe(): Promise<CampoMeResponse> {
 export async function campoHoje(): Promise<TodayView> {
   const { data } = await campoApi.get('/v1/campo/today');
   return data as TodayView;
+}
+
+export async function campoRotaHoje(): Promise<RouteView | null> {
+  const { data } = await campoApi.get('/v1/campo/routes/today');
+  return (data as RouteView | null) ?? null;
+}
+
+export async function campoRotaSemana(): Promise<{ week_start: string; routes: RouteView[] }> {
+  const { data } = await campoApi.get('/v1/campo/routes/week');
+  return data as { week_start: string; routes: RouteView[] };
+}
+
+export async function campoPainel(periodo: PainelCampo['periodo']): Promise<PainelCampo> {
+  const { data } = await campoApi.get('/v1/campo/painel', { params: { periodo } });
+  return data as PainelCampo;
 }
 
 export async function campoIniciarJornada(p: { client_id: string } & Posicao): Promise<JourneyView> {
@@ -82,7 +100,17 @@ export async function campoCheckin(p: CheckinPayload, foto: Blob): Promise<Visit
   return data as VisitView;
 }
 
-export async function campoSalvarRespostas(ref: string, respostas: VisitAnswers): Promise<VisitView> {
+export async function campoAbrirVaga(ref: string, vaga: { client_id: string; date: string; funcao: string }): Promise<VisitView> {
+  const { data } = await campoApi.post(`/v1/campo/visits/${ref}/vagas`, vaga);
+  return data as VisitView;
+}
+
+export async function campoPedirVoucher(ref: string): Promise<VisitView> {
+  const { data } = await campoApi.post(`/v1/campo/visits/${ref}/voucher`);
+  return data as VisitView;
+}
+
+export async function campoSalvarRespostas(ref: string, respostas: VisitAnswers | VisitAnswersV2): Promise<VisitView> {
   const { data } = await campoApi.patch(`/v1/campo/visits/${ref}/answers`, respostas);
   return data as VisitView;
 }

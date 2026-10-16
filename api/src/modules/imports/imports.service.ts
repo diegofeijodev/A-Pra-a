@@ -7,6 +7,8 @@ import { isUuid } from '../../common/ids/uuid';
 import { digits, phoneKey } from '../../common/phone/phone';
 import { todaySp } from '../../common/time/dates';
 import { CONTACT_KINDS } from '../../domain/catalog';
+import { geoInicial } from '../../domain/geo-rules';
+import { normalizarCnae } from '../../domain/planilha';
 import {
   findDuplicate,
   guessMapping,
@@ -37,6 +39,7 @@ export interface EvalRowView {
   dup: { lead_id: string | null; lead_name: string; by: DupKind } | null;
   no_phone: boolean;
   no_name: boolean;
+  fora_cnae: boolean;
   praca_id: string | null;
 }
 
@@ -47,6 +50,7 @@ export interface EvaluateView {
   no_name: number;
   will_import: number;
   sem_praca: number;
+  fora_cnae: number;
   guessed_map: Record<string, string>;
   rows: EvalRowView[];
 }
@@ -88,6 +92,9 @@ interface CandidatoRow {
   cnpj: string | null;
   instagram: string | null;
   decisor: string;
+  cnae: string | null;
+  bairro: string | null;
+  lat: number | null;
 }
 
 interface LinhaAvaliada extends EvalRowView {
@@ -150,6 +157,11 @@ export class ImportsService {
       decisor: string;
       classe: string;
       origem: string;
+      cnae: string | null;
+      bairro: string | null;
+      lat: number | null;
+      lng: number | null;
+      geo_status: string | null;
       owner_id: string;
       stage: number;
       entered_at: string;
@@ -157,12 +169,12 @@ export class ImportsService {
       import_batch_id: string;
       possible_dup: boolean;
     }[] = [];
-    const patches: { id: string; data: Record<string, string> }[] = [];
+    const patches: { id: string; data: Record<string, string | number> }[] = [];
     const eventos: { lead_id: string; at: Date; author_id: string; kind: string; text: string }[] = [];
 
     let i = 0;
     for (const l of linhas) {
-      if (l.no_name || l.no_phone) continue;
+      if (l.no_name || l.fora_cnae || (l.no_phone && !dto.allow_no_phone)) continue;
       if (l.dup && dto.dup_action === 'ignorar') continue;
       if (l.dup && dto.dup_action === 'completar') {
         // Duplicata de outra linha do mesmo arquivo não tem lead para
@@ -198,6 +210,11 @@ export class ImportsService {
         decisor: l.draft.decisor || '—',
         classe: l.draft.classe,
         origem,
+        cnae: l.draft.cnae,
+        bairro: l.draft.bairro || null,
+        lat: l.draft.lat,
+        lng: l.draft.lng,
+        geo_status: geoInicial(l.draft),
         owner_id: pool[i % pool.length]!,
         stage: 1,
         entered_at: hoje,
@@ -216,7 +233,7 @@ export class ImportsService {
     }
 
     const ignored = resumo.total - criados.length;
-    const reasons = this.motivos(resumo, dto.dup_action);
+    const reasons = this.motivos(resumo, dto.dup_action, !!dto.allow_no_phone);
 
     await tx.import_batches.create({
       data: {
@@ -349,6 +366,9 @@ export class ImportsService {
         cnpj: true,
         instagram: true,
         decisor: true,
+        cnae: true,
+        bairro: true,
+        lat: true,
       },
     });
     const pracas =
@@ -374,6 +394,7 @@ export class ImportsService {
       keys: dupKeys(c),
     }));
 
+    const cnaes = new Set((dto.cnaes ?? []).map(normalizarCnae).filter((c): c is string => !!c));
     const linhas: LinhaAvaliada[] = dto.rows.map((row) => {
       const draft = rowToDraft(row, dto.map, dto.origem);
       const dup = findDuplicate(draft, vistos);
@@ -394,6 +415,7 @@ export class ImportsService {
         dup: dup ? { lead_id: dup.lead.id, lead_name: dup.lead.name, by: dup.by } : null,
         no_phone: digits(draft.phone).length < 8,
         no_name: !draft.name,
+        fora_cnae: cnaes.size > 0 && !!draft.cnae && !cnaes.has(draft.cnae),
         praca_id,
         existente: dup?.lead.id ? (porId.get(dup.lead.id) ?? null) : null,
       };
@@ -401,7 +423,9 @@ export class ImportsService {
 
     // "Vai entrar" é exatamente o que o `run` cria — as duas contas usam o
     // mesmo predicado para o relatório nunca prometer mais do que grava.
-    const entra = (l: LinhaAvaliada) => !l.no_name && !l.no_phone && (!l.dup || dto.dup_action === 'criar');
+    const semTelefoneBarra = !dto.allow_no_phone;
+    const entra = (l: LinhaAvaliada) =>
+      !l.no_name && !l.fora_cnae && !(l.no_phone && semTelefoneBarra) && (!l.dup || dto.dup_action === 'criar');
 
     return {
       linhas,
@@ -410,7 +434,8 @@ export class ImportsService {
         dups: linhas.filter((l) => l.dup).length,
         // Sem telefone só é motivo quando a linha não foi barrada antes por
         // duplicidade ou falta de nome.
-        no_phone: linhas.filter((l) => l.no_phone && !l.dup && !l.no_name).length,
+        no_phone: semTelefoneBarra ? linhas.filter((l) => l.no_phone && !l.dup && !l.no_name && !l.fora_cnae).length : 0,
+        fora_cnae: linhas.filter((l) => l.fora_cnae && !l.no_name).length,
         no_name: linhas.filter((l) => l.no_name).length,
         will_import: linhas.filter(entra).length,
         sem_praca: linhas.filter((l) => entra(l) && !l.praca_id).length,
@@ -425,8 +450,8 @@ export class ImportsService {
   }
 
   /** Só o que está vazio no lead é completado — importação não sobrescreve trabalho feito. */
-  private camposVazios(ex: CandidatoRow, d: DraftLead): Record<string, string> {
-    const data: Record<string, string> = {};
+  private camposVazios(ex: CandidatoRow, d: DraftLead): Record<string, string | number> {
+    const data: Record<string, string | number> = {};
     if (!ex.address && d.address) data.address = d.address;
     if (!ex.city && d.city) data.city = d.city;
     if (!ex.phone && d.phone) {
@@ -437,13 +462,21 @@ export class ImportsService {
     if (!ex.instagram && d.instagram) data.instagram = d.instagram;
     if ((!ex.decisor || ex.decisor === '—') && d.decisor) data.decisor = d.decisor;
     if (!ex.cnpj && d.cnpj) data.cnpj = d.cnpj;
+    if (!ex.cnae && d.cnae) data.cnae = d.cnae;
+    if (!ex.bairro && d.bairro) data.bairro = d.bairro;
+    if (ex.lat == null && d.lat != null && d.lng != null) {
+      data.lat = d.lat;
+      data.lng = d.lng;
+      data.geo_status = 'ok';
+    }
     return data;
   }
 
   /** Texto do relatório do lote — mesmas frases do protótipo (`routes/entrada.tsx:160-167`). */
   private motivos(
-    resumo: { dups: number; no_phone: number; no_name: number; sem_praca: number },
+    resumo: { dups: number; no_phone: number; no_name: number; sem_praca: number; fora_cnae: number },
     dupAction: string,
+    semTelefoneEntra: boolean,
   ): string[] {
     const rotulo =
       dupAction === 'ignorar'
@@ -453,7 +486,8 @@ export class ImportsService {
           : 'criadas como possível duplicado';
     const reasons: string[] = [];
     if (resumo.dups) reasons.push(`${resumo.dups} duplicadas (${rotulo})`);
-    if (resumo.no_phone) reasons.push(`${resumo.no_phone} sem telefone`);
+    if (resumo.no_phone && !semTelefoneEntra) reasons.push(`${resumo.no_phone} sem telefone`);
+    if (resumo.fora_cnae) reasons.push(`${resumo.fora_cnae} CNAE fora da lista`);
     if (resumo.no_name) reasons.push(`${resumo.no_name} sem nome`);
     if (resumo.sem_praca) reasons.push(`${resumo.sem_praca} sem praça`);
     return reasons;

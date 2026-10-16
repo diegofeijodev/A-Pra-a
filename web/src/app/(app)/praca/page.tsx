@@ -19,6 +19,7 @@ import {
 } from '@/modules/pracas/application/use-pracas';
 import { useUsers } from '@/modules/users/application/use-users';
 import { AberturaPraca } from '@/components/praca/AberturaPraca';
+import { MapaEstabelecimentos } from '@/components/praca/MapaEstabelecimentos';
 import { NewPracaForm } from '@/components/praca/NewPracaForm';
 import { ActionRow, Avatar } from '@/components/praca/bits';
 
@@ -100,6 +101,9 @@ export default function PracaPage() {
               <span className="truncate">{praca.cobertura.vizinhas.slice(0, 8).join(", ")}{praca.cobertura.vizinhas.length > 8 ? "…" : ""}</span>
             </div>
           )}
+
+          {/* mapa de calor dos estabelecimentos (bloco B, §21.2) */}
+          <MapaEstabelecimentos praca={praca} />
 
           {/* faixa de progresso */}
           <div className="mt-6 flex items-center gap-0 overflow-x-auto pb-2">

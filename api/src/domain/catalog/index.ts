@@ -7,3 +7,4 @@ export * from './messages';
 export * from './cadences';
 export * from './midia';
 export * from './indicators';
+export * from './campo';

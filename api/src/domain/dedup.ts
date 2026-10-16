@@ -6,6 +6,7 @@
 // passa como lista. É o que deixa a regra testável sem subir a API.
 import { digits } from '../common/phone/phone';
 import { CLASSES, LEAD_FIELDS } from './catalog/funnel';
+import { lerCoordenada, normalizarCnae } from './planilha';
 
 export type Classe = (typeof CLASSES)[number]['id'];
 
@@ -78,7 +79,15 @@ export interface DraftLead {
   classe: Classe;
   origem: string;
   cnpj: string;
+  /** Bloco B (§21.3): CNAE em 7 dígitos, bairro e localização (nulos quando não vieram ou não valem). */
+  cnae: string | null;
+  bairro: string;
+  lat: number | null;
+  lng: number | null;
 }
+
+const parDeCoordenadas = (lat: number | null, lng: number | null) =>
+  lat != null && lng != null ? { lat, lng } : { lat: null, lng: null };
 
 /** Uma linha + o mapeamento viram rascunho de lead. `origemLote` é o padrão da tela. */
 export function rowToDraft(
@@ -100,6 +109,10 @@ export function rowToDraft(
     classe: guessClasse(g('classe')),
     origem: g('origem') || origemLote,
     cnpj: g('cnpj'),
+    cnae: normalizarCnae(g('cnae')),
+    bairro: g('bairro'),
+    // Só o par vale: latitude sem longitude não localiza ninguém.
+    ...parDeCoordenadas(lerCoordenada(g('lat'), 90), lerCoordenada(g('lng'), 180)),
   };
 }
 

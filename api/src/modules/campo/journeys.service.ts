@@ -51,7 +51,8 @@ export class JourneysService {
       visits: views,
       counters: {
         visits: views.length,
-        cadastrou_qr: views.filter((v) => v.answers.freela_status === 'cadastrou_qr').length,
+        // v1: "cadastrou agora pelo QR"; v2 (§21.6): status final "cadastrou".
+        cadastrou_qr: views.filter((v) => v.answers.freela_status === 'cadastrou_qr' || v.answers.final_status === 'cadastrou').length,
       },
     };
   }
@@ -70,6 +71,11 @@ export class JourneysService {
 
     const { at, ajustado } = carimbo(dto.at, agora, null);
     const id = randomUUID();
+    // "Iniciar rota" (§21.5): a jornada nasce ligada à rota do dia, se houver.
+    const rota = await this.prisma.field_routes.findUnique({
+      where: { consultant_id_day: { consultant_id: c.id, day: todaySp(at) } },
+      select: { id: true },
+    });
     try {
       await this.prisma.$transaction([
         this.prisma.field_journeys.create({
@@ -82,6 +88,7 @@ export class JourneysService {
             start_lat: dto.lat,
             start_lng: dto.lng,
             start_accuracy: dto.accuracy,
+            route_id: rota?.id ?? null,
           },
         }),
         this.prisma.field_points.create({

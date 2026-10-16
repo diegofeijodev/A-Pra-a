@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react';
 import { QrDoFreela } from '@/components/campo/QrDoFreela';
 import { ConsultorDialog } from '@/components/praca/ConsultorDialog';
 import { ConsultorLinhaDoTempo } from '@/components/praca/ConsultorLinhaDoTempo';
+import { RastroParadas } from '@/components/praca/RastroParadas';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -50,7 +51,7 @@ export default function ConsultorDetalhePage() {
     if (!consultorErro) return <p className="text-sm text-muted-foreground">Carregando…</p>;
     return (
       <div className="space-y-2">
-        <p className="text-sm text-destructive">{apiErrorMessage(erroConsultor, 'Não foi possível carregar o consultor.')}</p>
+        <p className="text-sm text-destructive">{apiErrorMessage(erroConsultor, 'Não foi possível carregar o representante.')}</p>
         <Button variant="outline" onClick={() => void recarregarConsultor()}>
           Tentar de novo
         </Button>
@@ -62,7 +63,17 @@ export default function ConsultorDetalhePage() {
     <>
       <h1 className="font-display text-xl font-extrabold">{c.name}</h1>
       <p className="mt-1 text-xs text-muted-foreground">
-        {c.praca_name} · {c.email} · {c.phone} · {c.active ? 'ativo' : 'desativado'}
+        {c.praca_name} · {c.email} · {c.phone}
+        {c.age != null ? ` · ${c.age} anos` : ''} · Pix {c.pix_key} · {c.active ? 'ativo' : 'desativado'}
+      </p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Área:{' '}
+        {[
+          c.area_radius_km ? `raio de ${String(c.area_radius_km).replace('.', ',')} km` : null,
+          c.area_bairros.length ? `bairros ${c.area_bairros.join(', ')}` : null,
+        ]
+          .filter(Boolean)
+          .join(' + ') || 'praça inteira'}
       </p>
       <p className="mt-1 text-xs">
         {c.freela_code ? `Código Freela: ${c.freela_code}` : `Código pendente${c.freela_sync_error ? ` — ${c.freela_sync_error}` : ''}`}
@@ -80,7 +91,7 @@ export default function ConsultorDetalhePage() {
             <Button
               variant="outline"
               onClick={() => {
-                const msg = c.active ? 'Desativar? O acesso dele para na hora e o código no Freela deixa de vincular cadastros.' : 'Reativar o consultor?';
+                const msg = c.active ? 'Desativar? O acesso dele para na hora e o código no Freela deixa de vincular cadastros.' : 'Reativar o representante?';
                 if (window.confirm(msg)) atualizar.mutate({ active: !c.active });
               }}
             >
@@ -117,7 +128,10 @@ export default function ConsultorDetalhePage() {
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
             <ConsultorLinhaDoTempo dia={diaDados} />
-            {(trilhas.some((t) => t.length > 0) || diaDados.visits.length > 0) && <ConsultorMapa trilhas={trilhas} visitas={diaDados.visits} dark={dark} />}
+            <div className="space-y-4">
+              {(trilhas.some((t) => t.length > 0) || diaDados.visits.length > 0) && <ConsultorMapa trilhas={trilhas} visitas={diaDados.visits} dark={dark} />}
+              <RastroParadas paradas={diaDados.stops ?? []} rota={diaDados.route ?? null} />
+            </div>
           </div>
         )}
       </section>
@@ -162,7 +176,7 @@ export default function ConsultorDetalhePage() {
             </div>
           ) : (
             <div className="space-y-3">
-              <p className="text-sm">Gera uma senha nova e derruba o acesso aberto no celular do consultor.</p>
+              <p className="text-sm">Gera uma senha nova e derruba o acesso aberto no celular do representante.</p>
               <Button onClick={() => resetar.mutate(undefined, { onSuccess: (r) => setSenha(r.temp_password) })} disabled={resetar.isPending} className="w-full">
                 Gerar
               </Button>

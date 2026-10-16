@@ -1,5 +1,7 @@
 import { api } from '@/modules/shared/infrastructure/http';
-import type { JourneyView, PointView, VisitView } from '@/modules/campo/domain/campo.types';
+import type { JourneyView, PointView, RouteView, StopTiming, VisitView } from '@/modules/campo/domain/campo.types';
+
+export type { RouteView };
 
 export type PixKeyType = 'cpf' | 'email' | 'telefone' | 'aleatoria';
 
@@ -21,6 +23,12 @@ export interface ConsultorView {
   freela_sync_error: string | null;
   freela_synced_at: string | null;
   signup_url: string | null;
+  birth_date: string | null;
+  age: number | null;
+  area_lat: number | null;
+  area_lng: number | null;
+  area_radius_km: number | null;
+  area_bairros: string[];
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -34,6 +42,45 @@ export interface DiaConsultor {
   day: string;
   journeys: (JourneyView & { points: PointView[] })[];
   visits: VisitView[];
+  stops: StopTiming[];
+  route: { id: string; goal: number; total: number; visitados: number } | null;
+}
+
+// ── painel (§21.9) ──
+export interface NumerosPainel {
+  rotas: number;
+  rotas_iniciadas: number;
+  rotas_abertas: number;
+  visitas: number;
+  meta: number;
+  pct_meta: number | null;
+  cadastros: number;
+  vouchers_solicitados: number;
+  vouchers_liberados: number;
+  vouchers_usados: number;
+  vagas: number;
+}
+
+export interface PainelAdmin {
+  from: string;
+  to: string;
+  totals: NumerosPainel;
+  por_representante: (NumerosPainel & { consultant_id: string; name: string })[];
+}
+
+export interface Trilhas {
+  day: string;
+  consultants: { id: string; name: string; points: { lat: number; lng: number; at: string }[]; stops: StopTiming[] }[];
+}
+
+export async function getPainel(params: { from?: string; to?: string; praca_id?: string; consultant_id?: string }): Promise<PainelAdmin> {
+  const { data } = await api.get('/v1/consultores/painel', { params });
+  return data as PainelAdmin;
+}
+
+export async function getTrilhas(params: { day?: string; praca_id?: string }): Promise<Trilhas> {
+  const { data } = await api.get('/v1/consultores/painel/trilhas', { params });
+  return data as Trilhas;
 }
 
 export interface CreateConsultorInput {
@@ -44,6 +91,11 @@ export interface CreateConsultorInput {
   praca_id: string;
   pix_key_type: PixKeyType;
   pix_key: string;
+  birth_date?: string | null;
+  area_lat?: number | null;
+  area_lng?: number | null;
+  area_radius_km?: number | null;
+  area_bairros?: string[];
 }
 
 export type UpdateConsultorInput = Partial<CreateConsultorInput> & { active?: boolean };
@@ -91,6 +143,82 @@ export async function fotoDaVisitaEquipe(visitId: string): Promise<Blob> {
 export async function getCanaisCampo(): Promise<string[]> {
   const { data } = await api.get('/v1/consultores/settings/channels');
   return (data as { channels: string[] }).channels;
+}
+
+// ── rotas (§21.5) ──
+export interface GenerateRoutesResult {
+  generated: number;
+  kept_started: number;
+  skipped_past: number;
+  sem_localizacao: number;
+  routes: RouteView[];
+}
+
+export async function listRotas(params: { week: string; praca_id?: string; consultant_id?: string }): Promise<RouteView[]> {
+  const { data } = await api.get('/v1/consultores/routes', { params });
+  return data as RouteView[];
+}
+
+export async function gerarRotas(input: { week: string; consultant_ids?: string[] }): Promise<GenerateRoutesResult> {
+  const { data } = await api.post('/v1/consultores/routes/generate', input);
+  return data as GenerateRoutesResult;
+}
+
+export async function editarRota(id: string, stops: { lead_id: string; removed?: boolean }[]): Promise<RouteView> {
+  const { data } = await api.patch(`/v1/consultores/routes/${id}`, { stops });
+  return data as RouteView;
+}
+
+// ── vouchers (§21.7) ──
+export type StatusVoucher = 'solicitado' | 'liberado' | 'recusado' | 'usado' | 'expirado';
+
+export interface VoucherView {
+  id: string;
+  code: string;
+  status: StatusVoucher;
+  valid_until: string;
+  lead_id: string;
+  lead_name: string;
+  consultant_id: string;
+  consultant_name: string;
+  visit_id: string;
+  praca_id: string;
+  freela_ref: string | null;
+  decision_note: string | null;
+  decided_by_name: string | null;
+  decided_at: string | null;
+  used_at: string | null;
+  created_at: string;
+}
+
+export async function listVouchers(params: { status?: StatusVoucher; praca_id?: string } = {}): Promise<VoucherView[]> {
+  const { data } = await api.get('/v1/consultores/vouchers', { params });
+  return data as VoucherView[];
+}
+
+export async function decidirVoucher(id: string, input: { decision: 'liberado' | 'recusado'; freela_ref?: string; note?: string }): Promise<VoucherView> {
+  const { data } = await api.post(`/v1/consultores/vouchers/${id}/decide`, input);
+  return data as VoucherView;
+}
+
+export async function voucherUsado(id: string): Promise<VoucherView> {
+  const { data } = await api.post(`/v1/consultores/vouchers/${id}/used`);
+  return data as VoucherView;
+}
+
+export interface CnaeItem {
+  code: string;
+  label: string;
+}
+
+export async function getCnaes(): Promise<CnaeItem[]> {
+  const { data } = await api.get('/v1/consultores/settings/cnaes');
+  return (data as { cnaes: CnaeItem[] }).cnaes;
+}
+
+export async function putCnaes(cnaes: CnaeItem[]): Promise<CnaeItem[]> {
+  const { data } = await api.put('/v1/consultores/settings/cnaes', { cnaes });
+  return (data as { cnaes: CnaeItem[] }).cnaes;
 }
 
 export async function putCanaisCampo(channels: string[]): Promise<string[]> {

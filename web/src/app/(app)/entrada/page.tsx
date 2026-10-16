@@ -31,6 +31,7 @@ import {
 import { useSettings, useUpdateSettings } from '@/modules/messages/application/use-settings';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 import { useActivePraca, usePracas } from '@/modules/pracas/application/use-pracas';
+import { useCnaes } from '@/modules/consultores/application/use-consultores';
 import { useUsers } from '@/modules/users/application/use-users';
 import { Avatar } from '@/components/praca/bits';
 import { NovoLeadDialog } from '@/components/praca/NovoLeadDialog';
@@ -118,6 +119,11 @@ function ImportSection() {
   const [ownerMode, setOwnerMode] = useState<"lote" | "rodizio">("lote");
   const [loteOwner, setLoteOwner] = useState("");
   const [rodizio, setRodizio] = useState<string[] | null>(null);
+  // Bloco B (§21.3): base de visita costuma vir sem telefone e com CNAE.
+  const [semTelefone, setSemTelefone] = useState(false);
+  const [filtrarCnae, setFiltrarCnae] = useState(false);
+  const { data: cnaesConfig } = useCnaes();
+  const cnaesFiltro = useMemo(() => (filtrarCnae ? (cnaesConfig ?? []).map((c) => c.code) : []), [filtrarCnae, cnaesConfig]);
   const [mapName, setMapName] = useState("");
   const [dragging, setDragging] = useState(false);
   const [done, setDone] = useState("");
@@ -179,6 +185,8 @@ function ImportSection() {
           dup_action: dupAction,
           praca_mode: pracaMode,
           ...(pracaMode === "lote" ? { lote_praca_id: lotePraca } : {}),
+          ...(cnaesFiltro.length ? { cnaes: cnaesFiltro } : {}),
+          ...(semTelefone ? { allow_no_phone: true } : {}),
         },
         {
           onSuccess: (res) => {
@@ -190,9 +198,10 @@ function ImportSection() {
       );
     }, 300);
     return () => clearTimeout(t);
-  }, [parsed, map, origemValue, dupAction, pracaMode, lotePraca, runEvaluate]);
+  }, [parsed, map, origemValue, dupAction, pracaMode, lotePraca, runEvaluate, cnaesFiltro, semTelefone]);
 
-  const importable = (r: EvalRowView) => !r.no_name && !r.no_phone && (!r.dup || dupAction === "criar");
+  const importable = (r: EvalRowView) =>
+    !r.no_name && !r.fora_cnae && !(r.no_phone && !semTelefone) && (!r.dup || dupAction === "criar");
   // Sem ninguém ativo o `lote_owner_id` iria vazio e o `run` levaria 400 no
   // `@IsUUID()`: melhor o botão dizer que não dá.
   const donoOk = ownerMode === "lote" ? !!loteOwnerId : rodizioIds.length > 0;
@@ -209,6 +218,8 @@ function ImportSection() {
         dup_action: dupAction,
         praca_mode: pracaMode,
         ...(pracaMode === "lote" ? { lote_praca_id: lotePraca } : {}),
+        ...(cnaesFiltro.length ? { cnaes: cnaesFiltro } : {}),
+        ...(semTelefone ? { allow_no_phone: true } : {}),
         file_name: fileName,
         owner_mode: ownerMode,
         ...(ownerMode === "lote" ? { lote_owner_id: loteOwnerId } : { rodizio_ids: rodizioIds }),
@@ -225,7 +236,7 @@ function ImportSection() {
   };
 
   return (
-    <Card title="1. Importar arquivo" sub="Aceita XML e planilha separada por vírgulas (.csv). Arraste o arquivo ou escolha pelo botão.">
+    <Card title="1. Importar arquivo" sub="Aceita Excel (.xlsx), XML e planilha separada por vírgulas (.csv). Arraste o arquivo ou escolha pelo botão.">
       {done && <p className="mb-3 rounded-md bg-success/12 px-3 py-2 text-xs text-success">{done}</p>}
       {!parsed && (
         <div
@@ -240,7 +251,7 @@ function ImportSection() {
             Escolher arquivo
           </button>
           <input
-            ref={fileRef} type="file" accept=".csv,.xml,text/csv,text/xml,application/xml" className="hidden"
+            ref={fileRef} type="file" accept=".csv,.xml,.xlsx,text/csv,text/xml,application/xml,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) void take(f); e.target.value = ""; }}
           />
           {err && <p className="text-xs text-danger">{err}</p>}
@@ -367,6 +378,18 @@ function ImportSection() {
             </label>
           </div>
 
+          {/* base de estabelecimentos para as rotas */}
+          <div className="flex flex-wrap gap-4 text-xs">
+            <label className="flex items-center gap-1.5">
+              <input type="checkbox" checked={semTelefone} onChange={(e) => setSemTelefone(e.target.checked)} />
+              Aceitar linha sem telefone (base de visita)
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input type="checkbox" checked={filtrarCnae} onChange={(e) => setFiltrarCnae(e.target.checked)} />
+              Só os CNAEs da configuração{cnaesConfig?.length ? ` (${cnaesConfig.length})` : ""}
+            </label>
+          </div>
+
           {/* duplicidade */}
           <div>
             <p className="tag text-muted-foreground">Duplicidade — mesmo telefone → mesmo CNPJ → mesmo nome e endereço</p>
@@ -390,6 +413,7 @@ function ImportSection() {
           {/* resumo + prévia */}
           <p className="rounded-md bg-secondary/60 px-3 py-2 text-xs">
             <b>{evalRes.total} linhas lidas</b> · {evalRes.dups} duplicadas · {evalRes.no_phone} sem telefone
+            {evalRes.fora_cnae ? ` · ${evalRes.fora_cnae} com CNAE fora da lista` : ""}
             {evalRes.sem_praca ? ` · ${evalRes.sem_praca} sem praça` : ""} · <b className="text-primary">{evalRes.will_import} serão importadas</b>
           </p>
           <div className="overflow-x-auto rounded-md border border-border">
@@ -413,7 +437,8 @@ function ImportSection() {
                     <td className="px-2 py-1.5">{pracas?.find((p) => p.id === r.praca_id)?.name ?? <span className="text-warning">sem praça</span>}</td>
                     <td className="px-2 py-1.5">
                       {r.dup ? <span className="text-warning">duplicado ({r.dup.by})</span>
-                        : r.no_phone ? <span className="text-danger">sem telefone</span>
+                        : r.fora_cnae ? <span className="text-danger">CNAE fora da lista</span>
+                        : r.no_phone && !semTelefone ? <span className="text-danger">sem telefone</span>
                         : importable(r) ? <span className="text-success">entra no funil</span> : "—"}
                     </td>
                   </tr>

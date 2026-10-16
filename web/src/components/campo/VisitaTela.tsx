@@ -6,6 +6,7 @@ import { AvisoGps } from '@/components/campo/AvisoGps';
 import { CampoTopo } from '@/components/campo/CampoTopo';
 import { FaixaFila } from '@/components/campo/FaixaFila';
 import { Questionario } from '@/components/campo/Questionario';
+import { QuestionarioV2, type VagaNaTela } from '@/components/campo/QuestionarioV2';
 import { Button } from '@/components/ui/button';
 import { todaySp } from '@/lib/dates';
 import { useCampoSession } from '@/modules/campo/application/campo-session.store';
@@ -13,10 +14,10 @@ import { useCampoMe, useDia } from '@/modules/campo/application/use-campo';
 import { enfileirar, useFilaStore } from '@/modules/campo/application/use-fila';
 import { useFotoUrl } from '@/modules/campo/application/use-foto-url';
 import { irPara } from '@/modules/campo/application/use-tela';
-import type { VisitAnswers } from '@/modules/campo/domain/campo.types';
+import type { VisitAnswers, VisitAnswersV2 } from '@/modules/campo/domain/campo.types';
 import { hora } from '@/modules/campo/domain/formatos';
 import type { MotivoGps } from '@/modules/campo/domain/gps-mensagens';
-import { faltando, RESPOSTAS_VAZIAS } from '@/modules/campo/domain/questionario';
+import { ehV2, faltando, faltandoV2, respostasV1De, respostasV2De } from '@/modules/campo/domain/questionario';
 import { ErroGps, lerPosicao } from '@/modules/campo/infrastructure/gps';
 
 /** Espera depois da última mudança para guardar o rascunho na fila (que substitui o anterior). */
@@ -39,16 +40,32 @@ export function VisitaTela({ refVisita }: { refVisita: string }) {
   const local = dia.visitas.find((v) => v.ref === refVisita) ?? null;
   const doServidor = hoje?.visits.find((v) => v.client_id === refVisita) ?? null;
   const rascunhoNaFila = [...itens].reverse().find((i) => i.kind === 'answers' && i.visit_ref === refVisita);
-  const inicial: VisitAnswers =
-    (rascunhoNaFila?.kind === 'answers' ? rascunhoNaFila.payload : null) ?? doServidor?.answers ?? RESPOSTAS_VAZIAS;
+  const doRascunho = rascunhoNaFila?.kind === 'answers' ? rascunhoNaFila.payload : null;
+  // Visita só no aparelho (check-in na fila) já é do formulário v2 (§21.6): o servidor só cria v2 agora.
+  const v2 = (doServidor?.form_version ?? 2) >= 2;
+  const inicial: VisitAnswers | VisitAnswersV2 = v2
+    ? doRascunho && ehV2(doRascunho)
+      ? doRascunho
+      : respostasV2De(doServidor?.answers)
+    : doRascunho && !ehV2(doRascunho)
+      ? doRascunho
+      : respostasV1De(doServidor?.answers);
+  // Vagas e voucher: o que o servidor já tem + o que ainda está na fila do aparelho.
+  const vagas: VagaNaTela[] = [
+    ...(doServidor?.vagas ?? []).map((v) => ({ key: v.id, date: v.date, funcao: v.funcao, pendente: false })),
+    ...itens.flatMap((i) =>
+      i.kind === 'vaga' && i.visit_ref === refVisita ? [{ key: i.payload.client_id, date: i.payload.date, funcao: i.payload.funcao, pendente: true }] : [],
+    ),
+  ];
+  const voucher = doServidor?.voucher ?? (itens.some((i) => i.kind === 'voucher' && i.visit_ref === refVisita) ? ('pendente' as const) : null);
   const checkoutBloqueado = itens.find((i) => i.kind === 'checkout' && i.visit_ref === refVisita && i.bloqueio);
 
   /** `null` = ainda não mexeu: segue o que vier do servidor/fila. */
-  const [respostas, setRespostas] = useState<VisitAnswers | null>(null);
+  const [respostas, setRespostas] = useState<VisitAnswers | VisitAnswersV2 | null>(null);
   const atual = respostas ?? inicial;
 
   // Rascunho ainda não guardado na fila (sujo) e o relógio da espera.
-  const pendente = useRef<VisitAnswers | null>(null);
+  const pendente = useRef<VisitAnswers | VisitAnswersV2 | null>(null);
   const relogio = useRef<number | null>(null);
   const consultor = useRef(consultantId);
   consultor.current = consultantId;
@@ -77,7 +94,7 @@ export function VisitaTela({ refVisita }: { refVisita: string }) {
     };
   }, [guardar]);
 
-  function mudar(r: VisitAnswers) {
+  function mudar(r: VisitAnswers | VisitAnswersV2) {
     pendente.current = r;
     setRespostas(r);
     if (relogio.current !== null) window.clearTimeout(relogio.current);
@@ -85,7 +102,27 @@ export function VisitaTela({ refVisita }: { refVisita: string }) {
   }
 
   const fechada = !!local?.checkout_at || !!local?.auto_closed;
-  const falta = faltando(atual, todaySp());
+  const falta = v2
+    ? faltandoV2(atual as VisitAnswersV2, todaySp(), { voucherPedido: !!voucher, vagas: vagas.length })
+    : faltando(atual as VisitAnswers, todaySp());
+
+  async function abrirVaga(v: { date: string; funcao: string }) {
+    try {
+      await enfileirar({ kind: 'vaga', visit_ref: refVisita, payload: { client_id: crypto.randomUUID(), ...v } }, consultor.current);
+    } catch {
+      toast.error('Não foi possível guardar a vaga neste aparelho.');
+    }
+  }
+
+  async function pedirVoucher() {
+    try {
+      // As respostas (contrata, quantos, aceitou) vão antes: é com elas que o servidor confere o direito ao voucher.
+      await guardar();
+      await enfileirar({ kind: 'voucher', visit_ref: refVisita }, consultor.current);
+    } catch {
+      toast.error('Não foi possível guardar o pedido neste aparelho.');
+    }
+  }
 
   async function checkout() {
     setGps(null);
@@ -147,6 +184,7 @@ export function VisitaTela({ refVisita }: { refVisita: string }) {
       <p className="text-xs text-muted-foreground">
         Check-in às {hora(local.checkin_at)}
         {doServidor?.far_from_place ? ' · longe do local' : ''}
+        {doServidor?.off_route ? ' · fora da rota' : ''}
         {local.auto_closed ? ' · fechada sem checkout' : ''}
       </p>
       {/* eslint-disable-next-line @next/next/no-img-element -- blob: local, next/image não serve */}
@@ -158,12 +196,22 @@ export function VisitaTela({ refVisita }: { refVisita: string }) {
         </p>
       )}
 
-      <Questionario
-        valor={atual}
-        canais={me.data?.channels ?? []}
-        desabilitado={fechada || ocupado}
-        onMudar={mudar}
-      />
+      {v2 ? (
+        <QuestionarioV2
+          valor={atual as VisitAnswersV2}
+          canais={me.data?.channels ?? []}
+          desabilitado={fechada || ocupado}
+          onMudar={mudar}
+          vagas={vagas}
+          onAbrirVaga={(v) => void abrirVaga(v)}
+          voucher={voucher}
+          onPedirVoucher={() => void pedirVoucher()}
+          signupUrl={me.data?.consultant.signup_url ?? null}
+          onMostrarQr={() => irPara({ v: 'qr' })}
+        />
+      ) : (
+        <Questionario valor={atual as VisitAnswers} canais={me.data?.channels ?? []} desabilitado={fechada || ocupado} onMudar={mudar} />
+      )}
 
       {!fechada && falta.length > 0 && (
         <p className="text-sm text-muted-foreground">Falta responder: {falta.join(', ')}.</p>

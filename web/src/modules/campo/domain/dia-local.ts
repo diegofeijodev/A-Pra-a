@@ -33,7 +33,8 @@ export function montarDia(today: TodayView | null, fila: ItemFila[]): DiaLocal {
     checkin_at: v.checkin_at,
     checkout_at: v.checkout_at,
     auto_closed: v.auto_closed,
-    cadastrou_qr: v.answers.freela_status === 'cadastrou_qr',
+    // v1: "cadastrou agora pelo QR"; v2: status final "cadastrou".
+    cadastrou_qr: v.answers.freela_status === 'cadastrou_qr' || v.answers.final_status === 'cadastrou',
     pendente: false,
   }));
   const achar = (ref: string) => visitas.find((v) => v.ref === ref);
@@ -63,9 +64,12 @@ export function montarDia(today: TodayView | null, fila: ItemFila[]): DiaLocal {
         break;
       case 'answers': {
         const v = achar(item.visit_ref);
-        if (v) v.cadastrou_qr = item.payload.freela_status === 'cadastrou_qr';
+        if (v) v.cadastrou_qr = 'final_status' in item.payload ? item.payload.final_status === 'cadastrou' : item.payload.freela_status === 'cadastrou_qr';
         break;
       }
+      case 'vaga':
+      case 'voucher':
+        break;
       case 'checkout': {
         const v = achar(item.visit_ref);
         // Checkout bloqueado (422) não fecha nada: a visita segue aberta para corrigir.

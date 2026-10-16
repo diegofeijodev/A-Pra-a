@@ -20,7 +20,15 @@ describe('visões do /campo na URL', () => {
     expect(urlDaTela({ v: 'visita', ref: 'a b/c' })).toBe('/campo?v=visita&ref=a%20b%2Fc');
   });
 
-  it.each<Tela>([{ v: 'hoje' }, { v: 'nova' }, { v: 'qr' }, { v: 'visita', ref: 'a b/c&d' }])('ida e volta %j', (t) => {
+  it.each<Tela>([
+    { v: 'hoje' },
+    { v: 'nova' },
+    { v: 'nova', lead: 'uuid-1', nome: 'Bar & Cia' },
+    { v: 'qr' },
+    { v: 'rota' },
+    { v: 'numeros' },
+    { v: 'visita', ref: 'a b/c&d' },
+  ])('ida e volta %j', (t) => {
     const qs = urlDaTela(t).split('?')[1] ?? '';
     expect(telaDaUrl(p(qs))).toEqual(t);
   });

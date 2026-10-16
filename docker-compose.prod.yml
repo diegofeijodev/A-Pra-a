@@ -42,6 +42,10 @@ services:
       # Uma instância só: o motor de cadências e o outbox do Freela rodam aqui (README, "Produção").
       CADENCE_ENGINE_ENABLED: 'true'
       FREELA_SYNC_ENABLED: 'true'
+      FIELD_ROUTES_ENABLED: 'true'
+      GEOCODER: ${GEOCODER:-nominatim}
+      GEOCODER_USER_AGENT: ${GEOCODER_USER_AGENT:-praca-freela/1.0}
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
     ports:
       - '127.0.0.1:3014:3014'
 

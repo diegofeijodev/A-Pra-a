@@ -4,7 +4,9 @@ import {
   campoCheckout,
   campoEncerrarJornada,
   campoEnviarPontos,
+  campoAbrirVaga,
   campoIniciarJornada,
+  campoPedirVoucher,
   campoSalvarRespostas,
 } from './campo.api';
 
@@ -22,6 +24,12 @@ export async function enviarItem(item: ItemFila): Promise<void> {
       return;
     case 'answers':
       await campoSalvarRespostas(item.visit_ref, item.payload);
+      return;
+    case 'vaga':
+      await campoAbrirVaga(item.visit_ref, item.payload);
+      return;
+    case 'voucher':
+      await campoPedirVoucher(item.visit_ref);
       return;
     case 'checkout':
       await campoCheckout(item.visit_ref, item.payload);

@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   Res,
   StreamableFile,
 } from '@nestjs/common';
@@ -17,7 +18,22 @@ import { AuthUser } from '../../common/auth/auth-user';
 import { AdminOnly } from '../../common/decorators/admin-only.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ConsultoresService } from './consultores.service';
-import { ChannelsDto, CreateConsultorDto, UpdateConsultorDto } from './dto/consultores.dto';
+import {
+  ChannelsDto,
+  CnaesDto,
+  CreateConsultorDto,
+  DecideVoucherDto,
+  EditRouteDto,
+  GenerateRoutesDto,
+  PainelQueryDto,
+  TrilhasQueryDto,
+  RoutesQueryDto,
+  UpdateConsultorDto,
+  VouchersQueryDto,
+} from './dto/consultores.dto';
+import { RoutesService } from './routes.service';
+import { VouchersService } from './vouchers.service';
+import { PainelService } from './painel.service';
 
 /**
  * Telas da equipe sobre os consultores de campo (`/v1/consultores`, §20.4).
@@ -28,7 +44,12 @@ import { ChannelsDto, CreateConsultorDto, UpdateConsultorDto } from './dto/consu
 @ApiBearerAuth()
 @Controller('v1/consultores')
 export class ConsultoresController {
-  constructor(private readonly consultores: ConsultoresService) {}
+  constructor(
+    private readonly consultores: ConsultoresService,
+    private readonly routes: RoutesService,
+    private readonly vouchers: VouchersService,
+    private readonly painel: PainelService,
+  ) {}
 
   @Get()
   list() {
@@ -51,6 +72,67 @@ export class ConsultoresController {
   @Put('settings/channels')
   setChannels(@Body() dto: ChannelsDto) {
     return this.consultores.setChannels(dto);
+  }
+
+  @Get('settings/cnaes')
+  cnaes() {
+    return this.consultores.cnaes();
+  }
+
+  @AdminOnly()
+  @Put('settings/cnaes')
+  setCnaes(@Body() dto: CnaesDto) {
+    return this.consultores.setCnaes(dto);
+  }
+
+  // ── painel (§21.9) ──
+  @Get('painel')
+  painelAdmin(@Query() q: PainelQueryDto) {
+    return this.painel.admin(q);
+  }
+
+  @Get('painel/trilhas')
+  trilhas(@Query() q: TrilhasQueryDto) {
+    return this.painel.trilhas(q);
+  }
+
+  // ── rotas (§21.5) ──
+  @Get('routes')
+  listRoutes(@Query() q: RoutesQueryDto) {
+    return this.routes.list(q);
+  }
+
+  @AdminOnly()
+  @HttpCode(200)
+  @Post('routes/generate')
+  generateRoutes(@CurrentUser() user: AuthUser, @Body() dto: GenerateRoutesDto) {
+    return this.routes.generate(dto, user.id);
+  }
+
+  @AdminOnly()
+  @Patch('routes/:routeId')
+  editRoute(@Param('routeId') routeId: string, @Body() dto: EditRouteDto) {
+    return this.routes.edit(routeId, dto);
+  }
+
+  // ── vouchers (§21.7) ──
+  @Get('vouchers')
+  listVouchers(@Query() q: VouchersQueryDto) {
+    return this.vouchers.list(q);
+  }
+
+  @AdminOnly()
+  @HttpCode(200)
+  @Post('vouchers/:voucherId/decide')
+  decideVoucher(@CurrentUser() user: AuthUser, @Param('voucherId') voucherId: string, @Body() dto: DecideVoucherDto) {
+    return this.vouchers.decide(voucherId, dto, user);
+  }
+
+  @AdminOnly()
+  @HttpCode(200)
+  @Post('vouchers/:voucherId/used')
+  voucherUsed(@Param('voucherId') voucherId: string) {
+    return this.vouchers.markUsed(voucherId);
   }
 
   @Get('visits/:visitId/photo')

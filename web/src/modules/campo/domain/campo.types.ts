@@ -10,6 +10,12 @@ export interface CampoConsultantMe {
   must_change_password: boolean;
   freela_code: string | null;
   signup_url: string | null;
+  /** Bloco B (§21.1) — opcionais: a sessão guardada antes do bloco B não traz. */
+  area_lat?: number | null;
+  area_lng?: number | null;
+  area_radius_km?: number | null;
+  area_bairros?: string[];
+  praca_route_hours?: { start: number; end: number };
 }
 
 export interface CampoSession {
@@ -79,6 +85,43 @@ export interface VisitAnswers {
   notes: string | null;
 }
 
+/** Formulário v2 (bloco B, §21.6). */
+export type CargoV2 = 'dono' | 'gerente';
+export type ModoCadastro = 'qr' | 'assistido' | 'nao_abriu';
+export type StatusFinal = 'cadastrou' | 'cadastra_depois' | 'nao_quis' | 'ligar_depois';
+
+export interface VisitAnswersV2 {
+  interlocutor_name: string | null;
+  interlocutor_role: CargoV2 | null;
+  hires_freelancer: boolean | null;
+  channels: string[];
+  channel_other: string | null;
+  freelas_per_week: number | null;
+  voucher_accepted: boolean | null;
+  signup_mode: ModoCadastro | null;
+  final_status: StatusFinal | null;
+  final_date: string | null;
+  final_reason: string | null;
+  callback_phone: string | null;
+  notes: string | null;
+}
+
+export interface VagaDaVisita {
+  id: string;
+  date: string;
+  funcao: string;
+  filled: boolean;
+}
+
+export interface VoucherDaVisita {
+  id: string;
+  code: string;
+  status: 'solicitado' | 'liberado' | 'recusado' | 'usado' | 'expirado';
+  valid_until: string;
+  freela_ref: string | null;
+  decision_note: string | null;
+}
+
 export interface VisitView {
   id: string;
   client_id: string;
@@ -98,7 +141,13 @@ export interface VisitView {
   checkout_lng: number | null;
   auto_closed: boolean;
   clock_adjusted: boolean;
-  answers: VisitAnswers;
+  /** 1 = questionário do bloco A; 2 = formulário do bloco B. Opcionais: retrato salvo antes do bloco B não traz. */
+  form_version?: number;
+  off_route?: boolean;
+  off_hours?: boolean;
+  vagas?: VagaDaVisita[];
+  voucher?: VoucherDaVisita | null;
+  answers: VisitAnswers & Partial<VisitAnswersV2>;
   missing: string[];
 }
 
@@ -109,6 +158,83 @@ export interface TodayView {
   open_visit: VisitView | null;
   visits: VisitView[];
   counters: { visits: number; cadastrou_qr: number };
+}
+
+/** Tempo em cada parada (§21.8). */
+export interface StopTiming {
+  visit_id: string;
+  lead_id: string;
+  lead_name: string;
+  lat: number;
+  lng: number;
+  checkin_at: string;
+  checkout_at: string | null;
+  minutes_on_site: number | null;
+  minutes_travel: number | null;
+  far_from_place: boolean;
+  off_route: boolean;
+  off_hours: boolean;
+  auto_closed: boolean;
+  clock_adjusted: boolean;
+  final_status: string | null;
+}
+
+/** "Meus números" (§21.9). */
+export interface ClienteItem {
+  lead_id: string;
+  name: string;
+  address: string;
+  phone: string;
+  lat: number | null;
+  lng: number | null;
+  stage: number;
+  vagas: number;
+  last_vaga_at: string | null;
+}
+
+export interface PainelCampo {
+  periodo: 'dia' | 'semana' | '30d';
+  from: string;
+  to: string;
+  numbers: { clientes_na_rota: number; visitados: number; cadastrados: number; vouchers: number; vagas: number };
+  cadastrou: ClienteItem[];
+  abriu_vaga: ClienteItem[];
+  nunca_abriu: ClienteItem[];
+  sem_vaga_30d: ClienteItem[];
+}
+
+/** Rota de visita (§21.5). */
+export type MotivoParada = 'novo' | 'retorno' | 'pendente' | 'incluido';
+export type StatusRota = 'aberta' | 'iniciada' | 'encerrada';
+
+export interface StopView {
+  id: string;
+  position: number;
+  lead_id: string;
+  lead_name: string;
+  address: string;
+  bairro: string | null;
+  phone: string;
+  lat: number | null;
+  lng: number | null;
+  classe: string;
+  stage: number;
+  reason: MotivoParada;
+  removed: boolean;
+  visit: { id: string; checkin_at: string; checkout_at: string | null; final_status: string | null } | null;
+}
+
+export interface RouteView {
+  id: string;
+  consultant_id: string;
+  consultant_name: string;
+  praca_id: string;
+  day: string;
+  goal: number;
+  source: 'auto' | 'admin';
+  status: StatusRota;
+  counts: { total: number; visitados: number };
+  stops: StopView[];
 }
 
 export interface PlaceView {
@@ -135,7 +261,9 @@ export type AcaoFila =
   | { kind: 'start'; payload: { client_id: string } & Posicao }
   | { kind: 'points'; payload: { points: ({ client_id: string } & Posicao)[] } }
   | { kind: 'checkin'; payload: CheckinPayload; foto: Blob }
-  | { kind: 'answers'; visit_ref: string; payload: VisitAnswers }
+  | { kind: 'answers'; visit_ref: string; payload: VisitAnswers | VisitAnswersV2 }
+  | { kind: 'vaga'; visit_ref: string; payload: { client_id: string; date: string; funcao: string } }
+  | { kind: 'voucher'; visit_ref: string }
   | { kind: 'checkout'; visit_ref: string; payload: Posicao }
   | { kind: 'end'; payload: Posicao };
 

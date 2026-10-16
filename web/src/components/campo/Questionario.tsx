@@ -15,7 +15,7 @@ const SITUACOES: [FreelaStatus, string][] = [
 ];
 const INTERESSES: [Interesse, string][] = [['alto', 'Alto'], ['medio', 'Médio'], ['baixo', 'Baixo'], ['nenhum', 'Nenhum']];
 
-function Opcoes<T extends string>({
+export function Opcoes<T extends string>({
   valor,
   opcoes,
   onEscolher,
@@ -46,7 +46,7 @@ function Opcoes<T extends string>({
   );
 }
 
-function Chips({
+export function Chips({
   marcados,
   opcoes,
   onTrocar,

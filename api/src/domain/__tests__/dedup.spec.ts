@@ -21,6 +21,10 @@ const draft = (over: Partial<DraftLead> = {}): DraftLead => ({
   classe: 'alvo',
   origem: 'importação',
   cnpj: '',
+  cnae: null,
+  bairro: '',
+  lat: null,
+  lng: null,
   ...over,
 });
 
