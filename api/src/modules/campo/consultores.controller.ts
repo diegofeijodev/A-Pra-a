@@ -17,7 +17,7 @@ import { AuthUser } from '../../common/auth/auth-user';
 import { AdminOnly } from '../../common/decorators/admin-only.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ConsultoresService } from './consultores.service';
-import { ChannelsDto, CreateConsultorDto, UpdateConsultorDto } from './dto/consultores.dto';
+import { ChannelsDto, CnaesDto, CreateConsultorDto, UpdateConsultorDto } from './dto/consultores.dto';
 
 /**
  * Telas da equipe sobre os consultores de campo (`/v1/consultores`, §20.4).
@@ -51,6 +51,17 @@ export class ConsultoresController {
   @Put('settings/channels')
   setChannels(@Body() dto: ChannelsDto) {
     return this.consultores.setChannels(dto);
+  }
+
+  @Get('settings/cnaes')
+  cnaes() {
+    return this.consultores.cnaes();
+  }
+
+  @AdminOnly()
+  @Put('settings/cnaes')
+  setCnaes(@Body() dto: CnaesDto) {
+    return this.consultores.setCnaes(dto);
   }
 
   @Get('visits/:visitId/photo')

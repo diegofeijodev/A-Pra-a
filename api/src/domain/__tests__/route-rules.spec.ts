@@ -2,8 +2,6 @@ import {
   dentroDaArea,
   diasDaSemana,
   idade,
-  lerCoordenada,
-  normalizarCnae,
   ordemVizinho,
   planejarSemana,
   rankDoNovo,
@@ -11,6 +9,7 @@ import {
   segundaDaSemana,
   type Candidato,
 } from '../route-rules';
+import { lerCoordenada, normalizarCnae } from '../planilha';
 
 describe('semana de rota (seg → sáb)', () => {
   it('segunda da semana: qualquer dia de seg a sáb, e domingo volta para a segunda anterior', () => {

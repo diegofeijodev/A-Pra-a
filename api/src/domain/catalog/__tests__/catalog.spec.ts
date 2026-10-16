@@ -54,7 +54,8 @@ describe('domain/catalog — funnel', () => {
   it('EST_VALUE tem o valor estimado por classe', () => {
     expect(EST_VALUE).toEqual({ grande: 4500, alvo: 2200, depois: 900 });
   });
-  it('LEAD_FIELDS tem os 9 campos mapeáveis na importação', () => expect(LEAD_FIELDS.length).toBe(9));
+  it('LEAD_FIELDS tem os 13 campos mapeáveis na importação (9 do protótipo + CNAE, bairro, lat, lng do bloco B)', () =>
+    expect(LEAD_FIELDS.map((f) => f.id).slice(9)).toEqual(['cnae', 'bairro', 'lat', 'lng']));
   it('CLASSE_ORDER ordena grande < alvo < depois', () => {
     expect(CLASSE_ORDER).toEqual({ grande: 0, alvo: 1, depois: 2 });
   });

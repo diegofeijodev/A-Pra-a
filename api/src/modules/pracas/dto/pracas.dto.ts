@@ -71,6 +71,25 @@ export class UpdatePracaDto {
   @IsOptional()
   @IsDayString()
   end_date?: string;
+
+  // Rotas de visita (§21.4): meta diária e janela de trabalho (9h–18h por padrão).
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(60)
+  route_daily_goal?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(23)
+  route_start_hour?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(24)
+  route_end_hour?: number;
 }
 
 export class StepResultDto {

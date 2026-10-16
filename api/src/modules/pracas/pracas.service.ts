@@ -23,6 +23,9 @@ export interface PracaView {
     vizinhas: string[];
   } | null;
   steps: Record<number, { actual: number | null; unlock: { by: string; at: string; reason: string } | null }>;
+  route_daily_goal: number;
+  route_start_hour: number;
+  route_end_hour: number;
   created_at: string;
 }
 
@@ -39,6 +42,9 @@ type PracaRow = {
   lat: number | null;
   lon: number | null;
   vizinhas: string[];
+  route_daily_goal: number;
+  route_start_hour: number;
+  route_end_hour: number;
   created_at: Date;
   step_states: {
     step_n: number;
@@ -118,6 +124,14 @@ export class PracasService {
   async update(id: string, dto: UpdatePracaDto): Promise<PracaView> {
     const atual = await this.findOrFail(id);
     this.assertPeriodo(dto.start_date ?? atual.start_date, dto.end_date ?? atual.end_date);
+    const inicio = dto.route_start_hour ?? atual.route_start_hour;
+    const fim = dto.route_end_hour ?? atual.route_end_hour;
+    if (fim <= inicio) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'O horário de fim das rotas precisa ser depois do início.',
+      });
+    }
     await this.prisma.pracas.update({
       where: { id },
       data: {
@@ -125,6 +139,9 @@ export class PracasService {
         city: dto.city?.trim(),
         start_date: dto.start_date,
         end_date: dto.end_date,
+        route_daily_goal: dto.route_daily_goal,
+        route_start_hour: dto.route_start_hour,
+        route_end_hour: dto.route_end_hour,
       },
     });
     return this.get(id);
@@ -292,6 +309,9 @@ export class PracasService {
           }
         : null,
       steps,
+      route_daily_goal: p.route_daily_goal,
+      route_start_hour: p.route_start_hour,
+      route_end_hour: p.route_end_hour,
       created_at: p.created_at.toISOString(),
     };
   }

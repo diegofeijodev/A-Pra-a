@@ -2,6 +2,7 @@ import { Transform } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsOptional,
   IsString,
@@ -119,6 +120,19 @@ export class EvaluateImportDto {
   @ValidateIf((o: EvaluateImportDto) => o.praca_mode === 'lote')
   @IsUUID()
   lote_praca_id?: string;
+
+  // Bloco B (§21.3). Só esses CNAEs entram (com ou sem máscara); linha sem CNAE passa.
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(40)
+  @IsString({ each: true })
+  @MaxLength(12, { each: true })
+  cnaes?: string[];
+
+  // Ausente = `false` (o comportamento de antes): a base de visita costuma vir sem telefone.
+  @IsOptional()
+  @IsBoolean()
+  allow_no_phone?: boolean;
 }
 
 export class RunImportDto extends EvaluateImportDto {

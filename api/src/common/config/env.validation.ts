@@ -41,6 +41,15 @@ const envBase = z.object({
   AWS_ACCESS_KEY_ID: z.string().default(''),
   AWS_SECRET_ACCESS_KEY: z.string().default(''),
 
+  // Bloco B (contrato §21). Rotas da segunda-feira: `false` desliga o relógio.
+  FIELD_ROUTES_ENABLED: z.string().default('true'),
+  // Endereço → lat/lng dos estabelecimentos: `nominatim` (OpenStreetMap, grátis,
+  // 1 consulta/s), `google` (exige GOOGLE_MAPS_API_KEY, pago) ou `off`.
+  GEOCODER: z.preprocess((v) => (v === '' ? undefined : v), z.enum(['nominatim', 'google', 'off']).default('nominatim')),
+  // A política do Nominatim exige identificar a aplicação (com contato) no User-Agent.
+  GEOCODER_USER_AGENT: z.string().default('praca-freela/1.0'),
+  GOOGLE_MAPS_API_KEY: z.string().default(''),
+
   SWAGGER_ENABLED: z.string().optional(),
 
   /**

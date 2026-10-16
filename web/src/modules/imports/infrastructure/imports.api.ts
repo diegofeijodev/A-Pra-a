@@ -21,6 +21,10 @@ export interface DraftLead {
   classe: string;
   origem: string;
   cnpj: string;
+  cnae: string | null;
+  bairro: string;
+  lat: number | null;
+  lng: number | null;
 }
 
 export interface EvalRowView {
@@ -29,6 +33,7 @@ export interface EvalRowView {
   dup: { lead_id: string | null; lead_name: string; by: string } | null;
   no_phone: boolean;
   no_name: boolean;
+  fora_cnae: boolean;
   praca_id: string | null;
 }
 
@@ -39,6 +44,7 @@ export interface EvaluateView {
   no_name: number;
   will_import: number;
   sem_praca: number;
+  fora_cnae: number;
   guessed_map: Record<string, string>;
   /** Só as 10 primeiras linhas — é pré-visualização; as contagens são do arquivo inteiro. */
   rows: EvalRowView[];
@@ -80,6 +86,8 @@ export interface EvaluateImportInput {
   dup_action: DupAction;
   praca_mode: PracaMode;
   lote_praca_id?: string;
+  cnaes?: string[];
+  allow_no_phone?: boolean;
 }
 
 export interface RunImportInput extends EvaluateImportInput {

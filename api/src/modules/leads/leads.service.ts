@@ -4,6 +4,7 @@ import { PrismaService } from '../../common/database/prisma.service';
 import { isUuid } from '../../common/ids/uuid';
 import { phoneKey } from '../../common/phone/phone';
 import { addDays, todaySp } from '../../common/time/dates';
+import { geoInicial } from '../../domain/geo-rules';
 import { CONTACT_KINDS, FUNNEL_STAGES } from '../../domain/catalog';
 import {
   daysSince,
@@ -281,13 +282,15 @@ export class LeadsService {
         stage: dto.stage ?? 1,
         entered_at: hoje,
         stage_since: hoje,
+        // Endereço novo entra na fila da geocodificação (§21.2).
+        geo_status: geoInicial({ address: dto.address, lat: null, lng: null }),
       },
     });
     return this.get(criado.id);
   }
 
   async update(id: string, dto: UpdateLeadDto): Promise<LeadView> {
-    await this.findOrFail(id);
+    const atual = await this.findOrFail(id);
     if (dto.praca_id) await this.pracaOrFail(dto.praca_id);
     if (dto.owner_id) await this.assertPessoa(dto.owner_id);
     if (dto.campanha_id) await this.assertCampanha(dto.campanha_id);
@@ -298,9 +301,25 @@ export class LeadsService {
         ...(dto.name ? { name: dto.name.trim() } : {}),
         ...(dto.owner_id ? { owner_id: dto.owner_id } : {}),
         ...this.camposEditaveis(dto),
+        ...this.geoDoEndereco(atual, dto.address),
       },
     });
     return this.get(id);
+  }
+
+  /**
+   * Endereço trocado volta para a fila (§21.2). Só mexe na localização que a
+   * própria geocodificação pôs (`geo_status` preenchido): a de um check-in de
+   * campo (`geo_status` nulo, com lat/lng) fica.
+   */
+  private geoDoEndereco(
+    atual: { address: string; lat: number | null; geo_status: string | null } | null,
+    endereco: string | undefined,
+  ) {
+    if (!atual || endereco === undefined || endereco.trim() === atual.address) return {};
+    if (atual.geo_status == null && atual.lat != null) return {};
+    const status = geoInicial({ address: endereco, lat: null, lng: null });
+    return { lat: null, lng: null, geo_status: status, geo_error: null };
   }
 
   /**

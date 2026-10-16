@@ -24,6 +24,9 @@ export interface PracaView {
   end_date: string;
   cobertura: Cobertura | null;
   steps: Record<string, StepState>;
+  route_daily_goal: number;
+  route_start_hour: number;
+  route_end_hour: number;
   created_at: string;
 }
 
@@ -42,6 +45,9 @@ export interface UpdatePracaInput {
   city?: string;
   start_date?: string;
   end_date?: string;
+  route_daily_goal?: number;
+  route_start_hour?: number;
+  route_end_hour?: number;
 }
 
 export async function listPracas(): Promise<PracaView[]> {

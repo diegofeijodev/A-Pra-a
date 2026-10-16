@@ -21,6 +21,7 @@ import { GeoModule } from './modules/geo/geo.module';
 import { ImportsModule } from './modules/imports/imports.module';
 import { IndicatorsModule } from './modules/indicators/indicators.module';
 import { LeadsModule } from './modules/leads/leads.module';
+import { MapaModule } from './modules/mapa/mapa.module';
 import { MessagesModule } from './modules/messages/messages.module';
 import { MidiaModule } from './modules/midia/midia.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
@@ -52,6 +53,7 @@ import { UsersModule } from './modules/users/users.module';
     IndicatorsModule,
     NotificationsModule,
     CampoModule,
+    MapaModule,
   ],
   providers: [
     // Não é APP_GUARD: o `JwtAuthGuard` global delega para ele nas rotas

@@ -12,7 +12,7 @@
 export interface ParsedFile {
   columns: string[];
   rows: Record<string, string>[];
-  kind: "csv" | "xml";
+  kind: "csv" | "xml" | "xlsx";
 }
 
 function splitCsvLine(line: string, sep: string): string[] {
@@ -75,7 +75,42 @@ export function parseXml(text: string): ParsedFile {
   return { columns, rows, kind: "xml" };
 }
 
+/** Valor de célula do Excel como texto: data vira `YYYY-MM-DD`, número sem notação científica. */
+function celula(v: unknown): string {
+  if (v == null) return "";
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? "" : v.toISOString().slice(0, 10);
+  if (typeof v === "number") {
+    if (!Number.isFinite(v)) return "";
+    const t = String(v);
+    return /e/i.test(t) ? v.toFixed(12).replace(/\.?0+$/, "") : t;
+  }
+  return String(v).trim();
+}
+
+/**
+ * Planilha do Excel (bloco B, §21.3): a primeira aba, primeira linha =
+ * cabeçalho. Mesma forma das outras leituras — linhas viram objetos
+ * `coluna → texto` e a API recebe tudo já parseado.
+ */
+export function linhasDoExcel(matriz: unknown[][]): ParsedFile {
+  const [cab = [], ...resto] = matriz;
+  const columns = cab.map((c, i) => celula(c) || `coluna ${i + 1}`);
+  const rows = resto
+    .filter((r) => r.some((c) => celula(c) !== ""))
+    .map((r) => {
+      const obj: Record<string, string> = {};
+      columns.forEach((c, i) => { obj[c] = celula(r[i]); });
+      return obj;
+    });
+  return { columns, rows, kind: "xlsx" };
+}
+
 export async function readFile(file: File): Promise<ParsedFile> {
+  if (/\.xlsx$/i.test(file.name)) {
+    // Carrega só quando alguém sobe um Excel: a biblioteca não pesa nas outras telas.
+    const { default: readXlsxFile } = await import("read-excel-file");
+    return linhasDoExcel((await readXlsxFile(file)) as unknown[][]);
+  }
   const text = await file.text();
   const isXml = /\.xml$/i.test(file.name) || text.trimStart().startsWith("<");
   return isXml ? parseXml(text) : parseCsv(text);

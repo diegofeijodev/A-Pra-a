@@ -104,6 +104,21 @@ export async function getCanaisCampo(): Promise<string[]> {
   return (data as { channels: string[] }).channels;
 }
 
+export interface CnaeItem {
+  code: string;
+  label: string;
+}
+
+export async function getCnaes(): Promise<CnaeItem[]> {
+  const { data } = await api.get('/v1/consultores/settings/cnaes');
+  return (data as { cnaes: CnaeItem[] }).cnaes;
+}
+
+export async function putCnaes(cnaes: CnaeItem[]): Promise<CnaeItem[]> {
+  const { data } = await api.put('/v1/consultores/settings/cnaes', { cnaes });
+  return (data as { cnaes: CnaeItem[] }).cnaes;
+}
+
 export async function putCanaisCampo(channels: string[]): Promise<string[]> {
   const { data } = await api.put('/v1/consultores/settings/channels', { channels });
   return (data as { channels: string[] }).channels;

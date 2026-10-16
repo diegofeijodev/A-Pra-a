@@ -8,6 +8,9 @@ import {
   diaDoConsultor,
   freelaSyncConsultor,
   getCanaisCampo,
+  getCnaes,
+  putCnaes,
+  type CnaeItem,
   getConsultor,
   listConsultores,
   putCanaisCampo,
@@ -74,6 +77,22 @@ export function useFreelaSyncConsultor(id: string) {
       else toast.success('Código no Freela pronto.');
     },
     onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível falar com o Freela.')),
+  });
+}
+
+export function useCnaes() {
+  return useQuery({ queryKey: [...CHAVE, 'cnaes'], queryFn: getCnaes });
+}
+
+export function useSalvarCnaes() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (cnaes: CnaeItem[]) => putCnaes(cnaes),
+    onSuccess: (cnaes) => {
+      qc.setQueryData([...CHAVE, 'cnaes'], cnaes);
+      toast.success('Lista de CNAEs salva.');
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível salvar os CNAEs.')),
   });
 }
 

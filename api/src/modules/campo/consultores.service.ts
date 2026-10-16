@@ -23,6 +23,7 @@ import {
 import { idade } from '../../domain/route-rules';
 import { CampoFreelaService } from './campo-freela.service';
 import { lerCanais } from './campo-canais';
+import { lerCnaes } from './campo-cnaes';
 import { signupUrl } from './campo-links';
 import { COM_PRACA } from './campo-prisma';
 import {
@@ -37,6 +38,7 @@ import {
 import {
   AreaFieldsDto,
   ChannelsDto,
+  CnaesDto,
   CreateConsultorDto,
   UpdateConsultorDto,
 } from './dto/consultores.dto';
@@ -379,6 +381,31 @@ export class ConsultoresService {
       create: { id: 1, field_channels: lista },
     });
     return { channels: lista };
+  }
+
+  async cnaes(): Promise<{ cnaes: { code: string; label: string }[] }> {
+    return { cnaes: await lerCnaes(this.prisma) };
+  }
+
+  /** Lista de CNAEs da base (§21.4): código sem repetir, rótulo aparado. */
+  async setCnaes(dto: CnaesDto): Promise<{ cnaes: { code: string; label: string }[] }> {
+    const vistos = new Set<string>();
+    const cnaes = dto.cnaes.map((c) => ({ code: c.code, label: c.label.trim() }));
+    for (const c of cnaes) {
+      if (vistos.has(c.code) || !c.label) {
+        throw new BadRequestException({
+          code: 'VALIDATION_ERROR',
+          message: vistos.has(c.code) ? `cnaes: o código ${c.code} aparece duas vezes.` : 'cnaes: todo CNAE precisa de um nome.',
+        });
+      }
+      vistos.add(c.code);
+    }
+    await this.prisma.app_settings.upsert({
+      where: { id: 1 },
+      update: { field_cnaes: cnaes },
+      create: { id: 1, field_cnaes: cnaes },
+    });
+    return { cnaes };
   }
 
   async findOrFail(id: string): Promise<ConsultorRow> {
