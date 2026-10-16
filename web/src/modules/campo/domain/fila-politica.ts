@@ -76,8 +76,14 @@ export function planejarRascunho(
   const checkout = semSeq({ ...fila[iCheckout], tentativas: 0, proxima_em: 0 });
   // Rascunho incompleto não destrava: o checkout segue parado (a tela continua mostrando o que falta).
   if (!completo && bloqueioAnterior) checkout.bloqueio = bloqueioAnterior;
-  const resto = cauda.slice(1).filter((i) => !velhos.has(i.seq as number)).map(semSeq);
-  return { remover: [...remover], adicionar: [novoItem, checkout, ...resto] };
+  const resto = cauda.slice(1).filter((i) => !velhos.has(i.seq as number));
+  // Vaga e voucher da MESMA visita guardados depois de um checkout recusado vão para antes dele:
+  // são justamente o que faltava (§21.6).
+  const daVisita = (i: ItemFila) => (i.kind === 'vaga' || i.kind === 'voucher') && nova.kind === 'answers' && i.visit_ref === nova.visit_ref;
+  return {
+    remover: [...remover],
+    adicionar: [novoItem, ...resto.filter(daVisita).map(semSeq), checkout, ...resto.filter((i) => !daVisita(i)).map(semSeq)],
+  };
 }
 
 /** Nome para avisar o consultor: check-in ainda na fila, senão o retrato do /today, senão "visita". */
@@ -111,7 +117,7 @@ function instanteDoItem(i: ItemFila): number {
     const at = i.payload.points[0]?.at;
     return at ? Date.parse(at) : i.criado_em;
   }
-  if (i.kind === 'answers') return i.criado_em;
+  if (i.kind === 'answers' || i.kind === 'vaga' || i.kind === 'voucher') return i.criado_em;
   return Date.parse(i.payload.at);
 }
 
@@ -140,7 +146,7 @@ export function seqsParaDescartar(fila: ItemFila[], item: ItemFila): number[] {
   if (item.kind === 'checkin') {
     const ref = item.payload.client_id;
     for (const d of fila) {
-      if (d.consultant_id === item.consultant_id && (d.kind === 'answers' || d.kind === 'checkout') && d.visit_ref === ref) seqs.push(d.seq as number);
+      if (d.consultant_id === item.consultant_id && 'visit_ref' in d && d.visit_ref === ref) seqs.push(d.seq as number);
     }
   }
   return seqs;

@@ -130,6 +130,43 @@ export async function editarRota(id: string, stops: { lead_id: string; removed?:
   return data as RouteView;
 }
 
+// ── vouchers (§21.7) ──
+export type StatusVoucher = 'solicitado' | 'liberado' | 'recusado' | 'usado' | 'expirado';
+
+export interface VoucherView {
+  id: string;
+  code: string;
+  status: StatusVoucher;
+  valid_until: string;
+  lead_id: string;
+  lead_name: string;
+  consultant_id: string;
+  consultant_name: string;
+  visit_id: string;
+  praca_id: string;
+  freela_ref: string | null;
+  decision_note: string | null;
+  decided_by_name: string | null;
+  decided_at: string | null;
+  used_at: string | null;
+  created_at: string;
+}
+
+export async function listVouchers(params: { status?: StatusVoucher; praca_id?: string } = {}): Promise<VoucherView[]> {
+  const { data } = await api.get('/v1/consultores/vouchers', { params });
+  return data as VoucherView[];
+}
+
+export async function decidirVoucher(id: string, input: { decision: 'liberado' | 'recusado'; freela_ref?: string; note?: string }): Promise<VoucherView> {
+  const { data } = await api.post(`/v1/consultores/vouchers/${id}/decide`, input);
+  return data as VoucherView;
+}
+
+export async function voucherUsado(id: string): Promise<VoucherView> {
+  const { data } = await api.post(`/v1/consultores/vouchers/${id}/used`);
+  return data as VoucherView;
+}
+
 export interface CnaeItem {
   code: string;
   label: string;

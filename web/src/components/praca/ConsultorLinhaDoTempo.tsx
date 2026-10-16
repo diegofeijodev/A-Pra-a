@@ -9,6 +9,43 @@ import { fotoDaVisitaEquipe, type DiaConsultor } from '@/modules/consultores/inf
 const SITUACAO: Record<string, string> = { ja_usa: 'Já usa o Freela', cadastrou_qr: 'Cadastrou agora pelo QR', nao_cadastrou: 'Não cadastrou' };
 const CARGO: Record<string, string> = { dono: 'Dono', gerente: 'Gerente', outro: 'Outro' };
 const INTERESSE: Record<string, string> = { alto: 'alto', medio: 'médio', baixo: 'baixo', nenhum: 'nenhum' };
+const FINAL: Record<string, string> = { cadastrou: 'Cadastrou', cadastra_depois: 'Vai cadastrar depois', nao_quis: 'Não quis', ligar_depois: 'Ligar depois' };
+const MODO: Record<string, string> = { qr: 'pelo QR', assistido: 'cadastro assistido', nao_abriu: 'não abriu o cadastro' };
+const VOUCHER: Record<string, string> = { solicitado: 'pedido', liberado: 'liberado', recusado: 'recusado', usado: 'usado', expirado: 'expirado' };
+
+/** Respostas do formulário v2 (§21.6) como a equipe lê. */
+function RespostasV2({ v }: { v: VisitView }) {
+  const a = v.answers;
+  return (
+    <>
+      {a.interlocutor_name && (
+        <p>
+          {a.interlocutor_name} ({a.interlocutor_role ? CARGO[a.interlocutor_role] : '—'}) ·{' '}
+          <b>{a.final_status ? FINAL[a.final_status] : 'sem status final'}</b>
+          {a.final_date ? ` em ${fmtBR(a.final_date)}` : ''}
+          {a.callback_phone ? ` (${a.callback_phone})` : ''}
+          {a.final_reason ? ` — ${a.final_reason}` : ''}
+        </p>
+      )}
+      <p className="text-xs">
+        {a.hires_freelancer == null
+          ? 'Contrata freelancer: —'
+          : a.hires_freelancer
+            ? `Contrata ${a.freelas_per_week ?? '—'} por semana · ${[...a.channels, a.channel_other].filter(Boolean).join(', ') || '—'}`
+            : 'Não contrata freelancer'}
+        {a.signup_mode ? ` · ${MODO[a.signup_mode]}` : ''}
+      </p>
+      {(v.vagas?.length || v.voucher) && (
+        <p className="text-xs">
+          {v.vagas?.length ? `Vagas: ${v.vagas.map((x) => `${x.funcao} ${fmtBR(x.date)}`).join('; ')}` : ''}
+          {v.vagas?.length && v.voucher ? ' · ' : ''}
+          {v.voucher ? `Voucher ${v.voucher.code} (${VOUCHER[v.voucher.status] ?? v.voucher.status})` : ''}
+        </p>
+      )}
+      {a.notes && <p className="text-xs text-muted-foreground">{a.notes}</p>}
+    </>
+  );
+}
 
 function FotoVisita({ visita }: { visita: VisitView }) {
   const [url, setUrl] = useState<string | null>(null);
@@ -59,7 +96,13 @@ export function ConsultorLinhaDoTempo({ dia }: { dia: DiaConsultor }) {
                       {v.far_from_place ? ' · longe do local' : ''}
                       {v.auto_closed ? ' · fechada à meia-noite' : ''}
                       {v.possible_dup ? ' · possível duplicado' : ''}
+                      {v.off_route ? ' · fora da rota' : ''}
+                      {v.off_hours ? ' · fora do horário' : ''}
                     </p>
+                    {(v.form_version ?? 1) >= 2 ? (
+                      <RespostasV2 v={v} />
+                    ) : (
+                      <>
                     {a.interlocutor_name && (
                       <p>
                         {a.interlocutor_name} ({a.interlocutor_role ? CARGO[a.interlocutor_role] : '—'}) · {a.freela_status ? SITUACAO[a.freela_status] : '—'} · interesse{' '}
@@ -79,6 +122,8 @@ export function ConsultorLinhaDoTempo({ dia }: { dia: DiaConsultor }) {
                       </p>
                     )}
                     {a.notes && <p className="text-xs text-muted-foreground">{a.notes}</p>}
+                      </>
+                    )}
                   </div>
                 </div>
               );

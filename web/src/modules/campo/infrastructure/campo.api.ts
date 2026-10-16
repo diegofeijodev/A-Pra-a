@@ -8,6 +8,7 @@ import type {
   RouteView,
   TodayView,
   VisitAnswers,
+  VisitAnswersV2,
   VisitView,
 } from '../domain/campo.types';
 import { campoApi } from './campo-http';
@@ -93,7 +94,17 @@ export async function campoCheckin(p: CheckinPayload, foto: Blob): Promise<Visit
   return data as VisitView;
 }
 
-export async function campoSalvarRespostas(ref: string, respostas: VisitAnswers): Promise<VisitView> {
+export async function campoAbrirVaga(ref: string, vaga: { client_id: string; date: string; funcao: string }): Promise<VisitView> {
+  const { data } = await campoApi.post(`/v1/campo/visits/${ref}/vagas`, vaga);
+  return data as VisitView;
+}
+
+export async function campoPedirVoucher(ref: string): Promise<VisitView> {
+  const { data } = await campoApi.post(`/v1/campo/visits/${ref}/voucher`);
+  return data as VisitView;
+}
+
+export async function campoSalvarRespostas(ref: string, respostas: VisitAnswers | VisitAnswersV2): Promise<VisitView> {
   const { data } = await campoApi.patch(`/v1/campo/visits/${ref}/answers`, respostas);
   return data as VisitView;
 }

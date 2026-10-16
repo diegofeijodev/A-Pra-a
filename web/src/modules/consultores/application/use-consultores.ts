@@ -11,6 +11,10 @@ import {
   editarRota,
   gerarRotas,
   listRotas,
+  listVouchers,
+  decidirVoucher,
+  voucherUsado,
+  type StatusVoucher,
   getCnaes,
   putCnaes,
   type CnaeItem,
@@ -115,6 +119,39 @@ export function useEditarRota() {
       toast.success('Rota salva.');
     },
     onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível salvar a rota.')),
+  });
+}
+
+export function useVouchers(status?: StatusVoucher) {
+  return useQuery({
+    queryKey: [...CHAVE, 'vouchers', status ?? ''],
+    queryFn: () => listVouchers(status ? { status } : {}),
+    refetchInterval: 60_000,
+  });
+}
+
+export function useDecidirVoucher() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: { id: string; decision: 'liberado' | 'recusado'; freela_ref?: string; note?: string }) => decidirVoucher(id, input),
+    onSuccess: (v) => {
+      void qc.invalidateQueries({ queryKey: [...CHAVE, 'vouchers'] });
+      void qc.invalidateQueries({ queryKey: ['notifications'] });
+      toast.success(v.status === 'liberado' ? `Voucher ${v.code} liberado.` : `Voucher ${v.code} recusado.`);
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível decidir o voucher.')),
+  });
+}
+
+export function useVoucherUsado() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => voucherUsado(id),
+    onSuccess: (v) => {
+      void qc.invalidateQueries({ queryKey: [...CHAVE, 'vouchers'] });
+      toast.success(`Voucher ${v.code} marcado como usado.`);
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível marcar o voucher.')),
   });
 }
 

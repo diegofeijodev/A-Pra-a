@@ -222,3 +222,28 @@ describe('guia para quem encerra com envios guardados', () => {
     expect(AVISO_ENVIOS_GUARDADOS).toMatch(/Praça Campo aberto/);
   });
 });
+
+describe('bloco B: vaga e voucher na fila (§21.6)', () => {
+  it('rascunho novo depois de checkout recusado: vaga e voucher da visita passam para antes do checkout', () => {
+    const fila: ItemFila[] = [
+      { ...base, seq: 1, kind: 'checkout', visit_ref: 'v1', payload: POS, bloqueio: 'Falta responder: abrir a vaga do voucher.' },
+      { ...base, seq: 2, kind: 'vaga', visit_ref: 'v1', payload: { client_id: 'x', date: '2026-10-09', funcao: 'Garçom' } },
+      { ...base, seq: 3, kind: 'voucher', visit_ref: 'v1' },
+      { ...base, seq: 4, kind: 'checkin', payload: { ...POS, client_id: 'v2', place_name: 'Outro', lead_id: 'l' }, foto: new Blob() },
+    ];
+    const r = planejarRascunho(fila, { kind: 'answers', visit_ref: 'v1', payload: R }, base, true);
+    expect(r.adicionar.map((i) => i.kind)).toEqual(['answers', 'vaga', 'voucher', 'checkout', 'checkin']);
+    expect(r.remover.sort()).toEqual([1, 2, 3, 4]);
+  });
+
+  it('check-in descartado leva vaga e voucher da mesma visita', () => {
+    const checkin: ItemFila = { ...base, seq: 1, kind: 'checkin', payload: { ...POS, client_id: 'v1', place_name: 'Bar', lead_id: 'l' }, foto: new Blob() };
+    const fila: ItemFila[] = [
+      checkin,
+      { ...base, seq: 2, kind: 'vaga', visit_ref: 'v1', payload: { client_id: 'x', date: '2026-10-09', funcao: 'Garçom' } },
+      { ...base, seq: 3, kind: 'voucher', visit_ref: 'v1' },
+      { ...base, seq: 4, kind: 'voucher', visit_ref: 'outra' },
+    ];
+    expect(seqsParaDescartar(fila, checkin)).toEqual([1, 2, 3]);
+  });
+});

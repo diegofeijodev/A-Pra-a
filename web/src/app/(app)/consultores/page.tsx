@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { ConsultorDialog } from '@/components/praca/ConsultorDialog';
 import { RotasSemana } from '@/components/praca/RotasSemana';
+import { VouchersLista } from '@/components/praca/VouchersLista';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
@@ -15,6 +16,7 @@ const SITUACAO = { em_jornada: 'em rota agora', encerrou: 'encerrou', nao_inicio
 const ABAS = [
   ['representantes', 'Representantes'],
   ['rotas', 'Rotas da semana'],
+  ['vouchers', 'Vouchers'],
 ] as const;
 type Aba = (typeof ABAS)[number][0];
 
@@ -45,6 +47,7 @@ export default function ConsultoresPage() {
       <div className="mt-4">
         {aba === 'representantes' && <Representantes />}
         {aba === 'rotas' && <RotasSemana />}
+        {aba === 'vouchers' && <VouchersLista />}
       </div>
       {novo && <ConsultorDialog aberto onFechar={() => setNovo(false)} />}
     </>

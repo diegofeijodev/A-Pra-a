@@ -85,6 +85,43 @@ export interface VisitAnswers {
   notes: string | null;
 }
 
+/** Formulário v2 (bloco B, §21.6). */
+export type CargoV2 = 'dono' | 'gerente';
+export type ModoCadastro = 'qr' | 'assistido' | 'nao_abriu';
+export type StatusFinal = 'cadastrou' | 'cadastra_depois' | 'nao_quis' | 'ligar_depois';
+
+export interface VisitAnswersV2 {
+  interlocutor_name: string | null;
+  interlocutor_role: CargoV2 | null;
+  hires_freelancer: boolean | null;
+  channels: string[];
+  channel_other: string | null;
+  freelas_per_week: number | null;
+  voucher_accepted: boolean | null;
+  signup_mode: ModoCadastro | null;
+  final_status: StatusFinal | null;
+  final_date: string | null;
+  final_reason: string | null;
+  callback_phone: string | null;
+  notes: string | null;
+}
+
+export interface VagaDaVisita {
+  id: string;
+  date: string;
+  funcao: string;
+  filled: boolean;
+}
+
+export interface VoucherDaVisita {
+  id: string;
+  code: string;
+  status: 'solicitado' | 'liberado' | 'recusado' | 'usado' | 'expirado';
+  valid_until: string;
+  freela_ref: string | null;
+  decision_note: string | null;
+}
+
 export interface VisitView {
   id: string;
   client_id: string;
@@ -104,7 +141,13 @@ export interface VisitView {
   checkout_lng: number | null;
   auto_closed: boolean;
   clock_adjusted: boolean;
-  answers: VisitAnswers;
+  /** 1 = questionário do bloco A; 2 = formulário do bloco B. Opcionais: retrato salvo antes do bloco B não traz. */
+  form_version?: number;
+  off_route?: boolean;
+  off_hours?: boolean;
+  vagas?: VagaDaVisita[];
+  voucher?: VoucherDaVisita | null;
+  answers: VisitAnswers & Partial<VisitAnswersV2>;
   missing: string[];
 }
 
@@ -175,7 +218,9 @@ export type AcaoFila =
   | { kind: 'start'; payload: { client_id: string } & Posicao }
   | { kind: 'points'; payload: { points: ({ client_id: string } & Posicao)[] } }
   | { kind: 'checkin'; payload: CheckinPayload; foto: Blob }
-  | { kind: 'answers'; visit_ref: string; payload: VisitAnswers }
+  | { kind: 'answers'; visit_ref: string; payload: VisitAnswers | VisitAnswersV2 }
+  | { kind: 'vaga'; visit_ref: string; payload: { client_id: string; date: string; funcao: string } }
+  | { kind: 'voucher'; visit_ref: string }
   | { kind: 'checkout'; visit_ref: string; payload: Posicao }
   | { kind: 'end'; payload: Posicao };
 
