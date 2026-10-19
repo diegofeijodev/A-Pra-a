@@ -171,6 +171,13 @@ describe('RotasCampoService — pular, adiar, desfazer', () => {
     expect(codigo(e)).toBe('STOP_TAKEN');
   });
 
+  it('desfazer o que já está pendente é inofensivo (200, sem gravar)', async () => {
+    const p = fakePrisma();
+    const v = await montar(p).undo(A, STOP(1), { client_id: CLI(9) }, AGORA);
+    expect(v.id).toBe(ROTA);
+    expect(p.$transaction).not.toHaveBeenCalled();
+  });
+
   it('pular/adiar/desfazer não tocam em leads nem em lead_events', async () => {
     const p = fakePrisma();
     p.lead_events = { create: jest.fn() };

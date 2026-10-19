@@ -310,6 +310,9 @@ export class RotasCampoService {
     const dup = await this.reenvio(c.id, clientId);
     if (dup) return this.viewDe(dup.route_id, agora);
 
+    // Desfazer o que já voltou ao roteiro (outra via refez a rota, ou o reenvio chegou depois): nada a fazer.
+    if (kind === 'undo' && parada.status === 'pendente') return this.viewDe(parada.route_id, agora);
+
     const origem = kind === 'undo' ? ['pulada', 'adiada'] : kind === 'skip' ? ['pendente', 'adiada'] : ['pendente'];
     if (!origem.includes(parada.status)) {
       throw kind === 'undo' && (parada.status === 'visitada' || parada.status === 'descartada')
