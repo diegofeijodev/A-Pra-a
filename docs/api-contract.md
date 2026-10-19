@@ -3066,3 +3066,178 @@ e a lista `EXCLUIR` (São Paulo, Rio de Janeiro) não mudam. Desenho:
 1. Rotas com `praca_id` em query em vez de aninhadas em `/v1/pracas/:id/areas`: segue o spec (`/v1/areas`) e deixa a checagem "área da praça" explícita.
 2. Sem `DELETE` (ver acima).
 3. A migração `field_areas` é gerada com `--create-only`; o `DROP INDEX` dos dois índices únicos parciais do bloco A é removido do SQL (§20.9, item 17).
+
+---
+
+## 22. Pesquisa automática de estabelecimentos — `/v1/place-searches`
+
+F2 da prospecção. A equipe (**só admin**) escolhe uma **área de atuação** (§21) e os
+tipos de estabelecimento; a API busca num provedor (OpenStreetMap/Overpass por padrão,
+Apify atrás de flag), guarda os achados como **candidatos** e a pessoa revisa antes de
+virarem leads. Desenho: `docs/superpowers/specs/2026-10-19-prospeccao-rotas-automacao-design.md`
+§3 e §10; tela: `...-rotas-ux.md` §5.1.
+
+Todas as rotas são `@AdminOnly()` e fechadas ao consultor de campo (sem `@CampoRoute()`).
+Toda leitura/escrita filtra por `id` **e** `praca_id`: busca de outra praça é `404 NOT_FOUND`.
+
+### 22.1 Tipos
+
+| `types[]` | Etiqueta | OSM |
+|---|---|---|
+| `bar` | Bares | `amenity=bar\|pub` |
+| `restaurante` | Restaurantes | `amenity=restaurant` |
+| `lanchonete` | Lanchonetes | `amenity=fast_food` |
+| `padaria` | Padarias | `shop=bakery` |
+| `cafe` | Cafés | `amenity=cafe` |
+
+### 22.2 `SearchRunView`
+
+```json
+{
+  "id": "uuid",
+  "praca_id": "uuid",
+  "area_id": "uuid",
+  "area_name": "Moema",
+  "source": "osm",
+  "types": ["bar", "restaurante"],
+  "center": { "lat": -23.6021, "lng": -46.6658 },
+  "radius_m": 1500,
+  "status": "queued | running | done | error | cancelled",
+  "found": 214,
+  "novos": 150,
+  "duplicados": 37,
+  "descartados": 27,
+  "truncated": false,
+  "est_cost_usd": 0,
+  "error": null,
+  "cached": false,
+  "requested_by": "uuid",
+  "created_at": "2026-10-19T14:00:00.000Z",
+  "started_at": "...",
+  "finished_at": "...",
+  "expires_at": "2026-10-26T14:00:00.000Z"
+}
+```
+
+- `found` cresce durante a execução (progresso: "62 encontrados até agora"); os contadores
+  `novos/duplicados/descartados` só fecham quando `status = done`.
+- `truncated = true` quando passou de **300** resultados: ficam os 300 mais próximos do centro
+  e a tela pede para reduzir a área.
+- `expires_at` = fim do cache de 7 dias (`finished_at` + 7 d); só existe em `done`.
+- `error` é texto para pessoa (nunca URL, cabeçalho ou token).
+
+### 22.3 Rotas
+
+| Método | Rota | Corpo / query | Resposta |
+|---|---|---|---|
+| POST | `/v1/place-searches` | `{praca_id, area_id, types[], source?, refresh?}` | `202 SearchRunView` (nova, `queued`) ou `200 SearchRunView` com `cached: true` (busca igual concluída há < 7 dias) |
+| GET | `/v1/place-searches/sources` | | `SourceView[]` (fontes deste servidor) |
+| GET | `/v1/place-searches?praca_id=` | `praca_id` obrigatório | `SearchRunView[]`, as 20 mais recentes |
+| GET | `/v1/place-searches/:id?praca_id=` | | `SearchRunView` (a tela consulta a cada 2 s enquanto `queued`/`running`) |
+| GET | `/v1/place-searches/:id/candidates?praca_id=` | | `CandidateView[]`, ordem `distance_m` |
+| POST | `/v1/place-searches/:id/cancel?praca_id=` | | `SearchRunView` (`cancelled`; só em `queued`/`running`, senão `409 RUN_NOT_CANCELLABLE`) |
+| POST | `/v1/place-searches/:id/leads` | `{praca_id, candidate_ids[], owner_id?}` | `201 AddLeadsView` |
+
+- `source`: `osm` (padrão) ou `apify`. `apify` com a flag desligada ou sem token →
+  `422 SOURCE_UNAVAILABLE` ("A fonte Apify não está ligada neste servidor.").
+- `types`: 1 a 5 valores distintos de §22.1 (`400 VALIDATION_ERROR`). `area_id` precisa ser da
+  praça e estar `active` (`404` / `409 AREA_INACTIVE`).
+- Cache: chave = hash de `lat`, `lng`, `radius_m` **da área no momento do pedido**, tipos
+  ordenados e fonte. Só reaproveita busca `done` com `finished_at` < 7 dias. `refresh: true`
+  ignora o cache. Mudar o centro/raio da área gera chave nova.
+- Uma busca por vez no servidor (fila em memória, instância única). No boot, `queued`/`running`
+  viram `error` com `"Interrompida: o servidor foi reiniciado."`.
+- Overpass: `User-Agent` identificado (`PLACES_USER_AGENT`), timeout, 1 requisição por vez,
+  intervalo mínimo entre requisições, `429`/`504` com espera crescente (respeita `Retry-After`);
+  esgotadas as tentativas → `status = error`, "A busca não funcionou agora. Nada foi cobrado."
+
+`SourceView` (a tela só oferece o que está `available` e avisa quando `paid`):
+
+```json
+{ "id": "osm", "label": "OpenStreetMap", "available": true, "paid": false }
+{ "id": "apify", "label": "Google Maps (Apify)", "available": false, "paid": true,
+  "max_places_per_run": 300, "monthly_cap": 3000, "used_this_month": 0, "est_cost_usd_per_run": 2.1 }
+```
+
+`est_cost_usd_per_run` = estimativa conservadora (US$ 7 por 1.000 lugares) para o teto da próxima busca.
+`used_this_month` soma `found` das buscas Apify do mês de Brasília.
+
+`CandidateView`:
+
+```json
+{
+  "id": "uuid",
+  "name": "Bar do Chico",
+  "category": "bar",
+  "address": "Av. Ibirapuera, 88",
+  "lat": -23.6,
+  "lng": -46.66,
+  "location_precision": "point",
+  "distance_m": 480,
+  "phone": "(11) 3333-4444",
+  "website": null,
+  "source": "osm",
+  "status": "novo | duplicado | descartado | adicionado",
+  "reason": "ja_na_praca | repetido_na_busca | parece_fechado | sem_nome | null",
+  "lead_id": "uuid | null",
+  "lead_name": "string | null",
+  "selectable": true
+}
+```
+
+- `status`/`reason` são **recalculados na leitura** para candidatos `novo` (um lead pode ter sido
+  criado depois da busca, dentro dos 7 dias de cache): vira `duplicado / ja_na_praca` com `lead_id`.
+- `selectable = status === 'novo'`. Duplicado, descartado e já adicionado não podem ser adicionados.
+- Duplicidade contra leads existentes (regra única em `domain/places-rules.ts`): mesmo
+  `source`+`source_ref`; mesmo telefone (9 últimos dígitos); nome+endereço iguais; ou
+  `nomeParecido` a **≤ 100 m** de um lead com coordenada (mesma regra do bloco A).
+  Dentro da própria busca vale `nomeParecido` ≤ 100 m (fica o primeiro por distância ao centro).
+- Descartados: `parece_fechado` (OSM `disused:*`/`abandoned:*`/`opening_hours=off`, Apify
+  `permanentlyClosed`) e `sem_nome`.
+- `location_precision`: `point` (coordenada pontual do provedor). Nunca se geocodifica por CEP/município.
+
+`AddLeadsView`:
+
+```json
+{ "batch_id": "uuid", "created": 177, "skipped": [{ "candidate_id": "uuid", "reason": "ja_na_praca" }] }
+```
+
+- Transação única: os candidatos pedidos são reservados (`novo → adicionado`; se algum não está
+  mais `novo`, ele vai em `skipped` com `reason` — duas pessoas clicando juntas não duplicam), os
+  leads são criados pelo **mesmo caminho do módulo imports** (`ImportsService`): etapa 1, `classe`
+  `alvo`, `origem = "pesquisa automática"`, `lat/lng`, `location_precision`, `source`/`source_ref`,
+  `import_batch_id`, evento de nota, dono = `owner_id` ou rodízio do time ativo. Ninguém recebe mensagem.
+- Até 300 `candidate_ids` por chamada; lista vazia ou sem nenhum `novo` → `400 VALIDATION_ERROR`/`409 NOTHING_TO_ADD`.
+- O lote aparece em `GET /v1/imports` (`file_name` = "Busca 19/10 · Moema (OSM)") e pode ser
+  desfeito em 24 h como qualquer importação; o candidato mantém `lead_id` com `ON DELETE SET NULL`.
+
+### 22.4 Variáveis de ambiente (zod em `env.validation.ts`)
+
+| Variável | Padrão | Observação |
+|---|---|---|
+| `OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | trocar de instância sem deploy de código |
+| `PLACES_USER_AGENT` | `praca-freela/1.0 (contato: tecnologia@freelaservicos.com.br)` | identificação exigida pelas instâncias públicas |
+| `APIFY_ENABLED` | `false` | sem `APIFY_TOKEN` a flag fica inerte |
+| `APIFY_TOKEN` | vazio | **segredo; o dono digita no servidor**, nunca em código/commit/docs |
+| `APIFY_ACTOR_ID` | `compass~crawler-google-places` | |
+| `APIFY_MAX_PLACES_PER_RUN` | `300` | teto por busca |
+| `APIFY_MONTHLY_PLACES_CAP` | `3000` | teto do mês (Brasília), somando `found` das buscas Apify |
+
+### 22.5 Banco
+
+- `place_import_runs` (busca) e `place_candidates` (achados); `leads` ganha `source`,
+  `source_ref`, `location_precision` (todas nulas nos antigos) e `UNIQUE (source, source_ref)`
+  (NULLs não conflitam). Migração aditiva.
+- `place_candidates`: `UNIQUE (run_id, source, source_ref)`; FK `run_id` `CASCADE`; `lead_id`
+  `SET NULL`; índice `(run_id, status)`.
+
+### 22.6 Desvios propositais
+
+1. O spec (§5) promove candidato a lead só ao entrar na rota (F3). Por pedido do dono a F2 cria o lead
+   na revisão ("Adicionar N como leads"), com confirmação escrita na tela.
+2. `UNIQUE(source, source_ref)` do spec ficou `UNIQUE(run_id, source, source_ref)` em `place_candidates`
+   (o mesmo ponto do OSM aparece em buscas repetidas ou sobrepostas) e passou a `leads`, onde diz "este ponto já é lead".
+3. `origem` = "pesquisa automática" (o UX diz "busca automática"; vale o pedido da F2).
+4. Lead de busca pode ter **telefone vazio** (muito ponto do OSM não tem); a importação por arquivo exige telefone, esta não.
+5. Sem `PLACES_SOURCES`/cadeia de fallback: a busca usa **uma** fonte por pedido (`source`).
+6. "Bairro ou endereço" e "Desenhar no mapa" do UX dependem de geocodificação/mapa e ficam para depois; a F2 usa as áreas da F1.
