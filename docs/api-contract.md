@@ -3248,3 +3248,161 @@ seu `limite` (cancelar ou estourar o tempo só aborta a nossa requisição, o ac
 4. Lead de busca pode ter **telefone vazio** (muito ponto do OSM não tem); a importação por arquivo exige telefone, esta não.
 5. Sem `PLACES_SOURCES`/cadeia de fallback: a busca usa **uma** fonte por pedido (`source`).
 6. "Bairro ou endereço" e "Desenhar no mapa" do UX dependem de geocodificação/mapa e ficam para depois; a F2 usa as áreas da F1.
+
+---
+
+## 23. Roteiro do dia — `/v1/campo/route`, `/v1/routes`
+
+F3 da prospecção. Cada consultor tem **no máximo um roteiro ativo por dia** (dia de Brasília): a lista ordenada de estabelecimentos
+(leads) a visitar, com horário estimado de chegada (ETA). A ordem sai de uma **heurística local, sem serviço externo**: vizinho mais
+próximo + 2-opt sobre a distância haversine × `fator_desvio` (linha reta → rua), a pé a `velocidade_kmh`, respeitando a janela de
+trabalho e o almoço. Desenho: `docs/superpowers/specs/2026-10-19-prospeccao-rotas-automacao-design.md` §4.2, §4.3 e §6.1.
+(O spec numerava este contrato como §22; a F2 ocupou o §22 e a numeração das fases seguintes avança em um — ver §23.8.)
+
+**Flag**: `FIELD_ROUTES_ENABLED` (padrão `false`). Desligada, `GET /v1/campo/route/today` responde `200 { enabled: false, route: null }`
+(a tela Hoje consulta de 60 em 60 s e o fluxo do bloco A fica idêntico) e **todas as outras rotas deste capítulo** respondem
+`404 ROUTES_DISABLED`. Não há `@Cron`: o roteiro nasce sob demanda.
+
+### 23.1 Configuração — `GET/PUT /v1/consultores/settings/config`
+
+Guardada em `app_settings.field_config` (JSON; a F5 acrescenta chaves aqui). Leitura: equipe. Escrita: **admin**, parcial (só as chaves
+enviadas mudam), e grava `atualizado_por` (id) e `atualizado_em`. Ausente ou inválida no banco = padrão. Vale mesmo com a flag desligada.
+
+| Chave | Padrão | Validação | Significado |
+|---|---|---|---|
+| `meta_diaria` | 30 | inteiro 1–100 | visitas planejadas por dia |
+| `janela_inicio` / `janela_fim` | `"09:00"` / `"18:00"` | `HH:MM`, início < fim | horário de Brasília |
+| `almoco_inicio` / `almoco_fim` | `"12:00"` / `"13:00"` | `HH:MM`, dentro da janela, início < fim | pausa do consultor |
+| `minutos_por_visita` | 8 | inteiro 1–120 | tempo parado em cada visita |
+| `velocidade_kmh` | 4.5 | número 1–15 | caminhada |
+| `fator_desvio` | 1.3 | número 1–3 | linha reta → rua |
+| `pool_fator` | 1.5 | número 1–5 | no automático: candidatas = meta × fator (reserva para pulos) |
+| `dias_sem_revisitar` | 14 | inteiro 0–365 | automático: exclui lead visitado há menos dias |
+| `estagio_maximo_rota` | 4 | inteiro 1–6 | automático: lead em estágio maior (cadastrado) fica fora |
+| `gerar_ao_iniciar` | `false` | boolean | ao iniciar a jornada, a API monta o roteiro sozinha (se não houver) |
+| `consultor_pode_gerar` | `false` | boolean | libera o botão "Montar meu dia" no celular |
+
+Chave desconhecida ou valor fora da faixa → `400 VALIDATION_ERROR`. Resposta: o objeto completo com os padrões aplicados.
+
+### 23.2 Tipos
+
+`StopView`:
+
+```json
+{
+  "id": "uuid", "route_id": "uuid", "lead_id": "uuid",
+  "seq": 3, "kind": "planejada", "status": "pendente", "fixa": false,
+  "eta": "11:40", "eta_min": 700, "planned_minutes": 8, "distance_m": 240,
+  "name": "Padaria Bom Pão", "address": "R. Gaivota, 120", "phone": "(11) 99999-0000",
+  "lat": -23.6021, "lng": -46.6658,
+  "skip_reason": null, "skip_note": null, "deferred_to": null, "visit_id": null
+}
+```
+
+- `kind`: `planejada` (entra na meta) | `reserva` (sobra para pulos; `eta` nulo).
+- `status`: `pendente` | `visitada` | `pulada` | `adiada` | `descartada` (saiu do roteiro numa remontagem; só a equipe vê).
+- `eta` = `"HH:MM"` de Brasília; `eta_min` = minutos desde 00:00 (nulos em `reserva`, `pulada`, `visitada`, `adiada para amanhã`).
+- `distance_m` = distância estimada **de rua** até a parada anterior (haversine × `fator_desvio`); a primeira conta a partir do ponto de partida.
+- `skip_reason`: `fechado` | `sem_dono` | `ja_cliente` | `outro` (com `skip_note` livre, até 200 caracteres).
+- `deferred_to`: `tarde` (volta no fim do roteiro de hoje) | `amanha` (sai de hoje e libera o lugar para a equipe). Quem decide é o servidor
+  pela hora do pedido: antes do fim do almoço = `tarde`, depois = `amanha`.
+- Nome, endereço, telefone e coordenada são **fotografados** na criação da parada: corrigir o lead depois não reescreve o roteiro do dia.
+
+`RouteView`:
+
+```json
+{
+  "id": "uuid", "consultant_id": "uuid", "consultant_name": "Ana", "praca_id": "uuid",
+  "day": "2026-10-20", "status": "ativa", "version": 2, "source": "equipe",
+  "area_id": "uuid|null", "start": { "lat": -23.6, "lng": -46.66 },
+  "params": { "meta_diaria": 30, "janela_inicio": "09:00", "janela_fim": "18:00", "almoco_inicio": "12:00",
+              "almoco_fim": "13:00", "minutos_por_visita": 8, "velocidade_kmh": 4.5, "fator_desvio": 1.3 },
+  "stops": ["StopView, ordem seq"],
+  "plan": { "planned": 28, "reserve": 4, "walk_km": 7.8, "fits_meta": false, "not_fit": 0 },
+  "progress": { "meta": 30, "done": 12, "skipped": 1, "deferred": 0, "pending": 15, "expected_now": 11, "delta": 1 },
+  "generated_at": "2026-10-20T11:58:00.000Z", "updated_at": "..."
+}
+```
+
+- `source`: `equipe` | `auto` (gerado ao iniciar a jornada) | `consultor` (botão "Montar meu dia").
+- `plan.walk_km` = soma dos trechos de rua estimados das paradas planejadas pendentes (conta: Σ haversine × `fator_desvio`); `fits_meta` = a meta coube na janela;
+  `not_fit` = quantos dos leads escolhidos pela equipe nem como reserva couberam (não foram gravados).
+- `progress.done` conta paradas `visitada`; pulada e adiada **não** contam. `expected_now` = quantas já deveriam estar feitas agora (minutos úteis decorridos
+  — janela menos almoço — ÷ minutos úteis por visita, `floor`); `delta` = `done − expected_now` (positivo = à frente). `done`/`delta` ignoram visitas avulsas; a tela do
+  consultor soma as visitas do dia (`GET /v1/campo/today`) por conta própria.
+
+### 23.3 Consultor — `@CampoRoute()`, só o roteiro do próprio consultor
+
+Roteiro, parada ou id de outro consultor → `404 NOT_FOUND` (nunca `403`).
+
+| Método | Rota | Corpo | Resposta |
+|---|---|---|---|
+| GET | `/v1/campo/route/today` | — | `200 { enabled, route: RouteView \| null }` |
+| POST | `/v1/campo/route/generate` | `{client_id, lat, lng}` | `200 RouteView`. Se já existe roteiro ativo hoje, devolve ele (idempotente). Sem ele: exige `consultor_pode_gerar` (senão `403 ROUTE_GENERATE_NOT_ALLOWED`); sem leads elegíveis → `422 ROUTE_NO_CANDIDATES` |
+| POST | `/v1/campo/route/reoptimize` | `{client_id, lat, lng, at?}` | `200 RouteView`. Mantém as visitadas, refaz a ordem das pendentes (e traz reservas / adiadas da tarde) a partir da posição e da hora; sobe `version`. Sem roteiro hoje → `404 ROUTE_NOT_FOUND` |
+| POST | `/v1/campo/route/stops/:id/skip` | `{client_id, reason, note?, at?}` | `200 RouteView`. `pendente`/`adiada` → `pulada`. Não troca a ordem; só recalcula os ETAs |
+| POST | `/v1/campo/route/stops/:id/defer` | `{client_id, at?}` | `200 RouteView`. `pendente` → `adiada` (`deferred_to` pela hora do servidor, ver acima) |
+| POST | `/v1/campo/route/stops/:id/undo` | `{client_id, at?}` | `200 RouteView`. `pulada`/`adiada` → `pendente` na posição original. `409 STOP_NOT_UNDOABLE` se já `visitada`/`descartada`; `409 STOP_TAKEN` se outro consultor já ficou com o lugar hoje |
+
+- **Idempotência**: `client_id` (uuid do aparelho) de `reoptimize`/`skip`/`defer`/`undo` fica gravado em `field_route_events` (único). Reenvio com o mesmo
+  `client_id` do mesmo consultor devolve o roteiro atual sem refazer; de outro consultor → `409 CLIENT_ID_IN_USE`. `at` é a hora real do aparelho
+  (mesma regra de carimbo do §20: fora de −24 h/+2 min vale a hora do recebimento). Estas ações **não tocam em `leads` nem em `lead_events`** (nem "Já é cliente").
+- `skip`/`defer`/`undo` em parada `visitada` → `409 STOP_NOT_PENDING`; `skip` em parada já `pulada` com o mesmo `client_id` é o reenvio (200).
+- **Concorrência**: `reoptimize` e a edição da equipe atualizam o roteiro com trava otimista em `version`; quem perde relê e tenta de novo uma vez.
+- **Check-in numa parada** (`POST /v1/campo/visits`, §20.3): com a flag ligada, a parada `pendente`/`adiada` do mesmo lead no roteiro ativo **do dia da jornada** vira `visitada`
+  com `visit_id`, na mesma transação do check-in. Não exige que seja a próxima. Check-in em lead fora do roteiro continua permitido (visita avulsa).
+- **Início da jornada** (`POST /v1/campo/journeys/start`): com a flag ligada e `gerar_ao_iniciar`, depois de gravar a jornada a API tenta montar o roteiro `auto`
+  (leads das áreas ativas da praça, com localização exata, vizinho-mais-próximo encadeado). Qualquer falha é registrada no log e **nunca** faz o `start` falhar.
+
+### 23.4 Equipe — `/v1/routes` (sem `@CampoRoute()`: token de consultor → `401`)
+
+Leitura: equipe. Escrita: **admin**.
+
+| Método | Rota | Corpo / query | Resposta |
+|---|---|---|---|
+| GET | `/v1/routes?day=&praca_id=` | `day` (padrão hoje), `praca_id` opcional | `RouteView[]` do dia (planejado × realizado: `progress` e `stops` com status e motivos) |
+| GET | `/v1/routes/candidates?praca_id=&day=&area_id=&q=&limit=` | `limit` ≤ 200 (padrão 100) | `CandidateView[]`: leads da praça com localização exata, não arquivados, fora do roteiro de outro consultor no dia |
+| POST | `/v1/routes` | `{consultant_id, day, lead_ids[], area_id?, start?: {lat,lng}}` | `201 RouteView`. Cria o roteiro do dia **ou substitui o conjunto** do ativo (mantém as paradas `visitada`; o que sai vira `descartada`; `version`+1) |
+| GET | `/v1/routes/:id` | — | `RouteView` |
+| PUT | `/v1/routes/:id/order` | `{version, stops: [{id, fixa?}]}` | `RouteView`. Define a ordem das paradas pendentes/reserva e quais ficam **fixas**; recalcula ETAs. `409 ROUTE_VERSION_CONFLICT` se a versão mudou |
+| POST | `/v1/routes/:id/reoptimize` | `{lat?, lng?}` | `RouteView`. Refaz as pendentes respeitando as fixas, a partir da posição (padrão: última visitada ou o ponto de partida) |
+
+`CandidateView`: `{ id, name, address, lat, lng, stage, source, category?, in_area }`.
+
+- **Fixa** = âncora: a parada mantém a posição na sequência; o resto é reordenado **dentro de cada trecho entre duas fixas** (o trecho é o que está entre elas na ordem atual).
+  Visitadas ficam sempre à frente, na ordem em que aconteceram.
+- Regras de montagem (`POST /v1/routes`): `consultant_id` ativo; `day` de hoje em diante (Brasília); cada `lead_id` precisa ser **da mesma praça do consultor**, ter `lat/lng`, não estar
+  arquivado e não estar em roteiro de outro consultor no dia (`409 LEAD_IN_OTHER_ROUTE`, com a lista); `area_id`, se vier, é da praça (senão `404 NOT_FOUND`). Ponto de partida padrão:
+  centro da área, senão o primeiro lead. `lead_ids` repetidos contam uma vez; 1–200 itens. Leads de outra praça → `400 VALIDATION_ERROR` ("lead_ids: … não pertencem à praça do consultor").
+- A equipe escolhe **leads existentes** (os candidatos da busca da F2, §22, que já viraram lead em "Adicionar N como leads"); a parada guarda `candidate_id` quando o lead veio de uma busca.
+  Montar roteiro **não cria lead**, não mexe em estágio e não dispara cadência.
+- A lista cabe até a meta e a janela; o que sobra vira `reserva` (até 10) e o restante vem em `plan.not_fit`.
+
+### 23.5 Banco
+
+Migração aditiva `field_routes`: `app_settings.field_config`; `field_routes` (`UNIQUE` parcial `field_routes_one_active_per_day (consultant_id, day) WHERE status = 'ativa'`);
+`field_route_stops` (`UNIQUE` parcial `field_route_stops_lead_day_unique (lead_id, day) WHERE status IN ('pendente','visitada','adiada')`: dois consultores nunca recebem o mesmo lugar
+no dia; FK `lead_id` `RESTRICT`; `visit_id` e `candidate_id` `SET NULL`); `field_route_events` (histórico append-only de pular/adiar/desfazer/refazer, `client_id` único).
+Os dois índices parciais vivem só no SQL — **entram no grupo de risco do §20.9, item 17**: gere a próxima migração com `--create-only` e apague os `DROP INDEX` deles.
+
+### 23.6 Variáveis de ambiente
+
+| Variável | Padrão | Observação |
+|---|---|---|
+| `FIELD_ROUTES_ENABLED` | `false` | liga todo o capítulo; o parâmetro de negócio fica em `field_config` (§23.1) |
+
+### 23.7 Offline (web do consultor)
+
+O roteiro do dia é guardado no IndexedDB do aparelho (`praca-campo`, loja `roteiro`) e mostrado sem sinal. `skip`, `defer`, `undo` e `reoptimize` entram na **fila offline**
+existente com `client_id` e `at`. "Refazer rota" sem sinal reordena **no aparelho** pelo mais próximo em linha reta (aviso na tela) **e** enfileira o `reoptimize`; a ordem local nunca é a
+autoridade — quando o servidor responde, a resposta substitui o guardado.
+
+### 23.8 Desvios propositais
+
+1. Seção §23 (e não §22) e flag `FIELD_ROUTES_ENABLED`, como na tabela de env do spec; rotas como no spec (`/route/*`), mais `defer`/`undo`, que o UX exige.
+2. `swap-reserve` do spec fica para depois: a reserva entra sozinha em `reoptimize`.
+3. Sem "obrigatórias primeiro" nem seleção por retornos/leads quentes (F5, que depende de `field_config` estendida); a seleção automática usa só os filtros do §23.1.
+4. Montar roteiro usa **leads existentes**; o spec previa promover candidato na hora (§5). A F2 já cria o lead na revisão.
+5. O horário "de Brasília" é calculado em minutos desde 00:00 a partir da hora real do pedido; um roteiro de outro dia usa `janela_inicio` como partida.
+6. `minutos_por_visita` é o padrão da configuração; a mediana real do consultor (spec §4.3) fica para a F5.
+7. Pular não reotimiza sozinho (o spec lista o pulo como gatilho): reordenar sob o dedo do consultor atrapalharia o "Desfazer"; só os ETAs são recalculados. "Refazer rota" é explícito.
