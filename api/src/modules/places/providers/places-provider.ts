@@ -11,6 +11,8 @@ export interface BuscaParams {
   signal: AbortSignal;
   /** Chamado com o total encontrado até agora (progresso da tela). */
   onProgress?: (encontrados: number) => void;
+  /** A fonte parou no próprio teto: há mais lugares na área do que veio. */
+  onParcial?: () => void;
 }
 
 /**

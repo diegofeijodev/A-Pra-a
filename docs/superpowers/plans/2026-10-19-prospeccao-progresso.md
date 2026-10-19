@@ -21,7 +21,7 @@ UX: `docs/superpowers/specs/2026-10-19-prospeccao-rotas-ux.md`
 ## Fases (marcar ao concluir)
 - [ ] F0 proposta api-freela (só documento/PR rascunho)
 - [x] F1 áreas de atuação (migração 20261019150000_field_areas; sem env; aplicar `migrate deploy` antes do código)
-- [x] F2 pesquisa automática de estabelecimentos (migração 20261019190000_place_search; contrato §22; env OVERPASS_URL, PLACES_USER_AGENT, APIFY_*; `migrate deploy` antes do código; Apify só com APIFY_ENABLED=true + APIFY_TOKEN no servidor; Overpass em Moema 500 m: 33 resultados em ~45 s, só 6 com telefone, 21 com rua; mapa e "bairro/endereço" ficam para depois)
+- [x] F2 pesquisa automática de estabelecimentos (migrações 20261019190000_place_search + 20261019200000_place_runs_reserved; contrato §22; env OVERPASS_URL, PLACES_USER_AGENT, APIFY_*; `migrate deploy` antes do código; Apify só com APIFY_ENABLED=true + APIFY_TOKEN no servidor; Overpass em Moema 500 m: 33 resultados em ~45 s, só 6 com telefone, 21 com rua; mapa e "bairro/endereço" ficam para depois)
 - [ ] F3 roteiro do dia + rota
 - [ ] F4 mapa de calor e cobertura
 - [ ] F5 metas, alertas, follow-up

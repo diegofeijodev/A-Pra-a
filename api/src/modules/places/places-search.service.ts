@@ -429,19 +429,23 @@ export class PlacesSearchService implements OnApplicationBootstrap {
     try {
       const provider = this.providers[run.source as FonteLugar];
       const limite = await this.limiteDaBusca(run);
+      let parcial = false;
       const lugares = await provider.buscar({
         centro: { lat: run.lat, lng: run.lng },
         raio_m: run.radius_m,
         types: run.types as TipoLugar[],
         limite,
         signal,
+        onParcial: () => {
+          parcial = true;
+        },
         onProgress: (n) => {
           void this.prisma.place_import_runs
             .updateMany({ where: { id: runId, status: 'running' }, data: { found: n } })
             .catch(() => undefined);
         },
       });
-      await this.concluir(run, lugares);
+      await this.concluir(run, lugares, parcial);
     } catch (e) {
       await this.falhar(run.id, e);
     }
@@ -458,22 +462,29 @@ export class PlacesSearchService implements OnApplicationBootstrap {
     if (limite === 0) {
       throw new ProviderError('O limite mensal de pesquisas pagas foi atingido. Nada foi cobrado.', 'apify teto mensal');
     }
+    // Reserva antes de chamar: cancelar ou estourar o tempo só aborta a nossa requisição, o
+    // actor segue rodando (e cobrando) no Apify. O teto mensal conta o reservado, não o devolvido.
+    await this.prisma.place_import_runs.updateMany({
+      where: { id: run.id, status: 'running' },
+      data: { reserved_places: limite },
+    });
     return limite;
   }
 
-  /** Lugares pedidos ao Apify neste mês (Brasília), somando `found` das buscas que começaram. */
+  /** Lugares reservados no Apify neste mês (Brasília), somando `reserved_places` das buscas que começaram. */
   private async apifyUsadoNoMes(exceto?: string): Promise<number> {
     const inicio = new Date(`${mesDeBrasilia(new Date())}-01T03:00:00.000Z`); // 00:00 em Brasília
     const soma = await this.prisma.place_import_runs.aggregate({
-      _sum: { found: true },
+      _sum: { reserved_places: true },
       where: { source: 'apify', ...(exceto ? { id: { not: exceto } } : {}), started_at: { gte: inicio } },
     });
-    return soma._sum.found ?? 0;
+    return soma._sum.reserved_places ?? 0;
   }
 
-  private async concluir(run: RunRow, lugares: LugarNormalizado[]): Promise<void> {
-    const { achados, truncated } = classificarAchados(lugares, { lat: run.lat, lng: run.lng }, run.radius_m);
+  private async concluir(run: RunRow, lugares: LugarNormalizado[], parcial: boolean): Promise<void> {
+    const { achados, truncated: passouDoTeto } = classificarAchados(lugares, { lat: run.lat, lng: run.lng }, run.radius_m);
 
+    const truncated = passouDoTeto || parcial;
     const leads = await this.leadsParaDedup(
       this.prisma,
       run.praca_id,
@@ -560,7 +571,7 @@ export class PlacesSearchService implements OnApplicationBootstrap {
   // ── internos ────────────────────────────────────────────────
   /**
    * Leads que podem ser a mesma coisa que os lugares: da própria praça (nome+endereço),
-   * com o mesmo telefone ou id externo (qualquer praça) ou com coordenada perto
+   * com o mesmo telefone (qualquer praça), com o mesmo id externo (qualquer praça, até arquivado) ou com coordenada perto
    * (caixa dos lugares + 100 m). A regra de decisão é `acharLeadDuplicado`.
    */
   private async leadsParaDedup(
@@ -582,12 +593,13 @@ export class PlacesSearchService implements OnApplicationBootstrap {
         };
     const rows = await db.leads.findMany({
       where: {
-        archived: false,
         OR: [
-          { praca_id: pracaId },
-          ...(telefones.length ? [{ phone_key: { in: telefones } }] : []),
+          { archived: false, praca_id: pracaId },
+          ...(telefones.length ? [{ archived: false, phone_key: { in: telefones } }] : []),
+          // Sem filtro de arquivado: o UNIQUE (source, source_ref) vale para arquivado também;
+          // lead arquivado deste ponto tem que contar, senão todo "adicionar" estoura no banco.
           { source_ref: { in: refs } },
-          { lat: { gte: caixa.latMin, lte: caixa.latMax }, lng: { gte: caixa.lngMin, lte: caixa.lngMax } },
+          { archived: false, lat: { gte: caixa.latMin, lte: caixa.latMax }, lng: { gte: caixa.lngMin, lte: caixa.lngMax } },
         ],
       },
       select: { id: true, name: true, address: true, phone: true, lat: true, lng: true, source: true, source_ref: true },

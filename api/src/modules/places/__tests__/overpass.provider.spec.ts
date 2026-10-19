@@ -40,6 +40,18 @@ describe('OverpassProvider', () => {
     expect(decodeURIComponent(String(init.body))).toContain('around:500,-23.6003,-46.665');
   });
 
+  it('resposta no teto de elementos avisa que é parcial; abaixo do teto, não', async () => {
+    const muitos = { elements: Array.from({ length: 2000 }, (_, i) => ({ type: 'node', id: i, lat: -23.6, lon: -46.66, tags: { name: `N${i}`, amenity: 'bar' } })) };
+    const a = setup([json(muitos)]);
+    const onParcial = jest.fn();
+    expect(await a.provider.buscar({ ...a.params, onParcial })).toHaveLength(2000);
+    expect(onParcial).toHaveBeenCalledTimes(1);
+    const b = setup([json(NODE)]);
+    const naoParcial = jest.fn();
+    await b.provider.buscar({ ...b.params, onParcial: naoParcial });
+    expect(naoParcial).not.toHaveBeenCalled();
+  });
+
   it('429 espera e tenta de novo; Retry-After do servidor manda (com teto de 60 s)', async () => {
     const { provider, fetch, sleep, params } = setup([json({}, 429, { 'retry-after': '7' }), json({}, 429, { 'retry-after': '999' }), json(NODE)]);
     await provider.buscar(params);

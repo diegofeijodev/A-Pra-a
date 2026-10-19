@@ -297,7 +297,7 @@ export function BuscaEstabelecimentos({ praca }: { praca: PracaView }) {
             </div>
             {run.truncated && (
               <p role="status" className="rounded-md border border-border p-2 text-sm">
-                Achamos mais de 300. Mostramos os 300 mais perto do centro. Reduza a área para ver todos.
+                Achamos mais de 300 nesta área. Mostramos 300. Reduza a área para ver todos.
               </p>
             )}
             {mensagemVazia(run) && <p className="text-sm text-muted-foreground">{mensagemVazia(run)}</p>}

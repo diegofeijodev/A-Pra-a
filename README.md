@@ -226,8 +226,8 @@ antes de "Adicionar N como leads" (origem `pesquisa automática`, com latitude/l
 - **Uma busca por vez**, resultado guardado por 7 dias, no máximo 300 lugares por busca.
 - **Apify (Google Maps) é opcional e pago**: só funciona com `APIFY_ENABLED=true` **e** `APIFY_TOKEN` no `.env` do
   servidor (o token é segredo: digite só lá, nunca em código, commit ou documento). Tetos: `APIFY_MAX_PLACES_PER_RUN`
-  (300) e `APIFY_MONTHLY_PLACES_CAP` (3000/mês, contados em `place_import_runs`).
-- Antes do deploy do código: `prisma migrate deploy` (migração `20261019190000_place_search`, aditiva).
+  (300) e `APIFY_MONTHLY_PLACES_CAP` (3000/mês, contando os lugares reservados em `place_import_runs.reserved_places`).
+- Antes do deploy do código: `prisma migrate deploy` (migrações `20261019190000_place_search` e `20261019200000_place_runs_reserved`, aditivas).
 - Overpass é instância pública compartilhada: `PLACES_USER_AGENT` identifica o Praça; trocar de instância com `OVERPASS_URL`.
 
 ## Produção

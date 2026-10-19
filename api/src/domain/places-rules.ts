@@ -19,8 +19,12 @@ export type FonteLugar = (typeof FONTES_LUGAR)[number];
 
 /** Teto de resultados por busca (UX §5.1): custo e lista não estouram. */
 export const MAX_RESULTADOS = 300;
-/** Elementos pedidos ao Overpass: folga sobre o teto, para o corte ser por distância. */
-export const MAX_ELEMENTOS_OVERPASS = 400;
+/**
+ * Elementos pedidos ao Overpass. Ele devolve na ordem dos ids, não por distância:
+ * o teto fica bem acima de `MAX_RESULTADOS` para o corte "300 mais próximos" ser sobre o conjunto
+ * inteiro. Se bater no teto, a resposta é parcial (`onParcial`) e a tela avisa.
+ */
+export const MAX_ELEMENTOS_OVERPASS = 2000;
 export const CACHE_DIAS = 7;
 /** Estimativa conservadora (US$/1.000 lugares): a listagem do actor diz "a partir de 1,50"; add-ons encarecem. */
 const APIFY_USD_POR_MIL = 7;

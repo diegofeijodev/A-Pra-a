@@ -102,7 +102,7 @@ export function idsParaAdicionar(sel: Set<string>, cands: CandidateView[]): stri
 export function textoConfirmacao(n: number, pracaNome: string): { titulo: string; corpo: string; botao: string } {
   return {
     titulo: `Adicionar ${plural(n, 'estabelecimento', 'estabelecimentos')} à praça ${pracaNome}?`,
-    corpo: `Entram como Lead novo, com a origem “pesquisa automática”. Ninguém recebe mensagem. Dá para desfazer em até 24 horas, em Entrada.`,
+    corpo: `Entram como Lead novo, com a origem “pesquisa automática”. Esta ação não envia mensagem. Mas, se houver uma cadência automática ligada para Lead novo, ela passa a valer para eles, como em qualquer importação. Dá para desfazer em até 24 horas, em Entrada.`,
     botao: `Adicionar ${plural(n, 'lead', 'leads')}`,
   };
 }

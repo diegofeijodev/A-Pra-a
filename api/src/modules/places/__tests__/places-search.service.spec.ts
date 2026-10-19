@@ -85,7 +85,7 @@ function setup(o: {
     create: jest.fn().mockImplementation(({ data }) => Promise.resolve(runRow({ ...data }))),
     updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     findUniqueOrThrow: jest.fn().mockImplementation(() => Promise.resolve(runRow({ status: 'running' }))),
-    aggregate: jest.fn().mockResolvedValue({ _sum: { found: o.usadoApify ?? 0 } }),
+    aggregate: jest.fn().mockResolvedValue({ _sum: { reserved_places: o.usadoApify ?? 0 } }),
   };
   const place_candidates = {
     findMany: jest.fn().mockResolvedValue(o.candidatos ?? []),
@@ -215,6 +215,21 @@ describe('execução em segundo plano (provedor fake)', () => {
     ]);
   });
 
+  it('Overpass parou no próprio teto (resposta parcial) => truncated mesmo com poucos achados', async () => {
+    const osm: PlacesProvider = {
+      id: 'osm', disponivel: () => true,
+      buscar: jest.fn(async (p: BuscaParams) => {
+        p.onParcial?.();
+        return [lugar()];
+      }),
+    };
+    const { service, place_import_runs } = setup({ osm });
+    await service.start(dto, ADMIN);
+    await service.aguardarFila();
+    const fim = place_import_runs.updateMany.mock.calls.find((c) => c[0].data.status === 'done')![0];
+    expect(fim.data.truncated).toBe(true);
+  });
+
   it('falha do provedor => run "error" com a mensagem para pessoa, sem candidatos', async () => {
     const osm: PlacesProvider = {
       id: 'osm', disponivel: () => true,
@@ -304,6 +319,13 @@ describe('Apify — teto mensal', () => {
     await service.start(dto, ADMIN);
     await service.aguardarFila();
     expect(f.buscar.mock.calls[0]![0].limite).toBe(100);
+    // reserva antes de chamar o actor: cancelar/estourar o tempo não "devolve" o teto
+    expect(place_import_runs.updateMany).toHaveBeenCalledWith({
+      where: { id: RUN, status: 'running' },
+      data: { reserved_places: 100 },
+    });
+    const soma = place_import_runs.aggregate.mock.calls[0]![0];
+    expect(soma._sum).toEqual({ reserved_places: true });
     const fim = place_import_runs.updateMany.mock.calls.find((c) => c[0].data.status === 'done')![0];
     expect(fim.data.est_cost_usd).toBe(0.007);
   });
@@ -351,6 +373,32 @@ describe('leitura — isolamento entre praças', () => {
     const v = await service.candidates(RUN, PRACA_A);
     expect(v[0]).toMatchObject({ status: 'duplicado', reason: 'ja_na_praca', lead_id: 'L1', lead_name: 'Bar do Chico Moema', selectable: false });
     expect(v[1]).toMatchObject({ status: 'novo', selectable: true });
+  });
+});
+
+describe('lead arquivado com o mesmo source_ref (UNIQUE vale até arquivado)', () => {
+  const arquivado = { id: 'LA', name: 'Qualquer', address: '', phone: '', lat: null, lng: null, source: 'osm', source_ref: 'node/1' };
+  const done = runRow({ status: 'done', finished_at: new Date() });
+
+  it('a consulta de duplicidade não filtra arquivado no ramo do source_ref (mas filtra nos demais)', async () => {
+    const { service, leads } = setup({ candidatos: [candRow(C1)] });
+    await service.candidates(RUN, PRACA_A);
+    const or = leads.findMany.mock.calls[0]![0].where.OR as Record<string, unknown>[];
+    const porRef = or.find((b) => 'source_ref' in b)!;
+    expect(porRef).toEqual({ source_ref: { in: ['node/1'] } });
+    expect(or.filter((b) => !('source_ref' in b)).every((b) => b.archived === false)).toBe(true);
+  });
+  it('na leitura: candidato cujo ponto já é lead (arquivado) aparece como já na praça', async () => {
+    const { service } = setup({ candidatos: [candRow(C1)], leads: [arquivado] });
+    const [v] = await service.candidates(RUN, PRACA_A);
+    expect(v).toMatchObject({ status: 'duplicado', reason: 'ja_na_praca', lead_id: 'LA', selectable: false });
+  });
+  it('ao adicionar: é pulado (nada de estourar o UNIQUE e travar o lote inteiro)', async () => {
+    const { service, imports } = setup({ run: done, candidatos: [candRow(C1), candRow(C2)], leads: [arquivado], claimCount: 1 });
+    const r = await service.addLeads(RUN, { praca_id: PRACA_A, candidate_ids: [C1, C2] }, ADMIN);
+    expect(r.created).toBe(1);
+    expect(r.skipped).toEqual([{ candidate_id: C1, reason: 'ja_na_praca' }]);
+    expect(imports.criarLeadsDeBusca.mock.calls[0]![1].itens).toHaveLength(1);
   });
 });
 

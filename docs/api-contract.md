@@ -3121,8 +3121,9 @@ Toda leitura/escrita filtra por `id` **e** `praca_id`: busca de outra praça é 
 
 - `found` cresce durante a execução (progresso: "62 encontrados até agora"); os contadores
   `novos/duplicados/descartados` só fecham quando `status = done`.
-- `truncated = true` quando passou de **300** resultados: ficam os 300 mais próximos do centro
-  e a tela pede para reduzir a área.
+- `truncated = true` quando passou de **300** resultados (ficam 300, os mais próximos do centro entre os
+  que a fonte devolveu) ou quando a fonte parou no próprio teto (Overpass: 2.000 elementos por consulta,
+  que vêm na ordem dos ids, não por distância). A tela pede para reduzir a área.
 - `expires_at` = fim do cache de 7 dias (`finished_at` + 7 d); só existe em `done`.
 - `error` é texto para pessoa (nunca URL, cabeçalho ou token).
 
@@ -3160,7 +3161,8 @@ Toda leitura/escrita filtra por `id` **e** `praca_id`: busca de outra praça é 
 ```
 
 `est_cost_usd_per_run` = estimativa conservadora (US$ 7 por 1.000 lugares) para o teto da próxima busca.
-`used_this_month` soma `found` das buscas Apify do mês de Brasília.
+`used_this_month` soma `reserved_places` das buscas Apify do mês de Brasília: ao iniciar, a busca reserva o
+seu `limite` (cancelar ou estourar o tempo só aborta a nossa requisição, o actor segue cobrando no Apify).
 
 `CandidateView`:
 
@@ -3192,6 +3194,8 @@ Toda leitura/escrita filtra por `id` **e** `praca_id`: busca de outra praça é 
   `source`+`source_ref`; mesmo telefone (9 últimos dígitos); nome+endereço iguais; ou
   `nomeParecido` a **≤ 100 m** de um lead com coordenada (mesma regra do bloco A).
   Dentro da própria busca vale `nomeParecido` ≤ 100 m (fica o primeiro por distância ao centro).
+- Lead **arquivado** com o mesmo `source`+`source_ref` também conta como duplicado (o `UNIQUE` do banco vale
+  para arquivado), os demais critérios só olham leads não arquivados.
 - Descartados: `parece_fechado` (OSM `disused:*`/`abandoned:*`/`opening_hours=off`, Apify
   `permanentlyClosed`) e `sem_nome`.
 - `location_precision`: `point` (coordenada pontual do provedor). Nunca se geocodifica por CEP/município.
@@ -3208,6 +3212,9 @@ Toda leitura/escrita filtra por `id` **e** `praca_id`: busca de outra praça é 
   `alvo`, `origem = "pesquisa automática"`, `lat/lng`, `location_precision`, `source`/`source_ref`,
   `import_batch_id`, evento de nota, dono = `owner_id` ou rodízio do time ativo. Ninguém recebe mensagem.
 - Até 300 `candidate_ids` por chamada; lista vazia ou sem nenhum `novo` → `400 VALIDATION_ERROR`/`409 NOTHING_TO_ADD`.
+- **Cadências:** a criação do lead não envia mensagem, mas o lead nasce na etapa 1 (Lead novo) e o motor de
+  cadências (`entry = stage_novo`) matricula qualquer lead novo não arquivado, sem filtro de praça ou origem — como
+  na importação por arquivo. A tela avisa isso na confirmação; mudar a regra de entrada é decisão do dono.
 - O lote aparece em `GET /v1/imports` (`file_name` = "Busca 19/10 · Moema (OSM)") e pode ser
   desfeito em 24 h como qualquer importação; o candidato mantém `lead_id` com `ON DELETE SET NULL`.
 
@@ -3221,11 +3228,11 @@ Toda leitura/escrita filtra por `id` **e** `praca_id`: busca de outra praça é 
 | `APIFY_TOKEN` | vazio | **segredo; o dono digita no servidor**, nunca em código/commit/docs |
 | `APIFY_ACTOR_ID` | `compass~crawler-google-places` | |
 | `APIFY_MAX_PLACES_PER_RUN` | `300` | teto por busca |
-| `APIFY_MONTHLY_PLACES_CAP` | `3000` | teto do mês (Brasília), somando `found` das buscas Apify |
+| `APIFY_MONTHLY_PLACES_CAP` | `3000` | teto do mês (Brasília), somando `reserved_places` das buscas Apify |
 
 ### 22.5 Banco
 
-- `place_import_runs` (busca) e `place_candidates` (achados); `leads` ganha `source`,
+- `place_import_runs` (busca; `reserved_places` = lugares reservados no Apify) e `place_candidates` (achados); `leads` ganha `source`,
   `source_ref`, `location_precision` (todas nulas nos antigos) e `UNIQUE (source, source_ref)`
   (NULLs não conflitam). Migração aditiva.
 - `place_candidates`: `UNIQUE (run_id, source, source_ref)`; FK `run_id` `CASCADE`; `lead_id`

@@ -1,4 +1,4 @@
-import { montarQueryOverpass, normalizarOverpass, type LugarNormalizado } from '../../../domain/places-rules';
+import { MAX_ELEMENTOS_OVERPASS, montarQueryOverpass, normalizarOverpass, type LugarNormalizado } from '../../../domain/places-rules';
 import {
   BuscaCancelada,
   ProviderError,
@@ -50,6 +50,8 @@ export class OverpassProvider implements PlacesProvider {
       await this.respeitarIntervalo(p.signal);
       const r = await this.requisitar(query, p.signal);
       if (r.tipo === 'ok') {
+        const elementos = (r.json as { elements?: unknown[] }).elements;
+        if (Array.isArray(elementos) && elementos.length >= MAX_ELEMENTOS_OVERPASS) p.onParcial?.();
         const lugares = normalizarOverpass(r.json);
         p.onProgress?.(lugares.length);
         return lugares;

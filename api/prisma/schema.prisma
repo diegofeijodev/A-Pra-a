@@ -724,6 +724,8 @@ model place_import_runs {
   duplicados   Int       @default(0)
   descartados  Int       @default(0)
   truncated    Boolean   @default(false)
+  // Apify: lugares reservados ao começar (teto mensal); o actor cobra mesmo se cancelarmos.
+  reserved_places Int    @default(0)
   est_cost_usd Float     @default(0)
   error        String?
   requested_by String    @db.Uuid

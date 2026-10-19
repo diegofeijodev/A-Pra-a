@@ -38,7 +38,7 @@ describe('montarQueryOverpass', () => {
     expect(q).toContain('nwr["amenity"~"^(bar|pub)$"](around:500,-23.6003,-46.665)');
     expect(q).toContain('nwr["shop"="bakery"](around:500,-23.6003,-46.665)');
     expect(q).not.toContain('restaurant');
-    expect(q).toMatch(/out tags center \d+;/);
+    expect(q).toContain('out tags center 2000;');
   });
 
   it('todos os tipos cobrem bar|pub, restaurant, fast_food, cafe e bakery', () => {

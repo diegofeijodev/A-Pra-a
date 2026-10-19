@@ -87,7 +87,8 @@ describe('textos', () => {
     expect(t.titulo).toBe('Adicionar 177 estabelecimentos à praça Moema?');
     expect(t.corpo).toContain('Lead novo');
     expect(t.corpo).toContain('pesquisa automática');
-    expect(t.corpo).toContain('Ninguém recebe mensagem');
+    expect(t.corpo).toContain('Esta ação não envia mensagem');
+    expect(t.corpo).toContain('cadência automática');
     expect(t.botao).toBe('Adicionar 177 leads');
     expect(textoConfirmacao(1, 'Moema').botao).toBe('Adicionar 1 lead');
     expect(textoConfirmacao(1, 'Moema').titulo).toBe('Adicionar 1 estabelecimento à praça Moema?');
