@@ -217,6 +217,19 @@ contrato: `docs/api-contract.md` §20.
 3. `FREELA_WEB_URL` = **URL base** do Freela web, sem `/cadastro` e sem barra no fim
    (ex.: `https://www.freelaservicos.com.br`). A API acrescenta `/cadastro?consultor=CÓDIGO`.
 
+## Pesquisa automática de estabelecimentos (F2)
+
+Menu **Buscar estabelecimentos** (`/prospeccao`, só admin): escolhe a área de atuação (Configurações) e os tipos;
+a API consulta o OpenStreetMap (Overpass, grátis, sem chave), guarda os achados como candidatos e a pessoa revisa
+antes de "Adicionar N como leads" (origem `pesquisa automática`, com latitude/longitude). Contrato: `docs/api-contract.md` §22.
+
+- **Uma busca por vez**, resultado guardado por 7 dias, no máximo 300 lugares por busca.
+- **Apify (Google Maps) é opcional e pago**: só funciona com `APIFY_ENABLED=true` **e** `APIFY_TOKEN` no `.env` do
+  servidor (o token é segredo: digite só lá, nunca em código, commit ou documento). Tetos: `APIFY_MAX_PLACES_PER_RUN`
+  (300) e `APIFY_MONTHLY_PLACES_CAP` (3000/mês, contados em `place_import_runs`).
+- Antes do deploy do código: `prisma migrate deploy` (migração `20261019190000_place_search`, aditiva).
+- Overpass é instância pública compartilhada: `PLACES_USER_AGENT` identifica o Praça; trocar de instância com `OVERPASS_URL`.
+
 ## Produção
 
 Todo o resto das variáveis do `api/.env` está em

@@ -98,7 +98,7 @@ npm run prisma:migrate:dev | prisma:generate | prisma:studio
 
 # web/
 yarn dev | typecheck | lint        # `build` só se o dono pedir (ver abaixo)
-yarn test                          # vitest run (fork único) — 8 arquivos, 91 testes
+yarn test                          # vitest run (fork único) — 10 arquivos, 115 testes
 yarn browser-check                 # scripts/browser-check.mjs — 145 checagens
                                    # precisa da API na 3014 (start:smoke) e do web na 3024 (yarn dev)
                                    # conta: PRACA_CHECK_EMAIL/PASSWORD (padrão = seed), login pelo formulário

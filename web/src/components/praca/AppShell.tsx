@@ -22,17 +22,19 @@ const I = {
   calendario: "M8 2v3M16 2v3M3 9h18M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2zM8 14h3v3H8z",
   indicadores: "M4 20V10M10 20V4M16 20v-7M22 20H2",
   config: "M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33h0a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51h0a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v0a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z",
+  busca: "M21 21l-4.3-4.3M11 18a7 7 0 100-14 7 7 0 000 14z",
   freela: "M6 7V3M10 7V3M4 7h8v3a4 4 0 01-8 0V7zM8 14v7",
 };
 
 // Mesma ordem do protótipo (`components/praca/Layout.tsx`). Duas diferenças:
 // "Ações" aponta para `/hoje` (no protótipo era a raiz `/`, que aqui só
 // redireciona) e "Freela" é o item novo da ponte com o api-freela.
-const NAV: { to: string; label: string; icon: string }[] = [
+const NAV: { to: string; label: string; icon: string; admin?: boolean }[] = [
   { to: "/praca", label: "Praça", icon: I.praca },
   { to: "/funil", label: "Funil", icon: I.funil },
   { to: "/consultores", label: "Consultores", icon: I.consultores },
   { to: "/entrada", label: "Entrada", icon: I.entrada },
+  { to: "/prospeccao", label: "Buscar estabelecimentos", icon: I.busca, admin: true },
   { to: "/mensagens", label: "Mensagens", icon: I.mensagens },
   { to: "/campanhas", label: "Campanhas", icon: I.campanhas },
   { to: "/calendario", label: "Calendário", icon: I.calendario },
@@ -110,7 +112,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </Link>
       </div>
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-2">
-        {NAV.map((n) => {
+        {NAV.filter((n) => !n.admin || user?.is_admin).map((n) => {
           const active = path === n.to;
           return (
             <Link
