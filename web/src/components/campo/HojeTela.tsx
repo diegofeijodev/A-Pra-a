@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { AvisoGps } from '@/components/campo/AvisoGps';
 import { CampoTopo } from '@/components/campo/CampoTopo';
 import { FaixaFila } from '@/components/campo/FaixaFila';
+import { RoteiroCard } from '@/components/campo/RoteiroCard';
 import { Button } from '@/components/ui/button';
 import { useCampoSession } from '@/modules/campo/application/campo-session.store';
 import { useDia } from '@/modules/campo/application/use-campo';
@@ -15,6 +16,8 @@ import { duracaoMin, hora } from '@/modules/campo/domain/formatos';
 import type { MotivoGps } from '@/modules/campo/domain/gps-mensagens';
 import { ErroGps, lerPosicao } from '@/modules/campo/infrastructure/gps';
 import { irPara } from '@/modules/campo/application/use-tela';
+import { useRoteiro } from '@/modules/rotas/application/use-roteiro';
+import { proximaParada } from '@/modules/rotas/domain/rota-local';
 
 /** Visão `hoje` de `/campo`:  do consultor (spec §8.1): iniciar/encerrar, visitas do dia, contadores, QR a um toque. */
 export function HojeTela() {
@@ -47,6 +50,8 @@ export function HojeTela() {
   };
 
   const aberta = dia.visitaAberta;
+  const rot = useRoteiro();
+  const proxima = rot.habilitado && rot.route ? proximaParada(rot.route.stops) : null;
 
   return (
     <main className="space-y-5">
@@ -67,6 +72,8 @@ export function HojeTela() {
         </section>
       ) : (
         <>
+          {rot.habilitado && <RoteiroCard />}
+
           <section className="grid grid-cols-2 gap-3">
             <div className="card-surface p-4">
               <p className="text-3xl font-black">{dia.contadores.visitas}</p>
@@ -86,6 +93,23 @@ export function HojeTela() {
             >
               Continuar visita: {aberta.nome}
             </button>
+          ) : proxima ? (
+            <>
+              <button
+                type="button"
+                onClick={() => irPara({ v: 'nova', parada: proxima.id })}
+                className="flex h-14 items-center justify-center rounded-md bg-primary text-base font-bold text-primary-foreground"
+              >
+                Cheguei: fazer check-in
+              </button>
+              <button
+                type="button"
+                onClick={() => irPara({ v: 'nova' })}
+                className="flex h-12 items-center justify-center rounded-md border border-border text-sm font-bold"
+              >
+                Visita fora do roteiro
+              </button>
+            </>
           ) : (
             <button
               type="button"

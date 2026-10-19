@@ -75,3 +75,17 @@ describe('montarDia — o dia como o consultor vê, com a fila por cima', () => 
     expect(dia.visitaAberta).toMatchObject({ ref: 'v1', checkout_at: null, pendente: true });
   });
 });
+
+describe('montarDia — ações de roteiro na fila não mexem no dia', () => {
+  it('pular/adiar/desfazer/refazer não criam visita nem mudam a jornada', () => {
+    const info = { consultant_id: 'c', tentativas: 0, proxima_em: 0, criado_em: 0 };
+    const dia = montarDia(null, [
+      { ...info, seq: 1, kind: 'stop_skip', stop_id: 's', payload: { client_id: 'a', reason: 'fechado', at: '2026-10-08T15:00:00.000Z' } },
+      { ...info, seq: 2, kind: 'stop_defer', stop_id: 's', payload: { client_id: 'b', at: '2026-10-08T15:00:00.000Z' } },
+      { ...info, seq: 3, kind: 'stop_undo', stop_id: 's', payload: { client_id: 'c', at: '2026-10-08T15:00:00.000Z' } },
+      { ...info, seq: 4, kind: 'route_reoptimize', payload: { client_id: 'd', at: '2026-10-08T15:00:00.000Z', lat: 0, lng: 0, accuracy: 5 } },
+    ]);
+    expect(dia.jornada).toBeNull();
+    expect(dia.visitas).toEqual([]);
+  });
+});

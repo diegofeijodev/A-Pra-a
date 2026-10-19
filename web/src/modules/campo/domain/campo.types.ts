@@ -1,4 +1,6 @@
-/** Wire do consultor de campo — contrato §20 (`docs/api-contract.md`). */
+/** Wire do consultor de campo — contrato §20 (`docs/api-contract.md`); roteiro: §23. */
+import type { MotivoPulo } from '@/modules/rotas/domain/rota.schema';
+
 
 export interface CampoConsultantMe {
   id: string;
@@ -137,7 +139,12 @@ export type AcaoFila =
   | { kind: 'checkin'; payload: CheckinPayload; foto: Blob }
   | { kind: 'answers'; visit_ref: string; payload: VisitAnswers }
   | { kind: 'checkout'; visit_ref: string; payload: Posicao }
-  | { kind: 'end'; payload: Posicao };
+  | { kind: 'end'; payload: Posicao }
+  // Roteiro do dia (contrato §23.3): idempotentes por `client_id`, com a hora real em `at`.
+  | { kind: 'stop_skip'; stop_id: string; payload: { client_id: string; reason: MotivoPulo; note?: string; at: string } }
+  | { kind: 'stop_defer'; stop_id: string; payload: { client_id: string; at: string } }
+  | { kind: 'stop_undo'; stop_id: string; payload: { client_id: string; at: string } }
+  | { kind: 'route_reoptimize'; payload: { client_id: string } & Posicao };
 
 export type ItemFila = AcaoFila & {
   /** Chave do IndexedDB (autoincremento) — é a ordem de envio. */

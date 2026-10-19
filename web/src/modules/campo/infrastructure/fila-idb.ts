@@ -3,11 +3,14 @@
  * `seq` é autoincremento: é ela que dá a ordem de envio. O arquivo da foto do
  * check-in vai junto, como Blob.
  */
+import type { RouteView } from '@/modules/rotas/domain/rota.schema';
 import type { ItemFila } from '../domain/campo.types';
 
 const BANCO = 'praca-campo';
 const LOJA = 'fila';
-const VERSAO = 1;
+/** Roteiro do dia guardado no aparelho (contrato §23.7). Versão 2 do banco: só ACRESCENTA esta loja. */
+const LOJA_ROTEIRO = 'roteiro';
+const VERSAO = 2;
 
 let aberto: Promise<IDBDatabase> | null = null;
 
@@ -18,6 +21,9 @@ function abrir(): Promise<IDBDatabase> {
       req.onupgradeneeded = () => {
         if (!req.result.objectStoreNames.contains(LOJA)) {
           req.result.createObjectStore(LOJA, { keyPath: 'seq', autoIncrement: true });
+        }
+        if (!req.result.objectStoreNames.contains(LOJA_ROTEIRO)) {
+          req.result.createObjectStore(LOJA_ROTEIRO, { keyPath: 'chave' });
         }
       };
       req.onsuccess = () => {
@@ -42,14 +48,14 @@ function abrir(): Promise<IDBDatabase> {
   return aberto;
 }
 
-async function loja(modo: IDBTransactionMode): Promise<{ s: IDBObjectStore; fim: Promise<void> }> {
+async function loja(modo: IDBTransactionMode, nome = LOJA): Promise<{ s: IDBObjectStore; fim: Promise<void> }> {
   let tx: IDBTransaction;
   try {
-    tx = (await abrir()).transaction(LOJA, modo);
+    tx = (await abrir()).transaction(nome, modo);
   } catch {
     // Conexão morta (iOS ao voltar do segundo plano): reabre uma vez.
     aberto = null;
-    tx = (await abrir()).transaction(LOJA, modo);
+    tx = (await abrir()).transaction(nome, modo);
   }
   const fim = new Promise<void>((resolve, reject) => {
     tx.oncomplete = () => resolve();
@@ -57,7 +63,7 @@ async function loja(modo: IDBTransactionMode): Promise<{ s: IDBObjectStore; fim:
     tx.onabort = () => reject(tx.error);
   });
   fim.catch(() => undefined);
-  return { s: tx.objectStore(LOJA), fim };
+  return { s: tx.objectStore(nome), fim };
 }
 
 function pedido<T>(r: IDBRequest<T>): Promise<T> {
@@ -68,8 +74,8 @@ function pedido<T>(r: IDBRequest<T>): Promise<T> {
 }
 
 /** Escrita só vale quando a TRANSAÇÃO fecha (`oncomplete`), não quando o pedido responde. */
-async function escrever<T>(acao: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  const { s, fim } = await loja('readwrite');
+async function escrever<T>(acao: (s: IDBObjectStore) => IDBRequest<T>, nome = LOJA): Promise<T> {
+  const { s, fim } = await loja('readwrite', nome);
   const r = await pedido(acao(s));
   await fim;
   return r;
@@ -128,4 +134,22 @@ export async function reposicionar(
     g.onerror = () => reject(g.error);
   });
   await fim;
+}
+
+/** Roteiro de um consultor num dia: chave `consultor:YYYY-MM-DD`. */
+export interface RoteiroGuardado {
+  chave: string;
+  route: RouteView;
+  guardado_em: number;
+}
+
+export const chaveDoRoteiro = (consultantId: string, day: string): string => `${consultantId}:${day}`;
+
+export async function guardarRoteiro(g: RoteiroGuardado): Promise<void> {
+  await escrever((s) => s.put(g), LOJA_ROTEIRO);
+}
+
+export async function lerRoteiro(chave: string): Promise<RoteiroGuardado | null> {
+  const { s } = await loja('readonly', LOJA_ROTEIRO);
+  return ((await pedido(s.get(chave) as IDBRequest<RoteiroGuardado | undefined>)) ?? null) as RoteiroGuardado | null;
 }

@@ -8,7 +8,8 @@ import { CampoTopo } from '@/components/campo/CampoTopo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { irPara } from '@/modules/campo/application/use-tela';
+import { irPara, useTela } from '@/modules/campo/application/use-tela';
+import { useRoteiro } from '@/modules/rotas/application/use-roteiro';
 import { useCampoSession } from '@/modules/campo/application/campo-session.store';
 import { useDia } from '@/modules/campo/application/use-campo';
 import { enfileirar } from '@/modules/campo/application/use-fila';
@@ -37,6 +38,8 @@ export function NovaVisitaTela() {
   const online = useOnline();
   const consultantId = useCampoSession((s) => s.session?.consultant.id ?? '');
   const { dia, carregando } = useDia();
+  const tela = useTela();
+  const rot = useRoteiro();
   const [modo, setModo] = useState<Modo>('perto');
   const [lugares, setLugares] = useState<PlaceView[] | null>(null);
   const [busca, setBusca] = useState('');
@@ -48,6 +51,13 @@ export function NovaVisitaTela() {
   const [previa, setPrevia] = useState<string | null>(null);
   const [gps, setGps] = useState<MotivoGps | null>(null);
   const [ocupado, setOcupado] = useState(false);
+
+  // "Cheguei: fazer check-in" vindo do roteiro: o estabelecimento já vem escolhido (UX §4.5).
+  const paradaId = tela.v === 'nova' ? tela.parada : undefined;
+  const paradaDoRoteiro = paradaId ? rot.route?.stops.find((s) => s.id === paradaId) : undefined;
+  useEffect(() => {
+    if (paradaDoRoteiro) setEscolhido((atual) => atual ?? { nome: paradaDoRoteiro.name, lead_id: paradaDoRoteiro.lead_id });
+  }, [paradaDoRoteiro]);
 
   // Com visita aberta, não começa outra (uma por vez — spec §7).
   useEffect(() => {

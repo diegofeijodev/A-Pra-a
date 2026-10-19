@@ -9,6 +9,7 @@ import type {
   VisitAnswers,
   VisitView,
 } from '../domain/campo.types';
+import type { HojeRotaView, MotivoPulo, RouteView } from '@/modules/rotas/domain/rota.schema';
 import { campoApi } from './campo-http';
 
 export async function campoLogin(email: string, password: string): Promise<CampoLoginResponse> {
@@ -96,4 +97,38 @@ export async function campoCheckout(ref: string, p: Posicao): Promise<VisitView>
 export async function campoFotoVisita(ref: string): Promise<Blob> {
   const { data } = await campoApi.get(`/v1/campo/visits/${encodeURIComponent(ref)}/photo`, { responseType: 'blob' });
   return data as Blob;
+}
+
+// ── roteiro do dia (contrato §23.3) ─────────────────────────
+export async function campoRotaHoje(): Promise<HojeRotaView> {
+  const { data } = await campoApi.get('/v1/campo/route/today');
+  return data as HojeRotaView;
+}
+
+export async function campoGerarRota(p: { client_id: string; lat: number; lng: number }): Promise<RouteView> {
+  const { data } = await campoApi.post('/v1/campo/route/generate', p);
+  return data as RouteView;
+}
+
+export async function campoRefazerRota(p: { client_id: string } & Posicao): Promise<RouteView> {
+  const { data } = await campoApi.post('/v1/campo/route/reoptimize', { client_id: p.client_id, at: p.at, lat: p.lat, lng: p.lng });
+  return data as RouteView;
+}
+
+export async function campoPularParada(
+  stopId: string,
+  p: { client_id: string; reason: MotivoPulo; note?: string; at: string },
+): Promise<RouteView> {
+  const { data } = await campoApi.post(`/v1/campo/route/stops/${stopId}/skip`, p);
+  return data as RouteView;
+}
+
+export async function campoAdiarParada(stopId: string, p: { client_id: string; at: string }): Promise<RouteView> {
+  const { data } = await campoApi.post(`/v1/campo/route/stops/${stopId}/defer`, p);
+  return data as RouteView;
+}
+
+export async function campoDesfazerParada(stopId: string, p: { client_id: string; at: string }): Promise<RouteView> {
+  const { data } = await campoApi.post(`/v1/campo/route/stops/${stopId}/undo`, p);
+  return data as RouteView;
 }

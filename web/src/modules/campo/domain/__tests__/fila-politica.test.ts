@@ -222,3 +222,21 @@ describe('guia para quem encerra com envios guardados', () => {
     expect(AVISO_ENVIOS_GUARDADOS).toMatch(/Praça Campo aberto/);
   });
 });
+
+describe('itens de roteiro na fila (contrato §23)', () => {
+  const skip: ItemFila = { ...base, seq: 1, kind: 'stop_skip', stop_id: 's1', payload: { client_id: 'k1', reason: 'fechado', at: '2026-10-07T15:00:00.000Z' } };
+  const reopt: ItemFila = { ...base, seq: 2, kind: 'route_reoptimize', payload: { client_id: 'k2', ...POS, at: '2026-10-08T15:00:00.000Z' } };
+
+  it('a hora real do item (payload.at) decide se é de dia anterior', () => {
+    expect(itensDeDiaAnterior([skip, reopt], '2026-10-08').map((i) => i.seq)).toEqual([1]);
+  });
+  it('não são rascunho nem dependem do check-in: descartar leva só o próprio item', () => {
+    expect(seqsParaDescartar([skip, reopt], skip)).toEqual([1]);
+    expect(substituidos([skip], { kind: 'stop_skip', stop_id: 's1', payload: skip.kind === 'stop_skip' ? skip.payload : (undefined as never) })).toEqual([]);
+  });
+  it('404/409 do servidor (parada que mudou) é recusa definitiva, não repete', () => {
+    expect(classificar(409)).toBe('regra');
+    expect(classificar(404)).toBe('regra');
+    expect(classificar(undefined)).toBe('rede');
+  });
+});

@@ -22,7 +22,7 @@ describe('RotasCampoService — flag', () => {
   it('desligada: today responde enabled=false sem consultar o banco; o resto é 404 ROUTES_DISABLED', async () => {
     const p = fakePrisma();
     const s = montar(p, false);
-    expect(await s.today(A, AGORA)).toEqual({ enabled: false, route: null });
+    expect(await s.today(A, AGORA)).toEqual({ enabled: false, route: null, can_generate: false });
     expect(p.field_routes.findFirst).not.toHaveBeenCalled();
     for (const f of [
       () => s.generate(A, { client_id: CLI(1), lat: -23.6, lng: -46.66 }, AGORA),
@@ -61,7 +61,9 @@ describe('RotasCampoService.today', () => {
   it('sem roteiro: route nulo; paradas descartadas nunca aparecem para o consultor', async () => {
     const p = fakePrisma();
     p.field_routes.findFirst.mockResolvedValue(null);
-    expect((await montar(p).today(A, AGORA)).route).toBeNull();
+    const sem = await montar(p).today(A, AGORA);
+    expect(sem).toEqual({ enabled: true, route: null, can_generate: false });
+    expect((await montar(p, true, { ...CONFIG_ROTA_PADRAO, consultor_pode_gerar: true }).today(A, AGORA)).can_generate).toBe(true);
     p.field_routes.findFirst.mockResolvedValue(rotaRow({ stops: [stopRow(1), stopRow(2, { status: 'descartada' })] }));
     expect((await montar(p).today(A, AGORA)).route!.stops).toHaveLength(1);
   });

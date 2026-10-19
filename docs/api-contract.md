@@ -3337,7 +3337,7 @@ Roteiro, parada ou id de outro consultor → `404 NOT_FOUND` (nunca `403`).
 
 | Método | Rota | Corpo | Resposta |
 |---|---|---|---|
-| GET | `/v1/campo/route/today` | — | `200 { enabled, route: RouteView \| null }` |
+| GET | `/v1/campo/route/today` | — | `200 { enabled, route: RouteView \| null, can_generate }` — `can_generate` = sem roteiro hoje e a equipe liberou o botão "Montar meu dia" (`consultor_pode_gerar`) |
 | POST | `/v1/campo/route/generate` | `{client_id, lat, lng}` | `200 RouteView`. Se já existe roteiro ativo hoje, devolve ele (idempotente). Sem ele: exige `consultor_pode_gerar` (senão `403 ROUTE_GENERATE_NOT_ALLOWED`); sem leads elegíveis → `422 ROUTE_NO_CANDIDATES` |
 | POST | `/v1/campo/route/reoptimize` | `{client_id, lat, lng, at?}` | `200 RouteView`. Mantém as visitadas, refaz a ordem das pendentes (e traz reservas / adiadas da tarde) a partir da posição e da hora; sobe `version`. Sem roteiro hoje → `404 ROUTE_NOT_FOUND` |
 | POST | `/v1/campo/route/stops/:id/skip` | `{client_id, reason, note?, at?}` | `200 RouteView`. `pendente`/`adiada` → `pulada`. Não troca a ordem; só recalcula os ETAs |

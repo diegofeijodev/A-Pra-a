@@ -4,7 +4,11 @@ import {
   campoCheckout,
   campoEncerrarJornada,
   campoEnviarPontos,
+  campoAdiarParada,
+  campoDesfazerParada,
   campoIniciarJornada,
+  campoPularParada,
+  campoRefazerRota,
   campoSalvarRespostas,
 } from './campo.api';
 
@@ -28,6 +32,18 @@ export async function enviarItem(item: ItemFila): Promise<void> {
       return;
     case 'end':
       await campoEncerrarJornada(item.payload);
+      return;
+    case 'stop_skip':
+      await campoPularParada(item.stop_id, item.payload);
+      return;
+    case 'stop_defer':
+      await campoAdiarParada(item.stop_id, item.payload);
+      return;
+    case 'stop_undo':
+      await campoDesfazerParada(item.stop_id, item.payload);
+      return;
+    case 'route_reoptimize':
+      await campoRefazerRota(item.payload);
       return;
   }
 }

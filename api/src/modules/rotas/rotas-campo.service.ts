@@ -25,6 +25,8 @@ import { ROTAS_LIGADAS } from './rotas.tokens';
 export interface HojeRotaView {
   enabled: boolean;
   route: RouteView | null;
+  /** Sem roteiro hoje: a equipe liberou o botão "Montar meu dia"? */
+  can_generate: boolean;
 }
 
 const desligado = () => new NotFoundException({ code: 'ROUTES_DISABLED', message: 'O roteiro do dia não está habilitado.' });
@@ -56,9 +58,10 @@ export class RotasCampoService {
 
   // ── leitura ─────────────────────────────────────────────────
   async today(c: CampoConsultant, agora = new Date()): Promise<HojeRotaView> {
-    if (!this.ligado) return { enabled: false, route: null };
+    if (!this.ligado) return { enabled: false, route: null, can_generate: false };
     const route = await this.ativaDeHoje(c.id, agora);
-    return { enabled: true, route: route ? routeView(route, agora) : null };
+    if (route) return { enabled: true, route: routeView(route, agora), can_generate: false };
+    return { enabled: true, route: null, can_generate: (await this.configs.config()).consultor_pode_gerar };
   }
 
   private ativaDeHoje(consultantId: string, agora: Date) {

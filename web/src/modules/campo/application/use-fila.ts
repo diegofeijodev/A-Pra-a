@@ -123,7 +123,13 @@ export function useFilaRunner(consultantId: string | null): void {
   const queryClient = useQueryClient();
   useEffect(() => {
     if (!consultantId) return;
-    aoEnviar = () => queryClient.refetchQueries({ queryKey: ['campo', 'today'] });
+    aoEnviar = async () => {
+      // O roteiro entra no mesmo respiro: a resposta do servidor substitui a ordem local.
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: ['campo', 'today'] }),
+        queryClient.refetchQueries({ queryKey: ['campo', 'route'] }),
+      ]);
+    };
     void recarregar();
     void drenar();
     // Voltou o sinal: zera a espera crescente e tenta já (spec §9).

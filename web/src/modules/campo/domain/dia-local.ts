@@ -79,6 +79,10 @@ export function montarDia(today: TodayView | null, fila: ItemFila[]): DiaLocal {
         break;
       }
       case 'points':
+      case 'stop_skip':
+      case 'stop_defer':
+      case 'stop_undo':
+      case 'route_reoptimize':
         break;
     }
   }
