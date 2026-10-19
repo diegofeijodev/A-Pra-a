@@ -26,6 +26,7 @@ model users {
   dismissed_notifs user_dismissed_notifs[]
   field_consultants_created field_consultants[]
   field_areas_created       field_areas[]
+  place_runs_requested      place_import_runs[]
 }
 
 model user_dismissed_notifs {
@@ -59,6 +60,7 @@ model pracas {
   campanhas   campanhas[]
   field_consultants field_consultants[]
   field_areas       field_areas[]
+  place_import_runs place_import_runs[]
 }
 
 model praca_step_states {
@@ -204,8 +206,15 @@ model leads {
   // preenche em massa; a visita de campo grava a do check-in no lead novo.
   lat             Float?
   lng             Float?
+  // Origem técnica do lead criado pela pesquisa automática (F2): `source` = fonte
+  // ('osm' | 'apify'), `source_ref` = id externo, `location_precision` = 'point'.
+  // Nulos nos leads antigos; NULLs não conflitam no UNIQUE abaixo.
+  source             String?
+  source_ref         String?
+  location_precision String?
   created_at      DateTime  @default(now())
   praca           pracas?   @relation(fields: [praca_id], references: [id], onDelete: SetNull)
+  place_candidates place_candidates[]
 
   events      lead_events[]
   vagas       lead_vagas[]
@@ -214,6 +223,7 @@ model leads {
   field_visits field_visits[]
 
   @@index([praca_id, lat, lng])
+  @@unique([source, source_ref])
   @@index([praca_id, stage])
   @@index([phone_key])
   @@index([import_batch_id])
@@ -693,4 +703,68 @@ model field_areas {
 
   @@unique([praca_id, name_key])
   @@index([praca_id, active])
+}
+
+// F2 da prospecção (contrato §22): uma pesquisa de estabelecimentos numa área.
+// `cache_key` = hash da geometria + tipos + fonte; reaproveitada por 7 dias.
+model place_import_runs {
+  id           String    @id @default(uuid()) @db.Uuid
+  praca_id     String    @db.Uuid
+  area_id      String    @db.Uuid
+  area_name    String
+  source       String
+  types        String[]
+  lat          Float
+  lng          Float
+  radius_m     Int
+  cache_key    String
+  status       String    @default("queued") // queued | running | done | error | cancelled
+  found        Int       @default(0)
+  novos        Int       @default(0)
+  duplicados   Int       @default(0)
+  descartados  Int       @default(0)
+  truncated    Boolean   @default(false)
+  est_cost_usd Float     @default(0)
+  error        String?
+  requested_by String    @db.Uuid
+  created_at   DateTime  @default(now())
+  started_at   DateTime?
+  finished_at  DateTime?
+
+  praca      pracas             @relation(fields: [praca_id], references: [id], onDelete: Cascade)
+  requester  users              @relation(fields: [requested_by], references: [id], onDelete: Restrict)
+  candidates place_candidates[]
+
+  @@index([praca_id, created_at(sort: Desc)])
+  @@index([cache_key, status, finished_at])
+  @@index([source, status, finished_at])
+}
+
+// Achado de uma pesquisa, antes de virar lead. `status`: novo | duplicado |
+// descartado | adicionado. O mesmo ponto do OSM aparece em buscas diferentes,
+// por isso a unicidade é por busca.
+model place_candidates {
+  id                 String   @id @default(uuid()) @db.Uuid
+  run_id             String   @db.Uuid
+  source             String
+  source_ref         String
+  name               String
+  category           String
+  address            String   @default("")
+  lat                Float
+  lng                Float
+  location_precision String   @default("point")
+  phone              String   @default("")
+  website            String?
+  distance_m         Int
+  status             String   @default("novo")
+  reason             String?
+  lead_id            String?  @db.Uuid
+  created_at         DateTime @default(now())
+
+  run  place_import_runs @relation(fields: [run_id], references: [id], onDelete: Cascade)
+  lead leads?            @relation(fields: [lead_id], references: [id], onDelete: SetNull)
+
+  @@unique([run_id, source, source_ref])
+  @@index([run_id, status])
 }

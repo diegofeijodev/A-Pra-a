@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+/** Vazio conta como ausente: o compose declara `VAR: ${VAR:-}` e o padrão sai do zod. */
+const vazioComoAusente = (v: unknown) => (v === '' ? undefined : v);
+
 const envBase = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(3014),
@@ -40,6 +43,20 @@ const envBase = z.object({
   // Vazias = cadeia padrão do SDK (papel da instância). Chave dedicada: só este bucket.
   AWS_ACCESS_KEY_ID: z.string().default(''),
   AWS_SECRET_ACCESS_KEY: z.string().default(''),
+
+  // Pesquisa automática de estabelecimentos (F2, contrato §22). OSM/Overpass não
+  // usa chave. Apify fica inerte sem `APIFY_ENABLED=true` E `APIFY_TOKEN`; o token
+  // é segredo — o dono digita no servidor, nunca vai a código, commit ou doc.
+  OVERPASS_URL: z.preprocess(vazioComoAusente, z.string().url().default('https://overpass-api.de/api/interpreter')),
+  PLACES_USER_AGENT: z.preprocess(
+    vazioComoAusente,
+    z.string().min(8).default('praca-freela/1.0 (contato: tecnologia@freelaservicos.com.br)'),
+  ),
+  APIFY_ENABLED: z.string().default('false'),
+  APIFY_TOKEN: z.string().default(''),
+  APIFY_ACTOR_ID: z.preprocess(vazioComoAusente, z.string().min(3).default('compass~crawler-google-places')),
+  APIFY_MAX_PLACES_PER_RUN: z.preprocess(vazioComoAusente, z.coerce.number().int().min(1).max(1000).default(300)),
+  APIFY_MONTHLY_PLACES_CAP: z.preprocess(vazioComoAusente, z.coerce.number().int().min(0).default(3000)),
 
   SWAGGER_ENABLED: z.string().optional(),
 

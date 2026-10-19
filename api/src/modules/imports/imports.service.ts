@@ -239,6 +239,94 @@ export class ImportsService {
     return { batch_id: batchId, imported: criados.length, updated: patches.length, ignored, reasons };
   }
 
+  /**
+   * Leads vindos da pesquisa automática de estabelecimentos (contrato §22). Mesmo
+   * caminho da importação por arquivo — lote em `import_batches` (aparece em
+   * Entrada e dá para desfazer em 24 h), etapa 1, dono pelo rodízio, evento de
+   * nota — mas com coordenada, fonte e id externo, e SEM exigir telefone.
+   *
+   * Roda dentro da transação de quem chama (o chamador reserva os candidatos e
+   * cria os leads de uma vez só). A deduplicação é de quem chama.
+   */
+  async criarLeadsDeBusca(
+    tx: Prisma.TransactionClient,
+    input: {
+      praca_id: string;
+      file_name: string;
+      origem: string;
+      owner_id?: string;
+      itens: {
+        name: string;
+        address: string;
+        phone: string;
+        site: string | null;
+        lat: number;
+        lng: number;
+        location_precision: string;
+        source: string;
+        source_ref: string;
+      }[];
+    },
+    user: AuthUser,
+  ): Promise<{ batch_id: string; leads: { source_ref: string; lead_id: string }[] }> {
+    const praca = await tx.pracas.findUnique({ where: { id: input.praca_id }, select: { city: true } });
+    if (!praca) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Praça não encontrada.' });
+    const pool = await this.poolDeDonos(
+      input.owner_id ? { owner_mode: 'lote', lote_owner_id: input.owner_id } : { owner_mode: 'rodizio' },
+      tx,
+    );
+
+    const at = new Date();
+    const hoje = todaySp();
+    const batchId = randomUUID();
+    const leads = input.itens.map((it, i) => ({
+      id: randomUUID(),
+      praca_id: input.praca_id,
+      name: it.name,
+      city: praca.city,
+      address: it.address,
+      phone: it.phone,
+      phone_key: phoneKey(it.phone),
+      site: it.site,
+      lat: it.lat,
+      lng: it.lng,
+      location_precision: it.location_precision,
+      source: it.source,
+      source_ref: it.source_ref,
+      classe: 'alvo',
+      origem: input.origem,
+      owner_id: pool[i % pool.length]!,
+      stage: 1,
+      entered_at: hoje,
+      stage_since: hoje,
+      import_batch_id: batchId,
+    }));
+
+    await tx.import_batches.create({
+      data: {
+        id: batchId,
+        at,
+        file_name: input.file_name,
+        by: user.id,
+        origem: input.origem,
+        imported: leads.length,
+        ignored: 0,
+        reasons: [],
+      },
+    });
+    await tx.leads.createMany({ data: leads });
+    await tx.lead_events.createMany({
+      data: leads.map((l) => ({
+        lead_id: l.id,
+        at,
+        author_id: user.id,
+        kind: 'note',
+        text: `Lead criado por ${input.origem} · ${input.file_name}.`,
+      })),
+    });
+    return { batch_id: batchId, leads: leads.map((l, i) => ({ source_ref: input.itens[i]!.source_ref, lead_id: l.id })) };
+  }
+
   // ── lotes ───────────────────────────────────────────────────
   async listBatches(): Promise<ImportBatchView[]> {
     const rows = await this.prisma.import_batches.findMany({ orderBy: { at: 'desc' } });
@@ -460,7 +548,10 @@ export class ImportsService {
   }
 
   /** Donos dos leads criados: uma pessoa só, ou o rodízio (padrão = time ativo). */
-  private async poolDeDonos(dto: RunImportDto, db: Db): Promise<string[]> {
+  private async poolDeDonos(
+    dto: Pick<RunImportDto, 'owner_mode' | 'lote_owner_id' | 'rodizio_ids'>,
+    db: Db,
+  ): Promise<string[]> {
     if (dto.owner_mode === 'lote') {
       await this.assertPessoas([dto.lote_owner_id!], db);
       return [dto.lote_owner_id!];

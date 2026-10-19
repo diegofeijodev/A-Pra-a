@@ -54,6 +54,15 @@ services:
       S3_REGION: ${S3_REGION:-}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      # Pesquisa automática de estabelecimentos (contrato §22). Overpass não usa chave.
+      # Apify só funciona com APIFY_ENABLED=true E APIFY_TOKEN (segredo do dono, no servidor).
+      OVERPASS_URL: ${OVERPASS_URL:-}
+      PLACES_USER_AGENT: ${PLACES_USER_AGENT:-}
+      APIFY_ENABLED: ${APIFY_ENABLED:-false}
+      APIFY_TOKEN: ${APIFY_TOKEN:-}
+      APIFY_ACTOR_ID: ${APIFY_ACTOR_ID:-}
+      APIFY_MAX_PLACES_PER_RUN: ${APIFY_MAX_PLACES_PER_RUN:-300}
+      APIFY_MONTHLY_PLACES_CAP: ${APIFY_MONTHLY_PLACES_CAP:-3000}
     ports:
       - '3014:3014'
 
