@@ -221,6 +221,7 @@ model leads {
   sends       msg_sends[]
   enrollments enrollments[]
   field_visits field_visits[]
+  route_stops  field_route_stops[]
 
   @@index([praca_id, lat, lng])
   @@unique([source, source_ref])
@@ -301,6 +302,8 @@ model app_settings {
   daily_quota       Int     @default(20)
   template_defaults Json    @default("{}")
   field_channels    Json    @default("[\"Nenhum\",\"Grupos de WhatsApp\",\"Indicação de conhecidos\",\"Agência de mão de obra\"]")
+  // Parâmetros de negócio do campo (roteiro, F3; a F5 acrescenta chaves). Ver contrato §23.1.
+  field_config      Json    @default("{}")
 }
 
 model blocklist {
@@ -596,6 +599,7 @@ model field_consultants {
 
   journeys field_journeys[]
   visits   field_visits[]
+  routes   field_routes[]
 }
 
 model field_journeys {
@@ -677,6 +681,7 @@ model field_visits {
   journey           field_journeys    @relation(fields: [journey_id], references: [id], onDelete: Cascade)
   consultant        field_consultants @relation(fields: [consultant_id], references: [id], onDelete: Cascade)
   lead              leads             @relation(fields: [lead_id], references: [id], onDelete: Cascade)
+  route_stops       field_route_stops[]
 
   // Mais o índice único PARCIAL `field_visits_one_open_per_consultant`.
   @@index([consultant_id, checkin_at])
@@ -766,7 +771,95 @@ model place_candidates {
 
   run  place_import_runs @relation(fields: [run_id], references: [id], onDelete: Cascade)
   lead leads?            @relation(fields: [lead_id], references: [id], onDelete: SetNull)
+  route_stops field_route_stops[]
 
   @@unique([run_id, source, source_ref])
   @@index([run_id, status])
+}
+
+// ── roteiro do dia (F3 da prospecção, contrato §23) ──────────
+// Um roteiro ATIVO por consultor por dia: o índice único parcial
+// `field_routes_one_active_per_day (consultant_id, day) WHERE status = 'ativa'`
+// vive só no SQL da migração (o Prisma não declara índice parcial).
+// `praca_id` e `area_id` são colunas simples (sem FK): a praça do roteiro é a do
+// consultor e áreas nunca são apagadas.
+model field_routes {
+  id              String   @id @default(uuid()) @db.Uuid
+  consultant_id   String   @db.Uuid
+  praca_id        String   @db.Uuid
+  area_id         String?  @db.Uuid
+  day             String
+  status          String   @default("ativa") // ativa | encerrada
+  version         Int      @default(1)
+  source          String // equipe | auto | consultor
+  start_lat       Float
+  start_lng       Float
+  params_snapshot Json
+  created_by      String?  @db.Uuid
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  consultant field_consultants    @relation(fields: [consultant_id], references: [id], onDelete: Cascade)
+  stops      field_route_stops[]
+  events     field_route_events[]
+
+  @@index([consultant_id, day])
+  @@index([day, praca_id])
+}
+
+// `day` repete o dia do roteiro para o índice único parcial
+// `field_route_stops_lead_day_unique (lead_id, day) WHERE status IN ('pendente','visitada','adiada')`
+// (só no SQL): dois consultores nunca recebem o mesmo lugar no dia.
+model field_route_stops {
+  id              String   @id @default(uuid()) @db.Uuid
+  route_id        String   @db.Uuid
+  lead_id         String   @db.Uuid
+  day             String
+  seq             Int
+  kind            String   @default("planejada") // planejada | reserva
+  status          String   @default("pendente") // pendente | visitada | pulada | adiada | descartada
+  fixa            Boolean  @default(false)
+  eta_min         Int?
+  planned_minutes Int
+  distance_m      Int      @default(0)
+  skip_reason     String?
+  skip_note       String?
+  deferred_to     String? // tarde | amanha
+  visit_id        String?  @db.Uuid
+  candidate_id    String?  @db.Uuid
+  name_snap       String
+  address_snap    String   @default("")
+  phone_snap      String   @default("")
+  lat_snap        Float
+  lng_snap        Float
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  route     field_routes      @relation(fields: [route_id], references: [id], onDelete: Cascade)
+  lead      leads             @relation(fields: [lead_id], references: [id], onDelete: Restrict)
+  visit     field_visits?     @relation(fields: [visit_id], references: [id], onDelete: SetNull)
+  candidate place_candidates? @relation(fields: [candidate_id], references: [id], onDelete: SetNull)
+  events    field_route_events[]
+
+  @@index([route_id, seq])
+  @@index([lead_id])
+}
+
+// Histórico append-only das ações do consultor no roteiro; `client_id` único = idempotência.
+model field_route_events {
+  id            String   @id @default(uuid()) @db.Uuid
+  route_id      String   @db.Uuid
+  stop_id       String?  @db.Uuid
+  consultant_id String   @db.Uuid
+  client_id     String   @unique @db.Uuid
+  kind          String // skip | defer | undo | reoptimize
+  reason        String?
+  note          String?
+  at            DateTime
+  created_at    DateTime @default(now())
+
+  route field_routes      @relation(fields: [route_id], references: [id], onDelete: Cascade)
+  stop  field_route_stops? @relation(fields: [stop_id], references: [id], onDelete: SetNull)
+
+  @@index([route_id, created_at])
 }
