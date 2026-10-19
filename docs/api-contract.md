@@ -3492,3 +3492,136 @@ coordenada crua; com `cell_m = 100` e um consultor filtrado a célula ainda most
 3. Filtro de consultor único (não multi-seleção) — a multi-seleção fica para depois.
 4. Sem amostragem "por quadra de 25 m" para >50 mil pontos: a agregação em grade no banco torna o volume irrelevante para a resposta.
 5. Job de retenção dos pontos `track` (spec §6.2) **não** faz parte da F4.
+
+## 25. Metas, alertas e retornos — `/v1/consultores/attention`, `/v1/consultores/followups`, `/v1/campo/followups`
+
+F5 da prospecção. Tudo é **calculado na hora da leitura** (regras puras em `api/src/domain/alerta-rules.ts` e `followup-rules.ts`): **sem
+`@Cron`, sem tabela nova, sem migração, sem variável de ambiente e sem flag**. Os alertas existem **só dentro da tela** (a lista de
+consultores já consulta de 60 em 60 s); nada sai por WhatsApp, e-mail ou push, porque esses canais estão fora do ar. "Ligar" e "Chamar no
+WhatsApp" são links `tel:` / `wa.me` que a própria pessoa abre. (O spec previa a tabela `field_alerts` para não repetir o aviso e jobs a cada
+5 min; calculado sob demanda o alerta some sozinho quando a causa some e não há o que repetir — ver §25.8.)
+
+Acesso: `attention` e `followups` da equipe são **leitura de equipe** (admin ou não), sem `@AdminOnly()` e **sem** `@CampoRoute()` (token de
+consultor → `401`). `/v1/campo/followups` é `@CampoRoute()` e mostra **só os retornos das visitas do próprio consultor**.
+
+### 25.1 Configuração — mesmas rotas do §23.1 (`GET/PUT /v1/consultores/settings/config`)
+
+Chaves novas em `app_settings.field_config` (parciais, `PUT` só admin, ausente/inválida = padrão; a resposta traz o conjunto completo):
+
+| Chave | Padrão | Validação | Significado |
+|---|---|---|---|
+| `alerta_inicio_apos_min` | 30 | inteiro 0–240 | "não iniciou": alerta quando `agora ≥ janela_inicio + N min` e ainda não há jornada hoje |
+| `alerta_visita_aberta_min` | 40 | inteiro 5–480 | visita com check-in e sem checkout há mais de N min |
+| `alerta_sem_registro_min` | 30 | inteiro 5–480 | jornada aberta sem nenhum registro (ponto/check-in/checkout) há mais de N min. O spec dizia 25 e o UX 30: vale 30 |
+| `alerta_ritmo_atras` | 5 | inteiro 1–100 | ritmo atrasado: `feitas − esperadas ≤ −N` visitas |
+| `alerta_parada_vencida_min` | 30 | inteiro 5–240 | parada pendente do roteiro cujo ETA passou há mais de N min (só com `FIELD_ROUTES_ENABLED=true` e roteiro ativo) |
+| `dias_trabalho` | `[1,2,3,4,5,6]` | lista de inteiros 0–6 sem repetir, ao menos 1 (0 = domingo, 6 = sábado, dia da semana de Brasília) | fora desses dias não há alerta nem cobrança de ritmo |
+| `retornos_no_roteiro` | `true` | boolean | o roteiro automático (§23.3) leva os retornos vencidos do consultor como paradas prioritárias (§25.6) |
+
+Os horários (`janela_*`, `almoco_*`) e a meta (`meta_diaria`) são os do §23.1 — a mesma conta do roteiro. Chave desconhecida ou fora da faixa → `400 VALIDATION_ERROR`.
+
+### 25.2 `GoalView` — meta e ritmo (com a conta e a fonte)
+
+```json
+{
+  "meta": 30, "feitas": 8, "esperadas": 12, "delta": -4, "faltam": 22,
+  "minutos_uteis": 280, "minutos_por_visita_ritmo": 16, "dia_de_trabalho": true,
+  "conta": "30 visitas em 8 h úteis (09:00–18:00, menos 1 h de almoço) = 1 a cada 16 min. Às 14:40 já deveriam ser 12 (280 min úteis ÷ 16 min); feitas: 8.",
+  "fonte": "Feitas = visitas com check-in nas jornadas de hoje (inclui a aberta e as sem checkout; pulada ou adiada do roteiro não conta). Meta e horários = configuração do roteiro."
+}
+```
+
+- `feitas` vem de `field_visits` das jornadas do dia (Brasília), **não** das paradas do roteiro: vale visita avulsa e funciona com a flag de roteiro desligada.
+  É o mesmo número da tela Hoje (`counters.visits`) e do card do roteiro (UX §4.2: meta de visitas, não de paradas).
+- `esperadas = min(meta, floor(minutos_uteis ÷ minutos_por_visita_ritmo))`, com `minutos_uteis` = tempo decorrido da janela menos o almoço (mesma função `ritmo()` do §23).
+- `delta > 0` = à frente. `faltam = max(meta − feitas, 0)`. `dia_de_trabalho = false` (hoje fora de `dias_trabalho`) → a tela não cobra ritmo.
+
+### 25.3 `GET /v1/consultores/attention` — "Atenção agora" e meta da equipe
+
+Query: `praca_id` (uuid, opcional). Dado, restringe aos consultores **ativos** daquela praça (`404 NOT_FOUND` se a praça não existe); ausente, todas
+(a equipe enxerga todas as praças — mesma regra do §24).
+
+```json
+{
+  "day": "2026-10-20", "generated_at": "2026-10-20T17:42:10.000Z", "now": "14:42", "dia_de_trabalho": true,
+  "thresholds": { "alerta_inicio_apos_min": 30, "alerta_visita_aberta_min": 40, "alerta_sem_registro_min": 30, "alerta_ritmo_atras": 5, "alerta_parada_vencida_min": 30 },
+  "alerts": [ { "code": "nao_iniciou", "severity": "alta", "consultant_id": "uuid", "consultant_name": "Bruno Lima", "praca_id": "uuid", "praca_name": "São Paulo",
+                "phone": "(11) 99999-0000", "message": "Bruno Lima — não iniciou a jornada (começa às 09:00; agora 09:42).",
+                "conta": "Janela começa às 09:00 + 30 min de tolerância = 09:30. Agora são 09:42 e não há jornada hoje.", "since": null } ],
+  "consultants": [ { "consultant_id": "uuid", "name": "Ana Souza", "praca_id": "uuid", "praca_name": "São Paulo", "phone": "(11) 98888-0000",
+                     "status": "em_jornada", "goal": { "...": "GoalView" }, "alerts": [] } ]
+}
+```
+
+Códigos de alerta (`code`), na ordem de exibição de mesma severidade; `severity` ∈ `alta|media`; um consultor pode ter vários:
+
+| `code` | Severidade | Dispara quando (consultor ativo, dia de trabalho, jornada de hoje não encerrada) |
+|---|---|---|
+| `nao_iniciou` | alta | sem jornada hoje e `janela_inicio + alerta_inicio_apos_min ≤ agora < janela_fim` |
+| `sem_registro` | alta | jornada aberta e há mais de `alerta_sem_registro_min` desde o último registro (maior entre ponto, check-in, checkout e início da jornada). Texto honesto: "pode ser tela apagada". **Suprimido** se há visita aberta (o alerta de visita aberta cobre) |
+| `visita_aberta` | media | check-in sem checkout há mais de `alerta_visita_aberta_min` |
+| `ritmo_atrasado` | media | jornada aberta, `janela_inicio ≤ agora ≤ janela_fim` e `delta ≤ −alerta_ritmo_atras` |
+| `parada_vencida` | media | jornada aberta e há paradas `pendente`/`planejada` do roteiro ativo de hoje com `eta + alerta_parada_vencida_min < agora` (≤ `janela_fim`). Uma linha por consultor, com a contagem e a primeira |
+
+- `since` = instante (ISO) a partir do qual a condição vale (check-in, último registro…) ou `null`. `conta` = a conta feita, com os números e a fonte, em frase.
+- Consultor que **encerrou** a jornada, desativado, ou em dia fora de `dias_trabalho` não gera alerta. Cada consultor ativo aparece em `consultants` (com `goal`).
+- `alerts` é a lista plana já ordenada (severidade, depois nome do consultor, depois `code`); `consultants[].alerts` é a mesma, por pessoa.
+- O telefone é o do cadastro do consultor (para o `tel:`/`wa.me` abertos pela equipe).
+- **"Fora de rota"** (distância da última posição à próxima parada) **não** foi feito: o ponto só é gravado com a tela aberta a cada ~5 min, e acusar o consultor por um ponto velho gera falso alarme (§25.8).
+
+### 25.4 Retornos (follow-up)
+
+`FollowupView`:
+
+```json
+{
+  "visit_id": "uuid", "lead_id": "uuid", "lead_name": "Padaria Bom Pão", "phone": "(11) 99999-0000", "address": "R. Gaivota, 120",
+  "consultant_id": "uuid", "consultant_name": "Ana Souza", "praca_id": "uuid",
+  "followup_what": "Levar o contrato", "followup_date": "2026-10-19", "due": "atrasado", "days_late": 1,
+  "visited_at": "2026-10-15T14:00:00.000Z", "interlocutor_name": "Marta", "interest": "alto"
+}
+```
+
+Resposta: `{ day, today: n, overdue: n, total: n, truncated: bool, items: FollowupView[] }`, ordenada por `followup_date` (mais antigo primeiro), depois nome. Máximo 200 itens
+(`truncated: true` se houver mais; `today`/`overdue`/`total` contam **todos** os vencidos, não só os 200 devolvidos).
+
+| Método | Rota | Quem | Escopo |
+|---|---|---|---|
+| GET | `/v1/consultores/followups?praca_id=` | equipe | leads da praça (`leads.praca_id`); sem `praca_id`, todas; praça inexistente → `404` |
+| GET | `/v1/campo/followups` | consultor (`@CampoRoute()`) | só visitas com `consultant_id` = o próprio. Retorno de outro consultor **nunca** aparece (mesmo na mesma praça) |
+
+Um retorno está **pendente** quando valem todas: (1) é a visita **mais recente** daquele lead (qualquer visita posterior de qualquer consultor o resolve);
+(2) tem checkout (`checkout_at` ou `auto_closed` — o questionário só é preenchido no checkout, então sem ele `needs_followup` é nulo); (3) `needs_followup = true`
+e `followup_date ≤ hoje` (Brasília); (4) o lead não está `archived`, não é `is_test` e está em estágio `< 5` (cadastrado). `due = "hoje"` se `followup_date = hoje`;
+senão `"atrasado"` com `days_late = hoje − followup_date` em dias. Retorno futuro não entra na fila.
+
+### 25.5 `GET /v1/campo/today` ganha `goal`
+
+`TodayView.goal: GoalView | null` — a meta e o ritmo do **próprio** consultor com a conta do §25.2 (`null` só se a configuração não puder ser lida). Não depende da flag de roteiro.
+O web usa `goal` no resumo da tela Hoje quando **não há card de roteiro** (flag desligada ou sem roteiro hoje); com roteiro, o card do §23 já mostra a mesma conta
+(mesmos `feitas`, mesma `meta_diaria`). O cliente recalcula o ritmo com o relógio do aparelho (funciona sem sinal) a partir dos horários que vêm no próprio `goal`:
+`goal.params = { meta_diaria, janela_inicio, janela_fim, almoco_inicio, almoco_fim }`.
+
+### 25.6 Retorno vencido como parada prioritária do roteiro automático
+
+Com `FIELD_ROUTES_ENABLED=true` e `retornos_no_roteiro = true`, ao montar o roteiro **automático** (`gerar_ao_iniciar` ou "Montar meu dia", §23.3), os retornos vencidos
+(§25.4) **das visitas do próprio consultor** entram **antes** da seleção por proximidade, ancorados no começo da ordem (`fixa` só no cálculo da montagem; não é gravada, então
+"Refazer rota" reordena por distância como qualquer parada). Regras: ignoram `dias_sem_revisitar` (o lead foi visitado há pouco, é justamente o caso) e a área de atuação;
+exigem `lat/lng` e (`location_precision` ∈ `point|address` **ou** a visita do retorno com `far_from_place = false`, isto é, o check-in foi no local); pulam lead bloqueado
+(`blocklist`), lead já em roteiro de hoje (de qualquer consultor) e arquivado/teste/estágio ≥ 5. Contam na meta como qualquer parada e respeitam o relógio da janela (podem virar
+reserva se a janela estourar). A equipe, ao montar à mão (`POST /v1/routes`), escolhe os leads — a fila de retornos da tela traz o nome para ela incluir.
+
+### 25.7 Fechamento da meia-noite (§20.5)
+
+**Sem mudança.** Roteiro de dia anterior com paradas `pendente` fica como está: toda leitura e toda trava filtram por `day`, o índice único parcial
+`field_route_stops_lead_day_unique` é por dia (lead pendente ontem não bloqueia hoje) e a tela da equipe (`GET /v1/routes?day=`) só lista `status = 'ativa'`
+— marcar o roteiro velho como `encerrada` o **esconderia** do histórico. O status `encerrada` continua sem uso.
+
+### 25.8 Desvios propositais
+
+1. Sem `field_alerts`, sem `@Cron`, sem `FIELD_ALERTS_ENABLED`: o spec (§10) previa job a cada 5 min e tabela de deduplicação para alertas **enviados**. Aqui o alerta é só uma leitura, recalculada a cada consulta.
+2. **Fim automático às `fim_automatico` (20:00)** do spec (§9, item 6) **não** foi feito: esta fase não toca o fechamento; o `@Cron` das 00:05 segue o único. Pendência.
+3. **Fora de rota** (§9, item 5): ver §25.3. Pendência — precisa de rastreio com a tela apagada ou de um limite mais tolerante para não acusar quem só guardou o celular.
+4. Fila de "leads quentes" sem retorno marcado (interesse alto/médio, §9 item 3): fora; a fila desta fase é a de retornos que o consultor **pediu** (`needs_followup`).
+5. `mediana real de minutos por visita` (§23.8 item 6) segue pendente.
+6. Os limiares moram no mesmo JSON de configuração do §23.1 (e no mesmo `GET/PUT`), mas a tela do F3 ("Meta e horários do roteiro") não os edita; há um bloco próprio "Alertas".
