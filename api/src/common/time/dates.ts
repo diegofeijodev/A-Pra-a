@@ -86,3 +86,11 @@ export function hourSp(date: Date = new Date()): number {
 export function weekdaySp(date: Date = new Date()): number {
   return weekdayOf(todaySp(date));
 }
+
+/** Minutos desde 00:00 em Brasília (o container roda em UTC: nunca `getHours()`). */
+export function minutesSp(date: Date = new Date()): number {
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: SP_TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(date);
+  const h = Number(parts.find((p) => p.type === 'hour')?.value ?? 0);
+  const m = Number(parts.find((p) => p.type === 'minute')?.value ?? 0);
+  return h * 60 + m;
+}
