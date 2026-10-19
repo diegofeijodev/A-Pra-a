@@ -11,6 +11,7 @@ import { CampoAuthGuard } from './common/guards/campo-auth.guard';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { HealthModule } from './common/health/health.module';
 import { ActionsModule } from './modules/actions/actions.module';
+import { AreasModule } from './modules/areas/areas.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CadencesModule } from './modules/cadences/cadences.module';
 import { CampoModule } from './modules/campo/campo.module';
@@ -52,6 +53,7 @@ import { UsersModule } from './modules/users/users.module';
     IndicatorsModule,
     NotificationsModule,
     CampoModule,
+    AreasModule,
   ],
   providers: [
     // Não é APP_GUARD: o `JwtAuthGuard` global delega para ele nas rotas

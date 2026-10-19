@@ -25,6 +25,7 @@ model users {
 
   dismissed_notifs user_dismissed_notifs[]
   field_consultants_created field_consultants[]
+  field_areas_created       field_areas[]
 }
 
 model user_dismissed_notifs {
@@ -57,6 +58,7 @@ model pracas {
   proofs      proofs[]
   campanhas   campanhas[]
   field_consultants field_consultants[]
+  field_areas       field_areas[]
 }
 
 model praca_step_states {
@@ -669,4 +671,26 @@ model field_visits {
   // Mais o índice único PARCIAL `field_visits_one_open_per_consultant`.
   @@index([consultant_id, checkin_at])
   @@index([journey_id])
+}
+
+// ── áreas de atuação do campo (F1 da prospecção) ─────────────
+// Círculo (centro + raio) dentro de uma praça. O CHECK de raio 200–5000 vive só
+// no SQL da migração (o Prisma não declara CHECK).
+model field_areas {
+  id         String   @id @default(uuid()) @db.Uuid
+  praca_id   String   @db.Uuid
+  name       String
+  name_key   String
+  lat        Float
+  lng        Float
+  radius_m   Int
+  active     Boolean  @default(true)
+  created_by String   @db.Uuid
+  created_at DateTime @default(now())
+
+  praca   pracas @relation(fields: [praca_id], references: [id], onDelete: Cascade)
+  creator users  @relation(fields: [created_by], references: [id], onDelete: Restrict)
+
+  @@unique([praca_id, name_key])
+  @@index([praca_id, active])
 }
