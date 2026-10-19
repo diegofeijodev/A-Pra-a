@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { api } from '@/modules/shared/infrastructure/http';
 import {
   candidateViewSchema,
+  configRotaSchema,
   configRotaViewSchema,
   routeViewSchema,
   type CandidateView,
@@ -51,6 +52,7 @@ export async function getRotaConfig(): Promise<ConfigRotaView> {
 }
 
 export async function putRotaConfig(body: Partial<ConfigRota>): Promise<ConfigRotaView> {
-  const { data } = await api.put('/v1/consultores/settings/config', body);
+  // O formulário nasce do GET (que traz `atualizado_por/em`); o PUT recusa campos desconhecidos (whitelist).
+  const { data } = await api.put('/v1/consultores/settings/config', configRotaSchema.partial().parse(body));
   return configRotaViewSchema.parse(data);
 }

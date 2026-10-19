@@ -343,7 +343,8 @@ export class RotasCampoService {
               : kind === 'defer'
                 ? {
                     status: 'adiada',
-                    deferred_to: minutesSp(agora) < paramsDaConfig(snap.config).almocoFim ? 'tarde' : 'amanha',
+                    // Pela hora REAL da ação (`at`, regra de carimbo do §20), não a do recebimento: a fila offline pode enviar tarde.
+                    deferred_to: minutesSp(carimbo(at, agora, null).at) < paramsDaConfig(snap.config).almocoFim ? 'tarde' : 'amanha',
                     eta_min: null,
                   }
                 : { status: 'pendente', skip_reason: null, skip_note: null, deferred_to: null };

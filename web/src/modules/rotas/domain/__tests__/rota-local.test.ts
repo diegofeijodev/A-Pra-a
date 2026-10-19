@@ -66,11 +66,17 @@ describe('links de navegação', () => {
 });
 
 describe('próxima parada e textos', () => {
-  it('é a primeira planejada pendente, na ordem do seq (reserva, pulada e adiada não contam)', () => {
-    const stops = [stop(3), stop(1, { status: 'pulada' }), stop(2, { status: 'adiada' }), stop(4, { kind: 'reserva' }), stop(5, { status: 'visitada' })];
+  it('é a primeira planejada pendente, na ordem do seq (reserva, pulada e adiada para amanhã não contam)', () => {
+    const stops = [stop(3), stop(1, { status: 'pulada' }), stop(2, { status: 'adiada', deferred_to: 'amanha' }), stop(4, { kind: 'reserva' }), stop(5, { status: 'visitada' })];
     expect(proximaParada(stops)?.id).toBe('s3');
     expect(faltam(stops).map((s) => s.id)).toEqual(['s3']);
     expect(proximaParada([stop(1, { status: 'visitada' })])).toBeNull();
+  });
+  it('acabando as pendentes, a deixada para a tarde volta como próxima; a de amanhã não', () => {
+    const stops = [stop(1, { status: 'visitada' }), stop(2, { status: 'adiada', deferred_to: 'tarde', eta: null, eta_min: null }), stop(3, { status: 'adiada', deferred_to: 'amanha' })];
+    expect(proximaParada(stops)?.id).toBe('s2');
+    expect(faltam(stops).map((s) => s.id)).toEqual(['s2']);
+    expect(proximaParada([stop(4), ...stops])?.id).toBe('s4'); // pendente tem prioridade
   });
   it('formata horário e trecho', () => {
     expect(etaTexto('11:40')).toBe('11h40');
@@ -153,6 +159,26 @@ describe('ações ainda na fila por cima do roteiro', () => {
 
 it('haversine igual ao da API (metros inteiros)', () => {
   expect(distanciaM({ lat: 0, lng: 0 }, { lat: 0, lng: 1000 / GRAU_M })).toBe(1000);
+});
+
+describe('check-in offline numa parada do roteiro', () => {
+  const info = { consultant_id: 'c', tentativas: 0, proxima_em: 0, criado_em: 0 };
+  const base = rota([stop(1), stop(2), stop(3, { status: 'pulada' })]);
+  const checkin = (leadId: string): ItemFila => ({
+    ...info, seq: 1, kind: 'checkin', foto: new Blob(['x']),
+    payload: { client_id: 'v1', at: '2026-10-20T14:00:00Z', lat: 0, lng: 0, accuracy: 5, lead_id: leadId, place_name: 'Bar 1' },
+  });
+  it('a parada visitada na fila sai da vez: a próxima passa a ser a seguinte', () => {
+    expect(proximaParada(base.stops)?.id).toBe('s1');
+    const x = aplicarAcoesPendentes(base, acoesDaFila([checkin('l1')]));
+    expect(x.stops.find((s) => s.id === 's1')?.status).toBe('visitada');
+    expect(proximaParada(x.stops)?.id).toBe('s2');
+  });
+  it('lugar novo (sem lead_id) e parada pulada não mudam', () => {
+    const novo: ItemFila = { ...checkin('l1'), payload: { client_id: 'v2', at: '2026-10-20T14:00:00Z', lat: 0, lng: 0, accuracy: 5, new_place: { name: 'X' }, place_name: 'X' } } as ItemFila;
+    expect(acoesDaFila([novo])).toEqual([]);
+    expect(aplicarAcoesPendentes(base, acoesDaFila([checkin('l3')])).stops.find((s) => s.id === 's3')?.status).toBe('pulada');
+  });
 });
 
 describe('itens da fila de roteiro', () => {

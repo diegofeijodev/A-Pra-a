@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { ConflictException, ForbiddenException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { CampoConsultant } from '../../../common/auth/campo-consultant';
@@ -156,6 +157,12 @@ describe('RotasCampoService — pular, adiar, desfazer', () => {
     expect(calls[1]).toMatchObject({ status: 'adiada', deferred_to: 'amanha' });
   });
 
+  it('defer feito às 11h no aparelho e enviado às 14h pela fila: vale a hora da ação (tarde)', async () => {
+    const p = fakePrisma();
+    await montar(p).defer(A, STOP(1), { client_id: CLI(1), at: '2026-10-20T14:00:00.000Z' }, new Date('2026-10-20T17:00:00Z'));
+    expect(p.field_route_stops.updateMany.mock.calls[0][0].data).toMatchObject({ status: 'adiada', deferred_to: 'tarde' });
+  });
+
   it('undo: volta a pendente; se outro consultor já levou o lugar (P2002) → 409 STOP_TAKEN', async () => {
     const p = fakePrisma();
     p.field_route_stops.findFirst.mockResolvedValue({ id: STOP(1), route_id: ROTA, status: 'pulada' });
@@ -288,5 +295,13 @@ describe('RotasCampoService.generate / gerarAoIniciar', () => {
     expect(p.field_areas.findMany).not.toHaveBeenCalled();
     await montar(p, true, { ...CONFIG_ROTA_PADRAO, gerar_ao_iniciar: true }).gerarAoIniciar(A, { lat: -23.6, lng: -46.66 }, AGORA);
     expect(p.field_areas.findMany).toHaveBeenCalled();
+  });
+});
+
+describe('injeção de dependências (o Nest só vê o que a reflexão registra)', () => {
+  it('o 2º parâmetro do JourneysService é o RotasCampoService (senão @Optional injeta undefined em silêncio)', async () => {
+    const { JourneysService } = await import('../../campo/journeys.service');
+    const tipos = Reflect.getMetadata('design:paramtypes', JourneysService) as unknown[];
+    expect(tipos[1]).toBe(RotasCampoService);
   });
 });

@@ -47,19 +47,29 @@ export function linkTel(phone: string): string | null {
 
 export const porSeq = (a: StopView, b: StopView) => a.seq - b.seq || (a.id < b.id ? -1 : 1);
 
-/** Próxima parada: a primeira planejada pendente, na ordem. */
+/**
+ * Próxima parada: a primeira planejada pendente, na ordem. Acabando as pendentes, volta a que foi
+ * "deixada para a tarde" (UX §4.4: "manhã vai à tarde"); "para amanhã" nunca volta hoje.
+ */
 export function proximaParada(stops: StopView[]): StopView | null {
-  return [...stops].sort(porSeq).find((s) => s.status === 'pendente' && s.kind === 'planejada') ?? null;
+  const ordem = [...stops].sort(porSeq);
+  return (
+    ordem.find((s) => s.status === 'pendente' && s.kind === 'planejada') ??
+    ordem.find((s) => s.status === 'adiada' && s.deferred_to === 'tarde') ??
+    null
+  );
 }
 
-/** Paradas que ainda faltam (pendentes planejadas), na ordem. */
+/** Paradas que ainda faltam hoje: pendentes planejadas e as deixadas para a tarde, na ordem. */
 export const faltam = (stops: StopView[]): StopView[] =>
-  [...stops].sort(porSeq).filter((s) => s.status === 'pendente' && s.kind === 'planejada');
+  [...stops]
+    .sort(porSeq)
+    .filter((s) => (s.status === 'pendente' && s.kind === 'planejada') || (s.status === 'adiada' && s.deferred_to === 'tarde'));
 
 /** "11:40" → "11h40". */
 export const etaTexto = (eta: string | null): string => (eta ? eta.replace(':', 'h') : '—');
 
-/** "240 m · 4 min a pé" (a pé = 4,5 km/h por padrão, a conta da API). */
+/** "240 m · 4 min a pé" (a pé = 4,5 km/h por padrão, a conta da API). A distância é a estimada desde a parada anterior. */
 export function trechoTexto(distanceM: number, kmh: number): string {
   const min = Math.ceil(distanceM / ((kmh * 1000) / 60));
   const d = distanceM < 1000 ? `${distanceM} m` : `${(distanceM / 1000).toFixed(1).replace('.', ',')} km`;
@@ -188,7 +198,9 @@ export type AcaoRotaPendente =
   | { kind: 'stop_skip'; stop_id: string; payload: { reason: string; note?: string; at: string } }
   | { kind: 'stop_defer'; stop_id: string; payload: { at: string } }
   | { kind: 'stop_undo'; stop_id: string; payload: { at: string } }
-  | { kind: 'route_reoptimize'; payload: { lat: number; lng: number; at: string } };
+  | { kind: 'route_reoptimize'; payload: { lat: number; lng: number; at: string } }
+  /** Check-in na fila de um lead do roteiro: o servidor marcará a parada como visitada. */
+  | { kind: 'visita_no_lead'; lead_id: string };
 
 /** Ações de roteiro ainda na fila (na ordem de envio) → o formato do "por cima". */
 export function acoesDaFila(itens: ItemFila[]): AcaoRotaPendente[] {
@@ -198,6 +210,7 @@ export function acoesDaFila(itens: ItemFila[]): AcaoRotaPendente[] {
     else if (i.kind === 'stop_defer') saida.push({ kind: 'stop_defer', stop_id: i.stop_id, payload: { at: i.payload.at } });
     else if (i.kind === 'stop_undo') saida.push({ kind: 'stop_undo', stop_id: i.stop_id, payload: { at: i.payload.at } });
     else if (i.kind === 'route_reoptimize') saida.push({ kind: 'route_reoptimize', payload: { lat: i.payload.lat, lng: i.payload.lng, at: i.payload.at } });
+    else if (i.kind === 'checkin' && i.payload.lead_id) saida.push({ kind: 'visita_no_lead', lead_id: i.payload.lead_id });
   }
   return saida;
 }
@@ -232,6 +245,13 @@ export function aplicarAcoesPendentes(route: RouteView, acoes: AcaoRotaPendente[
         break;
       case 'route_reoptimize':
         atual = reordenarSemSinal(atual, a.payload);
+        break;
+      case 'visita_no_lead':
+        // Mesma regra do servidor: só pendente/adiada viram visitada (pulada continua pulada).
+        atual = {
+          ...atual,
+          stops: atual.stops.map((s) => (s.lead_id === a.lead_id && (s.status === 'pendente' || s.status === 'adiada') ? { ...s, status: 'visitada', deferred_to: null } : s)),
+        };
         break;
     }
   }

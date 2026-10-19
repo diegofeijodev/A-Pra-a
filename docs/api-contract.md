@@ -3304,8 +3304,8 @@ Chave desconhecida ou valor fora da faixa → `400 VALIDATION_ERROR`. Resposta: 
 - `eta` = `"HH:MM"` de Brasília; `eta_min` = minutos desde 00:00 (nulos em `reserva`, `pulada`, `visitada`, `adiada para amanhã`).
 - `distance_m` = distância estimada **de rua** até a parada anterior (haversine × `fator_desvio`); a primeira conta a partir do ponto de partida.
 - `skip_reason`: `fechado` | `sem_dono` | `ja_cliente` | `outro` (com `skip_note` livre, até 200 caracteres).
-- `deferred_to`: `tarde` (volta no fim do roteiro de hoje) | `amanha` (sai de hoje e libera o lugar para a equipe). Quem decide é o servidor
-  pela hora do pedido: antes do fim do almoço = `tarde`, depois = `amanha`.
+- `deferred_to`: `tarde` (sai da vez; volta no fim do roteiro de hoje em "Refazer rota" e, acabando as pendentes, a tela a oferece como próxima parada) | `amanha` (sai de hoje; **o lugar continua reservado a este consultor no dia**, para outro consultor não receber o mesmo estabelecimento — o remanejamento para amanhã é manual da equipe, não há transferência automática). Quem decide é o servidor
+  pela hora REAL da ação (`at`, com a regra de carimbo do §20 — a fila offline pode enviar horas depois): antes do fim do almoço = `tarde`, depois = `amanha`.
 - Nome, endereço, telefone e coordenada são **fotografados** na criação da parada: corrigir o lead depois não reescreve o roteiro do dia.
 
 `RouteView`:

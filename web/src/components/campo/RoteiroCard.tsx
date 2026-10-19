@@ -100,11 +100,11 @@ export function RoteiroCard() {
 
       {proxima ? (
         <section className="card-surface space-y-3 p-4" aria-label="Próxima parada">
-          <p className="text-sm font-bold uppercase tracking-wide text-muted-foreground">PRÓXIMA PARADA · chega por volta das {etaTexto(proxima.eta)}</p>
+          <p className="text-sm font-bold uppercase tracking-wide text-muted-foreground">PRÓXIMA PARADA · {proxima.eta ? `chega por volta das ${etaTexto(proxima.eta)}` : 'deixada para a tarde'}</p>
           <div>
             <p className="text-lg font-black">{proxima.name}</p>
             <p className="text-sm">{proxima.address || 'Sem endereço'}</p>
-            <p className="text-sm text-muted-foreground">{trechoTexto(proxima.distance_m, route.params.velocidade_kmh)}</p>
+            <p className="text-sm text-muted-foreground">{trechoTexto(proxima.distance_m, route.params.velocidade_kmh)} (estimado, desde a parada anterior)</p>
           </div>
           <NavegarLinks parada={proxima} />
           <ParadaAcoes parada={proxima} params={route.params} />

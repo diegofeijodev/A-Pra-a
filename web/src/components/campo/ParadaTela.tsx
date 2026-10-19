@@ -34,7 +34,7 @@ export function ParadaTela({ id }: { id: string }) {
       <section className="card-surface space-y-1 p-4">
         <p className="text-sm">{parada.address || 'Sem endereço'}</p>
         <p className="text-sm text-muted-foreground">
-          {trechoTexto(parada.distance_m, rot.route.params.velocidade_kmh)}
+          {trechoTexto(parada.distance_m, rot.route.params.velocidade_kmh)} (estimado, desde a parada anterior)
           {parada.status === 'pendente' && parada.eta ? ` · chega por volta das ${etaTexto(parada.eta)}` : ''}
         </p>
         {parada.status === 'visitada' && <p className="text-sm font-bold text-success">✓ Visita feita</p>}
