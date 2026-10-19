@@ -3591,8 +3591,8 @@ Resposta: `{ day, today: n, overdue: n, total: n, truncated: bool, items: Follow
 | GET | `/v1/campo/followups` | consultor (`@CampoRoute()`) | só visitas com `consultant_id` = o próprio. Retorno de outro consultor **nunca** aparece (mesmo na mesma praça) |
 
 Um retorno está **pendente** quando valem todas: (1) é a visita **mais recente** daquele lead (qualquer visita posterior de qualquer consultor o resolve);
-(2) tem checkout (`checkout_at` ou `auto_closed` — o questionário só é preenchido no checkout, então sem ele `needs_followup` é nulo); (3) `needs_followup = true`
-e `followup_date ≤ hoje` (Brasília); (4) o lead não está `archived`, não é `is_test` e está em estágio `< 5` (cadastrado). `due = "hoje"` se `followup_date = hoje`;
+(2) tem checkout de verdade (`checkout_at` preenchido — visita aberta ou "sem checkout" guarda só rascunho das respostas; o checkout é quem as valida); (3) `needs_followup = true`
+e `followup_date` preenchida e `≤ hoje` (Brasília); (4) o lead não está `archived`, não é `is_test` e está em estágio `< 5` (cadastrado). `due = "hoje"` se `followup_date = hoje`;
 senão `"atrasado"` com `days_late = hoje − followup_date` em dias. Retorno futuro não entra na fila.
 
 ### 25.5 `GET /v1/campo/today` ganha `goal`
