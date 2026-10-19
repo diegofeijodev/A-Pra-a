@@ -263,7 +263,7 @@ aberta em ~98 dias, com o roteiro-modelo (§8) instanciado como ações (§7) e 
 }
 ```
 
-- `cobertura` é `null` quando a praça foi aberta sem cidade-sede do IBGE.
+- `cobertura` é `null` quando a praça foi aberta sem cidade-sede do IBGE. Essa praça funciona normalmente no trabalho de campo: ela ganha **áreas de atuação** (§21), que dão o centro e o raio do que se visita.
 - `steps` só traz as etapas que já têm estado (resultado lançado ou destrave);
   a chave é o número da etapa. `unlock` é `{by, at, reason}` ou `null`.
 
@@ -3011,3 +3011,58 @@ consultor. Localização só é recebida com jornada aberta.
 15. `vitest@3.2.4` no web (só dev), para a lógica pura (fila offline, completude, redução da foto).
 16. `leads` ganha `lat`/`lng` (como o spec manda), embora `pracas` use `lat`/`lon`.
 17. Índices únicos parciais (`field_journeys_one_open_per_consultant`, `field_visits_one_open_per_consultant`) vivem só no SQL da migração: o Prisma 5.22 não os declara, então qualquer `prisma migrate dev` futura propõe `DROP INDEX` deles — apague essas linhas do SQL gerado antes de aplicar.
+
+## 21. Áreas de atuação — `/v1/areas`
+
+Área de atuação é a geometria do **trabalho de campo** (prospecção): um círculo
+(centro + raio) dentro de uma praça. Uma praça pode ter várias ("Moema",
+"Itaim"). Não substitui a cobertura do IBGE (§6): a praça "São Paulo – Moema" é
+aberta **sem** `cobertura` (já permitido) e ganha áreas; `GeoService`, `/v1/geo/*`
+e a lista `EXCLUIR` (São Paulo, Rio de Janeiro) não mudam. Desenho:
+`docs/superpowers/specs/2026-10-19-prospeccao-rotas-automacao-design.md` §4.1.
+
+`AreaView`:
+
+```json
+{
+  "id": "uuid",
+  "praca_id": "uuid",
+  "name": "Moema",
+  "lat": -23.6021,
+  "lng": -46.6658,
+  "radius_m": 1500,
+  "active": true,
+  "created_at": "2026-10-19T14:00:00.000Z"
+}
+```
+
+| Método | Rota | Quem | Corpo / query | Resposta |
+|---|---|---|---|---|
+| GET | `/v1/areas?praca_id=` | autenticado (equipe) | `praca_id` obrigatório | `AreaView[]`, ordem `created_at`; inclui as inativas |
+| POST | `/v1/areas` | **admin** | `{praca_id, name, lat, lng, radius_m}` | `201 AreaView`; `active = true` |
+| PATCH | `/v1/areas/:id?praca_id=` | **admin** | `{name?, lat?, lng?, radius_m?, active?}` | `AreaView` |
+
+- Toda leitura/escrita de uma área filtra por `id` **e** `praca_id`: área de outra
+  praça responde `404 NOT_FOUND` ("Área não encontrada."). `praca_id` não muda
+  depois de criada (e mandá-lo no corpo do `PATCH` é `400`, campo desconhecido).
+- Validação (`400 VALIDATION_ERROR`): `name` 1–80 caracteres (sem espaços nas
+  pontas, único por praça ignorando maiúsculas e acentos →
+  `409 AREA_NAME_TAKEN`); `radius_m` inteiro de **200 a 5000**; centro dentro do
+  retângulo do Brasil (lat −33,75 a 5,30; lng −74,00 a −28,80). `lat`/`lng` e
+  `radius_m` vêm sempre juntos de valor numérico; no `PATCH`, a validade do
+  conjunto final é conferida no servidor.
+- Praça inexistente ou `praca_id` malformado → `404 NOT_FOUND`.
+- **Não há `DELETE`**: fases seguintes (busca, roteiro) referenciam a área;
+  desativar (`active: false`) preserva o histórico.
+- Rota fechada ao consultor de campo (sem `@CampoRoute()`): token `aud: "campo"` → `401`.
+- Pertinência (regra única, `domain/area-rules.ts`): um ponto está na área quando
+  a distância haversine até o centro é **≤** `radius_m`.
+- Banco: `CHECK (radius_m BETWEEN 200 AND 5000)`, índice `(praca_id, active)`, FK
+  para `pracas` com `ON DELETE CASCADE` (apagar a praça apaga as áreas).
+- Sem variável de ambiente nem flag (leitura/cadastro puros, spec §10.1).
+
+### 21.1 Desvios propositais
+
+1. Rotas com `praca_id` em query em vez de aninhadas em `/v1/pracas/:id/areas`: segue o spec (`/v1/areas`) e deixa a checagem "área da praça" explícita.
+2. Sem `DELETE` (ver acima).
+3. A migração `field_areas` é gerada com `--create-only`; o `DROP INDEX` dos dois índices únicos parciais do bloco A é removido do SQL (§20.9, item 17).
