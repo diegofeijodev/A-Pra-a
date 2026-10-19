@@ -686,6 +686,8 @@ model field_visits {
   // Mais o índice único PARCIAL `field_visits_one_open_per_consultant`.
   @@index([consultant_id, checkin_at])
   @@index([journey_id])
+  // Cobertura (§24): "este lead teve visita no período?" — a FK não tinha índice.
+  @@index([lead_id])
 }
 
 // ── áreas de atuação do campo (F1 da prospecção) ─────────────

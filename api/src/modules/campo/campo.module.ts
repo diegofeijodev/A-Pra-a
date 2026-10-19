@@ -9,6 +9,7 @@ import { CampoFreelaService } from './campo-freela.service';
 import { CampoController } from './campo.controller';
 import { ConsultoresController } from './consultores.controller';
 import { ConsultoresService } from './consultores.service';
+import { HeatmapService } from './heatmap.service';
 import { JourneysService } from './journeys.service';
 import { criarPhotoStorage, PHOTO_STORAGE } from './photo-storage';
 import { PlacesService } from './places.service';
@@ -27,6 +28,7 @@ import { VisitsService } from './visits.service';
     CampoAuthService,
     CampoFreelaService,
     ConsultoresService,
+    HeatmapService,
     JourneysService,
     CampoAutocloseScheduler,
     PlacesService,

@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   Res,
   StreamableFile,
 } from '@nestjs/common';
@@ -17,6 +18,8 @@ import { AuthUser } from '../../common/auth/auth-user';
 import { AdminOnly } from '../../common/decorators/admin-only.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ConsultoresService } from './consultores.service';
+import { HeatmapQueryDto } from './dto/heatmap.dto';
+import { HeatmapService } from './heatmap.service';
 import { ChannelsDto, CreateConsultorDto, UpdateConsultorDto } from './dto/consultores.dto';
 
 /**
@@ -28,7 +31,10 @@ import { ChannelsDto, CreateConsultorDto, UpdateConsultorDto } from './dto/consu
 @ApiBearerAuth()
 @Controller('v1/consultores')
 export class ConsultoresController {
-  constructor(private readonly consultores: ConsultoresService) {}
+  constructor(
+    private readonly consultores: ConsultoresService,
+    private readonly heatmap: HeatmapService,
+  ) {}
 
   @Get()
   list() {
@@ -51,6 +57,12 @@ export class ConsultoresController {
   @Put('settings/channels')
   setChannels(@Body() dto: ChannelsDto) {
     return this.consultores.setChannels(dto);
+  }
+
+  /** Mapa de calor e cobertura (§24): equipe, leitura, agregado em grade. */
+  @Get('heatmap')
+  heat(@Query() q: HeatmapQueryDto) {
+    return this.heatmap.heatmap(q);
   }
 
   @Get('visits/:visitId/photo')
