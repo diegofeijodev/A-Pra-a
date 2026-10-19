@@ -3406,3 +3406,89 @@ autoridade — quando o servidor responde, a resposta substitui o guardado.
 5. O horário "de Brasília" é calculado em minutos desde 00:00 a partir da hora real do pedido; um roteiro de outro dia usa `janela_inicio` como partida.
 6. `minutos_por_visita` é o padrão da configuração; a mediana real do consultor (spec §4.3) fica para a F5.
 7. Pular não reotimiza sozinho (o spec lista o pulo como gatilho): reordenar sob o dedo do consultor atrapalharia o "Desfazer"; só os ETAs são recalculados. "Refazer rota" é explícito.
+
+## 24. Mapa de calor e cobertura — `GET /v1/consultores/heatmap`
+
+F4 da prospecção. Uma rota só, **leitura**, agregada em **grade** no servidor: a resposta traz células (centro + contagens), **nunca**
+coordenadas de pontos de GPS, de check-ins nem de leads. Desenho: spec `2026-10-19-prospeccao-rotas-automacao-design.md` §6.2 e UX §5.3.
+(O spec numerava este contrato como §23; a numeração avança em um — ver §24.7.) Sem flag e sem variável de ambiente: leitura pura.
+
+Acesso: **equipe** (admin e não admin). Está no bloco estático do `ConsultoresController` (antes de `:id`), sem `@AdminOnly()` e **sem**
+`@CampoRoute()`: token de consultor de campo → `401` — o consultor nunca vê o calor de ninguém, nem o dele.
+
+### 24.1 Parâmetros (query)
+
+| Parâmetro | Obrigatório | Regra |
+|---|---|---|
+| `praca_id` | sim | uuid de praça existente (`404 NOT_FOUND` se não existe) |
+| `layer` | não (`visitas`) | `passagem` \| `visitas` \| `cobertura` |
+| `from`, `to` | não | `YYYY-MM-DD` (dia de Brasília, existente no calendário); `to` padrão = hoje (`todaySp`), `from` padrão = `to`; `from ≤ to`; **no máximo 92 dias** (inclusive). Filtra por `field_journeys.day` |
+| `consultant_id` | não | uuid de consultor **da `praca_id`**; de outra praça ou inexistente → o mesmo `404 NOT_FOUND` |
+| `area_id` | não | uuid de área **da `praca_id`**; de outra praça ou inexistente → o mesmo `404 NOT_FOUND`. Restringe ao círculo da área |
+| `cell_m` | não (`250`) | lado da célula em metros: `100`, `250`, `500` ou `1000` |
+| `bbox` | não | `sul,oeste,norte,leste` (graus decimais): recorta o que a tela está vendo. Dentro do Brasil, `sul < norte`, `oeste < leste`, no máximo 3° de lado |
+
+Erro de parâmetro: `400 VALIDATION_ERROR` (formato único do §1). A equipe enxerga todas as praças (o `AuthUser` não tem escopo por praça); o
+isolamento é pelo `praca_id` obrigatório: nada de outra praça entra na conta.
+
+### 24.2 Camadas
+
+| `layer` | Fonte | Praça da linha | Célula |
+|---|---|---|---|
+| `visitas` | `field_visits.checkin_lat/lng` das jornadas do período | `leads.praca_id` do estabelecimento visitado | `n` = visitas, `leads` = estabelecimentos distintos |
+| `passagem` | `field_points` das jornadas do período | `consultant.praca_id` do dono da jornada (ponto não tem praça: quem mudou de praça leva o trajeto antigo para a nova) | `n` = pontos gravados, `minutes` = pontos `track` × 5 (**aproximado**) |
+| `cobertura` | `leads` da praça com lat/lng × visitas do período | `leads.praca_id` | `total` = leads, `visited` = com ao menos 1 visita no período, `n` = `total − visited` ("falta visitar") |
+
+- **Passagem não é trajeto.** O ponto só é gravado no início/fim, em check-in/check-out e a cada ~5 min **com a tela aberta**; o campo `note`
+  da resposta repete o aviso e a tela o exibe sempre.
+- **Cobertura**: entram leads `archived = false`, `is_test = false`, com `lat`/`lng` e `location_precision IN ('point','address')` (mesma regra
+  do roteiro, §23: coordenada de centro de cidade ou de precisão desconhecida não vira "célula brilhante falsa"). "Visitado" conta visita de
+  **qualquer** consultor da praça no período: `consultant_id` **não** filtra esta camada (cobertura é da praça), e a resposta devolve `consultant_id: null`.
+- `consultant_id` filtra `visitas` e `passagem`. `area_id` filtra as três (ponto/lead dentro do círculo).
+
+### 24.3 Grade e limites
+
+- Célula = retângulo alinhado à origem (0°,0°): `i = floor(lat/Δlat)`, `j = floor(lng/Δlng)`, `Δlat = m/111320`, `Δlng = m/(111320·cos(latRef))`, com
+  `latRef` = latitude de referência **arredondada ao grau** do centro (do `bbox`, senão do centro da praça/área, senão −15°). A grade não "anda" com o zoom.
+- Limite de **5.000 células** por resposta. Passou: o servidor refaz com a próxima célula maior (100→250→500→1000); se ainda passar, devolve as
+  5.000 de maior peso e `truncated: true`. `cell.m` diz o tamanho **usado**; `requested_cell_m`, o pedido.
+- A agregação é `GROUP BY` no banco; nenhuma linha de ponto é carregada na aplicação.
+
+### 24.4 Resposta `HeatmapView`
+
+```json
+{
+  "layer": "cobertura", "praca_id": "uuid", "consultant_id": null, "area_id": null,
+  "from": "2026-10-12", "to": "2026-10-19",
+  "requested_cell_m": 250, "cell": { "m": 250, "dlat": 0.0022457, "dlng": 0.0024395 }, "lat_ref": -23,
+  "cells": [ { "lat": -23.6012, "lng": -46.6655, "n": 4, "total": 6, "visited": 2 } ],
+  "max": 9, "truncated": false,
+  "summary": { "leads_total": 140, "leads_visited": 87, "leads_missing": 53, "percent": 62 },
+  "note": null
+}
+```
+
+`cells[].lat/lng` = **centro da célula** (múltiplo da grade, não ponto real). Campos por camada: `visitas` → `{lat,lng,n,leads}`; `passagem` →
+`{lat,lng,n,minutes}`; `cobertura` → `{lat,lng,n,total,visited}`. `max` = maior `n` (a tela normaliza a cor por ele).
+`summary` por camada: `visitas` → `{ visits, leads, consultants: [{ id, name, visits }] }`; `passagem` → `{ points, minutes }`;
+`cobertura` → `{ leads_total, leads_visited, leads_missing, percent }` (`percent` inteiro, `0` se `leads_total = 0`). O resumo é do
+**filtro inteiro** (período + área + consultor), não só do recorte do `bbox`. `note` = aviso de precisão da camada `passagem`, `null` nas outras.
+
+### 24.5 Banco
+
+Migração aditiva `field_visits_lead_id_idx` (`field_visits (lead_id)`): a camada `cobertura` procura visitas por estabelecimento e a FK não tinha índice.
+Gere com `migrate diff` e **apague todos os `DROP INDEX`** dos quatro índices parciais (`field_journeys_one_open_per_consultant`, `field_visits_one_open_per_consultant`,
+`field_routes_one_active_per_day`, `field_route_stops_lead_day_unique`) — §20.9 item 17 e §23.5.
+
+### 24.6 Privacidade
+
+Localização individual só da equipe, só de jornadas abertas pelo próprio consultor (já avisado a ele). A resposta não carrega id de ponto/visita/lead nem
+coordenada crua; com `cell_m = 100` e um consultor filtrado a célula ainda mostra "por onde ele andou", por isso a rota é só da equipe.
+
+### 24.7 Desvios propositais
+
+1. Seção §24 (não §23) — a F2 e a F3 avançaram a numeração.
+2. Sem pinos de visita nem tooltip com nome do estabelecimento (UX §5.3): isso exigiria coordenada/identificador de visita na resposta; a tela mostra só a grade e uma tabela "quadras" equivalente.
+3. Filtro de consultor único (não multi-seleção) — a multi-seleção fica para depois.
+4. Sem amostragem "por quadra de 25 m" para >50 mil pontos: a agregação em grade no banco torna o volume irrelevante para a resposta.
+5. Job de retenção dos pontos `track` (spec §6.2) **não** faz parte da F4.
