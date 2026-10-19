@@ -370,6 +370,8 @@ export class ImportsService {
             stage: 1,
             // Visita de campo aberta aponta para o lead: apagar levaria a visita junto (cascata).
             field_visits: { none: {} },
+            // Parada de roteiro também aponta para o lead (FK RESTRICT).
+            route_stops: { none: {} },
             events: { none: { kind: { in: CONTACT_KINDS as string[] } } },
           },
         });

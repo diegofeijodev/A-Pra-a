@@ -63,6 +63,8 @@ services:
       APIFY_ACTOR_ID: ${APIFY_ACTOR_ID:-}
       APIFY_MAX_PLACES_PER_RUN: ${APIFY_MAX_PLACES_PER_RUN:-300}
       APIFY_MONTHLY_PLACES_CAP: ${APIFY_MONTHLY_PLACES_CAP:-3000}
+      # Roteiro do dia do consultor (contrato §23). Os parâmetros (meta, horários) ficam em app_settings.field_config.
+      FIELD_ROUTES_ENABLED: ${FIELD_ROUTES_ENABLED:-false}
     ports:
       - '3014:3014'
 

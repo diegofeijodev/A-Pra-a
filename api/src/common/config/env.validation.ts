@@ -58,6 +58,9 @@ const envBase = z.object({
   APIFY_MAX_PLACES_PER_RUN: z.preprocess(vazioComoAusente, z.coerce.number().int().min(1).max(1000).default(300)),
   APIFY_MONTHLY_PLACES_CAP: z.preprocess(vazioComoAusente, z.coerce.number().int().min(0).default(3000)),
 
+  // Roteiro do dia do consultor (F3, contrato §23). Desligado = o bloco A fica idêntico.
+  FIELD_ROUTES_ENABLED: z.string().default('false'),
+
   SWAGGER_ENABLED: z.string().optional(),
 
   /**

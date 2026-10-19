@@ -89,7 +89,7 @@ function fakePrisma() {
   return p;
 }
 
-function montar(p: ReturnType<typeof fakePrisma>) {
+function montar(p: ReturnType<typeof fakePrisma>, rotas = false) {
   const journeys = { abertaOuFalha: jest.fn().mockResolvedValue(JORNADA) };
   const places = { similar: jest.fn().mockResolvedValue([]) };
   const fotos = { put: jest.fn().mockResolvedValue(undefined), get: jest.fn(), remove: jest.fn().mockResolvedValue(undefined) };
@@ -98,6 +98,7 @@ function montar(p: ReturnType<typeof fakePrisma>) {
     journeys as unknown as JourneysService,
     places as unknown as PlacesService,
     fotos as unknown as PhotoStorage,
+    rotas,
   );
   return { s, journeys, places, fotos };
 }
@@ -240,6 +241,47 @@ describe('VisitsService.checkin', () => {
       response: { code: 'VISIT_ALREADY_OPEN' },
     });
     expect(fotos.remove).toHaveBeenCalledWith(dataDo(p.field_visits.create).photo_key);
+  });
+});
+
+describe('VisitsService.checkin — parada do roteiro (contrato §23.3)', () => {
+  const comLead = (p: ReturnType<typeof fakePrisma>) => {
+    p.leads.findFirst.mockResolvedValue({ id: LEAD, lat: -19.9245, lng: -43.9352 });
+    (p as Record<string, unknown>).field_route_stops = { updateMany: jest.fn().mockResolvedValue({ count: 1 }) };
+    return (p as unknown as { field_route_stops: { updateMany: jest.Mock } }).field_route_stops;
+  };
+
+  it('flag ligada: marca a parada pendente/adiada do dia DA JORNADA como visitada, na mesma transação, só do próprio consultor', async () => {
+    const p = fakePrisma();
+    const paradas = comLead(p);
+    await montar(p, true).s.checkin(C, checkinDto({ lead_id: LEAD }), JPEG, AGORA);
+    expect(paradas.updateMany).toHaveBeenCalledWith({
+      where: {
+        lead_id: LEAD,
+        day: JORNADA.day,
+        status: { in: ['pendente', 'adiada'] },
+        route: { consultant_id: CONS, status: 'ativa' },
+      },
+      data: expect.objectContaining({ status: 'visitada', visit_id: expect.any(String) }),
+    });
+    // vai no array da transação, junto com a visita (nada de estado intermediário)
+    const ops = p.$transaction.mock.calls[0]![0] as unknown[];
+    expect(ops).toHaveLength(3);
+  });
+
+  it('flag desligada: nenhuma operação extra (o bloco A fica idêntico)', async () => {
+    const p = fakePrisma();
+    const paradas = comLead(p);
+    await montar(p, false).s.checkin(C, checkinDto({ lead_id: LEAD }), JPEG, AGORA);
+    expect(paradas.updateMany).not.toHaveBeenCalled();
+    expect(p.$transaction.mock.calls[0]![0] as unknown[]).toHaveLength(2);
+  });
+
+  it('lugar novo (new_place) não mexe em roteiro', async () => {
+    const p = fakePrisma();
+    const paradas = comLead(p);
+    await montar(p, true).s.checkin(C, checkinDto({ new_place: { name: 'Bar Novo' } }), JPEG, AGORA);
+    expect(paradas.updateMany).not.toHaveBeenCalled();
   });
 });
 

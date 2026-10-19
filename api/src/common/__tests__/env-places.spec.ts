@@ -24,3 +24,10 @@ describe('env — pesquisa de estabelecimentos', () => {
     expect(() => validateEnv({ ...BASE, APIFY_MAX_PLACES_PER_RUN: '0' })).toThrow('Configuração de ambiente inválida');
   });
 });
+
+describe('env — roteiro do dia', () => {
+  it('desligado por padrão e aceita true', () => {
+    expect(validateEnv(BASE).FIELD_ROUTES_ENABLED).toBe('false');
+    expect(validateEnv({ ...BASE, FIELD_ROUTES_ENABLED: 'true' }).FIELD_ROUTES_ENABLED).toBe('true');
+  });
+});

@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
@@ -31,6 +32,7 @@ import {
   type FotoLida,
   type PhotoStorage,
 } from './photo-storage';
+import { ROTAS_LIGADAS } from '../rotas/rotas.tokens';
 import { PlacesService } from './places.service';
 import { violouUnico } from './prisma-errors';
 
@@ -54,6 +56,7 @@ export class VisitsService {
     private readonly journeys: JourneysService,
     private readonly places: PlacesService,
     @Inject(PHOTO_STORAGE) private readonly fotos: PhotoStorage,
+    @Optional() @Inject(ROTAS_LIGADAS) private readonly rotas: boolean = false,
   ) {}
 
   async checkin(c: CampoConsultant, dto: CheckinDto, foto: Buffer, agora = new Date()): Promise<VisitView> {
@@ -173,6 +176,21 @@ export class VisitsService {
         },
       }),
     );
+    // Roteiro (contrato §23.3): check-in numa parada pendente/adiada do dia da jornada a marca como
+    // visitada. Só essas duas origens: já seguram o lugar no dia, então não há violação de único aqui.
+    if (this.rotas && dto.lead_id) {
+      ops.push(
+        this.prisma.field_route_stops.updateMany({
+          where: {
+            lead_id: leadId,
+            day: jornada.day,
+            status: { in: ['pendente', 'adiada'] },
+            route: { consultant_id: c.id, status: 'ativa' },
+          },
+          data: { status: 'visitada', visit_id: visitId, skip_reason: null, skip_note: null, deferred_to: null },
+        }),
+      );
+    }
     try {
       await this.prisma.$transaction(ops);
     } catch (e) {

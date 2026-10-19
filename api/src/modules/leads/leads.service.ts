@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuthUser } from '../../common/auth/auth-user';
 import { PrismaService } from '../../common/database/prisma.service';
 import { isUuid } from '../../common/ids/uuid';
@@ -426,6 +426,13 @@ export class LeadsService {
    */
   async remove(id: string): Promise<{ ok: true }> {
     await this.findOrFail(id);
+    // Parada de roteiro aponta para o lead (FK RESTRICT): o histórico do dia não some junto.
+    if (await this.prisma.field_route_stops.count({ where: { lead_id: id } })) {
+      throw new ConflictException({
+        code: 'LEAD_IN_ROUTE',
+        message: 'Este estabelecimento está em um roteiro de campo. Arquive-o em vez de apagar.',
+      });
+    }
     await this.prisma.leads.delete({ where: { id } });
     return { ok: true };
   }

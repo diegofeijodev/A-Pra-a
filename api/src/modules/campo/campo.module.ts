@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { validateEnv } from '../../common/config/env.validation';
 import { FreelaClientModule } from '../freela/freela-client.module';
+import { RotasModule } from '../rotas/rotas.module';
 import { CampoAutocloseScheduler } from './campo-autoclose.scheduler';
 import { CampoAuthController } from './campo-auth.controller';
 import { CampoAuthService } from './campo-auth.service';
@@ -16,11 +17,11 @@ import { VisitsService } from './visits.service';
 /**
  * Consultores de campo — spec 2026-10-08, contrato §20.
  *
- * Só depende do `FreelaClientModule` (folha). O `FreelaModule` importa ESTE
+ * Só depende do `FreelaClientModule` e do `RotasModule` (folhas). O `FreelaModule` importa ESTE
  * módulo para o relógio de 2 min repetir o código pendente — sem ciclo.
  */
 @Module({
-  imports: [FreelaClientModule],
+  imports: [FreelaClientModule, RotasModule],
   controllers: [CampoAuthController, CampoController, ConsultoresController],
   providers: [
     CampoAuthService,

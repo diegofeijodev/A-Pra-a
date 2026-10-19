@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { CampoConsultant } from '../../common/auth/campo-consultant';
 import { PrismaService } from '../../common/database/prisma.service';
@@ -6,6 +6,7 @@ import { todaySp } from '../../common/time/dates';
 import { carimbo, PASSADO_MAXIMO_MS } from '../../domain/campo-rules';
 import { COM_LEAD, journeyView, visitView, type JourneyView, type VisitView } from './campo-views';
 import type { PontosDto, PosicaoDto, StartJourneyDto } from './dto/campo.dto';
+import { RotasCampoService } from '../rotas/rotas-campo.service';
 import { violouUnico } from './prisma-errors';
 
 export interface TodayView {
@@ -28,7 +29,10 @@ const semJornada = () => new ConflictException({ code: 'NO_OPEN_JOURNEY', messag
 
 @Injectable()
 export class JourneysService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly rotas?: RotasCampoService,
+  ) {}
 
   async today(c: CampoConsultant, agora = new Date()): Promise<TodayView> {
     await this.closeStale(agora, c.id);
@@ -104,6 +108,8 @@ export class JourneysService {
       if (ganhou) return this.daMesmaPessoa(ganhou, c);
       throw jaAberta();
     }
+    // Roteiro automático (contrato §23.3): depois do commit e sem nunca falhar o início da jornada.
+    await this.rotas?.gerarAoIniciar(c, { lat: dto.lat, lng: dto.lng }, agora);
     return journeyView(await this.prisma.field_journeys.findUniqueOrThrow({ where: { id } }));
   }
 

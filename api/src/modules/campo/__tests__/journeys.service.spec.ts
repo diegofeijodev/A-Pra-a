@@ -60,6 +60,25 @@ function fakePrisma() {
 const montar = (p: ReturnType<typeof fakePrisma>) => new JourneysService(p as unknown as PrismaService);
 const dataDo = (m: jest.Mock, n = 0) => (m.mock.calls[n]![0] as { data: Record<string, unknown> }).data;
 
+describe('JourneysService.start — roteiro automático', () => {
+  it('depois de gravar a jornada, pede o roteiro com a posição do início', async () => {
+    const p = fakePrisma();
+    const rotas = { gerarAoIniciar: jest.fn().mockResolvedValue(undefined) };
+    const s = new JourneysService(p as unknown as PrismaService, rotas as never);
+    await s.start(C, { client_id: CLIENT, ...POS }, AGORA);
+    expect(rotas.gerarAoIniciar).toHaveBeenCalledWith(C, { lat: POS.lat, lng: POS.lng }, AGORA);
+    expect(p.field_journeys.create.mock.invocationCallOrder[0]).toBeLessThan(rotas.gerarAoIniciar.mock.invocationCallOrder[0]!);
+  });
+
+  it('reenvio do mesmo client_id não gera roteiro de novo', async () => {
+    const p = fakePrisma();
+    p.field_journeys.findUnique.mockResolvedValue(JORNADA);
+    const rotas = { gerarAoIniciar: jest.fn() };
+    await new JourneysService(p as unknown as PrismaService, rotas as never).start(C, { client_id: CLIENT, ...POS }, AGORA);
+    expect(rotas.gerarAoIniciar).not.toHaveBeenCalled();
+  });
+});
+
 describe('JourneysService.start', () => {
   it('abre a jornada com o dia de Brasília da hora do aparelho e grava o ponto de início', async () => {
     const p = fakePrisma();

@@ -230,6 +230,13 @@ antes de "Adicionar N como leads" (origem `pesquisa automática`, com latitude/l
 - Antes do deploy do código: `prisma migrate deploy` (migrações `20261019190000_place_search` e `20261019200000_place_runs_reserved`, aditivas).
 - Overpass é instância pública compartilhada: `PLACES_USER_AGENT` identifica o Praça; trocar de instância com `OVERPASS_URL`.
 
+### Roteiro do dia (F3, contrato §23)
+
+- Flag `FIELD_ROUTES_ENABLED` (padrão `false`): desligada, nada muda no app do consultor (`GET /v1/campo/route/today` responde `enabled: false`).
+- Antes do deploy do código: `prisma migrate deploy` (migração `20261020100000_field_routes`, aditiva; cria dois índices únicos parciais que só existem no SQL — ver `CLAUDE.md`).
+- Meta, horários, tempo por visita, velocidade e permissões ficam em `app_settings.field_config` (`GET/PUT /v1/consultores/settings/config`, escrita só admin), não em env.
+- Sem serviço pago nem OSRM: a ordem sai de vizinho mais próximo + 2-opt (`api/src/domain/rota-rules.ts`), distância em linha reta × 1,3 a 4,5 km/h.
+
 ## Produção
 
 Todo o resto das variáveis do `api/.env` está em

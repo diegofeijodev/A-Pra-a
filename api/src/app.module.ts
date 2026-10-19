@@ -27,6 +27,7 @@ import { MidiaModule } from './modules/midia/midia.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PlacesModule } from './modules/places/places.module';
 import { PracasModule } from './modules/pracas/pracas.module';
+import { RotasModule } from './modules/rotas/rotas.module';
 import { PublicModule } from './modules/public/public.module';
 import { UsersModule } from './modules/users/users.module';
 
@@ -56,6 +57,7 @@ import { UsersModule } from './modules/users/users.module';
     CampoModule,
     AreasModule,
     PlacesModule,
+    RotasModule,
   ],
   providers: [
     // Não é APP_GUARD: o `JwtAuthGuard` global delega para ele nas rotas

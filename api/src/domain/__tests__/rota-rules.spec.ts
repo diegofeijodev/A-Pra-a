@@ -1,3 +1,4 @@
+import { minutesSp } from '../../common/time/dates';
 import {
   aplicarConfigRota,
   calcularRelogio,
@@ -277,5 +278,13 @@ describe('configuração', () => {
     expect(aplicarConfigRota(CONFIG_ROTA_PADRAO, { foo: 1 })).toMatchObject({ ok: false });
     expect(aplicarConfigRota(CONFIG_ROTA_PADRAO, { almoco_inicio: '08:00' })).toMatchObject({ ok: false });
     expect(aplicarConfigRota(CONFIG_ROTA_PADRAO, { almoco_inicio: '11:30', almoco_fim: '12:30' })).toMatchObject({ ok: true });
+  });
+});
+
+describe('minutesSp (hora de Brasília, não UTC)', () => {
+  it('converte o instante UTC para minutos do dia em Brasília', () => {
+    expect(minutesSp(new Date('2026-10-20T14:00:00Z'))).toBe(11 * 60);
+    expect(minutesSp(new Date('2026-10-20T02:30:00Z'))).toBe(23 * 60 + 30); // ainda dia 19 em Brasília
+    expect(minutesSp(new Date('2026-10-20T03:00:00Z'))).toBe(0);
   });
 });
