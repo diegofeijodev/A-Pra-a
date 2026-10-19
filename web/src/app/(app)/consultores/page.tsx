@@ -20,6 +20,9 @@ export default function ConsultoresPage() {
       <div className="flex items-center justify-between gap-3">
         <h1 className="font-display text-xl font-extrabold">Consultores de campo</h1>
         <div className="flex items-center gap-2">
+          <Link href="/consultores/calor" className="text-sm text-primary hover:underline">
+            Mapa de calor
+          </Link>
           <Link href="/consultores/roteiros" className="text-sm text-primary hover:underline">
             Roteiros do dia
           </Link>
