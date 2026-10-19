@@ -19,7 +19,12 @@ export default function ConsultoresPage() {
     <>
       <div className="flex items-center justify-between gap-3">
         <h1 className="font-display text-xl font-extrabold">Consultores de campo</h1>
-        {user?.is_admin && <Button onClick={() => setNovo(true)}>Novo consultor</Button>}
+        <div className="flex items-center gap-2">
+          <Link href="/consultores/roteiros" className="text-sm text-primary hover:underline">
+            Roteiros do dia
+          </Link>
+          {user?.is_admin && <Button onClick={() => setNovo(true)}>Novo consultor</Button>}
+        </div>
       </div>
       {isPending ? (
         <p className="mt-4 text-sm text-muted-foreground">Carregando…</p>
