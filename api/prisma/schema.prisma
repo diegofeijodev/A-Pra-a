@@ -607,6 +607,7 @@ model field_consultants {
   signup_sync     field_signup_sync_state?
   earnings        field_earnings_ledger[]
   payout_periods  field_payout_periods[]
+  payouts         field_payouts[]
 }
 
 model field_journeys {
@@ -1021,4 +1022,57 @@ model field_payout_periods {
 
   @@unique([consultant_id, week_start])
   @@index([week_start])
+}
+
+// ── pagamento por Pix MANUAL (F9, contrato §29) ──────────────
+// A obrigação semanal. Colunas de estado mudam SÓ por transição válida + evento na mesma transação;
+// trigger no banco barra DELETE e a mudança de consultor/semana/valor/chave Pix/criação.
+// O índice único PARCIAL (consultant_id, week_start) WHERE status <> 'cancelled' vive só na migração (Prisma não modela).
+model field_payouts {
+  id              String    @id @default(uuid()) @db.Uuid
+  consultant_id   String    @db.Uuid
+  week_start      String
+  week_end        String
+  due_cents       Int
+  pix_key         String?
+  pix_key_type    String?
+  block_reason    String?
+  status          String
+  paid_cents      Int?
+  paid_at         DateTime?
+  paid_by         String?   @db.Uuid
+  paid_by_name    String?
+  method          String    @default("pix_manual")
+  proof_key       String?
+  proof_mime      String?
+  proof_size      Int?
+  note            String?
+  diff_reason     String?
+  created_by      String?   @db.Uuid
+  created_by_name String?
+  created_at      DateTime  @default(now())
+
+  consultant field_consultants      @relation(fields: [consultant_id], references: [id], onDelete: Restrict)
+  events     field_payout_events[]
+
+  @@index([week_start, status])
+  @@index([consultant_id, week_start])
+}
+
+// AUDITORIA append-only (trigger barra UPDATE/DELETE). `data` nunca leva a chave Pix.
+model field_payout_events {
+  id          String   @id @default(uuid()) @db.Uuid
+  payout_id   String   @db.Uuid
+  type        String
+  from_status String?
+  to_status   String?
+  actor_id    String?  @db.Uuid
+  actor_name  String?
+  reason      String?
+  data        Json     @default("{}")
+  created_at  DateTime @default(now())
+
+  payout field_payouts @relation(fields: [payout_id], references: [id], onDelete: Restrict)
+
+  @@index([payout_id, created_at])
 }
