@@ -605,6 +605,8 @@ model field_consultants {
   company_signups field_company_signups[]
   signups         field_signups[]
   signup_sync     field_signup_sync_state?
+  earnings        field_earnings_ledger[]
+  payout_periods  field_payout_periods[]
 }
 
 model field_journeys {
@@ -949,4 +951,74 @@ model field_signup_sync_state {
   last_error      String?
   last_count      Int               @default(0)
   consultant      field_consultants @relation(fields: [consultant_id], references: [id], onDelete: Cascade)
+}
+
+// ── remuneração do consultor de campo (F8, contrato §28) ─────
+// Versões da regra: SÓ INSERE (nunca UPDATE/DELETE). `created_by` é uuid solto, sem FK: apagar usuário não pode tocar o histórico.
+model field_pay_rule_versions {
+  id              String   @id @default(uuid()) @db.Uuid
+  version         Int      @unique @default(autoincrement())
+  valid_from      String
+  config          Json
+  reason          String?
+  created_by      String?  @db.Uuid
+  created_by_name String?
+  created_at      DateTime @default(now())
+
+  ledger field_earnings_ledger[]
+
+  @@index([valid_from, version])
+}
+
+// RAZÃO APPEND-ONLY: trigger no banco barra UPDATE/DELETE; correção = novo lançamento (ajuste/estorno) com motivo.
+// Dinheiro em centavos inteiros. FK do consultor é Restrict de propósito (apagar consultor com ganhos é 409).
+model field_earnings_ledger {
+  id              String   @id @default(uuid()) @db.Uuid
+  consultant_id   String   @db.Uuid
+  kind            String
+  amount_cents    Int
+  work_scope      String
+  work_day        String?
+  work_week       String
+  payout_week     String
+  rule_version    Int?
+  source          String
+  reason          String?
+  reverses_id     String?  @unique @db.Uuid
+  idempotency_key String
+  snapshot        Json
+  created_by      String?  @db.Uuid
+  created_by_name String?
+  created_at      DateTime @default(now())
+
+  consultant  field_consultants        @relation(fields: [consultant_id], references: [id], onDelete: Restrict)
+  version     field_pay_rule_versions? @relation(fields: [rule_version], references: [version], onDelete: Restrict)
+  reverses    field_earnings_ledger?   @relation("estorno", fields: [reverses_id], references: [id], onDelete: Restrict)
+  reversed_by field_earnings_ledger?   @relation("estorno")
+
+  @@unique([consultant_id, payout_week, kind, idempotency_key])
+  @@index([consultant_id, payout_week])
+  @@index([consultant_id, work_week, work_scope, work_day])
+}
+
+// Fechamento semanal: só linhas `closed` são gravadas (semana aberta é calculada). Semana fechada não reabre.
+model field_payout_periods {
+  id             String   @id @default(uuid()) @db.Uuid
+  consultant_id  String   @db.Uuid
+  week_start     String
+  week_end       String
+  status         String
+  total_cents    Int
+  entries        Int
+  rule_version   Int
+  closed_at      DateTime
+  closed_by      String?  @db.Uuid
+  closed_by_name String?
+  closed_mode    String
+  created_at     DateTime @default(now())
+
+  consultant field_consultants @relation(fields: [consultant_id], references: [id], onDelete: Restrict)
+
+  @@unique([consultant_id, week_start])
+  @@index([week_start])
 }
