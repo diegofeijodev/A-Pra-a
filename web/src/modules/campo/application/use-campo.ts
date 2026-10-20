@@ -5,7 +5,7 @@ import { useEffect, useMemo } from 'react';
 import { todaySp } from '@/lib/dates';
 import type { CampoMeResponse, TodayView } from '../domain/campo.types';
 import { montarDia, type DiaLocal } from '../domain/dia-local';
-import { campoHoje, campoMe } from '../infrastructure/campo.api';
+import { campoHoje, campoMe, campoRetornos } from '../infrastructure/campo.api';
 import { getSnapshot, setSnapshot } from '../infrastructure/campo-session.storage';
 import { useCampoSession } from './campo-session.store';
 import { useFilaStore } from './use-fila';
@@ -61,4 +61,9 @@ export function useDia(): { dia: DiaLocal; carregando: boolean; hoje: TodayView 
   const online = useOnline();
   const dia = useMemo(() => montarDia(hoje.data ?? null, itens), [hoje.data, itens]);
   return { dia, carregando: online && hoje.isPending && !hoje.data, hoje: hoje.data };
+}
+
+/** Retornos do consultor: sem retrato local (é uma lista de apoio; sem sinal mostra o aviso e as visitas seguem). */
+export function useRetornosCampo() {
+  return useQuery({ queryKey: ['campo', 'followups'], queryFn: campoRetornos, refetchInterval: 5 * 60_000 });
 }

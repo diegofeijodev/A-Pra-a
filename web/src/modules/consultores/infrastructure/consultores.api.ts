@@ -1,5 +1,13 @@
 import { api } from '@/modules/shared/infrastructure/http';
 import type { JourneyView, PointView, VisitView } from '@/modules/campo/domain/campo.types';
+import {
+  atencaoSchema,
+  configAlertasSchema,
+  followupsSchema,
+  type AtencaoView,
+  type ConfigAlertas,
+  type FollowupsResponse,
+} from '../domain/atencao';
 
 export type PixKeyType = 'cpf' | 'email' | 'telefone' | 'aleatoria';
 
@@ -96,4 +104,26 @@ export async function getCanaisCampo(): Promise<string[]> {
 export async function putCanaisCampo(channels: string[]): Promise<string[]> {
   const { data } = await api.put('/v1/consultores/settings/channels', { channels });
   return (data as { channels: string[] }).channels;
+}
+
+// ── metas, atenção agora e retornos (contrato §25) ──────────
+export async function getAtencao(pracaId?: string): Promise<AtencaoView> {
+  const { data } = await api.get('/v1/consultores/attention', { params: pracaId ? { praca_id: pracaId } : undefined });
+  return atencaoSchema.parse(data);
+}
+
+export async function getRetornosEquipe(pracaId?: string): Promise<FollowupsResponse> {
+  const { data } = await api.get('/v1/consultores/followups', { params: pracaId ? { praca_id: pracaId } : undefined });
+  return followupsSchema.parse(data);
+}
+
+export async function getConfigAlertas(): Promise<ConfigAlertas> {
+  const { data } = await api.get('/v1/consultores/settings/config');
+  return configAlertasSchema.parse(data);
+}
+
+/** Só as chaves de alerta: o PUT é parcial e as chaves do roteiro (F3) ficam como estão. */
+export async function putConfigAlertas(body: Partial<ConfigAlertas>): Promise<ConfigAlertas> {
+  const { data } = await api.put('/v1/consultores/settings/config', configAlertasSchema.partial().parse(body));
+  return configAlertasSchema.parse(data);
 }

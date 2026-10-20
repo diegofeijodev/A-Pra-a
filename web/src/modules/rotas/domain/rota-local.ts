@@ -95,6 +95,9 @@ export function minutosSp(instante: Date | string | number): number {
 
 // ── ritmo ───────────────────────────────────────────────────
 
+/** O que a conta do ritmo precisa da configuração (o `goal` do Hoje traz só isso). */
+export type ParamsRitmo = Pick<ConfigRota, 'meta_diaria' | 'janela_inicio' | 'janela_fim' | 'almoco_inicio' | 'almoco_fim'>;
+
 export interface RitmoLocal {
   meta: number;
   feitas: number;
@@ -107,7 +110,7 @@ export interface RitmoLocal {
 }
 
 /** Mesma conta da API: minutos úteis (janela menos almoço) ÷ (minutos úteis do dia ÷ meta). */
-export function ritmoLocal(params: ConfigRota, feitas: number, agoraMin: number): RitmoLocal {
+export function ritmoLocal(params: ParamsRitmo, feitas: number, agoraMin: number): RitmoLocal {
   const ini = hhmm(params.janela_inicio);
   const fim = hhmm(params.janela_fim);
   const aIni = hhmm(params.almoco_inicio);
@@ -138,7 +141,7 @@ export interface RitmoTexto {
 
 const horaCurta = (min: number) => `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}`.replace(/h00$/, 'h');
 
-export function ritmoTexto(r: RitmoLocal, params: ConfigRota, agoraMin: number): RitmoTexto {
+export function ritmoTexto(r: RitmoLocal, params: Pick<ConfigRota, 'janela_fim'>, agoraMin: number): RitmoTexto {
   const conta = `Às ${horaCurta(agoraMin)} o esperado é ${r.esperadas}: ${r.minutosUteis} min úteis ÷ ${String(r.minutosPorVisita).replace('.', ',')} min por visita`;
   if (r.delta > 0) return { titulo: `✓ Ritmo: ${r.delta} à frente`, ok: true, conta };
   if (r.delta === 0) return { titulo: '✓ Ritmo: no ponto', ok: true, conta };

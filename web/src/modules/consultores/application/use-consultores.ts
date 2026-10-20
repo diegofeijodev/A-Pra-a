@@ -3,10 +3,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
+import type { ConfigAlertas } from '../domain/atencao';
 import {
   createConsultor,
   diaDoConsultor,
   freelaSyncConsultor,
+  getAtencao,
+  getConfigAlertas,
+  getRetornosEquipe,
+  putConfigAlertas,
   getCanaisCampo,
   getConsultor,
   listConsultores,
@@ -90,5 +95,31 @@ export function useSalvarCanaisCampo() {
       toast.success('Lista salva.');
     },
     onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível salvar a lista.')),
+  });
+}
+
+/** "Atenção agora" e meta do dia — o recálculo é no servidor; a tela só consulta de 60 em 60 s. */
+export function useAtencao() {
+  return useQuery({ queryKey: [...CHAVE, 'atencao'], queryFn: () => getAtencao(), refetchInterval: 60_000 });
+}
+
+export function useRetornosEquipe() {
+  return useQuery({ queryKey: [...CHAVE, 'retornos'], queryFn: () => getRetornosEquipe(), refetchInterval: 60_000 });
+}
+
+export function useConfigAlertas() {
+  return useQuery({ queryKey: [...CHAVE, 'config-alertas'], queryFn: getConfigAlertas });
+}
+
+export function useSalvarConfigAlertas() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Partial<ConfigAlertas>) => putConfigAlertas(body),
+    onSuccess: (c) => {
+      qc.setQueryData([...CHAVE, 'config-alertas'], c);
+      void qc.invalidateQueries({ queryKey: [...CHAVE, 'atencao'] });
+      toast.success('Limites dos alertas salvos.');
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível salvar os limites.')),
   });
 }

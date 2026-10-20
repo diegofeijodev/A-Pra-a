@@ -1,4 +1,5 @@
-/** Wire do consultor de campo — contrato §20 (`docs/api-contract.md`); roteiro: §23. */
+/** Wire do consultor de campo — contrato §20 (`docs/api-contract.md`); roteiro: §23; metas: §25. */
+import type { GoalView } from '@/modules/consultores/domain/atencao';
 import type { MotivoPulo } from '@/modules/rotas/domain/rota.schema';
 
 
@@ -111,6 +112,17 @@ export interface TodayView {
   open_visit: VisitView | null;
   visits: VisitView[];
   counters: { visits: number; cadastrou_qr: number };
+  /** Meta e ritmo do próprio consultor com a conta (contrato §25.5); ausente em respostas antigas guardadas no aparelho. */
+  goal?: (GoalView & { params: GoalParams }) | null;
+}
+
+/** Horários da configuração: o aparelho recalcula o ritmo com o relógio dele. */
+export interface GoalParams {
+  meta_diaria: number;
+  janela_inicio: string;
+  janela_fim: string;
+  almoco_inicio: string;
+  almoco_fim: string;
 }
 
 export interface PlaceView {

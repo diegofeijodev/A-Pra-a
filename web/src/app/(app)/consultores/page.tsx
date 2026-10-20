@@ -3,17 +3,20 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { ConsultorDialog } from '@/components/praca/ConsultorDialog';
+import { AlertasConfig, AtencaoAgora, MetaLinha, RetornosEquipe } from '@/components/praca/EquipeAtencao';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 import { hora, plural } from '@/modules/campo/domain/formatos';
-import { useConsultores } from '@/modules/consultores/application/use-consultores';
+import { useAtencao, useConsultores } from '@/modules/consultores/application/use-consultores';
 
 const SITUACAO = { em_jornada: 'em jornada agora', encerrou: 'encerrou', nao_iniciou: 'não começou' } as const;
 export default function ConsultoresPage() {
   const { user } = useAuth();
   const { data: consultores, isPending, isError, error, refetch } = useConsultores();
+  const { data: atencao } = useAtencao();
   const [novo, setNovo] = useState(false);
+  const metaDe = new Map((atencao?.consultants ?? []).map((c) => [c.consultant_id, c]));
 
   return (
     <>
@@ -28,6 +31,11 @@ export default function ConsultoresPage() {
           </Link>
           {user?.is_admin && <Button onClick={() => setNovo(true)}>Novo consultor</Button>}
         </div>
+      </div>
+      <div className="mt-4 space-y-4">
+        <AtencaoAgora />
+        <RetornosEquipe />
+        <AlertasConfig />
       </div>
       {isPending ? (
         <p className="mt-4 text-sm text-muted-foreground">Carregando…</p>
@@ -53,6 +61,7 @@ export default function ConsultoresPage() {
               <p className="mt-1 text-xs text-muted-foreground">
                 {c.praca_name} · {plural(c.today.visits, 'visita', 'visitas')} hoje · {plural(c.today.cadastros, 'cadastrou', 'cadastraram')} agora · último ponto {c.today.last_point_at ? hora(c.today.last_point_at) : '—'}
               </p>
+              {metaDe.get(c.id) && <MetaLinha goal={metaDe.get(c.id)!.goal} status={metaDe.get(c.id)!.status} />}
               <p className="mt-1 text-xs">
                 {c.freela_code ? `Código Freela: ${c.freela_code}` : `Código pendente${c.freela_sync_error ? ` — ${c.freela_sync_error}` : ''}`}
               </p>

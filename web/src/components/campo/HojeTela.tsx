@@ -5,6 +5,8 @@ import { toast } from 'sonner';
 import { AvisoGps } from '@/components/campo/AvisoGps';
 import { CampoTopo } from '@/components/campo/CampoTopo';
 import { FaixaFila } from '@/components/campo/FaixaFila';
+import { MetaCard } from '@/components/campo/MetaCard';
+import { RetornosCampo } from '@/components/campo/RetornosCampo';
 import { RoteiroCard } from '@/components/campo/RoteiroCard';
 import { Button } from '@/components/ui/button';
 import { useCampoSession } from '@/modules/campo/application/campo-session.store';
@@ -58,6 +60,8 @@ export function HojeTela() {
       <CampoTopo titulo="Hoje" />
       <FaixaFila />
       {gps && <AvisoGps motivo={gps} onFechar={() => setGps(null)} />}
+
+      {!carregando && !(rot.habilitado && rot.route) && <MetaCard />}
 
       {carregando ? (
         <p className="text-sm text-muted-foreground">Carregando…</p>
@@ -153,6 +157,8 @@ export function HojeTela() {
           </section>
         </>
       )}
+
+      {!carregando && <RetornosCampo />}
 
       <div className="fixed inset-x-0 bottom-0 border-t border-border bg-background/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
         <div className="mx-auto flex max-w-md gap-3">

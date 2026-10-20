@@ -10,6 +10,7 @@ import type {
   VisitView,
 } from '../domain/campo.types';
 import type { HojeRotaView, MotivoPulo, RouteView } from '@/modules/rotas/domain/rota.schema';
+import { followupsSchema, type FollowupsResponse } from '@/modules/consultores/domain/atencao';
 import { campoApi } from './campo-http';
 
 export async function campoLogin(email: string, password: string): Promise<CampoLoginResponse> {
@@ -131,4 +132,10 @@ export async function campoAdiarParada(stopId: string, p: { client_id: string; a
 export async function campoDesfazerParada(stopId: string, p: { client_id: string; at: string }): Promise<RouteView> {
   const { data } = await campoApi.post(`/v1/campo/route/stops/${stopId}/undo`, p);
   return data as RouteView;
+}
+
+/** `GET /v1/campo/followups` — retornos de hoje e atrasados das PRÓPRIAS visitas (§25.4). */
+export async function campoRetornos(): Promise<FollowupsResponse> {
+  const { data } = await campoApi.get('/v1/campo/followups');
+  return followupsSchema.parse(data);
 }
