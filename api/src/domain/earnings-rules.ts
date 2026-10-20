@@ -456,9 +456,14 @@ export function planejarLancamentos(alvos: readonly AlvoLancamento[], lancado: R
   return out;
 }
 
-/** Semana fechada nunca reabre: o delta de uma semana fechada entra na semana corrente. */
-export function semanaDePagamento(workWeek: string, fechadas: ReadonlySet<string>, semanaAtual: string): string {
-  return fechadas.has(workWeek) ? semanaAtual : workWeek;
+/**
+ * Semana fechada nunca reabre: o delta de uma semana fechada entra na PRIMEIRA semana ainda aberta depois dela
+ * (a que fecha em seguida), para que a tela da semana, o fechamento e o Pix mostrem o mesmo número.
+ */
+export function semanaDePagamento(workWeek: string, fechadas: ReadonlySet<string>): string {
+  let w = workWeek;
+  while (fechadas.has(w)) w = addDays(w, 7);
+  return w;
 }
 
 /** A semana `from` já terminou? (`to` < hoje). */

@@ -114,7 +114,7 @@ export class EarningsService {
   constructor(
     @Inject(EARNINGS_REPOSITORY) private readonly repo: EarningsRepository,
     @Inject(EARNINGS_INPUTS) private readonly inputs: EarningsInputs,
-    private readonly config: Pick<RotasConfigService, 'cadastro'>,
+    private readonly config: RotasConfigService,
     @Inject(EARNINGS_OPCOES) private readonly opcoes: OpcoesEarnings,
   ) {}
 
@@ -218,42 +218,54 @@ export class EarningsService {
 
   // ── leitura (a mesma conta do fechamento) ───────────────────────────────
 
-  /** Semanas fechadas dentro do prazo de confirmação tardia (só fazem sentido para a semana corrente). */
-  private semanasTardias(ctx: Ctx, fechadas: ReadonlySet<string>): string[] {
+  /** Quantas semanas para trás procurar semanas fechadas que ainda aceitam confirmação tardia. */
+  private janelaTardia(ctx: Ctx): number {
+    return Math.ceil(ctx.vigente.config.late_grace_days / 7) + 1;
+  }
+
+  /** Semanas fechadas, dentro do prazo, cujo delta tardio é pago em `semana` (a primeira aberta depois delas). */
+  private tardiasPara(ctx: Ctx, semana: string, fechadas: ReadonlySet<string>): string[] {
     const grace = ctx.vigente.config.late_grace_days;
-    const k = Math.ceil(grace / 7) + 1;
-    return this.semanasAtras(ctx.semanaAtual, k).filter((w) => fechadas.has(w) && dentroDoPrazoTardio(addDays(w, 6), ctx.hoje, grace));
+    return this.semanasAtras(semana, this.janelaTardia(ctx)).filter(
+      (w) => fechadas.has(w) && dentroDoPrazoTardio(addDays(w, 6), ctx.hoje, grace) && semanaDePagamento(w, fechadas) === semana,
+    );
+  }
+
+  /** Deltas ainda não lançados que são pagos em `semana`: os dela e os tardios que caem nela. A MESMA conta lê e fecha. */
+  private plano(semana: string, tardias: readonly string[], calcs: ReadonlyMap<string, ResultadoSemana> | undefined, lancado: ReadonlyMap<string, JaLancado>) {
+    const out: Array<{ delta: DeltaLancamento; calc: ResultadoSemana; payout: string }> = [];
+    for (const w of [semana, ...tardias]) {
+      const calc = calcs?.get(w);
+      if (!calc) continue;
+      for (const delta of planejarLancamentos(alvosDaSemana(calc), lancado)) out.push({ delta, calc, payout: semana });
+    }
+    return out;
+  }
+
+  private async fechadasDe(ids: string[], semanas: string[]): Promise<{ periodos: PeriodoRow[]; porConsultor: Map<string, Set<string>> }> {
+    const periodos = await this.repo.periodos(ids, semanas);
+    const porConsultor = new Map<string, Set<string>>(ids.map((id) => [id, new Set()]));
+    for (const p of periodos) porConsultor.get(p.consultant_id)?.add(p.week_start);
+    return { periodos, porConsultor };
   }
 
   private async visoes(ctx: Ctx, consultores: ConsultorBasico[], semana: string): Promise<Map<string, Visao>> {
     const ids = consultores.map((c) => c.id);
-    const atual = semana === ctx.semanaAtual;
-    const candidatas = atual ? this.semanasAtras(ctx.semanaAtual, Math.ceil(ctx.vigente.config.late_grace_days / 7) + 1) : [];
-    const [periodos, posted] = await Promise.all([
-      this.repo.periodos(ids, [semana, ...candidatas]),
+    const [{ periodos, porConsultor: fechadasDe }, posted] = await Promise.all([
+      this.fechadasDe(ids, [semana, ...this.semanasAtras(semana, this.janelaTardia(ctx))]),
       this.repo.lancamentos(ids, { payout_week: semana }),
     ]);
-    const fechadasDe = new Map<string, Set<string>>(ids.map((id) => [id, new Set()]));
-    for (const p of periodos) fechadasDe.get(p.consultant_id)?.add(p.week_start);
 
-    // Semanas a calcular por consultor: a pedida e, na corrente, as fechadas ainda dentro do prazo tardio.
-    const tardiasDe = new Map(consultores.map((c) => [c.id, atual ? this.semanasTardias(ctx, fechadasDe.get(c.id) ?? new Set()) : []]));
+    // Semana aberta: calcula a própria e as fechadas cujo delta tardio cai nela.
+    const tardiasDe = new Map(consultores.map((c) => [c.id, fechadasDe.get(c.id)?.has(semana) ? [] : this.tardiasPara(ctx, semana, fechadasDe.get(c.id) ?? new Set())]));
     const todasSemanas = [...new Set([semana, ...[...tardiasDe.values()].flat()])];
     const [calcs, lancado] = await Promise.all([this.calcular(ctx, consultores, todasSemanas), this.repo.lancadoAccrual(ids, todasSemanas)]);
 
     const out = new Map<string, Visao>();
     for (const c of consultores) {
-      const fechadas = fechadasDe.get(c.id) ?? new Set<string>();
       const periodo = periodos.find((p) => p.consultant_id === c.id && p.week_start === semana) ?? null;
       const calculo = calcs.get(c.id)?.get(semana) as ResultadoSemana;
-      const planned: DeltaLancamento[] = [];
-      if (!periodo) {
-        for (const w of [semana, ...(tardiasDe.get(c.id) ?? [])]) {
-          const calcW = calcs.get(c.id)?.get(w) as ResultadoSemana;
-          const deltas = planejarLancamentos(alvosDaSemana(calcW), lancado.get(c.id) ?? new Map<string, JaLancado>());
-          for (const d of deltas) if (semanaDePagamento(d.work_week, fechadas, ctx.semanaAtual) === semana) planned.push(d);
-        }
-      }
+      const planned = periodo ? [] : this.plano(semana, tardiasDe.get(c.id) ?? [], calcs.get(c.id), lancado.get(c.id) ?? new Map()).map((x) => x.delta);
       const meus = posted.filter((l) => l.consultant_id === c.id);
       const extrasPosted = meus.filter((l) => !(l.kind === 'accrual' && l.work_week === semana)).reduce((a, l) => a + l.amount_cents, 0);
       const extrasPlanned = planned.filter((d) => d.work_week !== semana).reduce((a, d) => a + d.delta_cents, 0);
@@ -448,22 +460,29 @@ export class EarningsService {
     if (!semanaEncerrada(to, ctx.hoje)) throw new ConflictException({ code: 'WEEK_NOT_ENDED', message: `A semana ${diaMes(p.week_start)} a ${diaMes(to)} ainda não terminou; só dá para fechar semana encerrada.` });
     const todos = await this.inputs.consultores(p.consultant_id ? { ids: [p.consultant_id] } : {});
     if (p.consultant_id && todos.length === 0) throw notFoundConsultor();
+    return this.fecharSemana(ctx, p.week_start, todos, ator, modo, agora, !!p.consultant_id);
+  }
+
+  private async fecharSemana(ctx: Ctx, semana: string, todos: ConsultorBasico[], ator: Ator, modo: 'manual' | 'auto', agora: Date, propagarErro: boolean) {
+    const to = addDays(semana, 6);
     const consultores = todos.filter((c) => c.created_day <= to);
-    const calcs = await this.calcular(ctx, consultores, [p.week_start]);
+    const ids = consultores.map((c) => c.id);
+    const { porConsultor: fechadasDe } = await this.fechadasDe(ids, this.semanasAtras(semana, this.janelaTardia(ctx)));
+    const tardiasDe = new Map(consultores.map((c) => [c.id, this.tardiasPara(ctx, semana, fechadasDe.get(c.id) ?? new Set())]));
+    const calcs = await this.calcular(ctx, consultores, [...new Set([semana, ...[...tardiasDe.values()].flat()])]);
     const periodos: Array<{ consultant_id: string; total_cents: number; already_closed: boolean }> = [];
     const erros: Array<{ consultant_id: string; message: string }> = [];
     for (const c of consultores) {
       try {
-        const calc = calcs.get(c.id)?.get(p.week_start) as ResultadoSemana;
-        periodos.push(await this.fecharConsultor(ctx, c, calc, p.week_start, ator, modo, agora));
+        periodos.push(await this.fecharConsultor(ctx, c, semana, tardiasDe.get(c.id) ?? [], calcs.get(c.id), ator, modo, agora));
       } catch (e) {
-        if (p.consultant_id) throw e;
-        this.log.error(`fechamento ${p.week_start} falhou para um consultor: ${e instanceof Error ? e.constructor.name : 'erro'}`);
+        if (propagarErro) throw e;
+        this.log.error(`fechamento ${semana} falhou para um consultor: ${e instanceof Error ? e.constructor.name : 'erro'}`);
         erros.push({ consultant_id: c.id, message: 'Não foi possível fechar este consultor; tente de novo.' });
       }
     }
     return {
-      week: { from: p.week_start, to },
+      week: { from: semana, to },
       closed: periodos.filter((x) => !x.already_closed).length,
       already_closed: periodos.filter((x) => x.already_closed).length,
       total_cents: periodos.reduce((a, x) => a + x.total_cents, 0),
@@ -472,13 +491,23 @@ export class EarningsService {
     };
   }
 
-  private async fecharConsultor(ctx: Ctx, c: ConsultorBasico, calc: ResultadoSemana, semana: string, ator: Ator, modo: 'manual' | 'auto', agora: Date) {
+  private async fecharConsultor(
+    ctx: Ctx,
+    c: ConsultorBasico,
+    semana: string,
+    tardias: readonly string[],
+    calcs: ReadonlyMap<string, ResultadoSemana> | undefined,
+    ator: Ator,
+    modo: 'manual' | 'auto',
+    agora: Date,
+  ) {
     return this.repo.emTransacao(c.id, async (tx) => {
       const [existente] = await tx.periodos([c.id], [semana]);
       if (existente) return { consultant_id: c.id, total_cents: existente.total_cents, already_closed: true };
-      const lancado = (await tx.lancadoAccrual([c.id], [semana])).get(c.id) ?? new Map();
-      const deltas = planejarLancamentos(alvosDaSemana(calc), lancado).map((delta) => ({ delta, calc, payout: semana }));
-      await this.lancarDeltas(tx, ctx, c.id, deltas, 'weekly_close', ator);
+      const lancado = (await tx.lancadoAccrual([c.id], [semana, ...tardias])).get(c.id) ?? new Map<string, JaLancado>();
+      const deltas = this.plano(semana, tardias, calcs, lancado);
+      await this.lancarDeltas(tx, ctx, c.id, deltas.filter((d) => d.delta.work_week === semana), 'weekly_close', ator);
+      await this.lancarDeltas(tx, ctx, c.id, deltas.filter((d) => d.delta.work_week !== semana), 'late_confirmation', ator, { late: true });
       const entradas = await tx.lancamentos([c.id], { payout_week: semana });
       const total = entradas.reduce((a, l) => a + l.amount_cents, 0);
       const r = await tx.inserirPeriodo({
@@ -497,30 +526,36 @@ export class EarningsService {
     });
   }
 
-  /** Confirmações tardias de semanas JÁ fechadas entram na semana corrente (nunca reabrem a fechada). */
+  /**
+   * Confirmações tardias de semanas JÁ fechadas entram na primeira semana ainda aberta depois delas (nunca
+   * reabrem a fechada). É a mesma regra da leitura e do fechamento, então o número da tela não muda ao lançar.
+   */
   async reconciliar(p: { consultant_id?: string }, ator: Ator, agora = new Date()) {
     const ctx = await this.contexto(agora);
     const consultores = await this.inputs.consultores(p.consultant_id ? { ids: [p.consultant_id] } : {});
     if (p.consultant_id && consultores.length === 0) throw notFoundConsultor();
     const ids = consultores.map((c) => c.id);
     const grace = ctx.vigente.config.late_grace_days;
-    const candidatas = this.semanasAtras(ctx.semanaAtual, Math.ceil(grace / 7) + 1);
-    const periodos = await this.repo.periodos(ids, candidatas);
-    const fechadasDe = new Map<string, Set<string>>(ids.map((id) => [id, new Set()]));
-    for (const pe of periodos) fechadasDe.get(pe.consultant_id)?.add(pe.week_start);
-    const tardias = new Map(consultores.map((c) => [c.id, this.semanasTardias(ctx, fechadasDe.get(c.id) ?? new Set())]));
-    const semanas = [...new Set([...tardias.values()].flat())];
-    const calcs = await this.calcular(ctx, consultores, semanas);
+    const candidatas = this.semanasAtras(ctx.semanaAtual, this.janelaTardia(ctx));
+    const { porConsultor: fechadasDe } = await this.fechadasDe(ids, candidatas);
+    const tardiasDe = new Map(
+      consultores.map((c) => {
+        const f = fechadasDe.get(c.id) ?? new Set<string>();
+        return [c.id, candidatas.filter((w) => f.has(w) && dentroDoPrazoTardio(addDays(w, 6), ctx.hoje, grace))] as const;
+      }),
+    );
+    const calcs = await this.calcular(ctx, consultores, [...new Set([...tardiasDe.values()].flat())]);
     let posted = 0;
     let total = 0;
     for (const c of consultores) {
-      const minhas = tardias.get(c.id) ?? [];
+      const minhas = tardiasDe.get(c.id) ?? [];
       if (!minhas.length) continue;
+      const fechadas = fechadasDe.get(c.id) ?? new Set<string>();
       const r = await this.repo.emTransacao(c.id, async (tx) => {
-        const lancado = (await tx.lancadoAccrual([c.id], minhas)).get(c.id) ?? new Map();
+        const lancado = (await tx.lancadoAccrual([c.id], minhas)).get(c.id) ?? new Map<string, JaLancado>();
         const deltas = minhas.flatMap((w) => {
-          const calc = calcs.get(c.id)?.get(w) as ResultadoSemana;
-          return planejarLancamentos(alvosDaSemana(calc), lancado).map((delta) => ({ delta, calc, payout: ctx.semanaAtual }));
+          const calc = calcs.get(c.id)?.get(w);
+          return calc ? planejarLancamentos(alvosDaSemana(calc), lancado).map((delta) => ({ delta, calc, payout: semanaDePagamento(w, fechadas) })) : [];
         });
         const n = await this.lancarDeltas(tx, ctx, c.id, deltas, 'late_confirmation', ator, { late: true });
         return { n, soma: deltas.reduce((a, d) => a + d.delta.delta_cents, 0) };
@@ -609,17 +644,21 @@ export class EarningsService {
 
   /**
    * Fecha as semanas encerradas ainda abertas (até 8 para trás) e reconcilia as tardias. Idempotente.
-   * Nunca fecha história anterior ao primeiro fechamento existente: na primeira vez só a última semana encerrada.
+   * Nunca inventa histórico: cada consultor continua a partir do SEU último fechamento; quem ainda não tem
+   * nenhum começa pela última semana encerrada.
    */
   async fecharEncerradas(agora = new Date()): Promise<{ semanas: number; fechados: number; tardios: number }> {
     const ctx = await this.contexto(agora);
     const ator: Ator = { id: null, name: 'sistema (fechamento automático)' };
     const ultimaEncerrada = addDays(ctx.semanaAtual, -7);
-    const primeira = (await this.repo.primeiraSemanaFechada()) ?? ultimaEncerrada;
+    const todos = await this.inputs.consultores({});
+    const primeiras = await this.repo.primeiraSemanaPorConsultor(todos.map((c) => c.id));
     let fechados = 0;
     let semanas = 0;
-    for (const w of this.semanasAtras(ctx.semanaAtual, MAX_SEMANAS_AUTOCLOSE).reverse().filter((x) => x >= primeira)) {
-      const r = await this.fechar({ week_start: w }, ator, 'auto', agora);
+    for (const w of this.semanasAtras(ctx.semanaAtual, MAX_SEMANAS_AUTOCLOSE).reverse()) {
+      const elegiveis = todos.filter((c) => w >= (primeiras.get(c.id) ?? ultimaEncerrada));
+      if (!elegiveis.length) continue;
+      const r = await this.fecharSemana(ctx, w, elegiveis, ator, 'auto', agora, false);
       semanas++;
       fechados += r.closed;
     }

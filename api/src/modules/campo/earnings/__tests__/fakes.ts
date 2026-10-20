@@ -41,8 +41,12 @@ export class FakeRepo implements EarningsRepository {
   async existeRazaoOuFechamento() {
     return this.ledger.length > 0 || this.periods.length > 0;
   }
-  async primeiraSemanaFechada() {
-    return this.periods.map((p) => p.week_start).sort()[0] ?? null;
+  async primeiraSemanaPorConsultor(ids: string[]) {
+    const out = new Map<string, string>();
+    for (const p of this.periods) {
+      if (ids.includes(p.consultant_id) && (!out.has(p.consultant_id) || p.week_start < (out.get(p.consultant_id) as string))) out.set(p.consultant_id, p.week_start);
+    }
+    return out;
   }
   async periodos(ids: string[], weeks: string[]) {
     return this.periods.filter((p) => ids.includes(p.consultant_id) && weeks.includes(p.week_start));

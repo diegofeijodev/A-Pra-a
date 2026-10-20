@@ -218,6 +218,45 @@ describe('confirmação tardia', () => {
   });
 });
 
+describe('confirmação tardia: o que a tela mostra é o que o fechamento paga', () => {
+  it('lida no domingo à noite e fechada na segunda 06:00: o período da semana tem o mesmo total', async () => {
+    const { s, repo, inputs } = montar();
+    inputs.set(A, '2026-10-19', { signups: 4 });
+    await s.fechar({ week_start: SEMANA_ANT, consultant_id: A }, SIS, 'auto', AGORA); // fecha W-1
+    inputs.set(A, '2026-10-27', { signups: 5 }); // trabalho da semana W
+    inputs.set(A, '2026-10-19', { signups: 10 }); // Freela confirma, durante W, cadastros de W-1 (4 → 10)
+
+    const domingoNoite = new Date('2026-11-02T02:59:00.000Z'); // domingo 01/11 23:59 BRT: W ainda não terminou
+    const lida = await s.equipe({ week: SEMANA_ATUAL, consultant_id: A }, domingoNoite);
+    expect(lida.consultants[0]).toMatchObject({ status: 'open', total_cents: 5000 + 6000, extras_cents: 6000 });
+    const doConsultor = await s.doConsultor({ id: A, name: 'Ana', email: 'a@x', praca_id: PRACA_1, must_change_password: false }, domingoNoite);
+    expect(doConsultor.week.total_cents).toBe(11000);
+
+    const segunda0600 = new Date('2026-11-02T09:00:00.000Z');
+    await s.fecharEncerradas(segunda0600);
+    const periodo = repo.periods.find((p) => p.consultant_id === A && p.week_start === SEMANA_ATUAL);
+    expect(periodo?.total_cents).toBe(lida.consultants[0]?.total_cents);
+    const tardio = repo.ledger.find((l) => l.source === 'late_confirmation');
+    expect(tardio).toMatchObject({ amount_cents: 6000, work_week: SEMANA_ANT, payout_week: SEMANA_ATUAL });
+    expect(repo.periods.find((p) => p.consultant_id === A && p.week_start === SEMANA_ANT)?.total_cents).toBe(4000);
+    // depois de fechar, lê o mesmo número e reconciliar não lança de novo
+    const depois = await s.equipe({ week: SEMANA_ATUAL, consultant_id: A }, segunda0600);
+    expect(depois.consultants[0]).toMatchObject({ status: 'closed', total_cents: 11000 });
+    expect((await s.reconciliar({}, SIS, segunda0600)).posted).toBe(0);
+  });
+
+  it('com duas semanas fechadas em seguida, o tardio pula para a primeira aberta', async () => {
+    const { s, repo, inputs } = montar();
+    inputs.set(A, '2026-10-19', { signups: 4 });
+    await s.fechar({ week_start: SEMANA_ANT, consultant_id: A }, SIS, 'auto', AGORA);
+    const duasDepois = new Date('2026-11-03T13:00:00.000Z'); // terça; semana corrente = 02/11
+    await s.fechar({ week_start: SEMANA_ATUAL, consultant_id: A }, SIS, 'auto', duasDepois);
+    inputs.set(A, '2026-10-19', { signups: 10 });
+    expect((await s.reconciliar({ consultant_id: A }, SIS, duasDepois)).posted).toBe(1);
+    expect(repo.ledger.find((l) => l.source === 'late_confirmation')).toMatchObject({ work_week: SEMANA_ANT, payout_week: '2026-11-02' });
+  });
+});
+
 describe('ajustes e estornos (nunca editam o passado)', () => {
   it('ajuste exige motivo, valor ≠ 0 e consultor existente', async () => {
     const { s, repo } = montar();
@@ -437,6 +476,15 @@ describe('fechamento automático', () => {
     const r = await s.fecharEncerradas(segunda);
     expect(r.semanas).toBe(1);
     expect([...new Set(repo.periods.map((p) => p.week_start))]).toEqual(['2026-10-19']);
+  });
+
+  it('fechamento manual de uma semana antiga de UM consultor não faz o automático inventar história dos outros', async () => {
+    const { s, repo } = montar();
+    await s.fechar({ week_start: '2026-10-05', consultant_id: A }, SIS, 'manual', AGORA);
+    await s.fecharEncerradas(new Date('2026-10-26T10:00:00.000Z'));
+    const semanasDe = (id: string) => repo.periods.filter((p) => p.consultant_id === id).map((p) => p.week_start).sort();
+    expect(semanasDe(A)).toEqual(['2026-10-05', '2026-10-12', '2026-10-19']);
+    expect(semanasDe(B)).toEqual(['2026-10-19']);
   });
 
   it('depois que há fechamento, recupera as semanas encerradas que ficaram abertas', async () => {

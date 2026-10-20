@@ -78,8 +78,8 @@ export interface FiltroLancamentos {
 export interface EarningsLeitura {
   versoes(): Promise<VersaoRegistrada[]>;
   existeRazaoOuFechamento(): Promise<boolean>;
-  /** Menor `week_start` com fechamento (de qualquer consultor), ou null. */
-  primeiraSemanaFechada(): Promise<string | null>;
+  /** Menor `week_start` com fechamento de CADA consultor (quem nunca fechou não aparece). */
+  primeiraSemanaPorConsultor(consultantIds: string[]): Promise<Map<string, string>>;
   periodos(consultantIds: string[], weeks: string[]): Promise<PeriodoRow[]>;
   lancamentos(consultantIds: string[], filtro: FiltroLancamentos): Promise<LancamentoRow[]>;
   /** Soma e contagem dos `accrual` (e SÓ eles) por período de trabalho: chave `chaveTrabalho`. */
@@ -164,9 +164,10 @@ class Leitor implements EarningsLeitura {
     return !!l || !!p;
   }
 
-  async primeiraSemanaFechada(): Promise<string | null> {
-    const r = await this.db.field_payout_periods.findFirst({ orderBy: { week_start: 'asc' }, select: { week_start: true } });
-    return r?.week_start ?? null;
+  async primeiraSemanaPorConsultor(consultantIds: string[]): Promise<Map<string, string>> {
+    if (!consultantIds.length) return new Map();
+    const g = await this.db.field_payout_periods.groupBy({ by: ['consultant_id'], where: { consultant_id: { in: consultantIds } }, _min: { week_start: true } });
+    return new Map(g.flatMap((r) => (r._min.week_start ? [[r.consultant_id, r._min.week_start] as const] : [])));
   }
 
   async periodos(consultantIds: string[], weeks: string[]): Promise<PeriodoRow[]> {

@@ -362,11 +362,13 @@ describe('razão: alvos e deltas', () => {
     expect(d[0]).toMatchObject({ scope: 'week', work_day: null, delta_cents: -15000, idempotency_key: `acc:week:${SEG}:1` });
   });
 
-  it('semana fechada nunca reabre: delta vai para a semana corrente', () => {
+  it('semana fechada nunca reabre: o delta vai para a primeira semana aberta depois dela', () => {
     const fechadas = new Set(['2026-10-12']);
-    expect(semanaDePagamento('2026-10-12', fechadas, SEG)).toBe(SEG);
-    expect(semanaDePagamento(SEG, fechadas, SEG)).toBe(SEG);
-    expect(semanaDePagamento('2026-10-05', fechadas, SEG)).toBe('2026-10-05');
+    expect(semanaDePagamento('2026-10-12', fechadas)).toBe(SEG);
+    expect(semanaDePagamento(SEG, fechadas)).toBe(SEG);
+    expect(semanaDePagamento('2026-10-05', fechadas)).toBe('2026-10-05');
+    // duas fechadas seguidas: pula as duas
+    expect(semanaDePagamento('2026-10-05', new Set(['2026-10-05', '2026-10-12']))).toBe(SEG);
   });
 });
 
