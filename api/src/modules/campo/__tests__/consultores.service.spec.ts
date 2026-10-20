@@ -60,6 +60,8 @@ function fakePrisma() {
     field_journeys: { findMany: jest.fn().mockResolvedValue([]) },
     field_visits: { findMany: jest.fn().mockResolvedValue([]) },
     field_points: { groupBy: jest.fn().mockResolvedValue([]) },
+    field_earnings_ledger: { count: jest.fn().mockResolvedValue(0) },
+    field_payout_periods: { count: jest.fn().mockResolvedValue(0) },
   };
 }
 
@@ -178,6 +180,16 @@ describe('ConsultoresService.update / resetPassword / remove', () => {
     expect(freela.desativarAntesDeApagar).toHaveBeenCalled();
     expect(p.field_consultants.delete).toHaveBeenCalledWith({ where: { id: CONS } });
     expect(fotos.remove.mock.calls.map((c) => c[0])).toEqual(['campo/a.jpg', 'campo/b.jpg']);
+  });
+
+  it('consultor com ganhos lançados não é apagado (409 HAS_EARNINGS) e nada é desligado', async () => {
+    const p = fakePrisma();
+    p.field_earnings_ledger.count.mockResolvedValue(3);
+    const { s, freela } = montar(p);
+
+    await expect(s.remove(CONS)).rejects.toMatchObject({ response: { code: 'HAS_EARNINGS' } });
+    expect(freela.desativarAntesDeApagar).not.toHaveBeenCalled();
+    expect(p.field_consultants.delete).not.toHaveBeenCalled();
   });
 
   it('id malformado = 404 sem tocar no banco', async () => {

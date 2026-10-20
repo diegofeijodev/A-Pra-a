@@ -13,6 +13,13 @@ import { CompanySignupService } from './company-signup.service';
 import { companySignupLigadoProvider } from './company-signup.tokens';
 import { ConsultoresController } from './consultores.controller';
 import { ConsultoresService } from './consultores.service';
+import { EarningsCampoController, EarningsEquipeController } from './earnings/earnings.controller';
+import { EarningsLigadoGuard } from './earnings/earnings.guard';
+import { EARNINGS_INPUTS, PrismaEarningsInputs } from './earnings/earnings-inputs';
+import { EARNINGS_REPOSITORY, PrismaEarningsRepository } from './earnings/earnings.repository';
+import { EarningsScheduler } from './earnings/earnings.scheduler';
+import { EarningsService } from './earnings/earnings.service';
+import { earningsOpcoesProvider } from './earnings/earnings.tokens';
 import { FollowupsService } from './followups.service';
 import { HeatmapService } from './heatmap.service';
 import { JourneysService } from './journeys.service';
@@ -34,8 +41,10 @@ import { VisitsService } from './visits.service';
 @Module({
   imports: [FreelaClientModule, RotasModule],
   controllers: [
-    // Antes de ConsultoresController: `GET /v1/consultores/signups` não pode cair em `:id`.
+    // Antes de ConsultoresController: `GET /v1/consultores/signups` e `/earnings` não podem cair em `:id`.
     SignupsEquipeController,
+    EarningsEquipeController,
+    EarningsCampoController,
     SignupsCampoController,
     CampoAuthController,
     CampoController,
@@ -60,6 +69,12 @@ import { VisitsService } from './visits.service';
     SignupSyncScheduler,
     signupSyncOpcoesProvider,
     SignupsLeituraService,
+    EarningsService,
+    EarningsScheduler,
+    EarningsLigadoGuard,
+    earningsOpcoesProvider,
+    { provide: EARNINGS_REPOSITORY, useClass: PrismaEarningsRepository },
+    { provide: EARNINGS_INPUTS, useClass: PrismaEarningsInputs },
     // O `.env` já está em `process.env` (ConfigModule.forRoot) e foi validado na
     // largada; reler pelo mesmo schema dá o PHOTO_STORAGE já resolvido.
     { provide: PHOTO_STORAGE, useFactory: () => criarPhotoStorage(validateEnv(process.env)) },

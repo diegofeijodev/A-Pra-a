@@ -279,6 +279,14 @@ export class ConsultoresService {
   /** Apaga de vez (limpeza de teste): cascata leva jornadas, pontos e visitas; as fotos saem à mão. */
   async remove(id: string): Promise<{ ok: true }> {
     const c = await this.findOrFail(id);
+    // O razão da remuneração é permanente (FK Restrict, §28.3): quem tem ganhos lançados é desativado, não apagado.
+    const [ganhos, fechamentos] = await Promise.all([
+      this.prisma.field_earnings_ledger.count({ where: { consultant_id: id } }),
+      this.prisma.field_payout_periods.count({ where: { consultant_id: id } }),
+    ]);
+    if (ganhos + fechamentos > 0) {
+      throw new ConflictException({ code: 'HAS_EARNINGS', message: 'Este consultor tem ganhos lançados e não pode ser apagado. Desative o acesso em vez de apagar.' });
+    }
     const fotos = await this.prisma.field_visits.findMany({
       where: { consultant_id: id },
       select: { photo_key: true },

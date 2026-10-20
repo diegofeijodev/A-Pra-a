@@ -71,6 +71,9 @@ services:
       FIELD_SIGNUP_SYNC_ENABLED: ${FIELD_SIGNUP_SYNC_ENABLED:-false}
       FIELD_SIGNUP_SYNC_INTERVAL_MIN: ${FIELD_SIGNUP_SYNC_INTERVAL_MIN:-10}
       FIELD_SIGNUP_RECONCILE_DAYS: ${FIELD_SIGNUP_RECONCILE_DAYS:-45}
+      # Remuneração do consultor (contrato §28). Valores e faixas ficam no banco (tela de Configurações), nunca aqui.
+      FIELD_EARNINGS_ENABLED: ${FIELD_EARNINGS_ENABLED:-false}
+      FIELD_EARNINGS_AUTOCLOSE_ENABLED: ${FIELD_EARNINGS_AUTOCLOSE_ENABLED:-false}
     ports:
       - '3014:3014'
 

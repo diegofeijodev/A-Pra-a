@@ -69,6 +69,10 @@ const envBase = z.object({
   FIELD_SIGNUP_SYNC_INTERVAL_MIN: z.preprocess(vazioComoAusente, z.coerce.number().int().min(1).max(120).default(10)),
   FIELD_SIGNUP_RECONCILE_DAYS: z.preprocess(vazioComoAusente, z.coerce.number().int().min(7).max(180).default(45)),
 
+  // Remuneração do consultor (F8, contrato §28). Desligado = rotas 404 e UI oculta; os parâmetros ficam no banco (regra versionada).
+  FIELD_EARNINGS_ENABLED: z.string().default('false'),
+  FIELD_EARNINGS_AUTOCLOSE_ENABLED: z.string().default('false'),
+
   SWAGGER_ENABLED: z.string().optional(),
 
   /**
