@@ -20,7 +20,7 @@ export function MetaCard() {
   }, []);
   if (!goal) return null;
 
-  const feitas = dia.contadores.visitas;
+  const feitas = dia.contadores.feitas; // sem os "fechados" (§30.1)
   const meta = goal.params.meta_diaria;
   const emJornada = !!dia.jornada;
   const ritmo = ritmoTexto(ritmoLocal(goal.params, feitas, minutosSp(agora)), goal.params, minutosSp(agora));

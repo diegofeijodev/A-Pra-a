@@ -29,6 +29,8 @@ export interface BuildRouteInput {
   day: string;
   lead_ids: string[];
   area_id?: string;
+  /** Contrato §30.4; ausente = mantém o modo do roteiro existente (ou a pé). */
+  travel_mode?: 'a_pe' | 'carro';
 }
 
 export async function buildRoute(input: BuildRouteInput): Promise<RouteView> {

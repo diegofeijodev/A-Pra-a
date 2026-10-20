@@ -19,6 +19,11 @@ export const RESPOSTAS_VAZIAS: VisitAnswers = {
   followup_what: null,
   followup_date: null,
   notes: null,
+  outcome: 'conversa',
+  refusal_reason: null,
+  refusal_note: null,
+  followup_time: null,
+  contact_phone: null,
 };
 
 /** Funções das vagas (spec §8.1 — "garçom, cozinheiro, churrasqueiro, motoboy ou outra"). */
@@ -27,6 +32,8 @@ export const FUNCOES_VAGA = ['Garçom', 'Cozinheiro', 'Churrasqueiro', 'Motoboy'
 const vazio = (s: string | null | undefined): boolean => !s || !s.trim();
 
 export function faltando(r: VisitAnswers, hoje: string): string[] {
+  // Estabelecimento fechado (§30.1): não houve com quem conversar.
+  if (r.outcome === 'fechado') return [];
   const f: string[] = [];
   if (vazio(r.interlocutor_name)) f.push('nome de quem atendeu');
   if (!r.interlocutor_role) f.push('cargo de quem atendeu');

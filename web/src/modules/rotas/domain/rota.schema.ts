@@ -48,6 +48,13 @@ export const configRotaViewSchema = configRotaSchema.extend({
 });
 export type ConfigRotaView = z.infer<typeof configRotaViewSchema>;
 
+export const MODOS_DESLOCAMENTO = [
+  { id: 'a_pe', rotulo: 'A pé' },
+  { id: 'carro', rotulo: 'De carro' },
+] as const;
+export const modoDeslocamentoSchema = z.enum(['a_pe', 'carro']);
+export type ModoDeslocamento = z.infer<typeof modoDeslocamentoSchema>;
+
 export const routeViewSchema = z.object({
   id: z.string(),
   consultant_id: z.string(),
@@ -60,6 +67,11 @@ export const routeViewSchema = z.object({
   area_id: z.string().nullable(),
   start: z.object({ lat: z.number(), lng: z.number() }),
   params: configRotaSchema,
+  /** Contrato §30.4. Respostas antigas (sem o campo) valem como a pé. */
+  travel_mode: modoDeslocamentoSchema.default('a_pe'),
+  travel: z
+    .object({ mode: modoDeslocamentoSchema, speed_kmh: z.number(), detour_factor: z.number(), text: z.string() })
+    .optional(),
   stops: z.array(stopViewSchema),
   plan: z.object({ planned: z.number(), reserve: z.number(), walk_km: z.number(), fits_meta: z.boolean(), not_fit: z.number() }),
   progress: z.object({

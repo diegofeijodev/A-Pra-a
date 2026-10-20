@@ -69,7 +69,7 @@ export default function ConsultoresPage() {
                 <span className="text-xs text-muted-foreground">{c.active ? SITUACAO[c.today.status] : 'desativado'}</span>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                {c.praca_name} · {plural(c.today.visits, 'visita', 'visitas')} hoje · {plural(c.today.cadastros, 'cadastrou', 'cadastraram')} agora · último ponto {c.today.last_point_at ? hora(c.today.last_point_at) : '—'}
+                {c.praca_name} · {plural(c.today.visits - (c.today.closed ?? 0), 'visita', 'visitas')} hoje{c.today.closed ? ` (+ ${c.today.closed} fechado${c.today.closed === 1 ? '' : 's'}, fora da meta)` : ''} · {plural(c.today.cadastros, 'cadastrou', 'cadastraram')} agora · último ponto {c.today.last_point_at ? hora(c.today.last_point_at) : '—'}
               </p>
               {c.signups_confirmed && (
                 <p className="mt-1 text-xs" title={textoCadastrosConfirmados(c.signups_confirmed).conta}>

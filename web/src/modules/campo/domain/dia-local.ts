@@ -8,6 +8,8 @@ export interface VisitaLocal {
   checkout_at: string | null;
   auto_closed: boolean;
   cadastrou_qr: boolean;
+  /** Estabelecimento fechado (§30.1): visita sem conversa, fora da meta. */
+  fechado: boolean;
   /** Ainda tem envio na fila. */
   pendente: boolean;
 }
@@ -16,7 +18,8 @@ export interface DiaLocal {
   jornada: { client_id: string; started_at: string; pendente: boolean } | null;
   visitas: VisitaLocal[];
   visitaAberta: VisitaLocal | null;
-  contadores: { visitas: number; cadastrou_qr: number };
+  /** `visitas` = total de check-ins do dia; `feitas` = só as com conversa (a conta da meta); `fechadas` = fora da meta. */
+  contadores: { visitas: number; feitas: number; fechadas: number; cadastrou_qr: number };
 }
 
 /**
@@ -34,6 +37,7 @@ export function montarDia(today: TodayView | null, fila: ItemFila[]): DiaLocal {
     checkout_at: v.checkout_at,
     auto_closed: v.auto_closed,
     cadastrou_qr: v.answers.freela_status === 'cadastrou_qr',
+    fechado: v.answers.outcome === 'fechado',
     pendente: false,
   }));
   const achar = (ref: string) => visitas.find((v) => v.ref === ref);
@@ -57,6 +61,7 @@ export function montarDia(today: TodayView | null, fila: ItemFila[]): DiaLocal {
             checkout_at: null,
             auto_closed: false,
             cadastrou_qr: false,
+            fechado: false,
             pendente: true,
           });
         }
@@ -66,7 +71,10 @@ export function montarDia(today: TodayView | null, fila: ItemFila[]): DiaLocal {
         break;
       case 'answers': {
         const v = achar(item.visit_ref);
-        if (v) v.cadastrou_qr = item.payload.freela_status === 'cadastrou_qr';
+        if (v) {
+          v.cadastrou_qr = item.payload.freela_status === 'cadastrou_qr';
+          v.fechado = item.payload.outcome === 'fechado';
+        }
         break;
       }
       case 'checkout': {
@@ -95,6 +103,11 @@ export function montarDia(today: TodayView | null, fila: ItemFila[]): DiaLocal {
     jornada,
     visitas,
     visitaAberta,
-    contadores: { visitas: visitas.length, cadastrou_qr: visitas.filter((v) => v.cadastrou_qr).length },
+    contadores: {
+      visitas: visitas.length,
+      feitas: visitas.filter((v) => !v.fechado).length,
+      fechadas: visitas.filter((v) => v.fechado).length,
+      cadastrou_qr: visitas.filter((v) => v.cadastrou_qr).length,
+    },
   };
 }

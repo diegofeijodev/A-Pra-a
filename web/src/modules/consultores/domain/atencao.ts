@@ -76,6 +76,12 @@ export const followupSchema = z.object({
   praca_id: z.string().nullable(),
   followup_what: z.string(),
   followup_date: z.string(),
+  /** `HH:mm` de Brasília (contrato §30.3); ausente em respostas antigas. */
+  followup_time: z.string().nullable().optional(),
+  /** `(11) 9****-4321`; a equipe nunca recebe o número completo. */
+  contact_phone_masked: z.string().nullable().optional(),
+  /** Número completo: SÓ em `GET /v1/campo/followups` (as visitas do próprio consultor). */
+  contact_phone: z.string().nullable().optional(),
   due: z.enum(['hoje', 'atrasado']),
   days_late: z.number(),
   visited_at: z.string(),
@@ -150,6 +156,12 @@ export const porcentagem = (feitas: number, meta: number): number => Math.min(10
 export function rotuloVencimento(f: Pick<FollowupView, 'due' | 'days_late'>): string {
   if (f.due === 'hoje') return 'Hoje';
   return `Atrasado há ${f.days_late} ${f.days_late === 1 ? 'dia' : 'dias'}`;
+}
+
+/** "Hoje às 15:30" / "Atrasado há 2 dias" + hora combinada, se houver (a hora só faz sentido para hoje; atrasado mostra o dia). */
+export function rotuloVencimentoComHora(f: Pick<FollowupView, 'due' | 'days_late' | 'followup_time'>): string {
+  const base = rotuloVencimento(f);
+  return f.followup_time ? `${base}, combinado para ${f.followup_time}` : base;
 }
 
 /** "2026-10-19" → "19/10". */

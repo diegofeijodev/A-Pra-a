@@ -10,7 +10,7 @@ import { campoGerarRota } from '@/modules/campo/infrastructure/campo.api';
 import { hora } from '@/modules/campo/domain/formatos';
 import { ErroGps, lerPosicao } from '@/modules/campo/infrastructure/gps';
 import { useRoteiro } from '@/modules/rotas/application/use-roteiro';
-import { etaTexto, faltam, minutosSp, proximaParada, ritmoLocal, ritmoTexto, trechoTexto } from '@/modules/rotas/domain/rota-local';
+import { etaTexto, faltam, minutosSp, proximaParada, ritmoLocal, ritmoTexto, trechoTexto, velocidadeDoRoteiro } from '@/modules/rotas/domain/rota-local';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 
 /**
@@ -64,7 +64,7 @@ export function RoteiroCard() {
   }
 
   const agoraMin = minutosSp(Date.now());
-  const feitas = dia.contadores.visitas;
+  const feitas = dia.contadores.feitas; // sem os "fechados" (§30.1)
   const meta = route.params.meta_diaria;
   const ritmo = ritmoTexto(ritmoLocal(route.params, feitas, agoraMin), route.params, agoraMin);
   const proxima = proximaParada(route.stops);
@@ -96,6 +96,10 @@ export function RoteiroCard() {
         </div>
         <p className={`text-sm font-bold ${ritmo.ok ? 'text-success' : 'text-warning'}`}>{ritmo.titulo}</p>
         <p className="text-sm text-muted-foreground">({ritmo.conta})</p>
+        <p className="text-sm" data-testid="modo-rota-consultor">
+          <strong>{route.travel_mode === 'carro' ? 'Roteiro de carro' : 'Roteiro a pé'}</strong>
+          <span className="text-muted-foreground"> — {route.travel?.text ?? `A pé: ${String(route.params.velocidade_kmh).replace('.', ',')} km/h`}</span>
+        </p>
       </section>
 
       {proxima ? (
@@ -104,7 +108,7 @@ export function RoteiroCard() {
           <div>
             <p className="text-lg font-black">{proxima.name}</p>
             <p className="text-sm">{proxima.address || 'Sem endereço'}</p>
-            <p className="text-sm text-muted-foreground">{trechoTexto(proxima.distance_m, route.params.velocidade_kmh)} (estimado, desde a parada anterior)</p>
+            <p className="text-sm text-muted-foreground">{trechoTexto(proxima.distance_m, velocidadeDoRoteiro(route), route.travel_mode)} (estimado, desde a parada anterior)</p>
           </div>
           <NavegarLinks parada={proxima} />
           <ParadaAcoes parada={proxima} params={route.params} />

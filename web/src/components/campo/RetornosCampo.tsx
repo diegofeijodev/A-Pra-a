@@ -2,7 +2,7 @@
 
 import { ContatoLinks } from '@/components/praca/ContatoLinks';
 import { useRetornosCampo } from '@/modules/campo/application/use-campo';
-import { diaCurto, rotuloVencimento, type FollowupView } from '@/modules/consultores/domain/atencao';
+import { diaCurto, rotuloVencimentoComHora, type FollowupView } from '@/modules/consultores/domain/atencao';
 
 /** Quantos retornos aparecem direto; o resto fica atrás de um toque para não empurrar o botão de check-in. */
 const VISIVEIS = 3;
@@ -13,11 +13,19 @@ function Retorno({ f }: { f: FollowupView }) {
       <p className="text-base font-bold">{f.lead_name}</p>
       <p className={`text-sm font-bold ${f.due === 'atrasado' ? 'text-warning' : 'text-success'}`}>
         {f.due === 'atrasado' ? '⚠ ' : '✓ '}
-        {rotuloVencimento(f)} ({diaCurto(f.followup_date)})
+        {rotuloVencimentoComHora(f)} ({diaCurto(f.followup_date)})
       </p>
       <p className="text-sm">{f.followup_what || 'Sem descrição do retorno.'}</p>
       {f.address && <p className="text-sm text-muted-foreground">{f.address}</p>}
       <ContatoLinks phone={f.phone} nome={f.lead_name} />
+      {f.contact_phone && (
+        <div className="space-y-1 border-t border-border pt-2">
+          <p className="text-sm text-muted-foreground">
+            Quem atendeu{f.interlocutor_name ? `: ${f.interlocutor_name}` : ''} · {f.contact_phone_masked}
+          </p>
+          <ContatoLinks phone={f.contact_phone} nome={f.interlocutor_name ?? f.lead_name} />
+        </div>
+      )}
     </>
   );
 }

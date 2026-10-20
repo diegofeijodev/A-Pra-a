@@ -1,11 +1,14 @@
 'use client';
 
+import { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { todaySp } from '@/lib/dates';
-import type { Cargo, FreelaStatus, Interesse, VisitAnswers } from '@/modules/campo/domain/campo.types';
+import type { Cargo, FreelaStatus, Interesse, Resultado, VisitAnswers } from '@/modules/campo/domain/campo.types';
+import { formatarTelefone, normalizarTelefone } from '@/modules/campo/domain/contato';
 import { canaisExclusivos, FUNCOES_VAGA } from '@/modules/campo/domain/questionario';
+import { MOTIVOS_RECUSA, pedeMotivoRecusa } from '@/modules/campo/domain/recusa';
 
 const CARGOS: [Cargo, string][] = [['dono', 'Dono'], ['gerente', 'Gerente'], ['outro', 'Outro']];
 const SITUACOES: [FreelaStatus, string][] = [
@@ -13,6 +16,7 @@ const SITUACOES: [FreelaStatus, string][] = [
   ['cadastrou_qr', 'Cadastrou agora pelo QR'],
   ['nao_cadastrou', 'Não cadastrou'],
 ];
+const RESULTADOS: [Resultado, string][] = [['conversa', 'Conversei'], ['fechado', 'Estava fechado']];
 const INTERESSES: [Interesse, string][] = [['alto', 'Alto'], ['medio', 'Médio'], ['baixo', 'Baixo'], ['nenhum', 'Nenhum']];
 
 function Opcoes<T extends string>({
@@ -85,6 +89,39 @@ const inteiro = (s: string, max: number): number | null => {
   return Number.isFinite(n) ? Math.min(Math.max(n, 0), max) : null;
 };
 
+/**
+ * Telefone de quem atendeu (opcional, §30.3). O que se digita fica no campo; só um número VÁLIDO (ou vazio)
+ * sobe para as respostas — um número pela metade nunca vai ao servidor (o rascunho é salvo a cada mudança).
+ */
+function TelefoneContato({ valor, onMudar, desabilitado }: { valor: string | null; onMudar: (v: string | null) => void; desabilitado?: boolean }) {
+  const [texto, setTexto] = useState(valor ? formatarTelefone(valor) : '');
+  const r = normalizarTelefone(texto);
+  return (
+    <div className="space-y-1">
+      <Label htmlFor="q-contato-fone">Telefone de quem atendeu (opcional)</Label>
+      <Input
+        id="q-contato-fone"
+        type="tel"
+        inputMode="tel"
+        autoComplete="off"
+        value={texto}
+        disabled={desabilitado}
+        onChange={(e) => {
+          const novo = formatarTelefone(e.target.value);
+          setTexto(novo);
+          const n = normalizarTelefone(novo);
+          onMudar(n.ok ? n.valor : null);
+        }}
+        placeholder="(11) 98765-4321"
+        aria-describedby="q-contato-fone-dica"
+      />
+      <p id="q-contato-fone-dica" className={`text-xs ${r.ok ? 'text-muted-foreground' : 'text-warning'}`}>
+        {r.ok ? 'Só para ligar de volta ou chamar no WhatsApp. DDD + número.' : 'Faltam dígitos: informe o DDD e o número (10 ou 11 dígitos). Enquanto isso, o telefone não é salvo.'}
+      </p>
+    </div>
+  );
+}
+
 /** Questionário da visita (spec §8.1). Controlado: cada mudança sobe inteira em `onMudar`. */
 export function Questionario({
   valor,
@@ -98,9 +135,28 @@ export function Questionario({
   desabilitado?: boolean;
 }) {
   const mudar = (parcial: Partial<VisitAnswers>) => onMudar({ ...valor, ...parcial });
+  const resultado: Resultado = valor.outcome ?? 'conversa';
+  const fechado = resultado === 'fechado';
 
   return (
     <div className="space-y-5">
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Como foi a visita?</p>
+        <Opcoes
+          valor={resultado}
+          opcoes={RESULTADOS}
+          onEscolher={(v) => mudar(v === 'fechado' ? { outcome: v, refusal_reason: null, refusal_note: null } : { outcome: v })}
+          desabilitado={desabilitado}
+        />
+        {fechado && (
+          <p className="text-sm text-muted-foreground">
+            Estabelecimento fechado: não precisa responder o questionário e a visita não entra na meta. Se quiser voltar, marque o retorno abaixo.
+          </p>
+        )}
+      </div>
+
+      {!fechado && (
+        <>
       <div className="space-y-2">
         <Label htmlFor="q-nome">Com quem falou</Label>
         <Input
@@ -112,6 +168,7 @@ export function Questionario({
           placeholder="Nome"
         />
         <Opcoes valor={valor.interlocutor_role} opcoes={CARGOS} onEscolher={(v) => mudar({ interlocutor_role: v })} desabilitado={desabilitado} />
+        <TelefoneContato valor={valor.contact_phone ?? null} onMudar={(t) => mudar({ contact_phone: t })} desabilitado={desabilitado} />
       </div>
 
       <div className="space-y-2">
@@ -121,8 +178,37 @@ export function Questionario({
 
       <div className="space-y-2">
         <p className="text-sm font-medium">Interesse</p>
-        <Opcoes valor={valor.interest} opcoes={INTERESSES} onEscolher={(v) => mudar({ interest: v })} desabilitado={desabilitado} />
+        <Opcoes
+          valor={valor.interest}
+          opcoes={INTERESSES}
+          onEscolher={(v) => mudar(v === 'nenhum' ? { interest: v } : { interest: v, refusal_reason: null, refusal_note: null })}
+          desabilitado={desabilitado}
+        />
       </div>
+
+      {pedeMotivoRecusa(valor) && (
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Motivo da recusa</p>
+          <Opcoes
+            valor={valor.refusal_reason ?? null}
+            opcoes={MOTIVOS_RECUSA.map((m) => [m.key, m.label] as [string, string])}
+            onEscolher={(v) => mudar({ refusal_reason: v, ...(v === 'outro' ? {} : { refusal_note: null }) })}
+            desabilitado={desabilitado}
+          />
+          {valor.refusal_reason === 'outro' && (
+            <Input
+              id="q-recusa-nota"
+              aria-label="Qual foi o motivo"
+              value={valor.refusal_note ?? ''}
+              maxLength={120}
+              disabled={desabilitado}
+              onChange={(e) => mudar({ refusal_note: e.target.value || null })}
+              placeholder="Qual? (curto)"
+            />
+          )}
+          <p className="text-xs text-muted-foreground">Ajuda a equipe a entender por que não quiseram. Não é obrigatório.</p>
+        </div>
+      )}
 
       <div className="space-y-2">
         <Label htmlFor="q-vagas">Vagas abertas agora</Label>
@@ -165,6 +251,8 @@ export function Questionario({
           placeholder="Outro (qual?)"
         />
       </div>
+        </>
+      )}
 
       <div className="space-y-2">
         <p className="text-sm font-medium">Precisa de retorno?</p>
@@ -172,7 +260,7 @@ export function Questionario({
           valor={valor.needs_followup == null ? null : valor.needs_followup ? 'sim' : 'nao'}
           opcoes={[['sim', 'Sim'], ['nao', 'Não']] as ['sim' | 'nao', string][]}
           onEscolher={(v) =>
-            mudar(v === 'sim' ? { needs_followup: true } : { needs_followup: false, followup_what: null, followup_date: null })
+            mudar(v === 'sim' ? { needs_followup: true } : { needs_followup: false, followup_what: null, followup_date: null, followup_time: null })
           }
           desabilitado={desabilitado}
         />
@@ -196,6 +284,17 @@ export function Questionario({
               disabled={desabilitado}
               onChange={(e) => mudar({ followup_date: e.target.value || null })}
             />
+            <div className="space-y-1">
+              <Label htmlFor="q-retorno-hora">Hora combinada (opcional)</Label>
+              <Input
+                id="q-retorno-hora"
+                type="time"
+                value={valor.followup_time ?? ''}
+                disabled={desabilitado}
+                onChange={(e) => mudar({ followup_time: e.target.value || null })}
+              />
+              <p className="text-xs text-muted-foreground">Horário de Brasília. Sem hora, o retorno vale o dia todo.</p>
+            </div>
           </div>
         )}
       </div>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { atencaoSchema, diaCurto, followupsSchema, linkLigar, linkWhatsApp, porcentagem, ritmoDaLinha, rotuloVencimento, type GoalView } from '../atencao';
+import { atencaoSchema, diaCurto, followupsSchema, linkLigar, linkWhatsApp, porcentagem, ritmoDaLinha, rotuloVencimento, rotuloVencimentoComHora, type GoalView } from '../atencao';
 
 const goal = (over: Partial<GoalView> = {}): GoalView => ({
   meta: 30, feitas: 8, esperadas: 17, delta: -9, faltam: 22, minutos_uteis: 280, minutos_por_visita_ritmo: 16, dia_de_trabalho: true, conta: 'c', fonte: 'f', ...over,
@@ -66,5 +66,13 @@ describe('contrato §25 no fio', () => {
     expect(() => atencaoSchema.parse({ ...a, alerts: [{ ...a.alerts[0], code: 'outro' }] })).toThrow();
     const f = { day: '2026-10-20', today: 0, overdue: 0, total: 0, truncated: false, items: [] };
     expect(followupsSchema.parse(f).items).toEqual([]);
+  });
+});
+
+describe('P0 §30.3 — vencimento com hora combinada', () => {
+  it('sem hora é o rótulo de antes; com hora acrescenta o horário', () => {
+    expect(rotuloVencimentoComHora({ due: 'hoje', days_late: 0, followup_time: null })).toBe('Hoje');
+    expect(rotuloVencimentoComHora({ due: 'hoje', days_late: 0, followup_time: '15:30' })).toBe('Hoje, combinado para 15:30');
+    expect(rotuloVencimentoComHora({ due: 'atrasado', days_late: 2, followup_time: '09:00' })).toBe('Atrasado há 2 dias, combinado para 09:00');
   });
 });

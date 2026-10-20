@@ -70,6 +70,9 @@ export type Cargo = 'dono' | 'gerente' | 'outro';
 export type FreelaStatus = 'ja_usa' | 'cadastrou_qr' | 'nao_cadastrou';
 export type Interesse = 'alto' | 'medio' | 'baixo' | 'nenhum';
 
+/** Resultado da visita (contrato §30.1): `fechado` = chegou e o estabelecimento estava fechado. */
+export type Resultado = 'conversa' | 'fechado';
+
 export interface VisitAnswers {
   interlocutor_name: string | null;
   interlocutor_role: Cargo | null;
@@ -84,6 +87,14 @@ export interface VisitAnswers {
   followup_what: string | null;
   followup_date: string | null;
   notes: string | null;
+  /** P0 §30 — opcionais no tipo: respostas guardadas no aparelho antes do deploy não têm estes campos (= conversa / vazio). */
+  outcome?: Resultado;
+  refusal_reason?: string | null;
+  refusal_note?: string | null;
+  /** `HH:mm` de Brasília. */
+  followup_time?: string | null;
+  /** Só dígitos (10–11). */
+  contact_phone?: string | null;
 }
 
 export interface VisitView {
@@ -115,7 +126,7 @@ export interface TodayView {
   journeys: JourneyView[];
   open_visit: VisitView | null;
   visits: VisitView[];
-  counters: { visits: number; cadastrou_qr: number };
+  counters: { visits: number; cadastrou_qr: number; closed?: number };
   /** Meta e ritmo do próprio consultor com a conta (contrato §25.5); ausente em respostas antigas guardadas no aparelho. */
   goal?: (GoalView & { params: GoalParams }) | null;
   /** Cadastros confirmados pelo Freela hoje/na semana (contrato §27.8); ausente em respostas antigas. */

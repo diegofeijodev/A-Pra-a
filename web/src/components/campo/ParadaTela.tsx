@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useDia } from '@/modules/campo/application/use-campo';
 import { irPara } from '@/modules/campo/application/use-tela';
 import { useRoteiro } from '@/modules/rotas/application/use-roteiro';
-import { etaTexto, trechoTexto } from '@/modules/rotas/domain/rota-local';
+import { etaTexto, trechoTexto, velocidadeDoRoteiro } from '@/modules/rotas/domain/rota-local';
 
 /** Visão `parada` de `/campo` (UX §4.4): detalhe, navegação, pular / deixar para depois e "Cheguei". */
 export function ParadaTela({ id }: { id: string }) {
@@ -34,7 +34,7 @@ export function ParadaTela({ id }: { id: string }) {
       <section className="card-surface space-y-1 p-4">
         <p className="text-sm">{parada.address || 'Sem endereço'}</p>
         <p className="text-sm text-muted-foreground">
-          {trechoTexto(parada.distance_m, rot.route.params.velocidade_kmh)} (estimado, desde a parada anterior)
+          {trechoTexto(parada.distance_m, velocidadeDoRoteiro(rot.route), rot.route.travel_mode)} (estimado, desde a parada anterior)
           {parada.status === 'pendente' && parada.eta ? ` · chega por volta das ${etaTexto(parada.eta)}` : ''}
         </p>
         {parada.status === 'visitada' && <p className="text-sm font-bold text-success">✓ Visita feita</p>}

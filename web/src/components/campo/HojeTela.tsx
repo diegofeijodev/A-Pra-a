@@ -86,8 +86,13 @@ export function HojeTela() {
 
           <section className="grid grid-cols-2 gap-3">
             <div className="card-surface p-4">
-              <p className="text-3xl font-black">{dia.contadores.visitas}</p>
-              <p className="text-xs text-muted-foreground">{dia.contadores.visitas === 1 ? 'visita hoje' : 'visitas hoje'}</p>
+              <p className="text-3xl font-black">{dia.contadores.feitas}</p>
+              <p className="text-xs text-muted-foreground">{dia.contadores.feitas === 1 ? 'visita hoje' : 'visitas hoje'}</p>
+              {dia.contadores.fechadas > 0 && (
+                <p className="text-[11px] text-muted-foreground">
+                  + {dia.contadores.fechadas} {dia.contadores.fechadas === 1 ? 'fechado' : 'fechados'} (fora da meta)
+                </p>
+              )}
             </div>
             <div className="card-surface p-4">
               <p className="text-3xl font-black">{dia.contadores.cadastrou_qr}</p>
@@ -146,6 +151,7 @@ export function HojeTela() {
                           {hora(v.checkin_at)}
                           {min !== null ? ` · ${min} min` : ''}
                           {v.cadastrou_qr ? ' · cadastrou agora' : ''}
+                          {v.fechado ? ' · estabelecimento fechado' : ''}
                         </p>
                       </div>
                       <div className="flex flex-col items-end gap-1 text-[11px]">

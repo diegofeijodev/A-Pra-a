@@ -15,6 +15,7 @@ import {
   ritmoLocal,
   ritmoTexto,
   trechoTexto,
+  velocidadeDoRoteiro,
 } from '../rota-local';
 import type { ConfigRota, RouteView, StopView } from '../rota.schema';
 
@@ -41,7 +42,7 @@ const stop = (n: number, over: Partial<StopView> = {}): StopView => ({
 });
 const rota = (stops: StopView[]): RouteView => ({
   id: 'r', consultant_id: 'c', consultant_name: 'Ana', praca_id: 'p', day: '2026-10-20', status: 'ativa', version: 1, source: 'equipe',
-  area_id: null, start: { lat: 0, lng: 0 }, params: PARAMS, stops,
+  area_id: null, start: { lat: 0, lng: 0 }, params: PARAMS, travel_mode: 'a_pe', stops,
   plan: { planned: 0, reserve: 0, walk_km: 0, fits_meta: true, not_fit: 0 },
   progress: { meta: 30, done: 0, skipped: 0, deferred: 0, pending: 0, expected_now: 0, delta: 0 },
   generated_at: '', updated_at: '',
@@ -191,5 +192,16 @@ describe('itens da fila de roteiro', () => {
       { ...info, seq: 4, kind: 'route_reoptimize', payload: { client_id: 'r', at: '2026-10-20T14:01:00Z', lat: 1, lng: 2, accuracy: 5 } },
     ];
     expect(acoesDaFila(itens).map((a) => a.kind)).toEqual(['stop_skip', 'stop_undo', 'route_reoptimize']);
+  });
+});
+
+describe('P0 §30.4 — modo de carro na tela', () => {
+  it('trechoTexto: mesma conta da API, rótulo do modo', () => {
+    expect(trechoTexto(1300, 25, 'carro')).toBe('1,3 km · 4 min de carro');
+    expect(trechoTexto(1300, 4.5)).toBe('1,3 km · 18 min a pé');
+  });
+  it('velocidadeDoRoteiro usa a do modo quando existe, senão a de caminhada', () => {
+    expect(velocidadeDoRoteiro({ params: { velocidade_kmh: 4.5 }, travel: { speed_kmh: 25 } })).toBe(25);
+    expect(velocidadeDoRoteiro({ params: { velocidade_kmh: 4.5 } })).toBe(4.5);
   });
 });

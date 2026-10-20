@@ -13,7 +13,7 @@ import {
   diaCurto,
   porcentagem,
   ritmoDaLinha,
-  rotuloVencimento,
+  rotuloVencimentoComHora,
   ROTULO_ALERTA,
   type ConfigAlertas,
   type FollowupView,
@@ -110,12 +110,13 @@ function RetornoItem({ f }: { f: FollowupView }) {
       <p className="text-sm font-bold">{f.lead_name}</p>
       <p className={`text-sm font-bold ${f.due === 'atrasado' ? 'text-warning' : 'text-success'}`}>
         {f.due === 'atrasado' ? '⚠ ' : '✓ '}
-        {rotuloVencimento(f)} ({diaCurto(f.followup_date)})
+        {rotuloVencimentoComHora(f)} ({diaCurto(f.followup_date)})
       </p>
       <p className="text-sm">{f.followup_what || 'Sem descrição do retorno.'}</p>
       <p className="text-sm text-muted-foreground">
         Visita de {f.consultant_name}
         {f.interlocutor_name ? `, falou com ${f.interlocutor_name}` : ''}. {f.address}
+        {f.contact_phone_masked ? ` Telefone de quem atendeu: ${f.contact_phone_masked}.` : ''}
       </p>
       <ContatoLinks phone={f.phone} nome={f.lead_name} />
     </>

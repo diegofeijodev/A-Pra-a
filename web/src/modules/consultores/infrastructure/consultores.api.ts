@@ -36,7 +36,7 @@ export interface ConsultorView {
 }
 
 export interface ConsultorListItem extends ConsultorView {
-  today: { status: 'em_jornada' | 'encerrou' | 'nao_iniciou'; visits: number; cadastros: number; last_point_at: string | null };
+  today: { status: 'em_jornada' | 'encerrou' | 'nao_iniciou'; visits: number; /** Estabelecimento fechado (§30.1), dentro de `visits`. */ closed?: number; cadastros: number; last_point_at: string | null };
   /** Confirmados pelo Freela (contrato §27.8); `null` se a leitura falhou, ausente em servidor antigo. */
   signups_confirmed?: CadastrosConfirmados | null;
 }

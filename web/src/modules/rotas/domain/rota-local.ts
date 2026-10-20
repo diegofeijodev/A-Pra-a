@@ -69,12 +69,19 @@ export const faltam = (stops: StopView[]): StopView[] =>
 /** "11:40" → "11h40". */
 export const etaTexto = (eta: string | null): string => (eta ? eta.replace(':', 'h') : '—');
 
-/** "240 m · 4 min a pé" (a pé = 4,5 km/h por padrão, a conta da API). A distância é a estimada desde a parada anterior. */
-export function trechoTexto(distanceM: number, kmh: number): string {
+/**
+ * "240 m · 4 min a pé" (a pé = 4,5 km/h por padrão) ou "1,3 km · 4 min de carro" (modo carro, §30.4):
+ * a mesma conta da API (`ceil(metros ÷ (km/h × 1000 ÷ 60))`). A distância é a estimada desde a parada anterior.
+ */
+export function trechoTexto(distanceM: number, kmh: number, modo: 'a_pe' | 'carro' = 'a_pe'): string {
   const min = Math.ceil(distanceM / ((kmh * 1000) / 60));
   const d = distanceM < 1000 ? `${distanceM} m` : `${(distanceM / 1000).toFixed(1).replace('.', ',')} km`;
-  return `${d} · ${min} min a pé`;
+  return `${d} · ${min} min ${modo === 'carro' ? 'de carro' : 'a pé'}`;
 }
+
+/** Velocidade do roteiro: a do modo (carro) ou a de caminhada da configuração. */
+export const velocidadeDoRoteiro = (r: { params: { velocidade_kmh: number }; travel?: { speed_kmh: number } }): number =>
+  r.travel?.speed_kmh ?? r.params.velocidade_kmh;
 
 // ── horários ────────────────────────────────────────────────
 

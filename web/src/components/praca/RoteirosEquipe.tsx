@@ -20,7 +20,7 @@ import {
 } from '@/modules/rotas/application/use-rotas-equipe';
 import { alternarFixa, mover, mudou, pendentesParaOrdenar, resumoDaMeta, type ItemOrdem } from '@/modules/rotas/domain/ordem';
 import { etaTexto } from '@/modules/rotas/domain/rota-local';
-import { rotuloMotivo, type ConfigRota, type RouteView } from '@/modules/rotas/domain/rota.schema';
+import { MODOS_DESLOCAMENTO, rotuloMotivo, type ConfigRota, type ModoDeslocamento, type RouteView } from '@/modules/rotas/domain/rota.schema';
 import { todaySp } from '@/lib/dates';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 
@@ -54,9 +54,13 @@ function RoteiroCartao({ r, admin }: { r: RouteView; admin: boolean }) {
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-base font-bold">{r.consultant_name}</h3>
         <span className="text-sm text-muted-foreground">
-          {r.plan.planned} planejadas · {r.plan.reserve} reserva · ~{String(r.plan.walk_km).replace('.', ',')} km a pé (soma dos trechos × {String(r.params.fator_desvio).replace('.', ',')})
+          {r.plan.planned} planejadas · {r.plan.reserve} reserva · ~{String(r.plan.walk_km).replace('.', ',')} km de rua (soma dos trechos em linha reta × {String(r.params.fator_desvio).replace('.', ',')})
         </span>
       </div>
+      <p className="text-sm" data-testid="modo-rota">
+        <strong>{r.travel_mode === 'carro' ? 'De carro' : 'A pé'}</strong>
+        <span className="text-muted-foreground"> — {r.travel?.text ?? `A pé: ${String(r.params.velocidade_kmh).replace('.', ',')} km/h`}</span>
+      </p>
       <Progresso r={r} />
       {!r.plan.fits_meta && <p className="text-sm text-warning">⚠ {resumoDaMeta(r.plan, r.progress.meta, r.progress.done)}</p>}
 
@@ -212,6 +216,7 @@ export function RoteirosEquipe({ praca }: { praca: PracaView }) {
   const [day, setDay] = useState(hoje);
   const [consultantId, setConsultantId] = useState('');
   const [areaId, setAreaId] = useState('');
+  const [modoEscolhido, setModoEscolhido] = useState<ModoDeslocamento | null>(null);
   const [marcados, setMarcados] = useState<Set<string>>(new Set());
   const [confirmando, setConfirmando] = useState(false);
 
@@ -223,6 +228,11 @@ export function RoteirosEquipe({ praca }: { praca: PracaView }) {
   const montar = useMontarRoteiro();
   const consultor = doPraca.find((c) => c.id === consultantId);
   const meta = rotas.data?.[0]?.progress.meta ?? 30;
+  // Sem escolha, vale o modo do roteiro que esse consultor já tem no dia (nunca volta a pé sem querer).
+  const existente = rotas.data?.find((r) => r.consultant_id === consultantId);
+  const modo: ModoDeslocamento = modoEscolhido ?? existente?.travel_mode ?? 'a_pe';
+  const kmhPe = String(rotas.data?.[0]?.params.velocidade_kmh ?? 4.5).replace('.', ',');
+  const desvio = String(rotas.data?.[0]?.params.fator_desvio ?? 1.3).replace('.', ',');
 
   const alternar = (id: string) =>
     setMarcados((atual) => {
@@ -272,6 +282,29 @@ export function RoteirosEquipe({ praca }: { praca: PracaView }) {
                 </select>
               </div>
             </div>
+
+            <fieldset className="space-y-1">
+              <legend className="text-sm font-medium">Como o consultor se desloca</legend>
+              <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Modo de deslocamento">
+                {MODOS_DESLOCAMENTO.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={modo === m.id}
+                    onClick={() => setModoEscolhido(m.id)}
+                    className={`h-10 rounded-md border px-4 text-sm font-semibold ${modo === m.id ? 'border-primary bg-primary text-primary-foreground' : 'border-border'}`}
+                  >
+                    {m.rotulo}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {modo === 'carro'
+                  ? `De carro: velocidade média do servidor (padrão 25 km/h, sem estacionar) × desvio de rua ${desvio}. Chega antes e cabem mais paradas na janela; o tempo parado em cada visita é o mesmo.`
+                  : `A pé: ${kmhPe} km/h × desvio de rua ${desvio}.`}
+              </p>
+            </fieldset>
 
             {candidatos.isPending ? (
               <p className="text-sm text-muted-foreground">Carregando estabelecimentos…</p>
@@ -353,7 +386,7 @@ export function RoteirosEquipe({ praca }: { praca: PracaView }) {
           <DialogHeader>
             <DialogTitle>Publicar o roteiro?</DialogTitle>
             <DialogDescription>
-              Publicar o roteiro de {day.split('-').reverse().join('/')} para {consultor?.name ?? 'o consultor'} com {marcados.size} estabelecimentos? Ele vê na tela Hoje ao abrir o aplicativo. Se já havia um roteiro, o conjunto é substituído (o que já foi visitado fica).
+              Publicar o roteiro de {day.split('-').reverse().join('/')} para {consultor?.name ?? 'o consultor'} com {marcados.size} estabelecimentos ({modo === 'carro' ? 'de carro' : 'a pé'})? Ele vê na tela Hoje ao abrir o aplicativo. Se já havia um roteiro, o conjunto é substituído (o que já foi visitado fica).
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
@@ -364,7 +397,7 @@ export function RoteirosEquipe({ praca }: { praca: PracaView }) {
               disabled={montar.isPending}
               onClick={() =>
                 montar.mutate(
-                  { consultant_id: consultantId, day, lead_ids: [...marcados], ...(areaId ? { area_id: areaId } : {}) },
+                  { consultant_id: consultantId, day, lead_ids: [...marcados], travel_mode: modo, ...(areaId ? { area_id: areaId } : {}) },
                   { onSuccess: () => { setConfirmando(false); setMarcados(new Set()); } },
                 )
               }

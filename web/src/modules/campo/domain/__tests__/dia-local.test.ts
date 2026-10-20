@@ -61,7 +61,7 @@ describe('montarDia — o dia como o consultor vê, com a fila por cima', () => 
     const dia = montarDia(hoje({ journey: JORNADA, visits: [visita({})] }), fila);
     expect(dia.visitaAberta).toBeNull();
     expect(dia.visitas[0]).toMatchObject({ ref: 'v1', checkout_at: POS.at, pendente: true, cadastrou_qr: true });
-    expect(dia.contadores).toEqual({ visitas: 1, cadastrou_qr: 1 });
+    expect(dia.contadores).toEqual({ visitas: 1, feitas: 1, fechadas: 0, cadastrou_qr: 1 });
   });
 
   it('visita fechada à meia-noite não é "aberta"', () => {
@@ -87,5 +87,14 @@ describe('montarDia — ações de roteiro na fila não mexem no dia', () => {
     ]);
     expect(dia.jornada).toBeNull();
     expect(dia.visitas).toEqual([]);
+  });
+
+  it('P0 §30.1: visita "fechado" (servidor ou rascunho na fila) fica fora de `feitas`, mas dentro do total', () => {
+    const doServidor = visita({ answers: { ...respostas('ja_usa'), outcome: 'fechado' } } as never);
+    const dia = montarDia(hoje({ journey: JORNADA, visits: [doServidor, visita({ client_id: 'v2', answers: respostas('ja_usa') } as never)] }), []);
+    expect(dia.contadores).toMatchObject({ visitas: 2, feitas: 1, fechadas: 1 });
+    // o rascunho na fila marca a segunda como fechada antes do envio
+    const fila: ItemFila[] = [{ ...base, seq: 1, kind: 'answers', visit_ref: 'v2', payload: { ...respostas('ja_usa'), outcome: 'fechado' } }];
+    expect(montarDia(hoje({ journey: JORNADA, visits: [doServidor, visita({ client_id: 'v2', answers: respostas('ja_usa') } as never)] }), fila).contadores).toMatchObject({ feitas: 0, fechadas: 2 });
   });
 });

@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react';
 import type { VisitView } from '@/modules/campo/domain/campo.types';
 import { fmtBR } from '@/lib/dates';
+import { mascararTelefone } from '@/modules/campo/domain/contato';
 import { duracaoMin, hora } from '@/modules/campo/domain/formatos';
+import { rotuloMotivoRecusa } from '@/modules/campo/domain/recusa';
 import { fotoDaVisitaEquipe, type DiaConsultor } from '@/modules/consultores/infrastructure/consultores.api';
 
 const SITUACAO: Record<string, string> = { ja_usa: 'Já usa o Freela', cadastrou_qr: 'Cadastrou agora pelo QR', nao_cadastrou: 'Não cadastrou' };
@@ -60,12 +62,22 @@ export function ConsultorLinhaDoTempo({ dia }: { dia: DiaConsultor }) {
                       {v.auto_closed ? ' · fechada à meia-noite' : ''}
                       {v.possible_dup ? ' · possível duplicado' : ''}
                     </p>
+                    {a.outcome === 'fechado' && (
+                      <p className="font-medium text-warning">Estabelecimento fechado (não conta como visita com conversa)</p>
+                    )}
                     {a.interlocutor_name && (
                       <p>
                         {a.interlocutor_name} ({a.interlocutor_role ? CARGO[a.interlocutor_role] : '—'}) · {a.freela_status ? SITUACAO[a.freela_status] : '—'} · interesse{' '}
                         {a.interest ? INTERESSE[a.interest] : '—'}
                       </p>
                     )}
+                    {rotuloMotivoRecusa(a.refusal_reason) && (
+                      <p className="text-xs">
+                        Motivo da recusa: {rotuloMotivoRecusa(a.refusal_reason)}
+                        {a.refusal_reason === 'outro' && a.refusal_note ? ` (${a.refusal_note})` : ''}
+                      </p>
+                    )}
+                    {a.contact_phone && <p className="text-xs">Telefone de quem atendeu: {mascararTelefone(a.contact_phone)}</p>}
                     {a.open_vagas != null && (
                       <p className="text-xs">
                         Vagas: {a.open_vagas}
@@ -75,7 +87,8 @@ export function ConsultorLinhaDoTempo({ dia }: { dia: DiaConsultor }) {
                     )}
                     {a.needs_followup && (
                       <p className="text-xs">
-                        Retorno: {a.followup_what} ({fmtBR(a.followup_date ?? undefined)})
+                        Retorno: {a.followup_what} ({fmtBR(a.followup_date ?? undefined)}
+                        {a.followup_time ? ` às ${a.followup_time}` : ''})
                       </p>
                     )}
                     {a.notes && <p className="text-xs text-muted-foreground">{a.notes}</p>}
