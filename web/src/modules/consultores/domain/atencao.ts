@@ -3,6 +3,7 @@
  * Os alertas só aparecem na tela: "Ligar" e "Chamar no WhatsApp" são links que a própria pessoa abre.
  */
 import { z } from 'zod';
+import { alertaPixSchema } from '@/modules/pagamentos/domain/pagamentos';
 
 export const goalSchema = z.object({
   meta: z.number(),
@@ -59,6 +60,8 @@ export const atencaoSchema = z.object({
       alerts: z.array(alertaSchema),
     }),
   ),
+  /** F9 (§29.8): Pix bloqueado/falho. Ausente com `FIELD_PAYOUTS_ENABLED` desligada. */
+  payout_alerts: z.array(alertaPixSchema).optional(),
 });
 export type AtencaoView = z.infer<typeof atencaoSchema>;
 

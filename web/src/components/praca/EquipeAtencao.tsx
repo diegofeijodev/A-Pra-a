@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { ContatoLinks } from '@/components/praca/ContatoLinks';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,7 +28,7 @@ export function AtencaoAgora() {
     <section className="card-surface p-4" aria-labelledby="atencao-titulo">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 id="atencao-titulo" className="font-display text-lg font-extrabold">
-          Atenção agora{data ? ` (${data.alerts.length})` : ''}
+          Atenção agora{data ? ` (${data.alerts.length + (data.payout_alerts?.length ?? 0)})` : ''}
         </h2>
         {data && <span className="text-sm text-muted-foreground">Atualizado às {data.now}, a cada minuto</span>}
       </div>
@@ -40,12 +41,24 @@ export function AtencaoAgora() {
             Tentar de novo
           </Button>
         </div>
-      ) : data.alerts.length === 0 ? (
+      ) : data.alerts.length === 0 && !(data.payout_alerts?.length) ? (
         <p className="mt-2 text-sm">
           {data.dia_de_trabalho ? '✓ Nenhum alerta agora: quem está em campo está dentro dos limites.' : 'Hoje não é dia de trabalho: sem alertas nem cobrança de ritmo.'}
         </p>
       ) : (
         <ul className="mt-3 space-y-3">
+          {data.payout_alerts?.map((a) => (
+            <li key={a.payout_id} className="rounded-md border border-warning/40 bg-warning/10 p-3">
+              <p className="text-sm font-bold">
+                <span aria-hidden>⚠ </span>
+                <span className="sr-only">{a.kind === 'pix_bloqueado' ? 'Pix bloqueado' : 'Pix falhou'}: </span>
+                {a.message}
+              </p>
+              <Link href="/consultores/pagamentos" className="inline-flex h-12 items-center text-sm font-bold text-primary hover:underline">
+                Abrir pagamentos
+              </Link>
+            </li>
+          ))}
           {data.alerts.map((a) => (
             <li key={`${a.consultant_id}-${a.code}`} className="rounded-md border border-warning/40 bg-warning/10 p-3">
               <p className="text-sm font-bold">

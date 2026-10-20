@@ -9,6 +9,7 @@ import { useAuth } from '@/modules/auth/application/use-auth';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 import { textoCadastrosConfirmados } from '@/modules/campo/domain/cadastros-confirmados';
 import { hora, plural } from '@/modules/campo/domain/formatos';
+import { usePagamentos } from '@/modules/pagamentos/application/use-pagamentos';
 import { useAtencao, useConsultores } from '@/modules/consultores/application/use-consultores';
 
 const SITUACAO = { em_jornada: 'em jornada agora', encerrou: 'encerrou', nao_iniciou: 'não começou' } as const;
@@ -16,6 +17,9 @@ export default function ConsultoresPage() {
   const { user } = useAuth();
   const { data: consultores, isPending, isError, error, refetch } = useConsultores();
   const { data: atencao } = useAtencao();
+  // O link some quando FIELD_PAYOUTS_ENABLED está desligada no servidor (404 PAYOUTS_DISABLED).
+  const pagamentos = usePagamentos();
+  const pagamentosLigados = pagamentos.isSuccess;
   const [novo, setNovo] = useState(false);
   const metaDe = new Map((atencao?.consultants ?? []).map((c) => [c.consultant_id, c]));
 
@@ -27,6 +31,11 @@ export default function ConsultoresPage() {
           <Link href="/consultores/calor" className="text-sm text-primary hover:underline">
             Mapa de calor
           </Link>
+          {pagamentosLigados && (
+            <Link href="/consultores/pagamentos" className="text-sm text-primary hover:underline">
+              Pagamentos
+            </Link>
+          )}
           <Link href="/consultores/roteiros" className="text-sm text-primary hover:underline">
             Roteiros do dia
           </Link>
