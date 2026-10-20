@@ -61,6 +61,7 @@ function fakePrisma() {
     field_visits: { findMany: jest.fn().mockResolvedValue([]) },
     field_points: { groupBy: jest.fn().mockResolvedValue([]) },
     field_earnings_ledger: { count: jest.fn().mockResolvedValue(0) },
+    field_declared_signups: { count: jest.fn().mockResolvedValue(0) },
     field_payout_periods: { count: jest.fn().mockResolvedValue(0) },
   };
 }

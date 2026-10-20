@@ -433,6 +433,13 @@ export class LeadsService {
         message: 'Este estabelecimento está em um roteiro de campo. Arquive-o em vez de apagar.',
       });
     }
+    // Cadastro declarado é um fato imutável do pagamento (FK RESTRICT, contrato §32.8).
+    if (await this.prisma.field_declared_signups.count({ where: { lead_id: id } })) {
+      throw new ConflictException({
+        code: 'HAS_DECLARED_SIGNUP',
+        message: 'Este estabelecimento tem um cadastro declarado por um consultor e não pode ser apagado. Arquive-o em vez de apagar.',
+      });
+    }
     await this.prisma.leads.delete({ where: { id } });
     return { ok: true };
   }

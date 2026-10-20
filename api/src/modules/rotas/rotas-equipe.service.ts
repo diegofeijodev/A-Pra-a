@@ -105,6 +105,8 @@ export class RotasEquipeService {
         archived: false,
         is_test: false,
         stage: { lte: config.estagio_maximo_rota },
+        // Modo do chefe S3 (§32.5): lead com cadastro declarado (não anulado) sai das rotas. Sem declaração, nada muda.
+        declared_signups: { none: { void: null } },
         location_precision: { in: ['point', 'address'] },
         OR: caixas,
         ...(q.q?.trim() ? { name: { contains: q.q.trim(), mode: 'insensitive' as const } } : {}),

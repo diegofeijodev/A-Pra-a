@@ -35,8 +35,8 @@ describe('CampoController.me — features', () => {
   it('company_signup segue a flag (padrão desligada)', async () => {
     const off = new CampoController(auth as never, {} as never, {} as never, {} as never, {} as never);
     const on = new CampoController(auth as never, {} as never, {} as never, {} as never, {} as never, true);
-    expect((await off.me(C)).features).toEqual({ company_signup: false, earnings: false, payouts: false, visit_flow: false });
-    expect((await on.me(C)).features).toEqual({ company_signup: true, earnings: false, payouts: false, visit_flow: false });
+    expect((await off.me(C)).features).toEqual({ company_signup: false, earnings: false, payouts: false, visit_flow: false, declared_signups: false });
+    expect((await on.me(C)).features).toEqual({ company_signup: true, earnings: false, payouts: false, visit_flow: false, declared_signups: false });
   });
 
   it('earnings segue FIELD_EARNINGS_ENABLED (padrão desligada)', async () => {

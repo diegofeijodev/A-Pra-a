@@ -13,6 +13,9 @@ import { CompanySignupService } from './company-signup.service';
 import { companySignupLigadoProvider } from './company-signup.tokens';
 import { ConsultoresController } from './consultores.controller';
 import { ConsultoresService } from './consultores.service';
+import { DeclaredSignupsEquipeController } from './declared/declared-signups.controller';
+import { DeclaredLigadoGuard } from './declared/declared.guard';
+import { DeclaredSignupsService } from './declared/declared-signups.service';
 import { EarningsCampoController, EarningsEquipeController } from './earnings/earnings.controller';
 import { EarningsLigadoGuard } from './earnings/earnings.guard';
 import { EARNINGS_INPUTS, PrismaEarningsInputs } from './earnings/earnings-inputs';
@@ -49,6 +52,7 @@ import { VisitsService } from './visits.service';
     // Antes de ConsultoresController: `GET /v1/consultores/signups` e `/earnings` não podem cair em `:id`.
     SignupsEquipeController,
     EarningsEquipeController,
+    DeclaredSignupsEquipeController,
     PayoutsEquipeController,
     PayoutsCampoController,
     EarningsCampoController,
@@ -79,6 +83,8 @@ import { VisitsService } from './visits.service';
     EarningsService,
     EarningsScheduler,
     EarningsLigadoGuard,
+    DeclaredSignupsService,
+    DeclaredLigadoGuard,
     earningsOpcoesProvider,
     PayoutsService,
     PayoutsLigadoGuard,

@@ -17,6 +17,7 @@ import { minParaHhmm } from '../../domain/rota-rules';
 import { RotasConfigService } from '../rotas/rotas-config.service';
 import { ROTAS_LIGADAS } from '../rotas/rotas.tokens';
 import { COM_PRACA } from './campo-prisma';
+import { DeclaredSignupsService, type AlertaDivergencia } from './declared/declared-signups.service';
 import { PayoutsService } from './payouts/payouts.service';
 import { PAYOUTS_OPCOES, type OpcoesPayouts } from './payouts/payouts.tokens';
 
@@ -44,6 +45,8 @@ export interface AtencaoView {
   consultants: AtencaoConsultor[];
   /** F9 (contrato §29.8): Pix bloqueado/falho. Ausente com `FIELD_PAYOUTS_ENABLED` desligada (e sem consulta). */
   payout_alerts?: Awaited<ReturnType<PayoutsService['alertas']>>;
+  /** S3 (contrato §32.7): divergência declaração × Freela. Ausente com `FIELD_DECLARED_SIGNUPS_ENABLED` desligada (e sem consulta). */
+  declared_alerts?: AlertaDivergencia[];
 }
 
 /** "Atenção agora" e meta da equipe (contrato §25.3): tudo calculado na leitura, nada gravado. */
@@ -56,12 +59,14 @@ export class AtencaoService {
     @Optional() @Inject(PAYOUTS_OPCOES) private readonly payoutsOpcoes?: OpcoesPayouts,
     @Optional() private readonly payouts?: PayoutsService,
     @Optional() private readonly modo?: ModoCampoService,
+    @Optional() private readonly declared?: DeclaredSignupsService,
   ) {}
 
   async painel(pracaId: string | undefined, agora = new Date()): Promise<AtencaoView> {
-    const v = await this.painelBase(pracaId, agora);
-    if (!this.payoutsOpcoes?.ligado || !this.payouts) return v;
-    return { ...v, payout_alerts: await this.payouts.alertas(pracaId) };
+    let v = await this.painelBase(pracaId, agora);
+    if (this.payoutsOpcoes?.ligado && this.payouts) v = { ...v, payout_alerts: await this.payouts.alertas(pracaId) };
+    if (this.declared?.ligado) v = { ...v, declared_alerts: await this.declared.alertas(pracaId, agora) };
+    return v;
   }
 
   private async painelBase(pracaId: string | undefined, agora: Date): Promise<AtencaoView> {

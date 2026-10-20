@@ -48,6 +48,9 @@ export interface ConfigModo {
   /** Só visitas `simples`: o "fechado" fotografado conta na meta. */
   fechado_conta_na_meta: boolean;
   desfazer_segundos: number;
+  /** S3 (contrato §32.7): alerta de divergência declaração × Freela: mínimo de "sem correspondência" e % mínimo. */
+  divergencia_alerta_min: number;
+  divergencia_alerta_pct: number;
 }
 
 export const CONFIG_MODO_PADRAO: ConfigModo = {
@@ -57,6 +60,8 @@ export const CONFIG_MODO_PADRAO: ConfigModo = {
   contato_campos: ['nome', 'cargo', 'telefone'],
   fechado_conta_na_meta: true,
   desfazer_segundos: 8,
+  divergencia_alerta_min: 5,
+  divergencia_alerta_pct: 40,
 };
 
 /**
@@ -75,6 +80,8 @@ export const PRESETS_MODO: { completo: ConfigModo; chefe: ConfigModo } = {
     contato_campos: ['nome', 'cargo', 'telefone'],
     fechado_conta_na_meta: true,
     desfazer_segundos: 8,
+    divergencia_alerta_min: 5,
+    divergencia_alerta_pct: 40,
   },
 };
 
@@ -91,6 +98,8 @@ const VALIDADORES: Record<keyof ConfigModo, (v: unknown) => boolean> = {
   contato_campos: subconjunto(CAMPOS_CONTATO),
   fechado_conta_na_meta: (v) => typeof v === 'boolean',
   desfazer_segundos: (v) => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 30,
+  divergencia_alerta_min: (v) => Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 1000,
+  divergencia_alerta_pct: (v) => Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 100,
 };
 
 export const CHAVES_CONFIG_MODO = Object.keys(VALIDADORES) as (keyof ConfigModo)[];

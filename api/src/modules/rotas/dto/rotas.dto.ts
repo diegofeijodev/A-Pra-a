@@ -59,6 +59,9 @@ export class ConfigRotaDto {
   @IsOptional() @IsArray() @IsString({ each: true }) contato_campos?: string[];
   @IsOptional() @IsBoolean() fechado_conta_na_meta?: boolean;
   @IsOptional() @IsInt() @Min(0) @Max(30) desfazer_segundos?: number;
+  // S3 (contrato §32.7): alerta de divergência do ganho declarado.
+  @IsOptional() @IsInt() @Min(1) @Max(1000) divergencia_alerta_min?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(100) divergencia_alerta_pct?: number;
 }
 
 export class PosicaoRotaDto {

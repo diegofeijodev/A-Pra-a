@@ -72,7 +72,7 @@ export class CampoController {
             },
           }
         : {}),
-      features: { company_signup: this.signupLigado, earnings: this.earnings?.ligado ?? false, payouts: this.payouts?.ligado ?? false, visit_flow: ligado },
+      features: { company_signup: this.signupLigado, earnings: this.earnings?.ligado ?? false, payouts: this.payouts?.ligado ?? false, visit_flow: ligado, declared_signups: this.earnings?.declaradasLigado ?? false },
     };
   }
 

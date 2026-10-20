@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { CampoConsultant } from '../../common/auth/campo-consultant';
 import { PrismaService } from '../../common/database/prisma.service';
 import { isUuid } from '../../common/ids/uuid';
+import { DeclaredSignupsService } from './declared/declared-signups.service';
 import { todaySp } from '../../common/time/dates';
 import {
   carimbo,
@@ -78,6 +79,7 @@ export class VisitsService {
     @Inject(PHOTO_STORAGE) private readonly fotos: PhotoStorage,
     @Optional() @Inject(ROTAS_LIGADAS) private readonly rotas: boolean = false,
     @Optional() private readonly modo?: ModoCampoService,
+    @Optional() private readonly declared?: DeclaredSignupsService,
   ) {}
 
   /** Parâmetros do modo do chefe (§31.3); flag desligada = nenhuma visita é `simples`, o padrão basta. */
@@ -334,13 +336,17 @@ export class VisitsService {
 
     const lead = await this.prisma.leads.findUniqueOrThrow({
       where: { id: v.lead_id },
-      select: { id: true, stage: true },
+      select: { id: true, stage: true, name: true },
     });
     // Estabelecimento fechado (§30.1) não é conversa: não grava atendente, contato nem retorno no lead
     // e não avança o estágio. O evento do CRM vira `note` (`visit` contaria como contato).
     const fechado = respostas.outcome === 'fechado';
     const estagio = resultado ? estagioSimples(resultado, lead.stage) : fechado ? lead.stage : estagioDepoisDaVisita(lead.stage);
     const mudou = estagio !== lead.stage;
+    // Modo do chefe S3 (§32.5): "cadastrou agora" vira uma declaração (fato imutável), na MESMA transação do checkout.
+    // Só com a flag ligada, no fluxo simples e nesse resultado; fora disso nada muda.
+    const declara = resultado === 'cadastrou' && !!this.declared && this.declared.ligado;
+    const preparo = declara ? await this.declared!.preparar(agora) : null;
 
     await this.prisma.$transaction(async (tx) => {
       // Condicional: dois checkouts simultâneos gravam UM evento no CRM.
@@ -354,6 +360,16 @@ export class VisitsService {
         },
       });
       if (r.count === 0) return;
+      if (declara && preparo)
+        await this.declared!.registrar(tx, {
+          consultant_id: c.id,
+          visit_id: v.id,
+          client_id: v.client_id,
+          lead: { id: lead.id, name: lead.name },
+          flow: v.flow,
+          agora,
+          preparo,
+        });
       await tx.field_points.create({
         data: {
           journey_id: v.journey_id,
