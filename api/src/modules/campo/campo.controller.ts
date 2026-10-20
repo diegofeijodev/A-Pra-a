@@ -3,6 +3,8 @@ import {
   Controller,
   Get,
   HttpCode,
+  Inject,
+  Optional,
   Param,
   Patch,
   Post,
@@ -17,6 +19,7 @@ import { CampoConsultant } from '../../common/auth/campo-consultant';
 import { AllowPendingPassword, CampoRoute } from '../../common/decorators/campo-route.decorator';
 import { CurrentConsultant } from '../../common/decorators/current-consultant.decorator';
 import { CampoAuthService } from './campo-auth.service';
+import { COMPANY_SIGNUP_LIGADO } from './company-signup.tokens';
 import { AnswersDto, PlacesQueryDto, PontosDto, PosicaoDto, SimilarQueryDto, StartJourneyDto } from './dto/campo.dto';
 import { FollowupsService } from './followups.service';
 import { JourneysService } from './journeys.service';
@@ -36,12 +39,14 @@ export class CampoController {
     private readonly places: PlacesService,
     private readonly visits: VisitsService,
     private readonly followups: FollowupsService,
+    @Optional() @Inject(COMPANY_SIGNUP_LIGADO) private readonly signupLigado: boolean = false,
   ) {}
 
   @AllowPendingPassword()
   @Get('me')
-  me(@CurrentConsultant() c: CampoConsultant) {
-    return this.auth.me(c.id);
+  async me(@CurrentConsultant() c: CampoConsultant) {
+    // `features` esconde o botão "Cadastrar no Freela" no web quando a flag está desligada (§26.3).
+    return { ...(await this.auth.me(c.id)), features: { company_signup: this.signupLigado } };
   }
 
   @Get('today')

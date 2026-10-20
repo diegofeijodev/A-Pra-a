@@ -8,6 +8,9 @@ import { CampoAuthController } from './campo-auth.controller';
 import { CampoAuthService } from './campo-auth.service';
 import { CampoFreelaService } from './campo-freela.service';
 import { CampoController } from './campo.controller';
+import { CompanySignupCampoController, CompanySignupEquipeController } from './company-signup.controller';
+import { CompanySignupService } from './company-signup.service';
+import { companySignupLigadoProvider } from './company-signup.tokens';
 import { ConsultoresController } from './consultores.controller';
 import { ConsultoresService } from './consultores.service';
 import { FollowupsService } from './followups.service';
@@ -25,7 +28,13 @@ import { VisitsService } from './visits.service';
  */
 @Module({
   imports: [FreelaClientModule, RotasModule],
-  controllers: [CampoAuthController, CampoController, ConsultoresController],
+  controllers: [
+    CampoAuthController,
+    CampoController,
+    ConsultoresController,
+    CompanySignupCampoController,
+    CompanySignupEquipeController,
+  ],
   providers: [
     CampoAuthService,
     CampoFreelaService,
@@ -37,6 +46,8 @@ import { VisitsService } from './visits.service';
     CampoAutocloseScheduler,
     PlacesService,
     VisitsService,
+    CompanySignupService,
+    companySignupLigadoProvider,
     // O `.env` já está em `process.env` (ConfigModule.forRoot) e foi validado na
     // largada; reler pelo mesmo schema dá o PHOTO_STORAGE já resolvido.
     { provide: PHOTO_STORAGE, useFactory: () => criarPhotoStorage(validateEnv(process.env)) },

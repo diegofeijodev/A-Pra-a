@@ -65,6 +65,8 @@ services:
       APIFY_MONTHLY_PLACES_CAP: ${APIFY_MONTHLY_PLACES_CAP:-3000}
       # Roteiro do dia do consultor (contrato §23). Os parâmetros (meta, horários) ficam em app_settings.field_config.
       FIELD_ROUTES_ENABLED: ${FIELD_ROUTES_ENABLED:-false}
+      # Cadastro assistido no Freela (contrato §26). Só ligar com o api-freela e a página /primeiro-acesso no ar.
+      FIELD_COMPANY_SIGNUP_ENABLED: ${FIELD_COMPANY_SIGNUP_ENABLED:-false}
     ports:
       - '3014:3014'
 

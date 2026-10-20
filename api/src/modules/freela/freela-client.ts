@@ -23,6 +23,16 @@
  * dependências — o teste monta `new FreelaClient()` e mexe só no ambiente.
  */
 import { BadGatewayException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  cadastroCriadoSchema,
+  linkReemitidoSchema,
+  listaCadastrosSchema,
+  type CadastroCriado,
+  type CadastroListado,
+  type CorpoCadastroFreela,
+  type FiltroListaCadastros,
+  type LinkReemitido,
+} from './freela-registrations';
 
 /** Mesma frase em todo lugar que fala de conexão com o Freela ausente. */
 export const FREELA_NOT_CONFIGURED_MESSAGE =
@@ -53,9 +63,16 @@ export class FreelaHttpError extends BadGatewayException {
   constructor(
     readonly freelaStatus: number,
     message: string,
+    /** SÓ `error.code` e `alreadyLinkedToThisConsultant` do Freela — o corpo inteiro nunca é guardado. */
+    readonly freelaError: FreelaErrorInfo = {},
   ) {
     super({ code: 'FREELA_ERROR', message });
   }
+}
+
+export interface FreelaErrorInfo {
+  code?: string | undefined;
+  alreadyLinkedToThisConsultant?: boolean | undefined;
 }
 
 /** Tempo máximo de espera por resposta do Freela. */
@@ -215,7 +232,7 @@ export class FreelaClient {
       }
     }
 
-    if (!res.ok) throw new FreelaHttpError(res.status, this.mensagem(corpo, res.status));
+    if (!res.ok) throw new FreelaHttpError(res.status, this.mensagem(corpo, res.status), this.infoDoErro(corpo));
     if (quebrado) {
       throw new BadGatewayException({
         code: 'FREELA_ERROR',
@@ -228,6 +245,66 @@ export class FreelaClient {
       data: (corpo?.data ?? null) as T,
       ...(meta && typeof meta === 'object' ? { meta: meta as Record<string, unknown> } : {}),
     };
+  }
+
+  /** `error.code` e `error.alreadyLinkedToThisConsultant` (contrato do cadastro assistido); o resto do corpo é descartado. */
+  private infoDoErro(corpo: Record<string, unknown> | null): FreelaErrorInfo {
+    const erro = corpo?.error;
+    if (!erro || typeof erro !== 'object') return {};
+    const e = erro as { code?: unknown; alreadyLinkedToThisConsultant?: unknown };
+    return {
+      ...(typeof e.code === 'string' ? { code: e.code } : {}),
+      ...(typeof e.alreadyLinkedToThisConsultant === 'boolean'
+        ? { alreadyLinkedToThisConsultant: e.alreadyLinkedToThisConsultant }
+        : {}),
+    };
+  }
+
+  /**
+   * Valida `dado` com zod. Falhou = `FREELA_ERROR` de mensagem FIXA: nem o corpo nem os
+   * issues do zod (que ecoam valores) vão para a mensagem ou para o log — o corpo tem o link.
+   */
+  private validar<T>(schema: { safeParse: (v: unknown) => { success: true; data: T } | { success: false } }, dado: unknown): T {
+    const r = schema.safeParse(dado);
+    if (r.success) return r.data;
+    throw new BadGatewayException({
+      code: 'FREELA_ERROR',
+      message: 'O Freela respondeu fora do formato esperado.',
+    });
+  }
+
+  // ── cadastro assistido da empresa (§26) ─────────────────────────────
+
+  /** `POST /v1/admins/consultants/:id/registrations`. `created:false` = replay (sem link). */
+  async createCompanyRegistration(freelaConsultantId: string, corpo: CorpoCadastroFreela): Promise<CadastroCriado> {
+    const r = await this.request('POST', `/v1/admins/consultants/${encodeURIComponent(freelaConsultantId)}/registrations`, corpo);
+    return this.validar(cadastroCriadoSchema, r.data);
+  }
+
+  /** `POST …/registrations/:userId/reissue-link` — invalida o link anterior. */
+  async reissueRegistrationLink(freelaConsultantId: string, userId: string, reason?: string): Promise<LinkReemitido> {
+    const r = await this.request(
+      'POST',
+      `/v1/admins/consultants/${encodeURIComponent(freelaConsultantId)}/registrations/${encodeURIComponent(userId)}/reissue-link`,
+      reason ? { reason } : {},
+    );
+    return this.validar(linkReemitidoSchema, r.data);
+  }
+
+  /** `GET …/registrations` (usada na F7). `nextCursor` vem em `meta`. */
+  async listRegistrations(
+    freelaConsultantId: string,
+    filtro: FiltroListaCadastros = {},
+  ): Promise<{ data: CadastroListado[]; nextCursor: string | null }> {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(filtro)) if (v !== undefined && v !== '') q.set(k, String(v));
+    const qs = q.toString();
+    const r = await this.request(
+      'GET',
+      `/v1/admins/consultants/${encodeURIComponent(freelaConsultantId)}/registrations${qs ? `?${qs}` : ''}`,
+    );
+    const nextCursor = (r.meta as { nextCursor?: unknown } | undefined)?.nextCursor;
+    return this.validar(listaCadastrosSchema, { data: r.data, nextCursor: typeof nextCursor === 'string' ? nextCursor : null });
   }
 
   /** A mensagem do Freela: `error.message`, `message` ou o status HTTP. */

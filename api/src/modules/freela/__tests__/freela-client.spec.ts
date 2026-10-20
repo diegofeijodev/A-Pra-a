@@ -290,3 +290,70 @@ describe('FreelaClient — status do Freela na recusa', () => {
     });
   });
 });
+
+describe('FreelaClient — cadastro assistido (§26)', () => {
+  beforeEach(configurar);
+  const LINK = 'https://freela.example/primeiro-acesso?t=TOKENSECRETOAAAAAAAAAAAAAAAAAAAA123';
+  const CORPO = {
+    clientId: '11111111-1111-4111-8111-111111111111',
+    persona: 'contractor' as const,
+    accessMode: 'setup_link' as const,
+    companyName: 'Padaria',
+    contactName: 'Marcos',
+    phone: '+5511987654321',
+    address: { city: 'São Paulo', uf: 'SP' },
+  };
+  const CRIADO = { userId: 'u1', contractorId: 'c1', created: true, accessMode: 'setup_link', setupLink: LINK, setupLinkExpiresAt: '2026-10-21T15:00:00.000Z', activatedAt: null };
+
+  it('createCompanyRegistration: POST no caminho do consultor e devolve o dado validado', async () => {
+    fetchMock.mockResolvedValueOnce(LOGIN_OK).mockResolvedValueOnce(resp(201, { data: CRIADO }));
+    const r = await new FreelaClient().createCompanyRegistration('fc/1', CORPO);
+    expect(r).toMatchObject({ userId: 'u1', created: true, setupLink: LINK });
+    expect(fetchMock.mock.calls[1]![0]).toBe(`${BASE}/v1/admins/consultants/fc%2F1/registrations`);
+    expect(JSON.parse((fetchMock.mock.calls[1]![1] as RequestInit).body as string)).toEqual(CORPO);
+  });
+
+  it('replay: created:false aceita setupLink nulo', async () => {
+    fetchMock.mockResolvedValueOnce(LOGIN_OK).mockResolvedValueOnce(resp(200, { data: { ...CRIADO, created: false, setupLink: null } }));
+    expect((await new FreelaClient().createCompanyRegistration('fc', CORPO)).setupLink).toBeNull();
+  });
+
+  it('resposta fora do formato: FREELA_ERROR de mensagem fixa, sem o link nem o corpo', async () => {
+    fetchMock.mockResolvedValueOnce(LOGIN_OK).mockResolvedValueOnce(resp(201, { data: { userId: 5, setupLink: LINK } }));
+    const erro = (await new FreelaClient().createCompanyRegistration('fc', CORPO).catch((e: unknown) => e)) as BadGatewayException;
+    expect(erro).toBeInstanceOf(BadGatewayException);
+    expect(JSON.stringify(erro.getResponse())).not.toContain('TOKENSECRETO');
+    expect(erro.getResponse()).toEqual({ code: 'FREELA_ERROR', message: 'O Freela respondeu fora do formato esperado.' });
+  });
+
+  it('409 guarda só code e alreadyLinkedToThisConsultant do Freela', async () => {
+    fetchMock.mockResolvedValueOnce(LOGIN_OK).mockResolvedValueOnce(
+      resp(409, { error: { code: 'PHONE_ALREADY_REGISTERED', message: 'Telefone já existe', alreadyLinkedToThisConsultant: true, userId: 'vazou' } }),
+    );
+    const erro = (await new FreelaClient().createCompanyRegistration('fc', CORPO).catch((e: unknown) => e)) as FreelaHttpError;
+    expect(erro.freelaStatus).toBe(409);
+    expect(erro.freelaError).toEqual({ code: 'PHONE_ALREADY_REGISTERED', alreadyLinkedToThisConsultant: true });
+  });
+
+  it('reissueRegistrationLink: valida link e validade', async () => {
+    fetchMock.mockResolvedValueOnce(LOGIN_OK).mockResolvedValueOnce(resp(200, { data: { userId: 'u1', setupLink: LINK, setupLinkExpiresAt: '2026-10-22T15:00:00.000Z' } }));
+    const r = await new FreelaClient().reissueRegistrationLink('fc', 'u1', 'perdeu');
+    expect(r.setupLink).toBe(LINK);
+    expect(fetchMock.mock.calls[1]![0]).toBe(`${BASE}/v1/admins/consultants/fc/registrations/u1/reissue-link`);
+    expect(JSON.parse((fetchMock.mock.calls[1]![1] as RequestInit).body as string)).toEqual({ reason: 'perdeu' });
+  });
+
+  it('listRegistrations: filtros na query e nextCursor de meta', async () => {
+    const item = { userId: 'u1', contractorId: 'c1', persona: 'contractor', companyName: 'P', cnpj: null, phone: '+55', email: null, source: 'on_behalf', accessMode: 'setup_link', createdAt: '2026-10-19T14:00:00.000Z', activatedAt: null, firstVacancyAt: null, firstJobCompletedAt: null, status: 'pending' };
+    fetchMock.mockResolvedValueOnce(LOGIN_OK).mockResolvedValueOnce(resp(200, { data: [item], meta: { nextCursor: 'abc' } }));
+    const r = await new FreelaClient().listRegistrations('fc', { status: 'pending', limit: 50 });
+    expect(r.nextCursor).toBe('abc');
+    expect(r.data[0]!.status).toBe('pending');
+    expect(fetchMock.mock.calls[1]![0]).toBe(`${BASE}/v1/admins/consultants/fc/registrations?status=pending&limit=50`);
+  });
+
+  it('listRegistrations: status desconhecido quebra a validação (não passa lixo adiante)', async () => {
+    fetchMock.mockResolvedValueOnce(LOGIN_OK).mockResolvedValueOnce(resp(200, { data: [{ userId: 'u', companyName: 'x', source: 's', createdAt: 'd', status: 'zzz' }], meta: {} }));
+    await expect(new FreelaClient().listRegistrations('fc')).rejects.toBeInstanceOf(BadGatewayException);
+  });
+});

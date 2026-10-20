@@ -29,3 +29,13 @@ describe('CampoController.photo — cache só na resposta de sucesso', () => {
     expect(header).not.toHaveBeenCalled();
   });
 });
+
+describe('CampoController.me — features', () => {
+  const auth = { me: jest.fn().mockResolvedValue({ consultant: { id: 'c1' }, channels: [] }) };
+  it('company_signup segue a flag (padrão desligada)', async () => {
+    const off = new CampoController(auth as never, {} as never, {} as never, {} as never, {} as never);
+    const on = new CampoController(auth as never, {} as never, {} as never, {} as never, {} as never, true);
+    expect((await off.me(C)).features).toEqual({ company_signup: false });
+    expect((await on.me(C)).features).toEqual({ company_signup: true });
+  });
+});

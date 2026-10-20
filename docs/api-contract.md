@@ -3626,3 +3626,123 @@ reserva se a janela estourar). A equipe, ao montar à mão (`POST /v1/routes`), 
 5. `mediana real de minutos por visita` (§23.8 item 6) segue pendente.
 6. **"Check-in longe do local"** (UX §5.4, um dos alertas padrão) **não** foi feito como alerta da equipe: a visita já nasce marcada `far_from_place` e a tela de cada dia do consultor (§20.4) a mostra. Pendência.
 7. Os limiares moram no mesmo JSON de configuração do §23.1 (e no mesmo `GET/PUT`), mas a tela do F3 ("Meta e horários do roteiro") não os edita; há um bloco próprio "Alertas".
+
+---
+
+## 26. Cadastro assistido da empresa no Freela — `/v1/campo/visits/:ref/company-signup`, `/v1/campo/company-signups`, `/v1/consultores/:id/company-signups`
+
+F6 da prospecção. O consultor cadastra a empresa visitada no Freela **sem ver senha**: o Freela devolve um **link de primeiro acesso** (`accessMode: "setup_link"`) que
+o dono do estabelecimento abre no próprio celular (QR na tela do consultor, ou WhatsApp pelo celular do consultor) e **escolhe a própria senha**.
+Tudo atrás de `FIELD_COMPANY_SIGNUP_ENABLED` (padrão `false`). Depende do contrato do api-freela `POST /v1/admins/consultants/:id/registrations` (ainda fora do ar; a flag do
+Freela, `FIELD_ASSISTED_SIGNUP_ENABLED`, também nasce desligada — sem ela o Freela responde `404` genérico, que o Praça trata como "indisponível", §26.7).
+
+### 26.0 Regra de ouro: o link é exibido uma única vez e nunca persistido
+
+- O `setup_link` aparece **somente** no corpo da resposta de `POST …/company-signup` (criação) e de `POST …/reissue-link`. Nenhuma leitura (`GET`, listagens da equipe, `/today`) o devolve.
+- **Nunca** vai para o banco do Praça, para log, para `last_error`, para o IndexedDB/fila offline, para o cache do TanStack Query nem para o `localStorage`. O web o guarda apenas em memória (estado da tela) e o perde ao recarregar.
+- O Praça **nunca** recebe nem grava senha. O banco guarda só o **fato** da emissão (`link_issued_at`, `link_expires_at`, `reissue_count`), telefone/e-mail **mascarados**, o `userId` do Freela e as datas.
+- Replay idempotente (mesmo `client_id`) e resposta perdida **não** devolvem o link: o Praça responde `setup_link: null` e a tela oferece "Gerar novo link" (`reissue-link`), que invalida o anterior no Freela.
+- Mensagens de erro do Freela passam por `sanitizarErroDoFreela` (URLs e tokens removidos) antes de ir a `last_error` ou à resposta.
+
+### 26.1 Desvios intencionais em relação ao F0 (proposta) e ao spec de arquitetura
+
+1. Flag `FIELD_COMPANY_SIGNUP_ENABLED` (o spec dizia `FIELD_SIGNUP_ENABLED`).
+2. Acesso por **link de primeiro acesso** (decisão do dono), não por senha temporária: o `field_signups` do spec virou `field_company_signups` e não tem campo de senha.
+3. A chave de idempotência do Freela é `clientId` (a proposta dizia `idempotencyKey`), e o `409` de duplicidade traz `alreadyLinkedToThisConsultant` direto em `error` (a proposta o punha em `error.details`).
+4. O filtro global de erros do Praça devolve só `{error:{code,message}}`: o booleano do Freela vira **dois códigos** (§26.6), não um campo extra.
+5. A rota é `…/visits/:ref/company-signup` (a proposta/spec dizia `…/signup`).
+
+### 26.2 Banco — `field_company_signups` (migração aditiva `20261021100000_field_company_signups`)
+
+| Coluna | Tipo | Observação |
+|---|---|---|
+| `id` | uuid PK | |
+| `client_id` | uuid **UNIQUE** | idempotência: gerado no aparelho; é o `clientId` enviado ao Freela |
+| `consultant_id` | uuid FK `field_consultants` (cascade) | isolamento: toda leitura filtra por ele |
+| `visit_id` | uuid? FK `field_visits` (set null) | visita de origem |
+| `lead_id` | uuid? FK `leads` (set null) | |
+| `company_name` | text | nome mostrado na tela (não é PII sensível) |
+| `phone_masked`, `email_masked` | text, text? | `(11) 9****-1234`, `m***@dominio.com` — o original **não** é guardado |
+| `status` | text CHECK | `creating` · `pending` · `activated` · `already_registered` · `failed` |
+| `freela_user_id`, `freela_contractor_id` | text? | devolvidos pelo Freela |
+| `link_issued_at`, `link_expires_at` | timestamptz? | fato da emissão (nunca o link) |
+| `reissue_count` | int | |
+| `activated_at` | timestamptz? | F6: só vira `activated` quando o Freela responde `409 ALREADY_ACTIVATED`; a data real vem do sync da F7 |
+| `last_error_code`, `last_error` | text? | código + mensagem **sanitizada** |
+| `created_at`, `updated_at` | timestamptz | |
+
+Índices: `(consultant_id, created_at)`, `(visit_id)`, `(lead_id)`.
+
+### 26.3 Rotas do consultor — `@CampoRoute()`, sempre do **próprio** consultor
+
+Flag desligada: **todas** respondem `404 NOT_FOUND`. `GET /v1/campo/me` ganha `features: { company_signup: boolean }` — é o que esconde o botão no web.
+`:ref` é resolvido como nas demais rotas de visita (id do servidor ou `client_id`; visita de outro consultor = `404`).
+
+| Método e caminho | Corpo | Resposta |
+|---|---|---|
+| `GET /v1/campo/visits/:ref/company-signup` | — | `200 { signup: SignupView \| null, prefill: Prefill }` (o cadastro mais recente da visita; **sem link**) |
+| `POST /v1/campo/visits/:ref/company-signup` | `SignupCreateDto` | `201` (criado agora) ou `200` (replay) → `SignupView` |
+| `POST /v1/campo/company-signups/:id/reissue-link` | `{ reason?: string ≤ 200 }` | `200 SignupView` com `setup_link` novo |
+| `GET /v1/campo/company-signups/:id` | — | `200 SignupView` (sem link) — status "aguardando o dono definir a senha" / "ativado" |
+
+`SignupCreateDto` (snake_case; whitelist estrita): `client_id` (uuid), `company_name` (1–120), `contact_name` (1–120), `phone` (10–11 dígitos nacionais, aceita máscara; vira `+55…`),
+`email?`, `cnpj?` (14 dígitos, só números/máscara), `corporate_reason?`, `address?: { cep?, street?, number?, complement?, neighborhood?, city?, uf? }`.
+`address.city`/`address.uf` ausentes caem na cobertura da praça do consultor; sem nenhuma das duas fontes → `400 VALIDATION_ERROR`.
+O corpo enviado ao Freela é montado **só** do DTO + dados determinísticos (o `freela_consultant_id` do consultor e o check-in da visita, quando `far_from_place = false`): nada é relido do lead,
+porque um reenvio com corpo diferente do original é `422 IDEMPOTENCY_KEY_REUSED` no Freela. O pré-preenchimento (`prefill`) é entregue ao aparelho no `GET` e o aparelho devolve tudo no `POST`.
+
+`SignupView`: `{ id, client_id, visit_ref, lead_id, status, company_name, phone_masked, email_masked, link_issued_at, link_expires_at, reissue_count, activated_at, last_error_code, last_error, created_at, created: boolean, setup_link: string | null }`.
+`setup_link` só é não nulo nas respostas de criação e reemissão (§26.0). `Prefill`: `{ company_name, contact_name, phone, cnpj, street, city, uf }` (do lead e da praça; vazio quando não há).
+
+Fluxo do `POST` (por `client_id`): insere a linha `creating` → chama o Freela com o mesmo `clientId` → grava `pending` (+`freela_user_id`, datas) e devolve o link se `created:true`.
+Em `P2002` (reenvio) carrega a linha existente (de **outro** consultor = `404`): se já tem `freela_user_id`, **não** chama o Freela de novo e responde `200` com `setup_link: null`;
+se não tem (`creating`/`failed`/`already_registered`), repete a chamada com o mesmo corpo. Replay do Freela (`created:false`) também resulta em `setup_link: null`.
+**Nunca** reemite automaticamente (o Freela limita a 3 reemissões em 24 h e as tentativas da fila queimariam o limite).
+
+### 26.4 Equipe — sem `@CampoRoute()` (token de consultor → `401`)
+
+`GET /v1/consultores/:id/company-signups?status=&limit=` (limit 1–200, padrão 50, mais novos primeiro): cadastros **daquele** consultor (`404` se o consultor não existe), `SignupView` sem link, mais `freela_user_id`.
+Flag desligada: `404`. Leitura de equipe (admin ou não), como o resto de `/v1/consultores`.
+
+### 26.5 Offline (fila do celular)
+
+Item novo da fila: `signup` (`{ visit_ref, payload: SignupCreateDto }`), idempotente por `client_id`. O item **não carrega link** e o IndexedDB nunca o recebe: ao sair da fila, a resposta
+é descartada. Sem sinal, a tela diz "o link só aparece quando o celular tiver sinal"; ao voltar o sinal o cadastro é criado e a tela passa a oferecer **Gerar link** (`reissue-link`).
+`429 DAILY_REGISTRATION_LIMIT` e `RESET_LIMIT` são erros de regra (não repetem); os demais `429`/`5xx` seguem a espera crescente. Check-in recusado leva junto o `signup` da mesma visita.
+
+### 26.6 Erros (formato plano `{ error: { code, message } }`)
+
+| Situação no Freela | Status e `code` no Praça |
+|---|---|
+| flag do Freela desligada (`404` genérico), `ACCESS_MODE_NOT_AVAILABLE` | `503 SIGNUP_UNAVAILABLE` |
+| sem configuração do Freela | `503 FREELA_NOT_CONFIGURED` |
+| consultor sem `freela_consultant_id` ou `404 CONSULTANT_NOT_FOUND` | `409 FREELA_CODE_PENDING` |
+| `409 PHONE_ALREADY_REGISTERED` | `409 PHONE_ALREADY_REGISTERED` ou, se `alreadyLinkedToThisConsultant`, `409 PHONE_ALREADY_REGISTERED_BY_YOU` |
+| `409 EMAIL_…` / `CNPJ_ALREADY_REGISTERED` | idem, com o sufixo `_BY_YOU` quando o Freela confirma o vínculo ao consultor (linha local = `already_registered`) |
+| `400 INVALID_CNPJ`, `CITY_NOT_FOUND`, validação | `400` com o mesmo `code` (a mensagem é a do Freela) |
+| `422 IDEMPOTENCY_KEY_REUSED` | `422 IDEMPOTENCY_KEY_REUSED` |
+| `429 DAILY_REGISTRATION_LIMIT` / `RESET_LIMIT` | `429` com o mesmo `code` |
+| `reissue`: `409 ALREADY_ACTIVATED` | `409 ALREADY_ACTIVATED` (linha local vira `activated`) |
+| `reissue`: `404 REGISTRATION_NOT_FOUND` | `409 SIGNUP_NOT_FOUND_IN_FREELA` |
+| `reissue` sem `freela_user_id` local | `409 SIGNUP_NOT_CREATED` |
+| resposta do Freela fora do formato (zod) | `502 FREELA_ERROR` (mensagem fixa; o corpo cru, que contém o link, nunca é logado) |
+| demais | `502 FREELA_ERROR` / `FREELA_UNREACHABLE` com a mensagem do Freela |
+
+### 26.7 Variáveis de ambiente
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `FIELD_COMPANY_SIGNUP_ENABLED` | `false` | `true` liga as rotas do §26 e o botão "Cadastrar no Freela" |
+
+**Pré-condições para ligar em produção:** (1) o api-freela com as rotas de cadastro assistido no ar e `FIELD_ASSISTED_SIGNUP_ENABLED` ligada lá; (2) a página `/primeiro-acesso` do `freela-web-v2` no ar
+(é ela que o link abre; **sem ela o link não funciona**); (3) a conta de serviço do Praça com a permissão `CONSULTANTS`; (4) `migrate deploy` antes do código.
+
+### 26.8 Cliente do Freela (`FreelaClient`)
+
+`createCompanyRegistration`, `reissueRegistrationLink` e `listRegistrations` (esta, para a F7) validam a resposta com zod. O cliente guarda o `error.code` e o `alreadyLinkedToThisConsultant` do Freela em `FreelaHttpError.freelaError` (apenas esses dois campos — nunca o corpo).
+
+### 26.9 Desvios propositais
+
+1. `activated` na F6 só vem do `409 ALREADY_ACTIVATED` do `reissue-link`; a leitura `listRegistrations` (com `activatedAt`) é da F7.
+2. A equipe só **lista** (sem criar nem reemitir pelo painel).
+3. O `409` por duplicidade não traz `userId`: a linha fica `already_registered` e a F7 a reconcilia.

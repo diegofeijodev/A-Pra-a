@@ -222,6 +222,7 @@ model leads {
   enrollments enrollments[]
   field_visits field_visits[]
   route_stops  field_route_stops[]
+  company_signups field_company_signups[]
 
   @@index([praca_id, lat, lng])
   @@unique([source, source_ref])
@@ -600,6 +601,7 @@ model field_consultants {
   journeys field_journeys[]
   visits   field_visits[]
   routes   field_routes[]
+  company_signups field_company_signups[]
 }
 
 model field_journeys {
@@ -682,6 +684,7 @@ model field_visits {
   consultant        field_consultants @relation(fields: [consultant_id], references: [id], onDelete: Cascade)
   lead              leads             @relation(fields: [lead_id], references: [id], onDelete: Cascade)
   route_stops       field_route_stops[]
+  company_signups   field_company_signups[]
 
   // Mais o índice único PARCIAL `field_visits_one_open_per_consultant`.
   @@index([consultant_id, checkin_at])
@@ -864,4 +867,35 @@ model field_route_events {
   stop  field_route_stops? @relation(fields: [stop_id], references: [id], onDelete: SetNull)
 
   @@index([route_id, created_at])
+}
+
+/// Cadastro assistido da empresa visitada no Freela (F6, contrato §26). NUNCA guarda o link de
+/// primeiro acesso nem senha: só o fato da emissão, telefone/e-mail mascarados e o userId do Freela.
+model field_company_signups {
+  id                   String    @id @default(uuid()) @db.Uuid
+  client_id            String    @unique @db.Uuid
+  consultant_id        String    @db.Uuid
+  visit_id             String?   @db.Uuid
+  lead_id              String?   @db.Uuid
+  company_name         String
+  phone_masked         String
+  email_masked         String?
+  status               String    @default("creating")
+  freela_user_id       String?
+  freela_contractor_id String?
+  link_issued_at       DateTime?
+  link_expires_at      DateTime?
+  reissue_count        Int       @default(0)
+  activated_at         DateTime?
+  last_error_code      String?
+  last_error           String?
+  created_at           DateTime  @default(now())
+  updated_at           DateTime  @updatedAt
+  consultant           field_consultants @relation(fields: [consultant_id], references: [id], onDelete: Cascade)
+  visit                field_visits?     @relation(fields: [visit_id], references: [id], onDelete: SetNull)
+  lead                 leads?            @relation(fields: [lead_id], references: [id], onDelete: SetNull)
+
+  @@index([consultant_id, created_at])
+  @@index([visit_id])
+  @@index([lead_id])
 }
