@@ -4211,3 +4211,81 @@ Versão mínima: só **visita aberta, do próprio consultor, de fluxo `simples`,
 | `FIELD_VISIT_FLOW_SELECT_ENABLED` | `false` | liga a escolha do fluxo (§31.1) |
 
 **Ordem de subida:** `migrate deploy` → **API** → **web**. O web novo manda `flow` no check-in (multipart) e `result`/`distance_note` nos rascunhos; a API antiga (`whitelist + forbidNonWhitelisted`) responderia `400`. Com a flag desligada o web mantém a tela atual e não manda nada novo.
+
+## 32. Modo do chefe, S2 e S3 — regra de pagamento estendida e ganho por cadastro declarado
+
+Origem: `docs/superpowers/specs/2026-10-20-modo-chefe-arquitetura.md` (eixo B e eixo C, §3, §4.3–§4.5) e a versão Lovable do chefe
+(`src/lib/financeiro.ts` e `financeiro.test.ts`). **Tudo é configurável** pela tela de equipe (Remuneração); o servidor não conhece "perfil do chefe", só as chaves.
+Dinheiro em **centavos inteiros**; wire `snake_case`; erros planos `{ error: { code, message } }`. As duas flags novas nascem **desligadas** e as versões de regra já gravadas são imutáveis: com as flags desligadas e sem usar chave nova, a API e o cálculo são **idênticos** ao §28 (provado por testes de caracterização).
+Ordem de subida: `migrate deploy` → **API** → **web**.
+
+### 32.1 Chaves novas da regra (`PUT /v1/consultores/earnings/config`)
+
+Todas **opcionais** no `config` (as 13 do §28.2 continuam obrigatórias). `null` vale como ausente (o web reenvia o que recebeu). Ausente = comportamento atual. O que é gravado em `field_pay_rule_versions.config` é só o que foi enviado (uma regra de 13 chaves grava as mesmas 13); `snapshot.rule` do razão continua sendo a config **crua** da versão.
+
+| Chave | Valores | Ausente (= hoje) | Significado |
+|---|---|---|---|
+| `signup_source` | `freela_confirmed` \| `declared` | `freela_confirmed` | de onde vem o cadastro que paga: confirmado pelo Freela (F7) ou declarado pelo consultor no checkout (§32.5). Vale **por dia, pela versão do dia** |
+| `daily_base_cents` | int 0–10.000.000 | `0` | diária **aditiva** do dia (não é piso); 0 = sem diária |
+| `daily_base_condition` | `none` \| `journey_open` \| `min_visits` \| `route_assigned` | `none` | quando a diária vale. `route_assigned` conta só dia com rota `source='equipe'` (`auto`/`consultor` não contam) |
+| `daily_base_min_visits` | int 0–1000 | `0` | obrigatório ≥ 1 com `min_visits` |
+| `daily_base_requires_journey` | boolean | `true` | além da condição, exige jornada iniciada no dia. Padrão `true` (diária não paga dia sem presença); o preset do chefe desliga (Lovable: basta a rota) |
+| `tiers_mode` | `highest` \| `cumulative` | `highest` | `highest`: vale a maior faixa atingida · `cumulative`: **soma todas** as faixas atingidas (como o chefe). No cumulativo o `amount_cents` de cada meta é um adicional e pode ser menor que o da anterior |
+| `declared_daily_cap` | int 1–1000 \| null | `null` | limite diário de declarações que entram na conta; o excedente é registrado e aparece no relatório "acima do limite" |
+| `declared_confirm_days` | int 1–91 \| null | `null` | **reservado à S4** (anulação automática, desligada): nada o executa agora. Se informado, tem de ser < `late_grace_days` |
+
+**Fórmula do dia (estendida):** núcleo (`n × unit_cents`, faixa/metas conforme `tiers_mode`) → piso → teto → **+ diária** (a diária fica **fora** do piso e do teto). **Semana:** a faixa/meta semanal e o teto semanal se aplicam à soma dos **núcleos** dos dias, sem as diárias; semana = núcleos + parte semanal + diárias. Com os padrões o resultado, a `conta` (texto) e as chaves de idempotência são **byte a byte** os da v1; só aparecem linhas novas na `conta` quando a chave nova é usada (diária, metas cumulativas, "declarado", limite, anuladas). `rotulo`: com `signup_source = declared` a conta diz "cadastro declarado" no lugar de "cadastro confirmado".
+
+Erros do PUT: `400 VALIDATION_ERROR` (mensagem com o campo); `409 ROUTES_DISABLED` (`daily_base_condition = route_assigned` com `FIELD_ROUTES_ENABLED` desligada: pagaria R$ 0 em silêncio); `409 DECLARED_DISABLED` (`signup_source = declared` com `FIELD_DECLARED_SIGNUPS_ENABLED` desligada ou sem `FIELD_EARNINGS_ENABLED`).
+
+### 32.2 `GET /v1/consultores/earnings/config` — acréscimos (nada existente muda)
+
+`current`/`upcoming`/`history` seguem com `config` **cru** (como gravado) e ganham `config_effective` (a regra normalizada, com todas as chaves). Novos: `presets: { completo, chefe }` (configs completas e válidas para **preencher o formulário**; o admin revisa e salva), `extended: { defaults, limits }` (padrões e limites das chaves novas) e `features: { routes_enabled, declared_signups_enabled }`. `default_config` e `limits` ficam como estavam.
+
+### 32.3 Simulador — `POST /v1/consultores/earnings/simulate`
+
+Continua aceitando `{ config?, signups_confirmed, visits?, journey_open? }` e ganha `route_assigned?: boolean` e `days?: [{ signups, visits?, journey_open?, route_assigned? }]` (1–7 dias, a partir do 1º dia da semana). Com `days`, calcula **a semana** pela mesma função do cálculo real e devolve `week: { total_cents, days_cents, week_part_cents, days: [{ total_cents, conta }], conta }` (além de `day`, que continua igual).
+
+### 32.4 Presets (valores e origem)
+
+`completo` = regra atual (v1) + chaves novas nos padrões. `chefe` = o **comportamento** da Lovable (`src/lib/financeiro.ts`): `signup_source=declared`, `daily_base_condition=route_assigned`, `daily_base_requires_journey=false`, `tiers_mode=cumulative`, `tiers_period=week`, `combine=sum`, `declared_daily_cap=30`, demais chaves como a v1.
+**Divergência anotada (spec × Lovable):** a Lovable **não traz valores padrão em dinheiro** — diária, comissão e metas são cadastrados por representante e nascem em 0 (`0000_migration.sql`: `valor_diaria`, `valor_comissao_cadastro`, `regras_bonus.meta/valor` default 0; `periodo` default `'semana'`; `forma_remuneracao` default `'diaria'`). Os números 150/10/100/200 e meta 5 só existem como fixtures de `financeiro.test.ts`. Logo o preset do chefe sai com `unit_cents = 0`, `daily_base_cents = 0` e **sem metas**, e o admin preenche. O limite 30 é a `meta_diaria` do nosso campo (salvaguarda nossa), não da Lovable. Vetores de teste (centavos): diária 150,00 × 2 dias com rota da equipe = 300,00; 5 × 10,00 = 50,00; diária 100,00 + 5 × 10,00 + meta 5 de 200,00 cumulativa = 350,00.
+
+### 32.5 Ganho por cadastro declarado (S3) — flag `FIELD_DECLARED_SIGNUPS_ENABLED` (padrão `false`)
+
+Efetiva só com `FIELD_EARNINGS_ENABLED` também ligada. Desligada: nenhuma declaração nasce, as rotas abaixo respondem `404 DECLARED_DISABLED`, `features.declared_signups=false`. **Desligar a flag não reescreve o passado:** o cálculo segue sempre a `signup_source` da versão do dia (senão desligar derrubaria o alvo e geraria estornos).
+
+**Quando nasce a declaração.** No **checkout** da visita `simples` com `result = cadastrou`, na MESMA transação que fecha a visita (nunca por rota própria). Divergência anotada: o spec §3.2 diz "sob qualquer regra" e o pedido do dono diz "quando a regra vigente é `declared`"; vale o spec: com a flag ligada o fato é guardado **sempre** (alimenta o relatório e a semana em sombra do §4.4), e o **pagamento** depende da `signup_source` do dia. Hora e dia (Brasília) são do **servidor** (`declared_at`/`declared_day`, sem retroagir: uma fila offline reenviada no dia seguinte conta no dia do recebimento). Idempotente: uma por visita (`visit_id` UNIQUE, `client_id` = o da visita) e **uma por empresa** em toda a base (`lead_id` UNIQUE); a segunda tentativa não cria nada e o checkout segue normal. A declaração tira o lead das **rotas futuras**: a seleção automática e a lista de candidatos do roteiro ignoram lead com declaração não anulada, e as paradas `pendente` dele em dias futuros viram `descartada`. Sem declaração (flag off, modo completo, outros resultados) nada disso muda.
+`freela_status = 'declarou'` já vale desde a S1 (§31.5) e não polui os indicadores de QR.
+
+**Pagar uma vez por empresa.** Um `field_signups` do **mesmo consultor** pareado (`lead_id`) a uma declaração não anulada que foi **paga sob regra `declared`** (a versão do `declared_day` tinha `signup_source=declared`) é **excluído** da contagem de confirmados dos dias em que a fonte é `freela_confirmed` (cruzar a vigência não paga duas vezes). Confirmado por **outro** consultor da praça não é excluído (o cadastro é dele); o relatório mostra a divergência.
+
+**Anulação.** `POST /v1/consultores/declared-signups/:id/void` (admin) `{ reason: not_confirmed|duplicate|admin_review|fraud, note (3–500), client_id (uuid) }` → `201` com a declaração; repetir o mesmo `client_id` devolve a mesma; outro `client_id` numa já anulada → `409 ALREADY_VOIDED`; id inexistente/mal formado → `404`. A anulação é um **fato novo** (`field_declared_signup_voids`); a contagem do dia cai e o motor lança o delta **negativo** como `accrual` com `source = 'declaration_void'` na primeira semana ainda aberta (mecanismo da confirmação tardia, §28.4; respeita `late_grace_days`). O `kind` do CHECK do razão **não muda**. Anulação errada se corrige com ajuste manual positivo com motivo.
+**Anulação automática (S4) NÃO entra:** `declared_confirm_days` fica reservado e nada anula sozinho. Pré-requisito da S4: carregar saldo devedor entre semanas — hoje uma semana com total ≤ 0 não gera Pix (`skipped_non_positive`, `payouts.service.ts`) e o negativo **não é carregado**; este comportamento **não foi alterado**.
+
+**Salvaguardas.** (1) limite diário `declared_daily_cap` (regra; padrão do preset 30); (2) relatório de divergência; (3) alerta "Atenção agora" `declared_divergence` (§32.7); (4) anulação manual com motivo.
+
+### 32.6 Relatório — `GET /v1/consultores/declared-signups` (equipe; flag desligada → `404 DECLARED_DISABLED`)
+
+Query: `from`, `to` (dias; padrão = semana atual; ≤ 92 dias), `praca_id`, `consultant_id` (uuid), `status` (`confirmed` \| `pending` \| `unmatched` \| `voided` \| `over_cap`). Resposta:
+`{ from, to, source, rows: [...até 500], totals: { declared, confirmed, pending_confirmation, unmatched, voided, over_cap, divergence_pct }, by_consultant: [{ consultant_id, name, praca_id, declared, confirmed, pending_confirmation, unmatched, voided, over_cap, divergence_pct }], conta: string[] }`.
+`row`: `{ id, consultant_id, consultant_name, praca_id, declared_day, declared_at, company_name, lead_id, visit_id, rule_version, paid_by: 'declared'|'freela_confirmed', status, over_cap, confirmed_by_other_consultant, void: { reason, note, voided_at, voided_by } \| null }`.
+**Status (pareamento pelo `lead_id`, mesma ligação do matcher da F7, §27.5):** `voided` (anulada) · `confirmed` (há `field_signups` do mesmo consultor ligado ao lead com o evento da regra de confirmação) · `pending` (ligado, mas sem o evento) · `unmatched` (nenhum `field_signups` ligado ao lead). `divergence_pct` = `unmatched ÷ (declared − voided) × 100`, inteiro, e a `conta` escreve a divisão e a fonte. Sem telefone, e-mail ou CNPJ na resposta.
+
+### 32.7 Alerta "Atenção agora"
+
+Tipo `declared_divergence` (flag ligada): consultor com, nos últimos 7 dias (Brasília, até ontem, para dar tempo ao Freela), `unmatched ≥ divergencia_alerta_min` (padrão 5) **e** `divergence_pct ≥ divergencia_alerta_pct` (padrão 40). As duas chaves ficam em `field_config` (`GET/PUT /v1/consultores/settings/config`, opcionais, inteiros 1–1000 e 1–100) e entram também no "Perfil" como padrões.
+
+### 32.8 Banco (migração aditiva `20261027100000_modo_chefe_s3`)
+
+`field_declared_signups` (só INSERT; trigger barra UPDATE/DELETE): `id`, `consultant_id` FK Restrict, `visit_id` UNIQUE FK Restrict, `lead_id` UNIQUE FK Restrict, `declared_at`, `declared_day` (varchar), `company_name` (foto do nome), `rule_version` int?, `client_id` UNIQUE, `flow`; índice `(consultant_id, declared_day)`.
+`field_declared_signup_voids` (só INSERT; mesmo trigger): `declared_id` UNIQUE FK Restrict, `reason` CHECK, `note`, `voided_at`, `voided_by` uuid? (FK users), `client_id` UNIQUE. Nenhuma coluna nova em tabela existente; sem `DROP INDEX`.
+Apagar consultor/lead com declaração: `409 HAS_EARNINGS` / `409 HAS_DECLARED_SIGNUP`.
+
+### 32.9 Variáveis
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `FIELD_DECLARED_SIGNUPS_ENABLED` | `false` | habilita declaração no checkout, relatório, anulação e alerta (exige `FIELD_EARNINGS_ENABLED`) |
+
+Recomendação de produção: S2/S3 em sombra por uma semana (comparar a tela de ganhos com o cálculo à mão) antes de publicar uma regra `declared`.
