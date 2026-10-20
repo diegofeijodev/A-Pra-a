@@ -21,3 +21,11 @@ export function velocidadeCarroKmh(env: Record<string, string | undefined> = pro
   const n = Number(bruto);
   return Number.isFinite(n) && n >= 5 && n <= 80 ? n : VELOCIDADE_CARRO_PADRAO;
 }
+
+/** `FIELD_VISIT_FLOW_SELECT_ENABLED=true`: liga a escolha do fluxo da visita (simples x completo, contrato §31). */
+export const FLUXO_SELECT_LIGADO = Symbol('FLUXO_SELECT_LIGADO');
+
+export const fluxoSelectLigadoProvider: Provider = {
+  provide: FLUXO_SELECT_LIGADO,
+  useFactory: (): boolean => validateEnv(process.env).FIELD_VISIT_FLOW_SELECT_ENABLED === 'true',
+};

@@ -25,6 +25,7 @@ import {
 import { IsDayString } from '../../../common/validation/is-day.decorator';
 import { CHAVES_MOTIVO_RECUSA } from '../../../domain/catalog/refusal';
 import { CARGOS, FREELA_STATUS, HORA_RETORNO_RE, INTERESSES, RESULTADOS_VISITA } from '../../../domain/campo-rules';
+import { FLUXOS_VISITA, RESULTADOS_SIMPLES } from '../../../domain/modo-campo-rules';
 
 export class CampoLoginDto {
   @IsEmail()
@@ -120,6 +121,11 @@ export class CheckinDto extends PosicaoDto {
   @Transform(({ value }) => (value === 'true' ? true : value === 'false' ? false : value))
   @IsBoolean()
   confirm_new?: boolean;
+
+  /** Contrato §31.2: dica do fluxo da tela do aparelho (`simples`|`completo`); só vale com a flag ligada. */
+  @IsOptional()
+  @IsIn([...FLUXOS_VISITA])
+  flow?: string;
 }
 
 /** Rascunho do questionário: tudo opcional, `null` limpa, SEM inicializador. */
@@ -215,6 +221,17 @@ export class AnswersDto {
   @IsString()
   @MaxLength(30)
   contact_phone?: string | null;
+
+  /** Contrato §31.5: resultado do fluxo simples; só aceito em visita `simples` (senão `422 FLOW_MODE_MISMATCH`). */
+  @IsOptional()
+  @IsIn([...RESULTADOS_SIMPLES])
+  result?: string | null;
+
+  /** Contrato §31.5: por que a visita foi feita longe do local. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  distance_note?: string | null;
 }
 
 export class PlacesQueryDto {

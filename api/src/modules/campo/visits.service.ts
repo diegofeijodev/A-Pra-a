@@ -24,6 +24,17 @@ import {
   resumoVisita,
   ROTULO_CARGO,
 } from '../../domain/campo-rules';
+import { rotuloMotivoRecusa } from '../../domain/catalog/refusal';
+import {
+  CONFIG_MODO_PADRAO,
+  derivarDoResultado,
+  ehResultadoSimples,
+  estagioSimples,
+  faltandoSimples,
+  fluxoDoCheckin,
+  resumoVisitaSimples,
+  type ResultadoSimples,
+} from '../../domain/modo-campo-rules';
 import { COM_LEAD, respostasDe, visitView, type VisitRow, type VisitView } from './campo-views';
 import type { AnswersDto, CheckinDto, PosicaoDto } from './dto/campo.dto';
 import { JourneysService } from './journeys.service';
@@ -35,6 +46,7 @@ import {
   type FotoLida,
   type PhotoStorage,
 } from './photo-storage';
+import { ModoCampoService } from '../rotas/modo-campo.service';
 import { ROTAS_LIGADAS } from '../rotas/rotas.tokens';
 import { PlacesService } from './places.service';
 import { violouUnico } from './prisma-errors';
@@ -50,6 +62,11 @@ const autoFechada = () =>
     code: 'VISIT_AUTO_CLOSED',
     message: 'A visita foi fechada automaticamente à meia-noite e não aceita mais checkout.',
   });
+const fluxoDiferente = () =>
+  new UnprocessableEntityException({
+    code: 'FLOW_MODE_MISMATCH',
+    message: 'Este envio é de outro modo de visita. Atualize o aplicativo e abra a visita de novo.',
+  });
 const texto = (s: string | null | undefined): string | null => (s == null ? null : s.trim() || null);
 
 @Injectable()
@@ -60,7 +77,13 @@ export class VisitsService {
     private readonly places: PlacesService,
     @Inject(PHOTO_STORAGE) private readonly fotos: PhotoStorage,
     @Optional() @Inject(ROTAS_LIGADAS) private readonly rotas: boolean = false,
+    @Optional() private readonly modo?: ModoCampoService,
   ) {}
+
+  /** Parâmetros do modo do chefe (§31.3); flag desligada = nenhuma visita é `simples`, o padrão basta. */
+  private cfgModo() {
+    return this.modo?.ligado ? this.modo.config() : Promise.resolve(CONFIG_MODO_PADRAO);
+  }
 
   async checkin(c: CampoConsultant, dto: CheckinDto, foto: Buffer, agora = new Date()): Promise<VisitView> {
     const mesma = await this.prisma.field_visits.findUnique({
@@ -138,6 +161,11 @@ export class VisitsService {
       };
     }
 
+    // Modo do chefe §31.2: o fluxo é gravado AQUI, na abertura (flag desligada = `completo`, sem tocar na coluna).
+    const flow = this.modo?.ligado
+      ? fluxoDoCheckin({ ligado: true, resolvido: await this.modo.fluxoDoConsultor(c.id), dica: dto.flow })
+      : 'completo';
+
     // O id da visita existe ANTES da foto: a chave leva o id.
     const visitId = randomUUID();
     const key = chaveDaFoto(c.id, jornada.day, visitId, mime);
@@ -162,6 +190,7 @@ export class VisitsService {
           photo_key: key,
           photo_bytes: foto.length,
           clock_adjusted: ajustado,
+          ...(flow === 'simples' ? { flow } : {}),
         },
       }),
     );
@@ -220,6 +249,9 @@ export class VisitsService {
     if (v.checkout_at || v.auto_closed) {
       throw new ConflictException({ code: 'VISIT_CLOSED', message: 'Esta visita já foi encerrada.' });
     }
+    const flow = v.flow ?? 'completo';
+    // Contrato §31.2: `result` só existe no fluxo simples; o questionário antigo vale nos dois (no simples é "Mais detalhes").
+    if (dto.result !== undefined && flow !== 'simples') throw fluxoDiferente();
     const data: Prisma.field_visitsUpdateInput = {};
     if (dto.interlocutor_name !== undefined) data.interlocutor_name = texto(dto.interlocutor_name);
     if (dto.interlocutor_role !== undefined) data.interlocutor_role = dto.interlocutor_role;
@@ -236,6 +268,7 @@ export class VisitsService {
     if (dto.followup_date !== undefined) data.followup_date = dto.followup_date;
     if (dto.notes !== undefined) data.notes = texto(dto.notes);
     if (dto.outcome !== undefined) data.outcome = dto.outcome;
+    if (dto.distance_note !== undefined) data.distance_note = texto(dto.distance_note);
     if (dto.contact_phone !== undefined) {
       const tel = normalizarTelefoneContato(dto.contact_phone);
       // A mensagem NÃO repete o número (dado pessoal de terceiro) e nada disso vai para log.
@@ -246,15 +279,25 @@ export class VisitsService {
         });
       data.contact_phone = tel.valor;
     }
+    // O que vale depois deste PATCH parcial para cada campo (o enviado, senão o que já estava gravado).
+    const efetivo = <K extends keyof typeof v>(k: K): (typeof v)[K] => ((data as Record<string, unknown>)[k as string] !== undefined ? ((data as Record<string, unknown>)[k as string] as (typeof v)[K]) : v[k]);
+    // Contrato §31.5 (fluxo simples): o resultado ESCOLHIDO manda nos campos antigos (derivação); interesse e
+    // "o quê" do retorno só entram quando vazios. Sem isso o consultor teria de responder as 8 perguntas.
+    const resultado = dto.result !== undefined ? dto.result : (v.result ?? null);
+    if (flow === 'simples' && dto.result !== undefined) data.result = dto.result;
+    if (flow === 'simples' && ehResultadoSimples(resultado)) {
+      Object.assign(data, derivarDoResultado(resultado, { interest: efetivo('interest'), followup_what: efetivo('followup_what') }));
+    }
     // Motivo de recusa e hora do retorno dependem de outros campos: valem sobre o estado MESCLADO
     // (o PATCH é parcial), então a cada gravação o estado antigo + o pedido é normalizado de novo.
     const mesclado = {
-      interest: dto.interest !== undefined ? dto.interest : v.interest,
-      outcome: dto.outcome !== undefined ? dto.outcome : v.outcome,
-      needs_followup: dto.needs_followup !== undefined ? dto.needs_followup : v.needs_followup,
+      interest: efetivo('interest'),
+      outcome: efetivo('outcome'),
+      result: flow === 'simples' ? resultado : null,
+      needs_followup: efetivo('needs_followup'),
       refusal_reason: dto.refusal_reason !== undefined ? dto.refusal_reason : (v.refusal_reason ?? null),
       refusal_note: dto.refusal_note !== undefined ? texto(dto.refusal_note) : (v.refusal_note ?? null),
-      followup_time: dto.followup_time !== undefined ? dto.followup_time : (v.followup_time ?? null),
+      followup_time: dto.followup_time !== undefined ? dto.followup_time : (efetivo('followup_time') ?? null),
     };
     const recusa = normalizarRecusa(mesclado);
     const retorno = normalizarRetorno(mesclado);
@@ -268,14 +311,19 @@ export class VisitsService {
   async checkout(c: CampoConsultant, ref: string, dto: PosicaoDto, agora = new Date()): Promise<VisitView> {
     const v = await this.daVisita(c.id, ref);
     // Reenvio da fila (a resposta se perdeu): devolve o que já foi feito.
-    if (v.checkout_at) return visitView(v, todaySp(agora));
+    if (v.checkout_at) return visitView(v, todaySp(agora), await this.cfgModo());
     if (v.auto_closed) throw autoFechada();
     const respostas = respostasDe(v);
+    // Contrato §31.2: o checkout segue o fluxo gravado na ABERTURA da visita, não a configuração de agora.
+    const simples = v.flow === 'simples';
+    const resultado: ResultadoSimples | null = simples && ehResultadoSimples(respostas.result) ? respostas.result : null;
     // "Hoje" é o dia do carimbo aceito, não o do recebimento: um rascunho
     // sincronizado depois da meia-noite não pode reprovar o retorno marcado
     // para o dia da própria visita.
     const { at, ajustado } = carimbo(dto.at, agora, v.checkin_at);
-    const falta = faltando(respostas, todaySp(at));
+    const falta = simples
+      ? faltandoSimples(respostas, todaySp(at), await this.cfgModo(), { far_from_place: v.far_from_place })
+      : faltando(respostas, todaySp(at));
     if (falta.length > 0) {
       throw new UnprocessableEntityException({
         code: 'ANSWERS_INCOMPLETE',
@@ -290,7 +338,7 @@ export class VisitsService {
     // Estabelecimento fechado (§30.1) não é conversa: não grava atendente, contato nem retorno no lead
     // e não avança o estágio. O evento do CRM vira `note` (`visit` contaria como contato).
     const fechado = respostas.outcome === 'fechado';
-    const estagio = fechado ? lead.stage : estagioDepoisDaVisita(lead.stage);
+    const estagio = resultado ? estagioSimples(resultado, lead.stage) : fechado ? lead.stage : estagioDepoisDaVisita(lead.stage);
     const mudou = estagio !== lead.stage;
 
     await this.prisma.$transaction(async (tx) => {
@@ -317,7 +365,21 @@ export class VisitsService {
           clock_adjusted: ajustado,
         },
       });
-      if (!fechado) {
+      if (!fechado && simples) {
+        // Fluxo simples (§31.5): nome/cargo podem não ter sido pedidos — só grava o que veio.
+        await tx.leads.update({
+          where: { id: lead.id },
+          data: {
+            ...(respostas.interlocutor_name?.trim() ? { decisor: respostas.interlocutor_name.trim() } : {}),
+            ...(respostas.interlocutor_role ? { decisor_role: ROTULO_CARGO[respostas.interlocutor_role] ?? '' } : {}),
+            last_contact_at: at,
+            ...(mudou ? { stage: estagio, stage_since: todaySp(at) } : {}),
+            ...(respostas.needs_followup && respostas.followup_date
+              ? { next_step_what: respostas.followup_what?.trim() || 'Retornar', next_step_date: respostas.followup_date }
+              : {}),
+          },
+        });
+      } else if (!fechado) {
         await tx.leads.update({
           where: { id: lead.id },
           data: {
@@ -339,7 +401,7 @@ export class VisitsService {
           // `visit` (e não "visita"): é o tipo do catálogo — rótulo "Visita" e conta como contato.
           // Fechado: `note` (não conta como contato).
           kind: fechado ? 'note' : 'visit',
-          text: resumoVisita(respostas),
+          text: simples ? resumoVisitaSimples(respostas, rotuloMotivoRecusa) : resumoVisita(respostas),
           stage_to: mudou ? estagio : null,
         },
       });
@@ -348,6 +410,38 @@ export class VisitsService {
     const atual = await this.porId(v.id, agora);
     if (!atual.checkout_at && atual.auto_closed) throw autoFechada();
     return atual;
+  }
+
+  /**
+   * "Cancelar a visita" feita por engano (contrato §31.7). Versão mínima: visita ABERTA, do próprio consultor,
+   * de fluxo `simples`, com a flag ligada. É exclusão; o estabelecimento criado por `new_place` fica.
+   */
+  async cancel(c: CampoConsultant, ref: string): Promise<{ cancelled: true }> {
+    if (!this.modo?.ligado) {
+      throw new NotFoundException({ code: 'FLOW_SELECT_DISABLED', message: 'O cancelamento de visita não está disponível.' });
+    }
+    const v = await this.daVisita(c.id, ref);
+    if (v.checkout_at || v.auto_closed) {
+      throw new ConflictException({ code: 'VISIT_CLOSED', message: 'Esta visita já foi encerrada e não pode ser cancelada.' });
+    }
+    if ((v.flow ?? 'completo') !== 'simples') throw fluxoDiferente();
+    const ops: Prisma.PrismaPromise<unknown>[] = [];
+    // A parada do roteiro volta a pendente (o check-in a tinha marcado visitada).
+    ops.push(
+      this.prisma.field_route_stops.updateMany({
+        where: { visit_id: v.id },
+        data: { status: 'pendente', visit_id: null },
+      }),
+    );
+    ops.push(
+      this.prisma.field_points.deleteMany({
+        where: { journey_id: v.journey_id, kind: 'checkin', at: v.checkin_at },
+      }),
+    );
+    ops.push(this.prisma.field_visits.deleteMany({ where: { id: v.id, checkout_at: null, auto_closed: false } }));
+    await this.prisma.$transaction(ops);
+    await this.fotos.remove(v.photo_key).catch(() => undefined);
+    return { cancelled: true };
   }
 
   async photo(c: CampoConsultant, ref: string): Promise<FotoLida> {
@@ -369,13 +463,13 @@ export class VisitsService {
 
   private async porId(id: string, agora: Date): Promise<VisitView> {
     const v = await this.prisma.field_visits.findUniqueOrThrow({ where: { id }, include: COM_LEAD });
-    return visitView(v, todaySp(agora));
+    return visitView(v, todaySp(agora), await this.cfgModo());
   }
 
-  private daMesmaPessoa(v: VisitRow & { consultant_id: string }, c: CampoConsultant, agora: Date): VisitView {
+  private async daMesmaPessoa(v: VisitRow & { consultant_id: string }, c: CampoConsultant, agora: Date): Promise<VisitView> {
     if (v.consultant_id !== c.id) {
       throw new ConflictException({ code: 'CLIENT_ID_IN_USE', message: 'Identificador de envio já usado.' });
     }
-    return visitView(v, todaySp(agora));
+    return visitView(v, todaySp(agora), await this.cfgModo());
   }
 }

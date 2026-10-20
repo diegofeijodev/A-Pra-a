@@ -11,6 +11,8 @@ import {
   type GoalView,
 } from '../../domain/alerta-rules';
 import { situacaoHoje, type SituacaoHoje } from '../../domain/campo-rules';
+import { CONFIG_MODO_DESLIGADO, contaNaMeta } from '../../domain/modo-campo-rules';
+import { ModoCampoService } from '../rotas/modo-campo.service';
 import { minParaHhmm } from '../../domain/rota-rules';
 import { RotasConfigService } from '../rotas/rotas-config.service';
 import { ROTAS_LIGADAS } from '../rotas/rotas.tokens';
@@ -53,6 +55,7 @@ export class AtencaoService {
     @Inject(ROTAS_LIGADAS) private readonly rotasLigadas: boolean,
     @Optional() @Inject(PAYOUTS_OPCOES) private readonly payoutsOpcoes?: OpcoesPayouts,
     @Optional() private readonly payouts?: PayoutsService,
+    @Optional() private readonly modo?: ModoCampoService,
   ) {}
 
   async painel(pracaId: string | undefined, agora = new Date()): Promise<AtencaoView> {
@@ -99,7 +102,7 @@ export class AtencaoService {
       }),
       this.prisma.field_visits.findMany({
         where: { consultant_id: { in: ids }, journey: { day: hoje } },
-        select: { consultant_id: true, checkin_at: true, checkout_at: true, auto_closed: true, outcome: true, lead: { select: { name: true } } },
+        select: { consultant_id: true, checkin_at: true, checkout_at: true, auto_closed: true, outcome: true, flow: true, lead: { select: { name: true } } },
       }),
       this.rotasLigadas
         ? this.prisma.field_route_stops.findMany({
@@ -119,6 +122,7 @@ export class AtencaoService {
       : [];
     const pontoPorJornada = new Map(ultimosPontos.map((u) => [u.journey_id, u._max.at]));
 
+    const modoCfg = this.modo?.ligado ? await this.modo.config() : CONFIG_MODO_DESLIGADO;
     const entradas: EntradaConsultor[] = consultores.map((c) => {
       const js = jornadas.filter((j) => j.consultant_id === c.id);
       const vs = visitas.filter((v) => v.consultant_id === c.id);
@@ -143,8 +147,8 @@ export class AtencaoService {
         situacao,
         ultimoRegistro: instantes.length ? new Date(Math.max(...instantes.map((d) => d.getTime()))) : null,
         visitaAberta: aberta ? { nome: aberta.lead.name, checkin_at: aberta.checkin_at } : null,
-        // §30.1: estabelecimento fechado não conta como visita para a meta.
-        feitas: vs.filter((v) => v.outcome !== 'fechado').length,
+        // §30.1: estabelecimento fechado não conta como visita para a meta — exceto no fluxo `simples` (§31.6).
+        feitas: vs.filter((v) => contaNaMeta(v, modoCfg)).length,
         paradasPendentes: paradas
           ? paradas.filter((s) => s.route.consultant_id === c.id).map((s) => ({ nome: s.name_snap, eta_min: s.eta_min! }))
           : null,

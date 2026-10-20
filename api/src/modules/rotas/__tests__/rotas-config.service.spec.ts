@@ -1,6 +1,7 @@
 import type { AuthUser } from '../../../common/auth/auth-user';
 import type { PrismaService } from '../../../common/database/prisma.service';
 import { CONFIG_ALERTAS_PADRAO } from '../../../domain/alerta-rules';
+import { CONFIG_MODO_PADRAO, PRESETS_MODO } from '../../../domain/modo-campo-rules';
 import { CONFIG_ROTA_PADRAO } from '../../../domain/rota-rules';
 import { RotasConfigService } from '../rotas-config.service';
 import { AGORA, fakePrisma } from './fixtures';
@@ -11,7 +12,7 @@ const falha = async (f: () => Promise<unknown>) => f().then(() => null, (e: unkn
 describe('RotasConfigService', () => {
   it('sem linha no banco: devolve os padrões e nenhum autor', async () => {
     const s = new RotasConfigService(fakePrisma() as unknown as PrismaService);
-    expect(await s.view()).toEqual({ ...CONFIG_ROTA_PADRAO, ...CONFIG_ALERTAS_PADRAO, confirmation_rule: 'activated', atualizado_por: null, atualizado_em: null });
+    expect(await s.view()).toEqual({ ...CONFIG_ROTA_PADRAO, ...CONFIG_ALERTAS_PADRAO, ...CONFIG_MODO_PADRAO, presets: PRESETS_MODO, confirmation_rule: 'activated', atualizado_por: null, atualizado_em: null });
   });
 
   it('PUT parcial: mescla, grava quem/quando e preserva chaves de outras fases', async () => {
@@ -60,5 +61,38 @@ describe('RotasConfigService', () => {
     const e = await falha(() => new RotasConfigService(p2 as unknown as PrismaService).atualizar({ confirmation_rule: 'qualquer' }, ADMIN, AGORA));
     expect((e as { getStatus: () => number }).getStatus()).toBe(400);
     expect(p2.app_settings.upsert).not.toHaveBeenCalled();
+  });
+
+  describe('Modo do chefe (§31.3)', () => {
+    it('PUT só com chaves do modo: grava SÓ as enviadas (não grava o padrão das outras) e preserva o resto', async () => {
+      const p = fakePrisma();
+      p.app_settings.findUnique.mockResolvedValue({ field_config: { meta_diaria: 25 } });
+      const s = new RotasConfigService(p as unknown as PrismaService);
+      const v = await s.atualizar({ fluxo_visita: 'simples', desfazer_segundos: 5 }, ADMIN, AGORA);
+      const gravado = p.app_settings.upsert.mock.calls[0][0].update.field_config;
+      expect(gravado).toMatchObject({ meta_diaria: 25, fluxo_visita: 'simples', desfazer_segundos: 5 });
+      expect(gravado).not.toHaveProperty('justificativa_distancia');
+      expect(gravado).not.toHaveProperty('contato_obrigatorio_em');
+      expect(v).toBeDefined();
+    });
+    it('fluxo_visita null = "sem escolha" é gravado como null', async () => {
+      const p = fakePrisma();
+      const s = new RotasConfigService(p as unknown as PrismaService);
+      await s.atualizar({ fluxo_visita: null }, ADMIN, AGORA);
+      expect(p.app_settings.upsert.mock.calls[0][0].update.field_config).toMatchObject({ fluxo_visita: null });
+    });
+    it('subconjunto inválido ou fora da faixa → 400 e nada gravado', async () => {
+      const p = fakePrisma();
+      const s = new RotasConfigService(p as unknown as PrismaService);
+      for (const dto of [{ contato_obrigatorio_em: ['fechado'] }, { desfazer_segundos: 31 }, { contato_campos: ['nome', 'nome'] }]) {
+        const e = await falha(() => s.atualizar(dto as never, ADMIN, AGORA));
+        expect((e as { getStatus: () => number }).getStatus()).toBe(400);
+      }
+      expect(p.app_settings.upsert).not.toHaveBeenCalled();
+    });
+    it('modo() lê o padrão da spec quando não há nada salvo', async () => {
+      const s = new RotasConfigService(fakePrisma() as unknown as PrismaService);
+      expect(await s.modo()).toEqual(CONFIG_MODO_PADRAO);
+    });
   });
 });

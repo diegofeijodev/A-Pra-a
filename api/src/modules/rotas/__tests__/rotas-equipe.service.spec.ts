@@ -11,6 +11,7 @@ import { MontarRotaDto } from '../dto/rotas.dto';
 import { RotasCampoController } from '../rotas-campo.controller';
 import type { RotasConfigService } from '../rotas-config.service';
 import { RotasConfigController, RotasEquipeController } from '../rotas-equipe.controller';
+import { CONFIG_MODO_PADRAO } from '../../../domain/modo-campo-rules';
 import { RotasEquipeService } from '../rotas-equipe.service';
 import { AGORA, CONS_A, CONS_B, DIA, fakePrisma, LEAD, PRACA, PRACA_B, ROTA, rotaRow, STOP, stopRow } from './fixtures';
 
@@ -286,6 +287,20 @@ describe('P0 §30.4 — modo de deslocamento a pé / de carro', () => {
     expect(v.travel.text).toBe('De carro: 25 km/h × desvio de rua 1,3 (média urbana, sem estacionar)');
     expect(v.progress.done).toBe(1);
     expect(v.stops.filter((s) => s.status === 'visitada')).toHaveLength(2); // a parada segue visitada: não trava o roteiro
+  });
+
+  it('Modo do chefe §31.6: "fechado" de visita `simples` entra no feito da meta, se configurado', async () => {
+    const rodar = async (conta: boolean) => {
+      const p = fakePrisma();
+      p.field_routes.findUnique.mockResolvedValue(
+        rotaRow({ stops: [stopRow(1, { status: 'visitada', visit: { outcome: 'fechado', flow: 'simples' } }), stopRow(2, { status: 'visitada', visit: { outcome: 'fechado', flow: 'completo' } })] }),
+      );
+      const configs = { config: jest.fn().mockResolvedValue(CONFIG_ROTA_PADRAO) } as unknown as RotasConfigService;
+      const modo = { ligado: true, config: jest.fn().mockResolvedValue({ ...CONFIG_MODO_PADRAO, fechado_conta_na_meta: conta }) };
+      return (await new RotasEquipeService(p as unknown as PrismaService, configs, true, modo as never).get(ROTA, AGORA)).progress.done;
+    };
+    expect(await rodar(true)).toBe(1);
+    expect(await rodar(false)).toBe(0);
   });
 
   it('DTO: travel_mode só aceita a_pe | carro e não tem default', async () => {

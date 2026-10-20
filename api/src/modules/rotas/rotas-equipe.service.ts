@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { AuthUser } from '../../common/auth/auth-user';
@@ -11,6 +11,7 @@ import { calcularRelogio, paramsDaConfig, planejar, type PontoRota } from '../..
 import { velocidadeCarroKmh } from './rotas.tokens';
 import { violouUnico } from '../campo/prisma-errors';
 import type { CandidatosQueryDto, MontarRotaDto, OrdenarRotaDto, ReotimizarEquipeDto, RotasQueryDto } from './dto/rotas.dto';
+import { ModoCampoService } from './modo-campo.service';
 import { RotasConfigService } from './rotas-config.service';
 import {
   conflitoVersao,
@@ -49,7 +50,13 @@ export class RotasEquipeService {
     private readonly prisma: PrismaService,
     private readonly configs: RotasConfigService,
     @Inject(ROTAS_LIGADAS) private readonly ligado: boolean,
+    @Optional() private readonly modo?: ModoCampoService,
   ) {}
+
+  /** Parâmetros do modo do chefe para a conta de meta (§31.6); sem a flag, o padrão (todas as visitas são `completo`). */
+  private async cfgModo() {
+    return this.modo?.ligado ? this.modo.config() : undefined;
+  }
 
   private exigirLigado() {
     if (!this.ligado) throw desligado();
@@ -62,12 +69,13 @@ export class RotasEquipeService {
       include: COM_PARADAS,
       orderBy: [{ consultant: { name: 'asc' } }, { id: 'asc' }],
     });
-    return rotas.map((r) => routeView(r, agora));
+    const modo = await this.cfgModo();
+    return rotas.map((r) => routeView(r, agora, false, modo));
   }
 
   async get(id: string, agora = new Date()): Promise<RouteView> {
     this.exigirLigado();
-    return routeView(await this.carregar(id), agora);
+    return routeView(await this.carregar(id), agora, false, await this.cfgModo());
   }
 
   private async carregar(id: string) {
@@ -291,7 +299,7 @@ export class RotasEquipeService {
         { timeout: 15_000 },
       );
     }
-    return routeView(await this.carregar(rotaId), agora);
+    return routeView(await this.carregar(rotaId), agora, false, await this.cfgModo());
   }
 
   private async candidatosDe(leadIds: string[]): Promise<Map<string, string>> {
@@ -350,7 +358,7 @@ export class RotasEquipeService {
       },
       { timeout: 15_000 },
     );
-    return routeView(await this.carregar(rota.id), agora);
+    return routeView(await this.carregar(rota.id), agora, false, await this.cfgModo());
   }
 
   async reoptimize(id: string, dto: ReotimizarEquipeDto, user: AuthUser, agora = new Date()): Promise<RouteView> {
@@ -361,7 +369,7 @@ export class RotasEquipeService {
       const inicio = dto.lat != null && dto.lng != null ? { lat: dto.lat, lng: dto.lng } : ultimaPosicao(rota.stops, { lat: rota.start_lat, lng: rota.start_lng });
       try {
         await this.prisma.$transaction((tx) => reotimizar(tx, rota, inicio, agora, 'refazer pela equipe', user.id), { timeout: 15_000 });
-        return routeView(await this.carregar(id), agora);
+        return routeView(await this.carregar(id), agora, false, await this.cfgModo());
       } catch (e) {
         if (ehConflitoVersao(e) && tentativa === 0) continue;
         throw e;

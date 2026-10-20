@@ -5,6 +5,8 @@ import { PrismaService } from '../../common/database/prisma.service';
 import { minutesSp, todaySp, weekdayOf } from '../../common/time/dates';
 import { ehDiaDeTrabalho, metaDoDia, type GoalView } from '../../domain/alerta-rules';
 import { carimbo, PASSADO_MAXIMO_MS } from '../../domain/campo-rules';
+import { CONFIG_MODO_DESLIGADO, contaNaMeta } from '../../domain/modo-campo-rules';
+import { ModoCampoService } from '../rotas/modo-campo.service';
 import { COM_LEAD, journeyView, visitView, type JourneyView, type VisitView } from './campo-views';
 import type { PontosDto, PosicaoDto, StartJourneyDto } from './dto/campo.dto';
 import { RotasCampoService } from '../rotas/rotas-campo.service';
@@ -20,7 +22,7 @@ export interface TodayView {
   journeys: JourneyView[];
   open_visit: VisitView | null;
   visits: VisitView[];
-  counters: { visits: number; cadastrou_qr: number; closed: number };
+  counters: { visits: number; cadastrou_qr: number; closed: number; cadastrou_agora: number };
   /** Meta e ritmo do próprio consultor, com a conta (contrato §25.5); `null` se a configuração não pôde ser lida. */
   goal: (GoalView & { params: GoalParams }) | null;
   /** Cadastros confirmados pelo Freela hoje/na semana, com a regra e a fonte (contrato §27.8); `null` se não pôde ser lido. */
@@ -52,6 +54,7 @@ export class JourneysService {
     @Optional() private readonly rotas?: RotasCampoService,
     @Optional() private readonly configs?: RotasConfigService,
     @Optional() private readonly signups?: SignupsLeituraService,
+    @Optional() private readonly modo?: ModoCampoService,
   ) {}
 
   /** Meta do dia do consultor. A leitura do Hoje nunca falha por causa dela. */
@@ -103,7 +106,9 @@ export class JourneysService {
         orderBy: { checkin_at: 'asc' },
       }),
     ]);
-    const views = visitas.map((v) => visitView(v, hoje));
+    // Modo do chefe §31: com a flag desligada nenhuma visita é `simples`, então o padrão basta (e nada é lido a mais).
+    const modoCfg = this.modo?.ligado ? await this.modo.config() : CONFIG_MODO_DESLIGADO;
+    const views = visitas.map((v) => visitView(v, hoje, modoCfg));
     return {
       day: hoje,
       journey: aberta ? journeyView(aberta) : null,
@@ -115,8 +120,11 @@ export class JourneysService {
         cadastrou_qr: views.filter((v) => v.answers.freela_status === 'cadastrou_qr').length,
         // §30.1: estabelecimento fechado fica fora da meta; o total (`visits`) não muda de significado.
         closed: views.filter((v) => v.answers.outcome === 'fechado').length,
+        // Modo do chefe §31.6: "Cadastrou agora" do fluxo simples (declarado). `cadastrou_qr` continua só QR.
+        cadastrou_agora: views.filter((v) => v.answers.result === 'cadastrou').length,
       },
-      goal: await this.metaDe(views.filter((v) => v.answers.outcome !== 'fechado').length, agora),
+      // §31.6: no fluxo `simples` o "fechado" fotografado conta (se configurado); no `completo` fica fora (§30.1).
+      goal: await this.metaDe(views.filter((v) => contaNaMeta({ outcome: v.answers.outcome, flow: v.flow }, modoCfg)).length, agora),
       signups_confirmed: await this.confirmadosDe(c.id, agora),
     };
   }

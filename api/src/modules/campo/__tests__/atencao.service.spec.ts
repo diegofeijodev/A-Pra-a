@@ -5,6 +5,7 @@ import { CAMPO_ROUTE_KEY } from '../../../common/decorators/campo-route.decorato
 import { CONFIG_ALERTAS_PADRAO } from '../../../domain/alerta-rules';
 import { CONFIG_ROTA_PADRAO } from '../../../domain/rota-rules';
 import type { RotasConfigService } from '../../rotas/rotas-config.service';
+import { CONFIG_MODO_PADRAO } from '../../../domain/modo-campo-rules';
 import { AtencaoService } from '../atencao.service';
 import { CampoController } from '../campo.controller';
 import { ConsultoresController } from '../consultores.controller';
@@ -106,6 +107,23 @@ describe('AtencaoService — meta e "Atenção agora" da equipe', () => {
     ]);
     const r = await svc(p).painel(undefined, AGORA);
     expect(r.consultants.find((c) => c.name === 'Ana')!.goal.feitas).toBe(2);
+  });
+
+  it('Modo do chefe §31.6: "fechado" de visita `simples` conta (feitas) se configurado; o de `completo` não', async () => {
+    const rodar = async (conta: boolean) => {
+      const p = fake();
+      p.field_journeys.findMany.mockResolvedValue([{ id: 'j1', consultant_id: C1, started_at: brt('09:00'), ended_at: null }]);
+      p.field_visits.findMany.mockResolvedValue([
+        { consultant_id: C1, checkin_at: brt('10:00'), checkout_at: brt('10:20'), auto_closed: false, outcome: 'fechado', flow: 'simples', lead: { name: 'Bar A' } },
+        { consultant_id: C1, checkin_at: brt('10:30'), checkout_at: brt('10:35'), auto_closed: false, outcome: 'fechado', flow: 'completo', lead: { name: 'Bar B' } },
+      ]);
+      const configs = { config: jest.fn().mockResolvedValue(CONFIG_ROTA_PADRAO), alertas: jest.fn().mockResolvedValue(CONFIG_ALERTAS_PADRAO) } as unknown as RotasConfigService;
+      const modo = { ligado: true, config: jest.fn().mockResolvedValue({ ...CONFIG_MODO_PADRAO, fechado_conta_na_meta: conta }) };
+      const r = await new AtencaoService(p as unknown as PrismaService, configs, false, undefined, undefined, modo as never).painel(undefined, AGORA);
+      return r.consultants.find((c) => c.name === 'Ana')!.goal.feitas;
+    };
+    expect(await rodar(true)).toBe(1);
+    expect(await rodar(false)).toBe(0);
   });
 
   it('isolamento: com praca_id filtra só consultores ATIVOS daquela praça; praça inexistente → 404 sem consultar', async () => {

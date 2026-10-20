@@ -217,6 +217,7 @@ describe('ConsultoresService.list — situação de hoje', () => {
       visits: 2,
       closed: 0,
       cadastros: 1,
+      cadastrou_agora: 0,
       last_point_at: '2026-10-08T17:40:00.000Z',
     });
   });

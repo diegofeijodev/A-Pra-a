@@ -15,12 +15,24 @@ import {
   type ConfigCadastro,
 } from '../../domain/signup-sync-rules';
 import { aplicarConfigRota, lerConfigRota, type ConfigRota } from '../../domain/rota-rules';
+import {
+  aplicarConfigModo,
+  CHAVES_CONFIG_MODO,
+  lerConfigModo,
+  PRESETS_MODO,
+  type ConfigModo,
+} from '../../domain/modo-campo-rules';
 import type { ConfigRotaDto } from './dto/rotas.dto';
 
-export interface ConfigView extends ConfigRota, ConfigAlertas, ConfigCadastro {
+export interface ConfigView extends ConfigRota, ConfigAlertas, ConfigCadastro, ConfigModo {
+  /** Os dois botões de preset da tela (contrato §31.3): só preenchem o formulário. */
+  presets: { completo: ConfigModo; chefe: ConfigModo };
   atualizado_por: string | null;
   atualizado_em: string | null;
 }
+
+const pick = <T extends object>(obj: T, so: Record<string, unknown>): Partial<T> =>
+  Object.fromEntries(Object.entries(obj).filter(([k]) => k in so)) as Partial<T>;
 
 /** Parâmetros de negócio do roteiro em `app_settings.field_config` (contrato §23.1). */
 @Injectable()
@@ -48,12 +60,19 @@ export class RotasConfigService {
     return lerConfigCadastro(await this.bruto());
   }
 
+  /** Fluxo da visita e parâmetros do modo do chefe (contrato §31.3). */
+  async modo(): Promise<ConfigModo> {
+    return lerConfigModo(await this.bruto());
+  }
+
   async view(): Promise<ConfigView> {
     const raw = await this.bruto();
     return {
       ...lerConfigRota(raw),
       ...lerConfigAlertas(raw),
       ...lerConfigCadastro(raw),
+      ...lerConfigModo(raw),
+      presets: PRESETS_MODO,
       atualizado_por: typeof raw.atualizado_por === 'string' ? raw.atualizado_por : null,
       atualizado_em: typeof raw.atualizado_em === 'string' ? raw.atualizado_em : null,
     };
@@ -66,15 +85,22 @@ export class RotasConfigService {
     const doAlerta = Object.fromEntries(Object.entries(parcial).filter(([k]) => chavesAlerta.has(k)));
     const chavesCadastro = new Set<string>(CHAVES_CONFIG_CADASTRO);
     const doCadastro = Object.fromEntries(Object.entries(parcial).filter(([k]) => chavesCadastro.has(k)));
-    const daRota = Object.fromEntries(Object.entries(parcial).filter(([k]) => !chavesAlerta.has(k) && !chavesCadastro.has(k)));
+    const chavesModo = new Set<string>(CHAVES_CONFIG_MODO);
+    const doModo = Object.fromEntries(Object.entries(parcial).filter(([k]) => chavesModo.has(k)));
+    const daRota = Object.fromEntries(
+      Object.entries(parcial).filter(([k]) => !chavesAlerta.has(k) && !chavesCadastro.has(k) && !chavesModo.has(k)),
+    );
     const r = aplicarConfigRota(lerConfigRota(raw), daRota);
     if (!r.ok) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: r.erro });
     const a = aplicarConfigAlertas(lerConfigAlertas(raw), doAlerta);
     if (!a.ok) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: a.erro });
     const c = aplicarConfigCadastro(lerConfigCadastro(raw), doCadastro);
     if (!c.ok) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: c.erro });
-    // Preserva as chaves de outras fases que já estejam no JSON.
-    const novo = { ...raw, ...r.config, ...a.config, ...c.config, atualizado_por: user.id, atualizado_em: agora.toISOString() };
+    const m = aplicarConfigModo(lerConfigModo(raw), doModo);
+    if (!m.ok) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: m.erro });
+    // Preserva as chaves de outras fases que já estejam no JSON. As do modo só entram quando o PUT as traz:
+    // gravar o padrão em toda chave faria "chave ausente" (fluxo_visita) virar escolha da equipe sem querer.
+    const novo = { ...raw, ...r.config, ...a.config, ...c.config, ...pick(m.config, doModo), atualizado_por: user.id, atualizado_em: agora.toISOString() };
     await this.prisma.app_settings.upsert({
       where: { id: 1 },
       update: { field_config: novo as Prisma.InputJsonValue },

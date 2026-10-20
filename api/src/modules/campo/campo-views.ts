@@ -1,5 +1,6 @@
 /** Projeções do wire (contrato §20) — uma só para o consultor e para a equipe. */
 import { faltando, type RespostasVisita } from '../../domain/campo-rules';
+import { CONFIG_MODO_PADRAO, faltandoSimples, type ConfigModo } from '../../domain/modo-campo-rules';
 
 export interface JourneyView {
   id: string;
@@ -82,6 +83,8 @@ export interface VisitRow extends RespostasVisita {
   checkout_lng: number | null;
   auto_closed: boolean;
   clock_adjusted: boolean;
+  /** Modo do chefe §31.2: fluxo gravado na abertura. Ausente na linha (testes/antigas) = `completo`. */
+  flow?: string;
   lead: { name: string; possible_dup: boolean };
 }
 
@@ -104,6 +107,8 @@ export interface VisitView {
   checkout_lng: number | null;
   auto_closed: boolean;
   clock_adjusted: boolean;
+  /** `simples` | `completo` (contrato §31.2). */
+  flow: string;
   answers: RespostasVisita;
   missing: string[];
 }
@@ -129,10 +134,13 @@ export function respostasDe(v: RespostasVisita): RespostasVisita {
     refusal_note: v.refusal_note ?? null,
     followup_time: v.followup_time ?? null,
     contact_phone: v.contact_phone ?? null,
+    // Modo do chefe §31.5: sempre explícitos no wire.
+    result: v.result ?? null,
+    distance_note: v.distance_note ?? null,
   };
 }
 
-export function visitView(v: VisitRow, hoje: string): VisitView {
+export function visitView(v: VisitRow, hoje: string, modo: ConfigModo = CONFIG_MODO_PADRAO): VisitView {
   const answers = respostasDe(v);
   return {
     id: v.id,
@@ -153,8 +161,14 @@ export function visitView(v: VisitRow, hoje: string): VisitView {
     checkout_lng: v.checkout_lng,
     auto_closed: v.auto_closed,
     clock_adjusted: v.clock_adjusted,
+    flow: v.flow ?? 'completo',
     answers,
-    // Visita fechada não "falta" nada: a lista é para o botão de checkout.
-    missing: v.checkout_at || v.auto_closed ? [] : faltando(answers, hoje),
+    // Visita fechada não "falta" nada: a lista é para o botão de checkout. A conta segue o fluxo da visita (§31.2).
+    missing:
+      v.checkout_at || v.auto_closed
+        ? []
+        : v.flow === 'simples'
+          ? faltandoSimples(answers, hoje, modo, { far_from_place: v.far_from_place })
+          : faltando(answers, hoje),
   };
 }

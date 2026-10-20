@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional, UnprocessableEntityException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { CampoConsultant } from '../../common/auth/campo-consultant';
@@ -12,6 +12,7 @@ import { ordenarRetornosAncorados, paramsDaConfig, planejar, selecionarEncadeado
 import { lerRetornosPendentes } from '../campo/retornos-query';
 import { violouUnico } from '../campo/prisma-errors';
 import type { AcaoParadaDto, GerarRotaDto, PosicaoRotaDto, PularParadaDto } from './dto/rotas.dto';
+import { ModoCampoService } from './modo-campo.service';
 import { RotasConfigService } from './rotas-config.service';
 import {
   partidaDoDia,
@@ -51,7 +52,13 @@ export class RotasCampoService {
     private readonly prisma: PrismaService,
     private readonly configs: RotasConfigService,
     @Inject(ROTAS_LIGADAS) private readonly ligado: boolean,
+    @Optional() private readonly modo?: ModoCampoService,
   ) {}
+
+  /** Parâmetros do modo do chefe para a conta de meta (§31.6); sem a flag, o padrão (todas as visitas são `completo`). */
+  private async cfgModo() {
+    return this.modo?.ligado ? this.modo.config() : undefined;
+  }
 
   get habilitado(): boolean {
     return this.ligado;
@@ -65,7 +72,7 @@ export class RotasCampoService {
   async today(c: CampoConsultant, agora = new Date()): Promise<HojeRotaView> {
     if (!this.ligado) return { enabled: false, route: null, can_generate: false };
     const route = await this.ativaDeHoje(c.id, agora);
-    if (route) return { enabled: true, route: routeView(route, agora), can_generate: false };
+    if (route) return { enabled: true, route: routeView(route, agora, false, await this.cfgModo()), can_generate: false };
     return { enabled: true, route: null, can_generate: (await this.configs.config()).consultor_pode_gerar };
   }
 
@@ -78,7 +85,7 @@ export class RotasCampoService {
 
   private async viewDe(id: string, agora: Date): Promise<RouteView> {
     const r = await this.prisma.field_routes.findUniqueOrThrow({ where: { id }, include: COM_PARADAS });
-    return routeView(r, agora);
+    return routeView(r, agora, false, await this.cfgModo());
   }
 
   // ── montagem ────────────────────────────────────────────────
@@ -86,7 +93,7 @@ export class RotasCampoService {
   async generate(c: CampoConsultant, dto: GerarRotaDto, agora = new Date()): Promise<RouteView> {
     this.exigirLigado();
     const existente = await this.ativaDeHoje(c.id, agora);
-    if (existente) return routeView(existente, agora);
+    if (existente) return routeView(existente, agora, false, await this.cfgModo());
     const config = await this.configs.config();
     if (!config.consultor_pode_gerar) {
       throw new ForbiddenException({ code: 'ROUTE_GENERATE_NOT_ALLOWED', message: 'A equipe monta o seu roteiro. Peça para ela montar o dia.' });
@@ -185,7 +192,7 @@ export class RotasCampoService {
       if (!violouUnico(e)) throw e;
       // Corrida: outra chamada criou o roteiro do dia (devolve) ou outro consultor levou um lugar (refaz sem ele, uma vez).
       const ganhou = await this.ativaDeHoje(c.id, agora);
-      if (ganhou) return routeView(ganhou, agora);
+      if (ganhou) return routeView(ganhou, agora, false, await this.cfgModo());
       if (tentativa === 0) return this.montarAuto(c, pos, source, config, agora, 1);
       throw new ConflictException({ code: 'ROUTE_CONFLICT', message: 'Não foi possível montar o roteiro agora. Tente de novo.' });
     }

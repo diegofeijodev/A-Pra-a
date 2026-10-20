@@ -36,6 +36,7 @@ import {
   type VisitView,
 } from './campo-views';
 import { ChannelsDto, CreateConsultorDto, UpdateConsultorDto } from './dto/consultores.dto';
+import { ModoCampoService } from '../rotas/modo-campo.service';
 import { lerFotoOuFalha, PHOTO_STORAGE, type FotoLida, type PhotoStorage } from './photo-storage';
 import { colunaUnicaDoConsultor, violouUnico } from './prisma-errors';
 
@@ -56,13 +57,17 @@ export interface ConsultorView {
   freela_sync_error: string | null;
   freela_synced_at: string | null;
   signup_url: string | null;
+  /** Exceção do fluxo da visita (contrato §31.3): `simples`|`completo`; `null` = seguir o padrão. */
+  visit_flow: string | null;
+  /** O fluxo que vale HOJE para ele (flag + consultor + global). */
+  visit_flow_effective: string;
   created_by: string;
   created_at: string;
   updated_at: string;
 }
 
 export interface ConsultorListItem extends ConsultorView {
-  today: { status: SituacaoHoje; visits: number; closed: number; cadastros: number; last_point_at: string | null };
+  today: { status: SituacaoHoje; visits: number; closed: number; cadastros: number; cadastrou_agora: number; last_point_at: string | null };
   /** Cadastros confirmados pelo Freela hoje/na semana (contrato §27.8); `null` se não pôde ser lido. */
   signups_confirmed: Contagem | null;
 }
@@ -72,7 +77,7 @@ export type ConsultorRow = Prisma.field_consultantsGetPayload<{
 }>;
 
 /** Projeção da equipe — nunca `password_hash` nem `token_version`. */
-export function toConsultorView(c: ConsultorRow): ConsultorView {
+export function toConsultorView(c: ConsultorRow, efetivo = 'completo'): ConsultorView {
   return {
     id: c.id,
     name: c.name,
@@ -90,6 +95,8 @@ export function toConsultorView(c: ConsultorRow): ConsultorView {
     freela_sync_error: c.freela_sync_error,
     freela_synced_at: c.freela_synced_at?.toISOString() ?? null,
     signup_url: signupUrl(c.freela_code),
+    visit_flow: c.visit_flow ?? null,
+    visit_flow_effective: efetivo,
     created_by: c.created_by,
     created_at: c.created_at.toISOString(),
     updated_at: c.updated_at.toISOString(),
@@ -110,7 +117,13 @@ export class ConsultoresService {
     private readonly freela: CampoFreelaService,
     @Inject(PHOTO_STORAGE) private readonly fotos: PhotoStorage,
     @Optional() private readonly signups?: SignupsLeituraService,
+    @Optional() private readonly modo?: ModoCampoService,
   ) {}
+
+  /** Fluxo da visita que vale para o consultor agora (contrato §31.1); sem o serviço, `completo`. */
+  private async fluxoEfetivo(c: { id: string; visit_flow: string | null }): Promise<string> {
+    return this.modo ? this.modo.fluxoDoConsultor(c.id) : 'completo';
+  }
 
   async list(agora = new Date()): Promise<ConsultorListItem[]> {
     const hoje = todaySp(agora);
@@ -125,7 +138,7 @@ export class ConsultoresService {
       }),
       this.prisma.field_visits.findMany({
         where: { journey: { day: hoje } },
-        select: { consultant_id: true, freela_status: true, outcome: true },
+        select: { consultant_id: true, freela_status: true, outcome: true, result: true },
       }),
     ]);
     const ultimos = jornadas.length
@@ -144,18 +157,22 @@ export class ConsultoresService {
       conf = null; // a lista da equipe não cai por causa do contador
     }
 
+    const efetivos = new Map<string, string>();
+    for (const c of consultores) efetivos.set(c.id, await this.fluxoEfetivo(c));
     return consultores.map((c) => {
       const js = jornadas.filter((j) => j.consultant_id === c.id);
       const vs = visitas.filter((v) => v.consultant_id === c.id);
       const pontos = js.map((j) => ultimoPorJornada.get(j.id)).filter((d): d is Date => d instanceof Date);
       const ultimo = pontos.length ? new Date(Math.max(...pontos.map((d) => d.getTime()))) : null;
       return {
-        ...toConsultorView(c),
+        ...toConsultorView(c, efetivos.get(c.id)),
         today: {
           status: situacaoHoje(js),
           visits: vs.length,
           closed: vs.filter((v) => v.outcome === 'fechado').length,
           cadastros: vs.filter((v) => v.freela_status === 'cadastrou_qr').length,
+          // Modo do chefe §31.5: "Cadastrou agora" do fluxo simples (declarado; o confirmado vem de signups_confirmed).
+          cadastrou_agora: vs.filter((v) => v.result === 'cadastrou').length,
           last_point_at: ultimo?.toISOString() ?? null,
         },
         signups_confirmed: conf
@@ -166,7 +183,8 @@ export class ConsultoresService {
   }
 
   async get(id: string): Promise<ConsultorView> {
-    return toConsultorView(await this.findOrFail(id));
+    const c = await this.findOrFail(id);
+    return toConsultorView(c, await this.fluxoEfetivo(c));
   }
 
   async create(
@@ -241,6 +259,8 @@ export class ConsultoresService {
       data.pix_key_type = tipo;
       data.pix_key = normalizarPix(tipo, chave);
     }
+    // Contrato §31.3: exceção do fluxo da visita (só admin; `null` = seguir o padrão). Vale para visitas abertas dali em diante.
+    if (dto.visit_flow !== undefined) data.visit_flow = dto.visit_flow;
     if (dto.active !== undefined && dto.active !== atual.active) {
       data.active = dto.active;
       // Desativar derruba a sessão aberta na hora (o guard compara `tv`).

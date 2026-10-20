@@ -1,3 +1,4 @@
+import { CONFIG_MODO_DESLIGADO, contaNaMeta, type ConfigModo } from '../../domain/modo-campo-rules';
 import type { Prisma } from '@prisma/client';
 import { minutesSp, todaySp } from '../../common/time/dates';
 import { lerConfigRota, minParaHhmm, paramsDaConfig, ritmo, textoDoModo, velocidadeDoModo, type ConfigRota, type ParamsPlano } from '../../domain/rota-rules';
@@ -5,7 +6,7 @@ import { velocidadeCarroKmh } from './rotas.tokens';
 
 export type StopRow = Prisma.field_route_stopsGetPayload<object>;
 /** A parada leva o resultado da visita: "fechado" (§30.1) não conta como visita feita na meta. */
-export type StopComVisita = StopRow & { visit?: { outcome: string } | null };
+export type StopComVisita = StopRow & { visit?: { outcome: string; flow?: string } | null };
 export type RouteRow = Omit<Prisma.field_routesGetPayload<{ include: { stops: true; consultant: { select: { name: true } } } }>, 'stops'> & { stops: StopComVisita[] };
 
 export interface StopView {
@@ -124,7 +125,12 @@ export const stopView = (s: StopRow): StopView => ({
 });
 
 /** `descartada` só interessa à equipe; o consultor nunca a vê. */
-export function routeView(r: RouteRow, agora: Date, incluirDescartadas = false): RouteView {
+export function routeView(
+  r: RouteRow,
+  agora: Date,
+  incluirDescartadas = false,
+  modo: Pick<ConfigModo, 'fechado_conta_na_meta'> = CONFIG_MODO_DESLIGADO,
+): RouteView {
   const snap = lerSnapshot(r.params_snapshot);
   const params = paramsDaRota(r);
   const kmh = velocidadeDaRota(r);
@@ -134,7 +140,8 @@ export function routeView(r: RouteRow, agora: Date, incluirDescartadas = false):
   const conta = (f: (s: StopComVisita) => boolean) => stops.filter(f).length;
   const pendentesPlan = stops.filter((s) => s.status === 'pendente' && s.kind === 'planejada');
   // "Fechado" (§30.1) fica fora da conta de visitas feitas para a meta; a parada segue visitada (não trava o roteiro).
-  const done = conta((s) => s.status === 'visitada' && s.visit?.outcome !== 'fechado');
+  // No fluxo `simples` o "fechado" fotografado conta, se `fechado_conta_na_meta` (contrato §31.6).
+  const done = conta((s) => s.status === 'visitada' && contaNaMeta({ outcome: s.visit?.outcome, flow: s.visit?.flow }, modo));
   const hoje = todaySp(agora);
   const r0 = ritmo({
     agoraMin: r.day === hoje ? minutesSp(agora) : r.day < hoje ? params.janelaFim : 0,
@@ -177,4 +184,4 @@ export function routeView(r: RouteRow, agora: Date, incluirDescartadas = false):
   };
 }
 
-export const COM_PARADAS = { stops: { include: { visit: { select: { outcome: true } } } }, consultant: { select: { name: true } } } as const;
+export const COM_PARADAS = { stops: { include: { visit: { select: { outcome: true, flow: true } } } }, consultant: { select: { name: true } } } as const;

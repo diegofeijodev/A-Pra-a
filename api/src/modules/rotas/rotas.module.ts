@@ -4,7 +4,8 @@ import { RotasCampoService } from './rotas-campo.service';
 import { RotasConfigService } from './rotas-config.service';
 import { RotasConfigController, RotasEquipeController } from './rotas-equipe.controller';
 import { RotasEquipeService } from './rotas-equipe.service';
-import { ROTAS_LIGADAS, rotasLigadasProvider } from './rotas.tokens';
+import { ModoCampoService } from './modo-campo.service';
+import { FLUXO_SELECT_LIGADO, fluxoSelectLigadoProvider, ROTAS_LIGADAS, rotasLigadasProvider } from './rotas.tokens';
 
 /**
  * Roteiro do dia (F3, contrato §23). Folha: não importa o CampoModule — é o CampoModule que
@@ -12,7 +13,7 @@ import { ROTAS_LIGADAS, rotasLigadasProvider } from './rotas.tokens';
  */
 @Module({
   controllers: [RotasCampoController, RotasEquipeController, RotasConfigController],
-  providers: [RotasConfigService, RotasCampoService, RotasEquipeService, rotasLigadasProvider],
-  exports: [RotasCampoService, RotasConfigService, ROTAS_LIGADAS],
+  providers: [RotasConfigService, RotasCampoService, RotasEquipeService, rotasLigadasProvider, fluxoSelectLigadoProvider, ModoCampoService],
+  exports: [RotasCampoService, RotasConfigService, ROTAS_LIGADAS, FLUXO_SELECT_LIGADO, ModoCampoService],
 })
 export class RotasModule {}

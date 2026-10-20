@@ -59,6 +59,12 @@ export const CONFIG_MODO_PADRAO: ConfigModo = {
   desfazer_segundos: 8,
 };
 
+/**
+ * Flag `FIELD_VISIT_FLOW_SELECT_ENABLED` desligada: o "fechado" volta a ficar fora da meta mesmo de uma visita
+ * `simples` que tenha ficado de antes de a flag ser desligada (comportamento de antes do modo do chefe).
+ */
+export const CONFIG_MODO_DESLIGADO: ConfigModo = { ...CONFIG_MODO_PADRAO, fechado_conta_na_meta: false };
+
 /** Os dois botões de preset da tela de configuração: só preenchem o formulário (o admin revisa e salva). */
 export const PRESETS_MODO: { completo: ConfigModo; chefe: ConfigModo } = {
   completo: { ...CONFIG_MODO_PADRAO, fluxo_visita: 'completo' },

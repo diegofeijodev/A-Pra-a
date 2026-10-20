@@ -81,6 +81,11 @@ export class UpdateConsultorDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  /** Exceção do fluxo da visita (contrato §31.3); `null` = seguir o padrão. */
+  @IsOptional()
+  @IsIn(['simples', 'completo'])
+  visit_flow?: string | null;
 }
 
 export class ChannelsDto {

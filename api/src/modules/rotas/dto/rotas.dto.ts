@@ -52,6 +52,13 @@ export class ConfigRotaDto {
   @IsOptional() @IsBoolean() payout_proof_required?: boolean;
   // F7 (contrato §27.4): regra de "cadastro confirmado". Os valores são conferidos no domínio.
   @IsOptional() @IsString() confirmation_rule?: string;
+  // Modo do chefe (contrato §31.3): os valores/subconjuntos são conferidos no domínio (`modo-campo-rules.ts`).
+  @IsOptional() @IsIn(['simples', 'completo']) fluxo_visita?: string | null;
+  @IsOptional() @IsIn(['nao', 'opcional', 'obrigatoria']) justificativa_distancia?: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) contato_obrigatorio_em?: string[];
+  @IsOptional() @IsArray() @IsString({ each: true }) contato_campos?: string[];
+  @IsOptional() @IsBoolean() fechado_conta_na_meta?: boolean;
+  @IsOptional() @IsInt() @Min(0) @Max(30) desfazer_segundos?: number;
 }
 
 export class PosicaoRotaDto {

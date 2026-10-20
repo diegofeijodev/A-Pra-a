@@ -3,6 +3,7 @@ import type { CampoConsultant } from '../../../common/auth/campo-consultant';
 import type { PrismaService } from '../../../common/database/prisma.service';
 import { CONFIG_ALERTAS_PADRAO } from '../../../domain/alerta-rules';
 import { CONFIG_ROTA_PADRAO } from '../../../domain/rota-rules';
+import { CONFIG_MODO_PADRAO } from '../../../domain/modo-campo-rules';
 import { JourneysService } from '../journeys.service';
 
 const CONS = '44444444-4444-4444-8444-444444444444';
@@ -300,7 +301,7 @@ describe('JourneysService.today', () => {
     expect(t.journeys).toHaveLength(1);
     expect(t.open_visit?.client_id).toBe(CLIENT2);
     expect(t.open_visit?.missing).toContain('interesse');
-    expect(t.counters).toEqual({ visits: 1, cadastrou_qr: 1, closed: 0 });
+    expect(t.counters).toEqual({ visits: 1, cadastrou_qr: 1, closed: 0, cadastrou_agora: 0 });
   });
 
   it('journey é a jornada ABERTA: sem aberta = null, mesmo com jornadas encerradas hoje', async () => {
@@ -354,11 +355,40 @@ describe('JourneysService.today — meta do dia (§25.5)', () => {
     expect(t.goal!.feitas).toBe(1);
   });
 
+  it('Modo do chefe §31.6: visita `simples` "fechado" CONTA na meta (se configurado); `completo` continua fora; counters.cadastrou_agora', async () => {
+    const base = {
+      client_id: CLIENT2, journey_id: 'j1', lead_id: 'l1',
+      checkin_at: new Date('2026-10-08T13:00:00.000Z'), checkin_lat: -19.92, checkin_lng: -43.93, checkin_accuracy: 10,
+      distance_m: null, far_from_place: false, photo_bytes: 1000,
+      checkout_at: new Date('2026-10-08T15:10:00.000Z'), checkout_lat: null, checkout_lng: null, auto_closed: false, clock_adjusted: false,
+      interlocutor_name: null, interlocutor_role: null, freela_status: null, interest: null,
+      open_vagas: null, vaga_roles: [], freelas_per_week: null, channels: [], channel_other: null,
+      needs_followup: null, followup_what: null, followup_date: null, notes: null,
+      lead: { name: 'Bar do Mercado', possible_dup: false },
+    };
+    const visitas = [
+      { ...base, id: 'a', outcome: 'fechado', flow: 'simples', result: 'fechado' },
+      { ...base, id: 'b', outcome: 'fechado', flow: 'completo' },
+      { ...base, id: 'c', outcome: 'conversa', flow: 'simples', result: 'cadastrou', freela_status: 'declarou' },
+    ];
+    const rodar = async (conta: boolean, ligado = true) => {
+      const p = fakePrisma();
+      p.field_visits.findMany.mockResolvedValue(visitas);
+      const modo = { ligado, config: jest.fn().mockResolvedValue({ ...CONFIG_MODO_PADRAO, fechado_conta_na_meta: conta }) };
+      return new JourneysService(p as unknown as PrismaService, undefined, configs() as never, undefined, modo as never).today(C, AGORA);
+    };
+    const on = await rodar(true);
+    expect(on.goal!.feitas).toBe(2); // o fechado simples + a conversa; o fechado completo fica de fora
+    expect(on.counters).toMatchObject({ visits: 3, closed: 2, cadastrou_qr: 0, cadastrou_agora: 1 });
+    expect((await rodar(false)).goal!.feitas).toBe(1);
+    expect((await rodar(true, false)).goal!.feitas).toBe(1); // flag desligada: padrão de antes
+  });
+
   it('sem o serviço de configuração (testes antigos) ou com falha nele: goal nulo, o Hoje continua', async () => {
     expect((await montar(fakePrisma()).today(C, AGORA)).goal).toBeNull();
     const ruim = configs({ config: jest.fn().mockRejectedValue(new Error('banco caiu')) });
     const t = await comConfigs(fakePrisma(), ruim).today(C, AGORA);
     expect(t.goal).toBeNull();
-    expect(t.counters).toEqual({ visits: 0, cadastrou_qr: 0, closed: 0 });
+    expect(t.counters).toEqual({ visits: 0, cadastrou_qr: 0, closed: 0, cadastrou_agora: 0 });
   });
 });

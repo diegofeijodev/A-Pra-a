@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Inject,
@@ -18,6 +19,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { CampoConsultant } from '../../common/auth/campo-consultant';
 import { AllowPendingPassword, CampoRoute } from '../../common/decorators/campo-route.decorator';
 import { CurrentConsultant } from '../../common/decorators/current-consultant.decorator';
+import { ModoCampoService } from '../rotas/modo-campo.service';
 import { CampoAuthService } from './campo-auth.service';
 import { COMPANY_SIGNUP_LIGADO } from './company-signup.tokens';
 import { AnswersDto, PlacesQueryDto, PontosDto, PosicaoDto, SimilarQueryDto, StartJourneyDto } from './dto/campo.dto';
@@ -44,13 +46,34 @@ export class CampoController {
     @Optional() @Inject(COMPANY_SIGNUP_LIGADO) private readonly signupLigado: boolean = false,
     @Optional() @Inject(EARNINGS_OPCOES) private readonly earnings?: OpcoesEarnings,
     @Optional() @Inject(PAYOUTS_OPCOES) private readonly payouts?: OpcoesPayouts,
+    @Optional() private readonly modo?: ModoCampoService,
   ) {}
 
   @AllowPendingPassword()
   @Get('me')
   async me(@CurrentConsultant() c: CampoConsultant) {
     // `features` esconde o botão "Cadastrar no Freela" no web quando a flag está desligada (§26.3).
-    return { ...(await this.auth.me(c.id)), features: { company_signup: this.signupLigado, earnings: this.earnings?.ligado ?? false, payouts: this.payouts?.ligado ?? false } };
+    // Contrato §31.4: `visit_flow` = o fluxo que vale agora para ele; `visit_config` só com a flag ligada (a tela confere o que
+    // falta sem sinal; quem decide é o servidor).
+    const ligado = this.modo?.ligado ?? false;
+    const visit_flow = this.modo ? await this.modo.fluxoDoConsultor(c.id) : 'completo';
+    const cfg = ligado && this.modo ? await this.modo.config() : null;
+    return {
+      ...(await this.auth.me(c.id)),
+      visit_flow,
+      ...(cfg
+        ? {
+            visit_config: {
+              justificativa_distancia: cfg.justificativa_distancia,
+              contato_obrigatorio_em: cfg.contato_obrigatorio_em,
+              contato_campos: cfg.contato_campos,
+              fechado_conta_na_meta: cfg.fechado_conta_na_meta,
+              desfazer_segundos: cfg.desfazer_segundos,
+            },
+          }
+        : {}),
+      features: { company_signup: this.signupLigado, earnings: this.earnings?.ligado ?? false, payouts: this.payouts?.ligado ?? false, visit_flow: ligado },
+    };
   }
 
   @Get('today')
@@ -110,6 +133,13 @@ export class CampoController {
   @Post('visits/:ref/checkout')
   checkout(@CurrentConsultant() c: CampoConsultant, @Param('ref') ref: string, @Body() dto: PosicaoDto) {
     return this.visits.checkout(c, ref, dto);
+  }
+
+  /** Cancelar a visita aberta feita por engano (contrato §31.7). */
+  @HttpCode(200)
+  @Delete('visits/:ref')
+  cancel(@CurrentConsultant() c: CampoConsultant, @Param('ref') ref: string) {
+    return this.visits.cancel(c, ref);
   }
 
   @Get('visits/:ref/photo')
