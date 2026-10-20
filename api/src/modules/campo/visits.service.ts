@@ -251,7 +251,8 @@ export class VisitsService {
     }
     const flow = v.flow ?? 'completo';
     // Contrato §31.2: `result` só existe no fluxo simples; o questionário antigo vale nos dois (no simples é "Mais detalhes").
-    if (dto.result !== undefined && flow !== 'simples') throw fluxoDiferente();
+    // `result: null` NÃO conta: o rascunho do questionário completo reenvia o estado inteiro da tela (inclui `result: null`).
+    if (dto.result != null && flow !== 'simples') throw fluxoDiferente();
     const data: Prisma.field_visitsUpdateInput = {};
     if (dto.interlocutor_name !== undefined) data.interlocutor_name = texto(dto.interlocutor_name);
     if (dto.interlocutor_role !== undefined) data.interlocutor_role = dto.interlocutor_role;

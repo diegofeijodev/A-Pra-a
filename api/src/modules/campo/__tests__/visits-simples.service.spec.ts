@@ -156,6 +156,14 @@ describe('rascunho do fluxo simples (§31.5)', () => {
     });
     expect(p.field_visits.update).not.toHaveBeenCalled();
   });
+  it('rascunho do questionário completo manda result: null (estado inteiro da tela): aceito, nada de result gravado', async () => {
+    const p = fakePrisma();
+    p.field_visits.findFirst.mockResolvedValue({ ...VISITA, flow: 'completo' });
+    await montar(p).s.saveAnswers(C, CLIENT, { result: null, distance_note: null, interlocutor_name: 'Maria' } as never, AGORA);
+    const d = dataDo(p.field_visits.update);
+    expect(d).toMatchObject({ interlocutor_name: 'Maria' });
+    expect(d).not.toHaveProperty('result');
+  });
   it('as 8 perguntas antigas continuam aceitas no simples ("Mais detalhes") e são gravadas', async () => {
     const d = await salvar({}, { result: 'ja_usa', interlocutor_name: ' Marcos ', open_vagas: 2, vaga_roles: ['Garçom'], freelas_per_week: 3, channels: ['Nenhum'], notes: 'ok' });
     expect(d).toMatchObject({ interlocutor_name: 'Marcos', open_vagas: 2, vaga_roles: ['Garçom'], freelas_per_week: 3, channels: ['Nenhum'], notes: 'ok', result: 'ja_usa', freela_status: 'ja_usa' });
