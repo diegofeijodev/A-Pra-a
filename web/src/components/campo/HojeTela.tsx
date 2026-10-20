@@ -6,6 +6,7 @@ import { AvisoGps } from '@/components/campo/AvisoGps';
 import { CampoTopo } from '@/components/campo/CampoTopo';
 import { FaixaFila } from '@/components/campo/FaixaFila';
 import { CadastrosConfirmadosCard } from '@/components/campo/CadastrosConfirmadosCard';
+import { GanhosCard } from '@/components/campo/GanhosCard';
 import { MetaCard } from '@/components/campo/MetaCard';
 import { RetornosCampo } from '@/components/campo/RetornosCampo';
 import { RoteiroCard } from '@/components/campo/RoteiroCard';
@@ -64,6 +65,7 @@ export function HojeTela() {
 
       {!carregando && !rot.carregando && !(rot.habilitado && rot.route) && <MetaCard />}
       {!carregando && <CadastrosConfirmadosCard />}
+      {!carregando && <GanhosCard />}
 
       {carregando ? (
         <p className="text-sm text-muted-foreground">Carregando…</p>

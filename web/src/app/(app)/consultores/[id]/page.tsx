@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { QrDoFreela } from '@/components/campo/QrDoFreela';
 import { ConsultorDialog } from '@/components/praca/ConsultorDialog';
+import { GanhosConsultor } from '@/components/praca/GanhosConsultor';
 import { ConsultorLinhaDoTempo } from '@/components/praca/ConsultorLinhaDoTempo';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -121,6 +122,8 @@ export default function ConsultorDetalhePage() {
           </div>
         )}
       </section>
+
+      <GanhosConsultor consultantId={id} />
 
       {editando && <ConsultorDialog aberto consultor={c} onFechar={() => setEditando(false)} />}
 

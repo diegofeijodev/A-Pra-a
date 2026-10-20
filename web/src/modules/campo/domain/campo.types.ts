@@ -32,7 +32,7 @@ export interface CampoMeResponse {
   consultant: CampoConsultantMe;
   channels: string[];
   /** Chaves do servidor que ligam telas (contrato §26.3). Ausente em respostas antigas guardadas no aparelho. */
-  features?: { company_signup: boolean };
+  features?: { company_signup: boolean; earnings?: boolean };
 }
 
 /** Posição + hora real do aparelho. */

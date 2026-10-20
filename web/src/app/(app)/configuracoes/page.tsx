@@ -2,6 +2,7 @@
 
 import { AreasAtuacao } from '@/components/praca/AreasAtuacao';
 import { CanaisCampo } from '@/components/praca/CanaisCampo';
+import { RemuneracaoConfig } from '@/components/praca/RemuneracaoConfig';
 import Link from 'next/link';
 import { useState } from 'react';
 import { fmtBR } from '@/lib/dates';
@@ -97,6 +98,7 @@ export default function ConfiguracoesPage() {
       <h1 className="font-display text-xl font-extrabold">Configurações</h1>
       <Pessoas />
       <CanaisCampo />
+      <RemuneracaoConfig />
       <AreasAtuacao praca={praca} />
       <DadosDaPraca praca={praca} />
       <VariaveisPadrao />
