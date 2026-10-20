@@ -3989,7 +3989,7 @@ Leitura: equipe. Escrita: `@AdminOnly()`. Token de consultor de campo ⇒ `401`.
 | `GET /v1/consultores/payouts` | `?week=YYYY-MM-DD` (qualquer dia da semana; padrão a última encerrada) `&consultant_id= &praca_id= &status=` | `{ week: {from,to}, pix_date, summary: { to_pay_cents, blocked_cents, failed_cents, paid_cents, counts: {pending,blocked,failed,paid,cancelled}, conta: string[], source }, proof_required, payouts: Pagamento[] }` (cancelados só com `status=cancelled`) |
 | `POST /v1/consultores/payouts/generate` | `{ week_start }` (admin) | `{ week, created, blocked, existing, unblocked, skipped_non_positive, payouts: Pagamento[] }`; `409 WEEK_NOT_CLOSED` se nenhum consultor tem a semana fechada |
 | `GET /v1/consultores/payouts/export.csv` | `?week= &consultant_id= &praca_id= &include_pix_key=true` (a opção é admin) | CSV (§29.7) |
-| `GET /v1/consultores/payouts/:id` | — | `Pagamento` + `events: Evento[]` |
+| `GET /v1/consultores/payouts/:id` | — | `Pagamento` + `balance_cents` (saldo da semana, §29.5) + `events: [ { id, type, from_status, to_status, actor, reason, created_at } ]` |
 | `POST /v1/consultores/payouts/:id/pay` | multipart: `proof?` (arquivo), `paid_cents?` (padrão `due_cents`), `reason?`, `note?` (admin) | `200 Pagamento` + `already_paid` |
 | `POST /v1/consultores/payouts/:id/fail` | `{ reason }` 3–500 (admin) | `200 Pagamento` |
 | `POST /v1/consultores/payouts/:id/retry` | `{}` (admin) — "Tentar de novo" (manual) | `200 Pagamento` (volta a `pending`) |

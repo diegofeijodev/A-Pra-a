@@ -447,11 +447,11 @@ describe('flags e infraestrutura', () => {
   });
 
   it('a flag é falsa por padrão e depende da remuneração', () => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+     
     const { validateEnv } = require('../../../../common/config/env.validation');
     const base = { DATABASE_URL: 'postgresql://x', JWT_SECRET: 'x'.repeat(40) } as NodeJS.ProcessEnv;
     expect(validateEnv(base).FIELD_PAYOUTS_ENABLED).toBe('false');
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+     
     const { payoutsOpcoesProvider } = require('../payouts.tokens');
     const roda = (env: Record<string, string>) => {
       const antes = { ...process.env };

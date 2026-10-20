@@ -110,7 +110,7 @@ describe('armazenamento do comprovante', () => {
   const PROVA = '55555555-5555-4555-8555-555555555555';
 
   it('o disco aceita a chave do comprovante (jpg/png/pdf), devolve o tipo certo e recusa o resto', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+     
     const { DiskPhotoStorage, chaveDoComprovante, mimeDaChave } = require('../../photo-storage');
     const dir = mkdtempSync(join(tmpdir(), 'praca-prova-'));
     try {
