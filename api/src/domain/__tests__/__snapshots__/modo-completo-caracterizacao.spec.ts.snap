@@ -1,0 +1,449 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`caracterização — faltando() do fluxo completo campos novos do chefe ignorados no completo 1`] = `
+[
+  "nome de quem atendeu",
+  "cargo de quem atendeu",
+  "situação no Freela",
+  "interesse",
+  "vagas abertas",
+  "freelancers por semana",
+  "apps e canais que usa",
+  "se pediu retorno",
+]
+`;
+
+exports[`caracterização — faltando() do fluxo completo canal só "outro" 1`] = `[]`;
+
+exports[`caracterização — faltando() do fluxo completo completa 1`] = `[]`;
+
+exports[`caracterização — faltando() do fluxo completo fechado 1`] = `[]`;
+
+exports[`caracterização — faltando() do fluxo completo fechado com retorno incompleto 1`] = `
+[
+  "o que fazer no retorno",
+  "data do retorno",
+]
+`;
+
+exports[`caracterização — faltando() do fluxo completo retorno no passado 1`] = `
+[
+  "data do retorno (não pode ser no passado)",
+]
+`;
+
+exports[`caracterização — faltando() do fluxo completo retorno sem o quê nem data 1`] = `
+[
+  "o que fazer no retorno",
+  "data do retorno",
+]
+`;
+
+exports[`caracterização — faltando() do fluxo completo sem retorno 1`] = `[]`;
+
+exports[`caracterização — faltando() do fluxo completo vagas sem funções 1`] = `
+[
+  "funções das vagas",
+]
+`;
+
+exports[`caracterização — faltando() do fluxo completo vazio 1`] = `
+[
+  "nome de quem atendeu",
+  "cargo de quem atendeu",
+  "situação no Freela",
+  "interesse",
+  "vagas abertas",
+  "freelancers por semana",
+  "apps e canais que usa",
+  "se pediu retorno",
+]
+`;
+
+exports[`caracterização — regra de pagamento v1 (REGRA_PADRAO), valores em centavos calcularDia para 0, 9, 10, 12, 20 cadastros 1`] = `
+[
+  {
+    "conta": [
+      "0 cadastros confirmados × R$ 10,00 = R$ 0,00.",
+      "Faltam 10 cadastros confirmados para a faixa de R$ 100,00 (10 cadastros).",
+      "Total do dia: R$ 0,00.",
+    ],
+    "dia": "2026-10-19",
+    "faixa": null,
+    "faixa_cents": 0,
+    "futuro": false,
+    "journey_open": true,
+    "nucleo_cents": 0,
+    "piso_aplicado": false,
+    "piso_motivo": null,
+    "por_cadastro_cents": 0,
+    "proxima_faixa": {
+      "amount_cents": 10000,
+      "faltam": 10,
+      "min_signups": 10,
+    },
+    "rule_version": 1,
+    "signups": 0,
+    "teto_aplicado": false,
+    "total_cents": 0,
+    "unit_cents": 1000,
+    "visits": 0,
+  },
+  {
+    "conta": [
+      "9 cadastros confirmados × R$ 10,00 = R$ 90,00.",
+      "Faltam 1 cadastro confirmado para a faixa de R$ 100,00 (10 cadastros).",
+      "Total do dia: R$ 90,00.",
+    ],
+    "dia": "2026-10-19",
+    "faixa": null,
+    "faixa_cents": 0,
+    "futuro": false,
+    "journey_open": true,
+    "nucleo_cents": 9000,
+    "piso_aplicado": false,
+    "piso_motivo": null,
+    "por_cadastro_cents": 9000,
+    "proxima_faixa": {
+      "amount_cents": 10000,
+      "faltam": 1,
+      "min_signups": 10,
+    },
+    "rule_version": 1,
+    "signups": 9,
+    "teto_aplicado": false,
+    "total_cents": 9000,
+    "unit_cents": 1000,
+    "visits": 0,
+  },
+  {
+    "conta": [
+      "10 cadastros confirmados × R$ 10,00 = R$ 100,00.",
+      "Faixa atingida: 10 cadastros = R$ 100,00.",
+      "Vale o maior: R$ 100,00.",
+      "Faltam 10 cadastros confirmados para a faixa de R$ 250,00 (20 cadastros).",
+      "Total do dia: R$ 100,00.",
+    ],
+    "dia": "2026-10-19",
+    "faixa": {
+      "amount_cents": 10000,
+      "min_signups": 10,
+    },
+    "faixa_cents": 10000,
+    "futuro": false,
+    "journey_open": true,
+    "nucleo_cents": 10000,
+    "piso_aplicado": false,
+    "piso_motivo": null,
+    "por_cadastro_cents": 10000,
+    "proxima_faixa": {
+      "amount_cents": 25000,
+      "faltam": 10,
+      "min_signups": 20,
+    },
+    "rule_version": 1,
+    "signups": 10,
+    "teto_aplicado": false,
+    "total_cents": 10000,
+    "unit_cents": 1000,
+    "visits": 0,
+  },
+  {
+    "conta": [
+      "12 cadastros confirmados × R$ 10,00 = R$ 120,00.",
+      "Faixa atingida: 10 cadastros = R$ 100,00.",
+      "Vale o maior: R$ 120,00.",
+      "Faltam 8 cadastros confirmados para a faixa de R$ 250,00 (20 cadastros).",
+      "Total do dia: R$ 120,00.",
+    ],
+    "dia": "2026-10-19",
+    "faixa": {
+      "amount_cents": 10000,
+      "min_signups": 10,
+    },
+    "faixa_cents": 10000,
+    "futuro": false,
+    "journey_open": true,
+    "nucleo_cents": 12000,
+    "piso_aplicado": false,
+    "piso_motivo": null,
+    "por_cadastro_cents": 12000,
+    "proxima_faixa": {
+      "amount_cents": 25000,
+      "faltam": 8,
+      "min_signups": 20,
+    },
+    "rule_version": 1,
+    "signups": 12,
+    "teto_aplicado": false,
+    "total_cents": 12000,
+    "unit_cents": 1000,
+    "visits": 0,
+  },
+  {
+    "conta": [
+      "20 cadastros confirmados × R$ 10,00 = R$ 200,00.",
+      "Faixa atingida: 20 cadastros = R$ 250,00.",
+      "Vale o maior: R$ 250,00.",
+      "Total do dia: R$ 250,00.",
+    ],
+    "dia": "2026-10-19",
+    "faixa": {
+      "amount_cents": 25000,
+      "min_signups": 20,
+    },
+    "faixa_cents": 25000,
+    "futuro": false,
+    "journey_open": true,
+    "nucleo_cents": 25000,
+    "piso_aplicado": false,
+    "piso_motivo": null,
+    "por_cadastro_cents": 20000,
+    "proxima_faixa": null,
+    "rule_version": 1,
+    "signups": 20,
+    "teto_aplicado": false,
+    "total_cents": 25000,
+    "unit_cents": 1000,
+    "visits": 0,
+  },
+]
+`;
+
+exports[`caracterização — regra de pagamento v1 (REGRA_PADRAO), valores em centavos calcularSemana com a v1 1`] = `
+{
+  "conta": [
+    "seg 19/10: R$ 100,00 (10 cadastros confirmados).",
+    "ter 20/10: R$ 30,00 (3 cadastros confirmados).",
+    "qua 21/10: R$ 0,00 (0 cadastros confirmados).",
+    "Soma dos dias: R$ 130,00.",
+    "Total da semana: R$ 130,00.",
+  ],
+  "days": [
+    {
+      "conta": [
+        "10 cadastros confirmados × R$ 10,00 = R$ 100,00.",
+        "Faixa atingida: 10 cadastros = R$ 100,00.",
+        "Vale o maior: R$ 100,00.",
+        "Faltam 10 cadastros confirmados para a faixa de R$ 250,00 (20 cadastros).",
+        "Total do dia: R$ 100,00.",
+      ],
+      "dia": "2026-10-19",
+      "faixa": {
+        "amount_cents": 10000,
+        "min_signups": 10,
+      },
+      "faixa_cents": 10000,
+      "futuro": false,
+      "journey_open": true,
+      "nucleo_cents": 10000,
+      "piso_aplicado": false,
+      "piso_motivo": null,
+      "por_cadastro_cents": 10000,
+      "proxima_faixa": {
+        "amount_cents": 25000,
+        "faltam": 10,
+        "min_signups": 20,
+      },
+      "rule_version": 1,
+      "signups": 10,
+      "teto_aplicado": false,
+      "total_cents": 10000,
+      "unit_cents": 1000,
+      "visits": 0,
+    },
+    {
+      "conta": [
+        "3 cadastros confirmados × R$ 10,00 = R$ 30,00.",
+        "Faltam 7 cadastros confirmados para a faixa de R$ 100,00 (10 cadastros).",
+        "Total do dia: R$ 30,00.",
+      ],
+      "dia": "2026-10-20",
+      "faixa": null,
+      "faixa_cents": 0,
+      "futuro": false,
+      "journey_open": true,
+      "nucleo_cents": 3000,
+      "piso_aplicado": false,
+      "piso_motivo": null,
+      "por_cadastro_cents": 3000,
+      "proxima_faixa": {
+        "amount_cents": 10000,
+        "faltam": 7,
+        "min_signups": 10,
+      },
+      "rule_version": 1,
+      "signups": 3,
+      "teto_aplicado": false,
+      "total_cents": 3000,
+      "unit_cents": 1000,
+      "visits": 0,
+    },
+    {
+      "conta": [
+        "0 cadastros confirmados × R$ 10,00 = R$ 0,00.",
+        "Faltam 10 cadastros confirmados para a faixa de R$ 100,00 (10 cadastros).",
+        "Total do dia: R$ 0,00.",
+      ],
+      "dia": "2026-10-21",
+      "faixa": null,
+      "faixa_cents": 0,
+      "futuro": false,
+      "journey_open": true,
+      "nucleo_cents": 0,
+      "piso_aplicado": false,
+      "piso_motivo": null,
+      "por_cadastro_cents": 0,
+      "proxima_faixa": {
+        "amount_cents": 10000,
+        "faltam": 10,
+        "min_signups": 10,
+      },
+      "rule_version": 1,
+      "signups": 0,
+      "teto_aplicado": false,
+      "total_cents": 0,
+      "unit_cents": 1000,
+      "visits": 0,
+    },
+    {
+      "conta": [
+        "Dia ainda não chegou.",
+      ],
+      "dia": "2026-10-22",
+      "faixa": null,
+      "faixa_cents": 0,
+      "futuro": true,
+      "journey_open": false,
+      "nucleo_cents": 0,
+      "piso_aplicado": false,
+      "piso_motivo": null,
+      "por_cadastro_cents": 0,
+      "proxima_faixa": {
+        "amount_cents": 10000,
+        "faltam": 10,
+        "min_signups": 10,
+      },
+      "rule_version": 1,
+      "signups": 0,
+      "teto_aplicado": false,
+      "total_cents": 0,
+      "unit_cents": 1000,
+      "visits": 0,
+    },
+    {
+      "conta": [
+        "Dia ainda não chegou.",
+      ],
+      "dia": "2026-10-23",
+      "faixa": null,
+      "faixa_cents": 0,
+      "futuro": true,
+      "journey_open": false,
+      "nucleo_cents": 0,
+      "piso_aplicado": false,
+      "piso_motivo": null,
+      "por_cadastro_cents": 0,
+      "proxima_faixa": {
+        "amount_cents": 10000,
+        "faltam": 10,
+        "min_signups": 10,
+      },
+      "rule_version": 1,
+      "signups": 0,
+      "teto_aplicado": false,
+      "total_cents": 0,
+      "unit_cents": 1000,
+      "visits": 0,
+    },
+    {
+      "conta": [
+        "Dia ainda não chegou.",
+      ],
+      "dia": "2026-10-24",
+      "faixa": null,
+      "faixa_cents": 0,
+      "futuro": true,
+      "journey_open": false,
+      "nucleo_cents": 0,
+      "piso_aplicado": false,
+      "piso_motivo": null,
+      "por_cadastro_cents": 0,
+      "proxima_faixa": {
+        "amount_cents": 10000,
+        "faltam": 10,
+        "min_signups": 10,
+      },
+      "rule_version": 1,
+      "signups": 0,
+      "teto_aplicado": false,
+      "total_cents": 0,
+      "unit_cents": 1000,
+      "visits": 0,
+    },
+    {
+      "conta": [
+        "Dia ainda não chegou.",
+      ],
+      "dia": "2026-10-25",
+      "faixa": null,
+      "faixa_cents": 0,
+      "futuro": true,
+      "journey_open": false,
+      "nucleo_cents": 0,
+      "piso_aplicado": false,
+      "piso_motivo": null,
+      "por_cadastro_cents": 0,
+      "proxima_faixa": {
+        "amount_cents": 10000,
+        "faltam": 10,
+        "min_signups": 10,
+      },
+      "rule_version": 1,
+      "signups": 0,
+      "teto_aplicado": false,
+      "total_cents": 0,
+      "unit_cents": 1000,
+      "visits": 0,
+    },
+  ],
+  "days_cents": 13000,
+  "from": "2026-10-19",
+  "rule_version": 1,
+  "signups_week": 13,
+  "to": "2026-10-25",
+  "total_cents": 13000,
+  "week_part_cents": 0,
+}
+`;
+
+exports[`caracterização — resumo do CRM, estágio, recusa e retorno normalizarRecusa e normalizarRetorno 1`] = `
+[
+  {
+    "refusal_note": null,
+    "refusal_reason": "preco",
+  },
+  {
+    "refusal_note": null,
+    "refusal_reason": null,
+  },
+  {
+    "refusal_note": null,
+    "refusal_reason": null,
+  },
+  {
+    "followup_time": "09:05",
+  },
+  {
+    "followup_time": null,
+  },
+]
+`;
+
+exports[`caracterização — resumo do CRM, estágio, recusa e retorno resumoVisita: conversa completa, fechado e recusa 1`] = `
+[
+  "Visita de campo — atendeu: João (Dono). Freela: já usa o Freela. Interesse: alto. Vagas abertas: 2 (Garçom). Freelancers por semana: 3. Canais: Grupos de WhatsApp. Retorno: Ligar sexta em 23/10/2026 às 14:30. Obs.: Pediu proposta.",
+  "Visita de campo — estabelecimento fechado. Obs.: Portão baixo.",
+  "Visita de campo — atendeu: João (Dono). Freela: já usa o Freela. Interesse: nenhum. Motivo da recusa: Outro (Vai fechar a casa). Vagas abertas: 2 (Garçom). Freelancers por semana: 3. Canais: Grupos de WhatsApp. Retorno: não pediu. Obs.: Pediu proposta.",
+]
+`;

@@ -1,0 +1,46 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`caracterização — faltando() completo (espelho do servidor) > canal só "outro" 1`] = `[]`;
+
+exports[`caracterização — faltando() completo (espelho do servidor) > completa 1`] = `[]`;
+
+exports[`caracterização — faltando() completo (espelho do servidor) > fechado 1`] = `[]`;
+
+exports[`caracterização — faltando() completo (espelho do servidor) > fechado com retorno incompleto 1`] = `
+[
+  "o que fazer no retorno",
+  "data do retorno",
+]
+`;
+
+exports[`caracterização — faltando() completo (espelho do servidor) > retorno no passado 1`] = `
+[
+  "data do retorno (não pode ser no passado)",
+]
+`;
+
+exports[`caracterização — faltando() completo (espelho do servidor) > retorno sem o quê nem data 1`] = `
+[
+  "o que fazer no retorno",
+  "data do retorno",
+]
+`;
+
+exports[`caracterização — faltando() completo (espelho do servidor) > vagas sem funções 1`] = `
+[
+  "funções das vagas",
+]
+`;
+
+exports[`caracterização — faltando() completo (espelho do servidor) > vazio 1`] = `
+[
+  "nome de quem atendeu",
+  "cargo de quem atendeu",
+  "situação no Freela",
+  "interesse",
+  "vagas abertas",
+  "freelancers por semana",
+  "apps e canais que usa",
+  "se pediu retorno",
+]
+`;
