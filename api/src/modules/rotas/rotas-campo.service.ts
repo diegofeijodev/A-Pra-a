@@ -8,7 +8,7 @@ import { minutesSp, todaySp } from '../../common/time/dates';
 import { caixaEnvolvente, carimbo } from '../../domain/campo-rules';
 import { retornoRoteirizavel } from '../../domain/followup-rules';
 import { pontoNaArea } from '../../domain/area-rules';
-import { paramsDaConfig, planejar, selecionarEncadeados, type ConfigRota } from '../../domain/rota-rules';
+import { ordenarVizinhoMaisProximo, paramsDaConfig, planejar, selecionarEncadeados, type ConfigRota } from '../../domain/rota-rules';
 import { lerRetornosPendentes } from '../campo/retornos-query';
 import { violouUnico } from '../campo/prisma-errors';
 import type { AcaoParadaDto, GerarRotaDto, PosicaoRotaDto, PularParadaDto } from './dto/rotas.dto';
@@ -130,7 +130,9 @@ export class RotasCampoService {
       Math.max(Math.ceil(config.meta_diaria * config.pool_fator) - retornos.length, 0),
     );
     // Retornos vencidos vão ancorados no começo da ordem (§25.6): só no cálculo, não ficam gravados como fixos.
-    const escolhidos = [...retornos.map((l) => ({ id: l.id, lat: l.lat, lng: l.lng, fixa: true })), ...sorteados];
+    // Entre si, os retornos seguem a caminhada (mais próximo primeiro), não a ordem das datas.
+    const ancorados = ordenarVizinhoMaisProximo(pos, retornos.map((l) => ({ id: l.id, lat: l.lat, lng: l.lng }))).map((p) => ({ ...p, fixa: true }));
+    const escolhidos = [...ancorados, ...sorteados];
     if (escolhidos.length === 0) return null;
     const dia = todaySp(agora);
     const plano = planejar({ inicio: pos, partidaMin: partidaDoDia(dia, agora, params), pontos: escolhidos, params });

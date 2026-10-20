@@ -3543,7 +3543,7 @@ Query: `praca_id` (uuid, opcional). Dado, restringe aos consultores **ativos** d
 
 ```json
 {
-  "day": "2026-10-20", "generated_at": "2026-10-20T17:42:10.000Z", "now": "14:42", "dia_de_trabalho": true,
+  "day": "2026-10-20", "generated_at": "2026-10-20T12:42:10.000Z", "now": "09:42", "dia_de_trabalho": true,
   "thresholds": { "alerta_inicio_apos_min": 30, "alerta_visita_aberta_min": 40, "alerta_sem_registro_min": 30, "alerta_ritmo_atras": 5, "alerta_parada_vencida_min": 30 },
   "alerts": [ { "code": "nao_iniciou", "severity": "alta", "consultant_id": "uuid", "consultant_name": "Bruno Lima", "praca_id": "uuid", "praca_name": "São Paulo",
                 "phone": "(11) 99999-0000", "message": "Bruno Lima — não iniciou a jornada (começa às 09:00; agora 09:42).",
@@ -3605,7 +3605,7 @@ O web usa `goal` no resumo da tela Hoje quando **não há card de roteiro** (fla
 ### 25.6 Retorno vencido como parada prioritária do roteiro automático
 
 Com `FIELD_ROUTES_ENABLED=true` e `retornos_no_roteiro = true`, ao montar o roteiro **automático** (`gerar_ao_iniciar` ou "Montar meu dia", §23.3), os retornos vencidos
-(§25.4) **das visitas do próprio consultor** entram **antes** da seleção por proximidade, ancorados no começo da ordem (`fixa` só no cálculo da montagem; não é gravada, então
+(§25.4) **das visitas do próprio consultor** entram **antes** da seleção por proximidade, ancorados no começo da ordem, entre si do mais próximo ao mais longe da posição de partida (`fixa` só no cálculo da montagem; não é gravada, então
 "Refazer rota" reordena por distância como qualquer parada). Regras: ignoram `dias_sem_revisitar` (o lead foi visitado há pouco, é justamente o caso) e a área de atuação;
 exigem `lat/lng` e (`location_precision` ∈ `point|address` **ou** a visita do retorno com `far_from_place = false`, isto é, o check-in foi no local); pulam lead bloqueado
 (`blocklist`), lead já em roteiro de hoje (de qualquer consultor) e arquivado/teste/estágio ≥ 5. Entram no máximo 10 (os mais antigos). Falha ao ler os retornos só vai para o log e o roteiro sai sem eles. Contam na meta como qualquer parada e respeitam o relógio da janela (podem virar
@@ -3624,4 +3624,5 @@ reserva se a janela estourar). A equipe, ao montar à mão (`POST /v1/routes`), 
 3. **Fora de rota** (§9, item 5): ver §25.3. Pendência — precisa de rastreio com a tela apagada ou de um limite mais tolerante para não acusar quem só guardou o celular.
 4. Fila de "leads quentes" sem retorno marcado (interesse alto/médio, §9 item 3): fora; a fila desta fase é a de retornos que o consultor **pediu** (`needs_followup`).
 5. `mediana real de minutos por visita` (§23.8 item 6) segue pendente.
-6. Os limiares moram no mesmo JSON de configuração do §23.1 (e no mesmo `GET/PUT`), mas a tela do F3 ("Meta e horários do roteiro") não os edita; há um bloco próprio "Alertas".
+6. **"Check-in longe do local"** (UX §5.4, um dos alertas padrão) **não** foi feito como alerta da equipe: a visita já nasce marcada `far_from_place` e a tela de cada dia do consultor (§20.4) a mostra. Pendência.
+7. Os limiares moram no mesmo JSON de configuração do §23.1 (e no mesmo `GET/PUT`), mas a tela do F3 ("Meta e horários do roteiro") não os edita; há um bloco próprio "Alertas".

@@ -15,6 +15,7 @@ import {
   rotuloVencimento,
   ROTULO_ALERTA,
   type ConfigAlertas,
+  type FollowupView,
   type GoalView,
 } from '@/modules/consultores/domain/atencao';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
@@ -87,6 +88,27 @@ export function MetaLinha({ goal, status }: { goal: GoalView; status: 'em_jornad
   );
 }
 
+/** Quantos retornos aparecem direto; o resto fica atrás de um toque para não empurrar a lista de consultores. */
+const VISIVEIS_RETORNOS = 5;
+
+function RetornoItem({ f }: { f: FollowupView }) {
+  return (
+    <>
+      <p className="text-sm font-bold">{f.lead_name}</p>
+      <p className={`text-sm font-bold ${f.due === 'atrasado' ? 'text-warning' : 'text-success'}`}>
+        {f.due === 'atrasado' ? '⚠ ' : '✓ '}
+        {rotuloVencimento(f)} ({diaCurto(f.followup_date)})
+      </p>
+      <p className="text-sm">{f.followup_what || 'Sem descrição do retorno.'}</p>
+      <p className="text-sm text-muted-foreground">
+        Visita de {f.consultant_name}
+        {f.interlocutor_name ? `, falou com ${f.interlocutor_name}` : ''}. {f.address}
+      </p>
+      <ContatoLinks phone={f.phone} nome={f.lead_name} />
+    </>
+  );
+}
+
 /** "Retornos de hoje e atrasados" da equipe (§25.4). */
 export function RetornosEquipe() {
   const { data, isPending, isError, error, refetch } = useRetornosEquipe();
@@ -114,22 +136,26 @@ export function RetornosEquipe() {
       ) : (
         <>
           <ul className="mt-3 space-y-3">
-            {data.items.map((f) => (
+            {data.items.slice(0, VISIVEIS_RETORNOS).map((f) => (
               <li key={f.visit_id} className="rounded-md border border-border p-3">
-                <p className="text-sm font-bold">{f.lead_name}</p>
-                <p className={`text-sm font-bold ${f.due === 'atrasado' ? 'text-warning' : 'text-success'}`}>
-                  {f.due === 'atrasado' ? '⚠ ' : '✓ '}
-                  {rotuloVencimento(f)} ({diaCurto(f.followup_date)})
-                </p>
-                <p className="text-sm">{f.followup_what || 'Sem descrição do retorno.'}</p>
-                <p className="text-sm text-muted-foreground">
-                  Visita de {f.consultant_name}
-                  {f.interlocutor_name ? `, falou com ${f.interlocutor_name}` : ''}. {f.address}
-                </p>
-                <ContatoLinks phone={f.phone} nome={f.lead_name} />
+                <RetornoItem f={f} />
               </li>
             ))}
           </ul>
+          {data.items.length > VISIVEIS_RETORNOS && (
+            <details className="mt-2">
+              <summary className="flex h-12 cursor-pointer items-center justify-center rounded-md border border-border text-sm font-bold">
+                Ver os outros {data.items.length - VISIVEIS_RETORNOS}
+              </summary>
+              <ul className="mt-3 space-y-3">
+                {data.items.slice(VISIVEIS_RETORNOS).map((f) => (
+                  <li key={f.visit_id} className="rounded-md border border-border p-3">
+                    <RetornoItem f={f} />
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
           {data.truncated && <p className="mt-2 text-sm text-muted-foreground">Mostrando os 200 mais antigos de {data.total}.</p>}
         </>
       )}

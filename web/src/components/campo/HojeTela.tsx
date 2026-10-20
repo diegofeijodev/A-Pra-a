@@ -61,7 +61,7 @@ export function HojeTela() {
       <FaixaFila />
       {gps && <AvisoGps motivo={gps} onFechar={() => setGps(null)} />}
 
-      {!carregando && !(rot.habilitado && rot.route) && <MetaCard />}
+      {!carregando && !rot.carregando && !(rot.habilitado && rot.route) && <MetaCard />}
 
       {carregando ? (
         <p className="text-sm text-muted-foreground">Carregando…</p>
