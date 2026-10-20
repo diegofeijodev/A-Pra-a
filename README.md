@@ -230,6 +230,13 @@ antes de "Adicionar N como leads" (origem `pesquisa automática`, com latitude/l
 - Antes do deploy do código: `prisma migrate deploy` (migrações `20261019190000_place_search` e `20261019200000_place_runs_reserved`, aditivas).
 - Overpass é instância pública compartilhada: `PLACES_USER_AGENT` identifica o Praça; trocar de instância com `OVERPASS_URL`.
 
+### Cadastro assistido da empresa no Freela (F6, contrato §26)
+
+- Flag `FIELD_COMPANY_SIGNUP_ENABLED` (padrão `false`): desligada, as rotas respondem `404` e o botão "Cadastrar no Freela" não aparece.
+- O consultor gera um **link/QR de primeiro acesso**; o dono escolhe a própria senha. O Praça nunca vê nem grava senha, e o link só aparece na resposta de criar/reemitir (não vai para banco, log nem fila offline).
+- Antes do deploy do código: `prisma migrate deploy` (migração `20261021100000_field_company_signups`, aditiva).
+- **Só ligar com** o api-freela com as rotas de cadastro assistido no ar (flag `FIELD_ASSISTED_SIGNUP_ENABLED` lá) e a página `/primeiro-acesso` do `freela-web-v2` publicada.
+
 ### Roteiro do dia (F3, contrato §23)
 
 - Flag `FIELD_ROUTES_ENABLED` (padrão `false`): desligada, nada muda no app do consultor (`GET /v1/campo/route/today` responde `enabled: false`).

@@ -61,6 +61,9 @@ export function montarDia(today: TodayView | null, fila: ItemFila[]): DiaLocal {
           });
         }
         break;
+      case 'signup':
+        // Cadastro assistido não muda a visita (§26): só sai da fila.
+        break;
       case 'answers': {
         const v = achar(item.visit_ref);
         if (v) v.cadastrou_qr = item.payload.freela_status === 'cadastrou_qr';

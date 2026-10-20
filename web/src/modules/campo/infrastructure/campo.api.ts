@@ -11,6 +11,7 @@ import type {
 } from '../domain/campo.types';
 import type { HojeRotaView, MotivoPulo, RouteView } from '@/modules/rotas/domain/rota.schema';
 import { followupsSchema, type FollowupsResponse } from '@/modules/consultores/domain/atencao';
+import type { SignupDaVisita, SignupPayload, SignupView } from '../domain/cadastro-empresa';
 import { campoApi } from './campo-http';
 
 export async function campoLogin(email: string, password: string): Promise<CampoLoginResponse> {
@@ -138,4 +139,22 @@ export async function campoDesfazerParada(stopId: string, p: { client_id: string
 export async function campoRetornos(): Promise<FollowupsResponse> {
   const { data } = await campoApi.get('/v1/campo/followups');
   return followupsSchema.parse(data);
+}
+
+// ── cadastro assistido da empresa (contrato §26) ───────────────────────────
+// A resposta de criar/reemitir traz `setup_link`: NUNCA vai para cache, IndexedDB nem log.
+
+export async function campoCadastroDaVisita(ref: string): Promise<SignupDaVisita> {
+  const { data } = await campoApi.get(`/v1/campo/visits/${encodeURIComponent(ref)}/company-signup`);
+  return data as SignupDaVisita;
+}
+
+export async function campoCriarCadastro(ref: string, p: SignupPayload): Promise<SignupView> {
+  const { data } = await campoApi.post(`/v1/campo/visits/${encodeURIComponent(ref)}/company-signup`, p);
+  return data as SignupView;
+}
+
+export async function campoReemitirLink(id: string): Promise<SignupView> {
+  const { data } = await campoApi.post(`/v1/campo/company-signups/${encodeURIComponent(id)}/reissue-link`, {});
+  return data as SignupView;
 }

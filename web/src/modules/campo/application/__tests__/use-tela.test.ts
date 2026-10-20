@@ -14,6 +14,12 @@ describe('visões do /campo na URL', () => {
     expect(telaDaUrl(p('v=parada'))).toEqual({ v: 'hoje' });
   });
 
+  it('cadastro assistido: ida e volta pela URL; sem ref volta para hoje', () => {
+    expect(telaDaUrl(p('v=cadastro&ref=abc'))).toEqual({ v: 'cadastro', ref: 'abc' });
+    expect(telaDaUrl(p('v=cadastro'))).toEqual({ v: 'hoje' });
+    expect(urlDaTela({ v: 'cadastro', ref: 'a b' })).toBe('/campo?v=cadastro&ref=a%20b');
+  });
+
   it('urlDaTela', () => {
     expect(urlDaTela({ v: 'hoje' })).toBe('/campo');
     expect(urlDaTela({ v: 'nova' })).toBe('/campo?v=nova');

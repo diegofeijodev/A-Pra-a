@@ -41,6 +41,7 @@ export function VisitaTela({ refVisita }: { refVisita: string }) {
   const rascunhoNaFila = [...itens].reverse().find((i) => i.kind === 'answers' && i.visit_ref === refVisita);
   const inicial: VisitAnswers =
     (rascunhoNaFila?.kind === 'answers' ? rascunhoNaFila.payload : null) ?? doServidor?.answers ?? RESPOSTAS_VAZIAS;
+  const cadastroLigado = me.data?.features?.company_signup === true;
   const checkoutBloqueado = itens.find((i) => i.kind === 'checkout' && i.visit_ref === refVisita && i.bloqueio);
 
   /** `null` = ainda não mexeu: segue o que vier do servidor/fila. */
@@ -164,6 +165,20 @@ export function VisitaTela({ refVisita }: { refVisita: string }) {
         desabilitado={fechada || ocupado}
         onMudar={mudar}
       />
+
+      {cadastroLigado && (
+        <section aria-label="Dar acesso ao Freela" className="card-surface space-y-3 p-4">
+          <p className="text-base font-bold">Dar acesso ao Freela</p>
+          <p className="text-sm text-muted-foreground">O dono escolhe a própria senha. Você não vê nem digita senha.</p>
+          <button
+            type="button"
+            onClick={() => irPara({ v: 'cadastro', ref: refVisita })}
+            className="flex h-14 w-full items-center justify-center rounded-md border border-primary text-base font-bold text-primary"
+          >
+            Cadastrar no Freela
+          </button>
+        </section>
+      )}
 
       {!fechada && falta.length > 0 && (
         <p className="text-sm text-muted-foreground">Falta responder: {falta.join(', ')}.</p>

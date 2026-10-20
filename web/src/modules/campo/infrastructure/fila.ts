@@ -2,6 +2,7 @@ import type { ItemFila } from '../domain/campo.types';
 import {
   campoCheckin,
   campoCheckout,
+  campoCriarCadastro,
   campoEncerrarJornada,
   campoEnviarPontos,
   campoAdiarParada,
@@ -26,6 +27,10 @@ export async function enviarItem(item: ItemFila): Promise<void> {
       return;
     case 'answers':
       await campoSalvarRespostas(item.visit_ref, item.payload);
+      return;
+    case 'signup':
+      // A resposta (com o link, se for o caso) é descartada de propósito: o link não pode ir para a fila nem para o disco.
+      await campoCriarCadastro(item.visit_ref, item.payload);
       return;
     case 'checkout':
       await campoCheckout(item.visit_ref, item.payload);

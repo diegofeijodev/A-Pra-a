@@ -1,5 +1,6 @@
 /** Wire do consultor de campo — contrato §20 (`docs/api-contract.md`); roteiro: §23; metas: §25. */
 import type { GoalView } from '@/modules/consultores/domain/atencao';
+import type { SignupPayload } from './cadastro-empresa';
 import type { MotivoPulo } from '@/modules/rotas/domain/rota.schema';
 
 
@@ -29,6 +30,8 @@ export interface CampoLoginResponse {
 export interface CampoMeResponse {
   consultant: CampoConsultantMe;
   channels: string[];
+  /** Chaves do servidor que ligam telas (contrato §26.3). Ausente em respostas antigas guardadas no aparelho. */
+  features?: { company_signup: boolean };
 }
 
 /** Posição + hora real do aparelho. */
@@ -150,6 +153,8 @@ export type AcaoFila =
   | { kind: 'points'; payload: { points: ({ client_id: string } & Posicao)[] } }
   | { kind: 'checkin'; payload: CheckinPayload; foto: Blob }
   | { kind: 'answers'; visit_ref: string; payload: VisitAnswers }
+  /** Cadastro assistido (§26): idempotente por `payload.client_id`; a fila NUNCA guarda o link devolvido. */
+  | { kind: 'signup'; visit_ref: string; payload: SignupPayload }
   | { kind: 'checkout'; visit_ref: string; payload: Posicao }
   | { kind: 'end'; payload: Posicao }
   // Roteiro do dia (contrato §23.3): idempotentes por `client_id`, com a hora real em `at`.

@@ -18,6 +18,9 @@ describe('classificar — o que a fila faz com cada resposta', () => {
     [400, 'VALIDATION_ERROR', 'regra'],
     [404, 'NOT_FOUND', 'regra'],
     [409, 'VISIT_ALREADY_OPEN', 'regra'],
+    [429, 'DAILY_REGISTRATION_LIMIT', 'regra'],
+    [429, 'RESET_LIMIT', 'regra'],
+    [429, 'THROTTLED', 'rede'],
     [413, 'FILE_TOO_LARGE', 'regra'],
     [422, 'ANSWERS_INCOMPLETE', 'regra'],
     [408, undefined, 'rede'],
@@ -209,6 +212,14 @@ describe('descartar o envio parado na cabeça da fila', () => {
       mk(5, { kind: 'end', payload: POS }),
     ];
     expect(seqsParaDescartar(fila, fila[0])).toEqual([1, 2, 3]);
+  });
+  it('descartar check-in leva o cadastro assistido da mesma visita', () => {
+    const fila = [
+      checkin(1, 'a', 8),
+      mk(2, { kind: 'signup', visit_ref: 'a', payload: { client_id: 'c', company_name: 'P', contact_name: 'M', phone: '1' } }),
+      mk(3, { kind: 'signup', visit_ref: 'b', payload: { client_id: 'd', company_name: 'P', contact_name: 'M', phone: '1' } }),
+    ];
+    expect(seqsParaDescartar(fila, fila[0])).toEqual([1, 2]);
   });
   it('descartar start remove só ele', () => {
     const fila = [start(1, 8), checkin(2, 'a')];

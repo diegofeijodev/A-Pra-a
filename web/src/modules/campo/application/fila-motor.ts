@@ -65,11 +65,11 @@ export async function drenarCom(d: DepsMotor): Promise<ResultadoDrenagem> {
       if (desfecho === 'regra') {
         const mensagem = apiErrorMessage(falha, 'Um envio foi recusado pelo servidor.');
         if (cabeca.kind === 'checkin') {
-          // Sem a visita no servidor, respostas e checkout dela virariam 404: saem juntos.
+          // Sem a visita no servidor, respostas, checkout e cadastro dela virariam 404: saem juntos.
           const ref = cabeca.payload.client_id;
           // Relê a fila: respostas/checkout guardados durante o envio demorado também saem.
           for (const dep of await d.listar()) {
-            if (dep.consultant_id === consultor && (dep.kind === 'answers' || dep.kind === 'checkout') && dep.visit_ref === ref) {
+            if (dep.consultant_id === consultor && (dep.kind === 'answers' || dep.kind === 'checkout' || dep.kind === 'signup') && dep.visit_ref === ref) {
               await d.remover(dep.seq as number);
             }
           }

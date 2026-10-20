@@ -14,6 +14,8 @@ export function classificar(status: number | undefined, code?: string): Desfecho
   if (status >= 200 && status < 300) return 'ok';
   if (status === 401) return 'sessao';
   if (status === 403 && code === 'PASSWORD_CHANGE_REQUIRED') return 'sessao';
+  // Limite diário/de reemissão do Freela não passa com espera: repetir só queima tentativas (§26.5).
+  if (status === 429 && (code === 'DAILY_REGISTRATION_LIMIT' || code === 'RESET_LIMIT')) return 'regra';
   if (status === 408 || status === 429 || status >= 500) return 'rede';
   return 'regra';
 }
@@ -111,7 +113,7 @@ function instanteDoItem(i: ItemFila): number {
     const at = i.payload.points[0]?.at;
     return at ? Date.parse(at) : i.criado_em;
   }
-  if (i.kind === 'answers') return i.criado_em;
+  if (i.kind === 'answers' || i.kind === 'signup') return i.criado_em;
   return Date.parse(i.payload.at);
 }
 
@@ -140,7 +142,7 @@ export function seqsParaDescartar(fila: ItemFila[], item: ItemFila): number[] {
   if (item.kind === 'checkin') {
     const ref = item.payload.client_id;
     for (const d of fila) {
-      if (d.consultant_id === item.consultant_id && (d.kind === 'answers' || d.kind === 'checkout') && d.visit_ref === ref) seqs.push(d.seq as number);
+      if (d.consultant_id === item.consultant_id && (d.kind === 'answers' || d.kind === 'checkout' || d.kind === 'signup') && d.visit_ref === ref) seqs.push(d.seq as number);
     }
   }
   return seqs;

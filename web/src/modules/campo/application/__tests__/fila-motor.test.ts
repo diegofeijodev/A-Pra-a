@@ -167,6 +167,37 @@ describe('drenarCom — itens dependentes de uma recusa', () => {
     expect(fila).toEqual([]);
   });
 
+  it('check-in recusado leva junto o cadastro assistido (signup) da MESMA visita', async () => {
+    const signup = (seq: number, ref: string) =>
+      item(seq, { kind: 'signup', visit_ref: ref, payload: { client_id: 'c', company_name: 'P', contact_name: 'M', phone: '11987654321' } } as Partial<ItemFila>);
+    const fila = [checkinItem(1, 'v1'), signup(2, 'v1'), signup(3, 'v2')];
+    const d = deps(fila, async (i) => {
+      if (i.kind === 'checkin') throw erroHttp(409, 'VISIT_ALREADY_OPEN', 'Visita aberta.');
+    });
+    await drenarCom(d);
+    expect(vi.mocked(d.enviar).mock.calls.map(([i]) => i.seq)).toEqual([1, 3]);
+    expect(fila).toEqual([]);
+  });
+
+  it('signup: 429 DAILY_REGISTRATION_LIMIT é regra (sai da fila com a mensagem), 503 é rede (fica e espera)', async () => {
+    const signup = (seq: number) =>
+      item(seq, { kind: 'signup', visit_ref: 'v1', payload: { client_id: 'c', company_name: 'P', contact_name: 'M', phone: '11987654321' } } as Partial<ItemFila>);
+    const limite = [signup(1)];
+    const d1 = deps(limite, async () => {
+      throw erroHttp(429, 'DAILY_REGISTRATION_LIMIT', 'Limite de cadastros do dia atingido.');
+    });
+    await drenarCom(d1);
+    expect(d1.aoRecusar).toHaveBeenCalledWith('Limite de cadastros do dia atingido.');
+    expect(limite).toEqual([]);
+
+    const fora = [signup(1)];
+    const d2 = deps(fora, async () => {
+      throw erroHttp(503, 'SIGNUP_UNAVAILABLE', 'Indisponível.');
+    });
+    expect(await drenarCom(d2)).toBe('esperando');
+    expect(fora).toHaveLength(1);
+  });
+
   it('checkout 422: não sai da fila, fica bloqueado e a fila para nele', async () => {
     const fila = [checkoutItem(1, 'v1'), checkinItem(2, 'v2')];
     const d = deps(fila, async () => {
