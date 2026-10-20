@@ -39,6 +39,14 @@ export class ConfigRotaDto {
   @IsOptional() @IsInt() @Min(1) @Max(6) estagio_maximo_rota?: number;
   @IsOptional() @IsBoolean() gerar_ao_iniciar?: boolean;
   @IsOptional() @IsBoolean() consultor_pode_gerar?: boolean;
+  // F5 (contrato §25.1): limiares de "Atenção agora". A faixa é conferida no domínio.
+  @IsOptional() @IsInt() @Min(0) @Max(240) alerta_inicio_apos_min?: number;
+  @IsOptional() @IsInt() @Min(5) @Max(480) alerta_visita_aberta_min?: number;
+  @IsOptional() @IsInt() @Min(5) @Max(480) alerta_sem_registro_min?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(100) alerta_ritmo_atras?: number;
+  @IsOptional() @IsInt() @Min(5) @Max(240) alerta_parada_vencida_min?: number;
+  @IsOptional() @IsArray() @ArrayMinSize(1) @ArrayMaxSize(7) @IsInt({ each: true }) @Min(0, { each: true }) @Max(6, { each: true }) dias_trabalho?: number[];
+  @IsOptional() @IsBoolean() retornos_no_roteiro?: boolean;
 }
 
 export class PosicaoRotaDto {

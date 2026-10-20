@@ -87,7 +87,7 @@ export function fakePrisma(over: Record<string, unknown> = {}) {
     },
     field_areas: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn().mockResolvedValue(null) },
     field_consultants: { findUnique: jest.fn().mockResolvedValue({ id: CONS_A, praca_id: PRACA, active: true }) },
-    field_visits: { findMany: jest.fn().mockResolvedValue([]) },
+    field_visits: { findMany: jest.fn().mockResolvedValue([]), groupBy: jest.fn().mockResolvedValue([]) },
     leads: { findMany: jest.fn().mockResolvedValue([]) },
     blocklist: { findMany: jest.fn().mockResolvedValue([]) },
     place_candidates: { findMany: jest.fn().mockResolvedValue([]) },

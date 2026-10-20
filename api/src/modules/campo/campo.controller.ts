@@ -18,6 +18,7 @@ import { AllowPendingPassword, CampoRoute } from '../../common/decorators/campo-
 import { CurrentConsultant } from '../../common/decorators/current-consultant.decorator';
 import { CampoAuthService } from './campo-auth.service';
 import { AnswersDto, PlacesQueryDto, PontosDto, PosicaoDto, SimilarQueryDto, StartJourneyDto } from './dto/campo.dto';
+import { FollowupsService } from './followups.service';
 import { JourneysService } from './journeys.service';
 import { lerCheckinMultipart } from './multipart-checkin';
 import { PlacesService } from './places.service';
@@ -34,6 +35,7 @@ export class CampoController {
     private readonly journeys: JourneysService,
     private readonly places: PlacesService,
     private readonly visits: VisitsService,
+    private readonly followups: FollowupsService,
   ) {}
 
   @AllowPendingPassword()
@@ -45,6 +47,12 @@ export class CampoController {
   @Get('today')
   today(@CurrentConsultant() c: CampoConsultant) {
     return this.journeys.today(c);
+  }
+
+  /** Retornos de hoje e atrasados das PRÓPRIAS visitas (§25.4). */
+  @Get('followups')
+  followupsDoConsultor(@CurrentConsultant() c: CampoConsultant) {
+    return this.followups.doConsultor(c);
   }
 
   // ── jornada ─────────────────────────────────────────────────

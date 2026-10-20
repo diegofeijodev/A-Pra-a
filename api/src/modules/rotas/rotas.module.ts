@@ -13,6 +13,6 @@ import { ROTAS_LIGADAS, rotasLigadasProvider } from './rotas.tokens';
 @Module({
   controllers: [RotasCampoController, RotasEquipeController, RotasConfigController],
   providers: [RotasConfigService, RotasCampoService, RotasEquipeService, rotasLigadasProvider],
-  exports: [RotasCampoService, ROTAS_LIGADAS],
+  exports: [RotasCampoService, RotasConfigService, ROTAS_LIGADAS],
 })
 export class RotasModule {}

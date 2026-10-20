@@ -17,7 +17,10 @@ import type { FastifyReply } from 'fastify';
 import { AuthUser } from '../../common/auth/auth-user';
 import { AdminOnly } from '../../common/decorators/admin-only.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AtencaoService } from './atencao.service';
 import { ConsultoresService } from './consultores.service';
+import { FollowupsService } from './followups.service';
+import { PracaOpcionalQueryDto } from './dto/atencao.dto';
 import { HeatmapQueryDto } from './dto/heatmap.dto';
 import { HeatmapService } from './heatmap.service';
 import { ChannelsDto, CreateConsultorDto, UpdateConsultorDto } from './dto/consultores.dto';
@@ -34,6 +37,8 @@ export class ConsultoresController {
   constructor(
     private readonly consultores: ConsultoresService,
     private readonly heatmap: HeatmapService,
+    private readonly atencao: AtencaoService,
+    private readonly followups: FollowupsService,
   ) {}
 
   @Get()
@@ -63,6 +68,18 @@ export class ConsultoresController {
   @Get('heatmap')
   heat(@Query() q: HeatmapQueryDto) {
     return this.heatmap.heatmap(q);
+  }
+
+  /** "Atenção agora" e meta do dia da equipe (§25.3): calculado na leitura. */
+  @Get('attention')
+  attention(@Query() q: PracaOpcionalQueryDto) {
+    return this.atencao.painel(q.praca_id);
+  }
+
+  /** Fila de retornos de hoje e atrasados da equipe (§25.4). */
+  @Get('followups')
+  followupsDaEquipe(@Query() q: PracaOpcionalQueryDto) {
+    return this.followups.equipe(q.praca_id);
   }
 
   @Get('visits/:visitId/photo')

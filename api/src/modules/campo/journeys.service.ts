@@ -1,12 +1,14 @@
-import { ConflictException, Injectable, Optional } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { CampoConsultant } from '../../common/auth/campo-consultant';
 import { PrismaService } from '../../common/database/prisma.service';
-import { todaySp } from '../../common/time/dates';
+import { minutesSp, todaySp, weekdayOf } from '../../common/time/dates';
+import { ehDiaDeTrabalho, metaDoDia, type GoalView } from '../../domain/alerta-rules';
 import { carimbo, PASSADO_MAXIMO_MS } from '../../domain/campo-rules';
 import { COM_LEAD, journeyView, visitView, type JourneyView, type VisitView } from './campo-views';
 import type { PontosDto, PosicaoDto, StartJourneyDto } from './dto/campo.dto';
 import { RotasCampoService } from '../rotas/rotas-campo.service';
+import { RotasConfigService } from '../rotas/rotas-config.service';
 import { violouUnico } from './prisma-errors';
 
 export interface TodayView {
@@ -18,6 +20,17 @@ export interface TodayView {
   open_visit: VisitView | null;
   visits: VisitView[];
   counters: { visits: number; cadastrou_qr: number };
+  /** Meta e ritmo do próprio consultor, com a conta (contrato §25.5); `null` se a configuração não pôde ser lida. */
+  goal: (GoalView & { params: GoalParams }) | null;
+}
+
+/** Horários da configuração: o aparelho recalcula o ritmo com o relógio dele, mesmo sem sinal. */
+export interface GoalParams {
+  meta_diaria: number;
+  janela_inicio: string;
+  janela_fim: string;
+  almoco_inicio: string;
+  almoco_fim: string;
 }
 
 const jaAberta = () =>
@@ -29,10 +42,40 @@ const semJornada = () => new ConflictException({ code: 'NO_OPEN_JOURNEY', messag
 
 @Injectable()
 export class JourneysService {
+  private readonly log = new Logger(JourneysService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly rotas?: RotasCampoService,
+    @Optional() private readonly configs?: RotasConfigService,
   ) {}
+
+  /** Meta do dia do consultor. A leitura do Hoje nunca falha por causa dela. */
+  private async metaDe(feitas: number, agora: Date): Promise<TodayView['goal']> {
+    if (!this.configs) return null;
+    try {
+      const [config, alertas] = await Promise.all([this.configs.config(), this.configs.alertas()]);
+      const goal = metaDoDia({
+        agoraMin: minutesSp(agora),
+        feitas,
+        config,
+        diaDeTrabalho: ehDiaDeTrabalho(weekdayOf(todaySp(agora)), alertas),
+      });
+      return {
+        ...goal,
+        params: {
+          meta_diaria: config.meta_diaria,
+          janela_inicio: config.janela_inicio,
+          janela_fim: config.janela_fim,
+          almoco_inicio: config.almoco_inicio,
+          almoco_fim: config.almoco_fim,
+        },
+      };
+    } catch (e) {
+      this.log.warn(`meta do dia não calculada: ${e instanceof Error ? e.message : String(e)}`);
+      return null;
+    }
+  }
 
   async today(c: CampoConsultant, agora = new Date()): Promise<TodayView> {
     await this.closeStale(agora, c.id);
@@ -57,6 +100,7 @@ export class JourneysService {
         visits: views.length,
         cadastrou_qr: views.filter((v) => v.answers.freela_status === 'cadastrou_qr').length,
       },
+      goal: await this.metaDe(views.length, agora),
     };
   }
 

@@ -1,5 +1,6 @@
 import type { AuthUser } from '../../../common/auth/auth-user';
 import type { PrismaService } from '../../../common/database/prisma.service';
+import { CONFIG_ALERTAS_PADRAO } from '../../../domain/alerta-rules';
 import { CONFIG_ROTA_PADRAO } from '../../../domain/rota-rules';
 import { RotasConfigService } from '../rotas-config.service';
 import { AGORA, fakePrisma } from './fixtures';
@@ -10,7 +11,7 @@ const falha = async (f: () => Promise<unknown>) => f().then(() => null, (e: unkn
 describe('RotasConfigService', () => {
   it('sem linha no banco: devolve os padrões e nenhum autor', async () => {
     const s = new RotasConfigService(fakePrisma() as unknown as PrismaService);
-    expect(await s.view()).toEqual({ ...CONFIG_ROTA_PADRAO, atualizado_por: null, atualizado_em: null });
+    expect(await s.view()).toEqual({ ...CONFIG_ROTA_PADRAO, ...CONFIG_ALERTAS_PADRAO, atualizado_por: null, atualizado_em: null });
   });
 
   it('PUT parcial: mescla, grava quem/quando e preserva chaves de outras fases', async () => {
@@ -28,5 +29,23 @@ describe('RotasConfigService', () => {
     const e = await falha(() => s.atualizar({ almoco_inicio: '08:00' }, ADMIN, AGORA));
     expect((e as { getStatus: () => number }).getStatus()).toBe(400);
     expect(p.app_settings.upsert).not.toHaveBeenCalled();
+  });
+
+  it('F5: PUT mistura chaves da rota e de alertas; grava as duas e valida cada uma', async () => {
+    const p = fakePrisma();
+    const s = new RotasConfigService(p as unknown as PrismaService);
+    await s.atualizar({ meta_diaria: 20, alerta_ritmo_atras: 3, dias_trabalho: [5, 2] }, ADMIN, AGORA);
+    expect(p.app_settings.upsert.mock.calls[0][0].update.field_config).toMatchObject({ meta_diaria: 20, alerta_ritmo_atras: 3, dias_trabalho: [2, 5] });
+    const p2 = fakePrisma();
+    const e = await falha(() => new RotasConfigService(p2 as unknown as PrismaService).atualizar({ alerta_ritmo_atras: 0 }, ADMIN, AGORA));
+    expect((e as { getStatus: () => number }).getStatus()).toBe(400);
+    expect(p2.app_settings.upsert).not.toHaveBeenCalled();
+  });
+
+  it('F5: limiares ausentes caem no padrão e alertas() lê só as chaves de alerta', async () => {
+    const p = fakePrisma();
+    p.app_settings.findUnique.mockResolvedValue({ field_config: { alerta_sem_registro_min: 45 } });
+    const s = new RotasConfigService(p as unknown as PrismaService);
+    expect(await s.alertas()).toEqual({ ...CONFIG_ALERTAS_PADRAO, alerta_sem_registro_min: 45 });
   });
 });

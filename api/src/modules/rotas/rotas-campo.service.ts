@@ -6,8 +6,10 @@ import { PrismaService } from '../../common/database/prisma.service';
 import { isUuid } from '../../common/ids/uuid';
 import { minutesSp, todaySp } from '../../common/time/dates';
 import { caixaEnvolvente, carimbo } from '../../domain/campo-rules';
+import { retornoRoteirizavel } from '../../domain/followup-rules';
 import { pontoNaArea } from '../../domain/area-rules';
 import { paramsDaConfig, planejar, selecionarEncadeados, type ConfigRota } from '../../domain/rota-rules';
+import { lerRetornosPendentes } from '../campo/retornos-query';
 import { violouUnico } from '../campo/prisma-errors';
 import type { AcaoParadaDto, GerarRotaDto, PosicaoRotaDto, PularParadaDto } from './dto/rotas.dto';
 import { RotasConfigService } from './rotas-config.service';
@@ -28,6 +30,9 @@ export interface HojeRotaView {
   /** Sem roteiro hoje: a equipe liberou o botão "Montar meu dia"? */
   can_generate: boolean;
 }
+
+/** Teto de retornos que entram sozinhos no roteiro (os mais antigos primeiro). */
+const MAX_RETORNOS_NO_ROTEIRO = 10;
 
 const desligado = () => new NotFoundException({ code: 'ROUTES_DISABLED', message: 'O roteiro do dia não está habilitado.' });
 const semRoteiro = () => new NotFoundException({ code: 'ROUTE_NOT_FOUND', message: 'Você não tem roteiro para hoje.' });
@@ -116,16 +121,20 @@ export class RotasCampoService {
     tentativa = 0,
   ): Promise<RouteView | null> {
     const params = paramsDaConfig(config);
-    const leads = await this.elegiveis(c.praca_id, config, agora);
-    const escolhidos = selecionarEncadeados(
+    const retornos = await this.retornosVencidos(c, agora);
+    const idsRetorno = new Set(retornos.map((l) => l.id));
+    const leads = (await this.elegiveis(c.praca_id, config, agora)).filter((l) => !idsRetorno.has(l.id));
+    const sorteados = selecionarEncadeados(
       pos,
       leads.map((l) => ({ id: l.id, lat: l.lat, lng: l.lng })),
-      Math.ceil(config.meta_diaria * config.pool_fator),
+      Math.max(Math.ceil(config.meta_diaria * config.pool_fator) - retornos.length, 0),
     );
+    // Retornos vencidos vão ancorados no começo da ordem (§25.6): só no cálculo, não ficam gravados como fixos.
+    const escolhidos = [...retornos.map((l) => ({ id: l.id, lat: l.lat, lng: l.lng, fixa: true })), ...sorteados];
     if (escolhidos.length === 0) return null;
     const dia = todaySp(agora);
     const plano = planejar({ inicio: pos, partidaMin: partidaDoDia(dia, agora, params), pontos: escolhidos, params });
-    const porId = new Map(leads.map((l) => [l.id, l]));
+    const porId = new Map([...leads, ...retornos].map((l) => [l.id, l]));
     const candidatos = await this.candidatosDe(escolhidos.map((p) => p.id));
     const id = randomUUID();
     try {
@@ -178,6 +187,36 @@ export class RotasCampoService {
       throw new ConflictException({ code: 'ROUTE_CONFLICT', message: 'Não foi possível montar o roteiro agora. Tente de novo.' });
     }
     return this.viewDe(id, agora);
+  }
+
+  /**
+   * Retornos vencidos das visitas do próprio consultor, prontos para o roteiro (contrato §25.6).
+   * Item secundário: qualquer falha aqui vira aviso no log e o roteiro sai sem eles.
+   */
+  private async retornosVencidos(c: CampoConsultant, agora: Date): Promise<LeadParaRota[]> {
+    try {
+      if (!(await this.configs.alertas()).retornos_no_roteiro) return [];
+      const dia = todaySp(agora);
+      const lidos = await lerRetornosPendentes(this.prisma, { hoje: dia, consultantId: c.id });
+      const bons = lidos.itens
+        .filter((r) => r.praca_id === c.praca_id && retornoRoteirizavel(r, r.far_from_place))
+        .slice(0, MAX_RETORNOS_NO_ROTEIRO);
+      if (bons.length === 0) return [];
+      const ids = bons.map((r) => r.lead_id);
+      const chaves = [...new Set(bons.map((r) => r.phone_key).filter(Boolean))];
+      const [bloqueados, ocupados] = await Promise.all([
+        chaves.length ? this.prisma.blocklist.findMany({ where: { phone_key: { in: chaves } }, select: { phone_key: true } }) : [],
+        this.prisma.field_route_stops.findMany({ where: { day: dia, lead_id: { in: ids }, status: { in: [...SEGURA_LUGAR] } }, select: { lead_id: true } }),
+      ]);
+      const fora = new Set(ocupados.map((o) => o.lead_id));
+      const chavesFora = new Set(bloqueados.map((b) => b.phone_key));
+      return bons
+        .filter((r) => !fora.has(r.lead_id) && !(r.phone_key && chavesFora.has(r.phone_key)))
+        .map((r) => ({ id: r.lead_id, name: r.lead_name, address: r.address, phone: r.phone, lat: r.lat!, lng: r.lng! }));
+    } catch (e) {
+      this.log.warn(`retornos não entraram no roteiro do consultor ${c.id}: ${e instanceof Error ? e.message : String(e)}`);
+      return [];
+    }
   }
 
   /** Leads elegíveis para a seleção automática (contrato §23.3 e spec §6.1.1). */

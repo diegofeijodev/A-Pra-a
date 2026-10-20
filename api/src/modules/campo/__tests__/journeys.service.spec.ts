@@ -1,6 +1,8 @@
 import { Prisma } from '@prisma/client';
 import type { CampoConsultant } from '../../../common/auth/campo-consultant';
 import type { PrismaService } from '../../../common/database/prisma.service';
+import { CONFIG_ALERTAS_PADRAO } from '../../../domain/alerta-rules';
+import { CONFIG_ROTA_PADRAO } from '../../../domain/rota-rules';
 import { JourneysService } from '../journeys.service';
 
 const CONS = '44444444-4444-4444-8444-444444444444';
@@ -310,5 +312,34 @@ describe('JourneysService.today', () => {
 
     expect(t.journey).toBeNull();
     expect(t.journeys).toHaveLength(1);
+  });
+});
+
+describe('JourneysService.today — meta do dia (§25.5)', () => {
+  const configs = (over: Partial<Record<'config' | 'alertas', jest.Mock>> = {}) => ({
+    config: jest.fn().mockResolvedValue(CONFIG_ROTA_PADRAO),
+    alertas: jest.fn().mockResolvedValue(CONFIG_ALERTAS_PADRAO),
+    ...over,
+  });
+  const comConfigs = (p: ReturnType<typeof fakePrisma>, c: ReturnType<typeof configs>) =>
+    new JourneysService(p as unknown as PrismaService, undefined, c as never);
+
+  it('traz meta, ritmo e a conta; feitas = visitas do dia; params para o aparelho recalcular', async () => {
+    const p = fakePrisma();
+    p.field_visits.findMany.mockResolvedValue([]);
+    const t = await comConfigs(p, configs()).today(C, AGORA); // 12:00 em Brasília, quinta
+    expect(t.goal).toMatchObject({
+      meta: 30, feitas: 0, esperadas: 11, delta: -11, faltam: 30, minutos_uteis: 180, dia_de_trabalho: true,
+      params: { meta_diaria: 30, janela_inicio: '09:00', janela_fim: '18:00', almoco_inicio: '12:00', almoco_fim: '13:00' },
+    });
+    expect(t.goal!.conta).toContain('Às 12:00 já deveriam ser 11 (180 min úteis ÷ 16 min); feitas: 0.');
+  });
+
+  it('sem o serviço de configuração (testes antigos) ou com falha nele: goal nulo, o Hoje continua', async () => {
+    expect((await montar(fakePrisma()).today(C, AGORA)).goal).toBeNull();
+    const ruim = configs({ config: jest.fn().mockRejectedValue(new Error('banco caiu')) });
+    const t = await comConfigs(fakePrisma(), ruim).today(C, AGORA);
+    expect(t.goal).toBeNull();
+    expect(t.counters).toEqual({ visits: 0, cadastrou_qr: 0 });
   });
 });

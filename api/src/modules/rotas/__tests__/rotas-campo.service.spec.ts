@@ -3,6 +3,7 @@ import { ConflictException, ForbiddenException, NotFoundException, Unprocessable
 import { Prisma } from '@prisma/client';
 import type { CampoConsultant } from '../../../common/auth/campo-consultant';
 import type { PrismaService } from '../../../common/database/prisma.service';
+import { CONFIG_ALERTAS_PADRAO, type ConfigAlertas } from '../../../domain/alerta-rules';
 import { CONFIG_ROTA_PADRAO } from '../../../domain/rota-rules';
 import { RotasCampoService } from '../rotas-campo.service';
 import { RotasConfigService } from '../rotas-config.service';
@@ -11,8 +12,8 @@ import { AGORA, CLI, CONS_A, CONS_B, DIA, fakePrisma, LEAD, PRACA, rotaRow, ROTA
 const A: CampoConsultant = { id: CONS_A, name: 'Ana', email: 'a@a.com', praca_id: PRACA, must_change_password: false };
 const B: CampoConsultant = { ...A, id: CONS_B, name: 'Bia' };
 
-function montar(p: ReturnType<typeof fakePrisma>, ligado = true, config = CONFIG_ROTA_PADRAO) {
-  const configs = { config: jest.fn().mockResolvedValue(config) } as unknown as RotasConfigService;
+function montar(p: ReturnType<typeof fakePrisma>, ligado = true, config = CONFIG_ROTA_PADRAO, alertas: ConfigAlertas = CONFIG_ALERTAS_PADRAO) {
+  const configs = { config: jest.fn().mockResolvedValue(config), alertas: jest.fn().mockResolvedValue(alertas) } as unknown as RotasConfigService;
   return new RotasCampoService(p as unknown as PrismaService, configs, ligado);
 }
 const codigo = (e: unknown) => ((e as { getResponse: () => { code: string } }).getResponse() as { code: string }).code;
@@ -298,10 +299,96 @@ describe('RotasCampoService.generate / gerarAoIniciar', () => {
   });
 });
 
+describe('RotasCampoService — retornos vencidos no roteiro automático (§25.6)', () => {
+  const POS = { client_id: CLI(1), lat: -23.6, lng: -46.66 };
+  const config = { ...CONFIG_ROTA_PADRAO, consultor_pode_gerar: true };
+  const lead = (n: number, over: Record<string, unknown> = {}) => ({
+    id: LEAD(n), name: `Bar ${n}`, address: '', phone: '', phone_key: '', lat: -23.6 + n * 0.001, lng: -46.66, ...over,
+  });
+  const retorno = (n: number, over: Record<string, unknown> = {}) => ({
+    id: `v${n}`, lead_id: LEAD(n), checkin_at: new Date('2026-10-15T15:00:00Z'), checkout_at: new Date('2026-10-15T15:20:00Z'),
+    needs_followup: true, followup_date: '2026-10-19', followup_what: 'Levar contrato', interlocutor_name: 'Marta', interest: 'alto',
+    far_from_place: false, consultant_id: CONS_A, consultant: { name: 'Ana' },
+    lead: { name: `Retorno ${n}`, phone: '(11) 90000-0000', phone_key: '', address: 'R. X', praca_id: PRACA, lat: -23.6 + n * 0.0005, lng: -46.66, location_precision: 'point' },
+    ...over,
+  });
+
+  function cenario(retornos: unknown[]) {
+    const p = fakePrisma();
+    p.field_routes.findFirst.mockResolvedValueOnce(null).mockResolvedValue(rotaRow());
+    p.field_areas.findMany.mockResolvedValue([{ id: 'a', praca_id: PRACA, lat: -23.6, lng: -46.66, radius_m: 3000 }]);
+    p.leads.findMany.mockResolvedValue([lead(1), lead(2)]);
+    // 1ª chamada de visitas com `needs_followup` = retornos; as demais (revisitas recentes) vazias.
+    p.field_visits.findMany.mockImplementation(async (a: { where: Record<string, unknown> }) => ('needs_followup' in a.where ? retornos : []));
+    p.field_route_stops.findMany.mockResolvedValue([]);
+    return p;
+  }
+  const criadas = (p: ReturnType<typeof fakePrisma>) => p.field_route_stops.createMany.mock.calls[0][0].data.map((d: any) => d.lead_id);
+
+  it('retorno vencido do próprio consultor entra ANTES dos sorteados e ignora dias_sem_revisitar; só consulta as visitas dele', async () => {
+    const p = cenario([retorno(7), retorno(8)]);
+    await montar(p, true, config).generate(A, POS, AGORA);
+    expect(criadas(p).slice(0, 2).sort()).toEqual([LEAD(7), LEAD(8)].sort());
+    expect(criadas(p)).toEqual(expect.arrayContaining([LEAD(1), LEAD(2)]));
+    const where = p.field_visits.findMany.mock.calls.find((c: any) => 'needs_followup' in c[0].where)![0].where;
+    expect(where).toMatchObject({ consultant_id: CONS_A, needs_followup: true });
+    // o retorno não fica gravado como fixo: "Refazer rota" reordena por distância
+    expect(p.field_route_stops.createMany.mock.calls[0][0].data.every((d: any) => d.fixa === undefined)).toBe(true);
+  });
+
+  it('pula retorno bloqueado, já em roteiro hoje, de outra praça, sem coordenada confiável e o resolvido por visita posterior', async () => {
+    const p = cenario([
+      retorno(3, { lead: { ...retorno(3).lead, phone_key: '11999' } }), // bloqueado
+      retorno(4), // ocupado em outro roteiro
+      retorno(5, { lead: { ...retorno(5).lead, praca_id: '00000000-0000-4000-8000-0000000000bb' } }), // outra praça
+      retorno(6, { far_from_place: true, lead: { ...retorno(6).lead, location_precision: 'city' } }), // coordenada duvidosa
+      retorno(9), // resolvido: houve visita depois
+      retorno(7), // este vale
+    ]);
+    p.field_visits.groupBy.mockResolvedValue([{ lead_id: LEAD(9), _max: { checkin_at: new Date('2026-10-18T15:00:00Z') } }]);
+    p.blocklist.findMany.mockResolvedValue([{ phone_key: '11999' }]);
+    p.field_route_stops.findMany.mockResolvedValue([{ lead_id: LEAD(4) }]);
+    await montar(p, true, config).generate(A, POS, AGORA);
+    const ids = criadas(p);
+    expect(ids).toContain(LEAD(7));
+    for (const n of [3, 4, 5, 6, 9]) expect(ids).not.toContain(LEAD(n));
+  });
+
+  it('retornos_no_roteiro desligado: nem consulta retornos', async () => {
+    const p = cenario([retorno(7)]);
+    await montar(p, true, config, { ...CONFIG_ALERTAS_PADRAO, retornos_no_roteiro: false }).generate(A, POS, AGORA);
+    expect(criadas(p)).not.toContain(LEAD(7));
+    expect(p.field_visits.findMany.mock.calls.some((c: any) => 'needs_followup' in c[0].where)).toBe(false);
+  });
+
+  it('falha na consulta de retornos não derruba a montagem do dia', async () => {
+    const p = cenario([]);
+    p.field_visits.findMany.mockImplementation(async (a: { where: Record<string, unknown> }) => {
+      if ('needs_followup' in a.where) throw new Error('banco lento');
+      return [];
+    });
+    await montar(p, true, config).generate(A, POS, AGORA);
+    expect(criadas(p)).toEqual(expect.arrayContaining([LEAD(1), LEAD(2)]));
+  });
+
+  it('só com retornos (sem áreas nem leads sorteáveis) ainda monta o roteiro', async () => {
+    const p = cenario([retorno(7)]);
+    p.field_areas.findMany.mockResolvedValue([]);
+    await montar(p, true, config).generate(A, POS, AGORA);
+    expect(criadas(p)).toEqual([LEAD(7)]);
+  });
+});
+
 describe('injeção de dependências (o Nest só vê o que a reflexão registra)', () => {
   it('o 2º parâmetro do JourneysService é o RotasCampoService (senão @Optional injeta undefined em silêncio)', async () => {
     const { JourneysService } = await import('../../campo/journeys.service');
     const tipos = Reflect.getMetadata('design:paramtypes', JourneysService) as unknown[];
     expect(tipos[1]).toBe(RotasCampoService);
+  });
+
+  it('o 3º parâmetro do JourneysService é o RotasConfigService (a meta do Hoje depende dele)', async () => {
+    const { JourneysService } = await import('../../campo/journeys.service');
+    const tipos = Reflect.getMetadata('design:paramtypes', JourneysService) as unknown[];
+    expect(tipos[2]).toBe(RotasConfigService);
   });
 });

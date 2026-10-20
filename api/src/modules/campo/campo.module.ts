@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { validateEnv } from '../../common/config/env.validation';
 import { FreelaClientModule } from '../freela/freela-client.module';
 import { RotasModule } from '../rotas/rotas.module';
+import { AtencaoService } from './atencao.service';
 import { CampoAutocloseScheduler } from './campo-autoclose.scheduler';
 import { CampoAuthController } from './campo-auth.controller';
 import { CampoAuthService } from './campo-auth.service';
@@ -9,6 +10,7 @@ import { CampoFreelaService } from './campo-freela.service';
 import { CampoController } from './campo.controller';
 import { ConsultoresController } from './consultores.controller';
 import { ConsultoresService } from './consultores.service';
+import { FollowupsService } from './followups.service';
 import { HeatmapService } from './heatmap.service';
 import { JourneysService } from './journeys.service';
 import { criarPhotoStorage, PHOTO_STORAGE } from './photo-storage';
@@ -29,6 +31,8 @@ import { VisitsService } from './visits.service';
     CampoFreelaService,
     ConsultoresService,
     HeatmapService,
+    AtencaoService,
+    FollowupsService,
     JourneysService,
     CampoAutocloseScheduler,
     PlacesService,

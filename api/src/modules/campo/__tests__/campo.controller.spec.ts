@@ -8,7 +8,7 @@ const REF = '77777777-7777-4777-8777-777777777777';
 
 function montar(photo: jest.Mock) {
   const visits = { photo };
-  const c = new CampoController({} as never, {} as never, {} as never, visits as never);
+  const c = new CampoController({} as never, {} as never, {} as never, visits as never, {} as never);
   const res = { header: jest.fn().mockReturnThis() };
   return { c, res: res as unknown as FastifyReply, header: res.header };
 }

@@ -3524,9 +3524,9 @@ Os horários (`janela_*`, `almoco_*`) e a meta (`meta_diaria`) são os do §23.1
 
 ```json
 {
-  "meta": 30, "feitas": 8, "esperadas": 12, "delta": -4, "faltam": 22,
+  "meta": 30, "feitas": 8, "esperadas": 17, "delta": -9, "faltam": 22,
   "minutos_uteis": 280, "minutos_por_visita_ritmo": 16, "dia_de_trabalho": true,
-  "conta": "30 visitas em 8 h úteis (09:00–18:00, menos 1 h de almoço) = 1 a cada 16 min. Às 14:40 já deveriam ser 12 (280 min úteis ÷ 16 min); feitas: 8.",
+  "conta": "30 visitas em 8 h úteis (09:00–18:00, menos 1 h de almoço) = 1 a cada 16 min. Às 14:40 já deveriam ser 17 (280 min úteis ÷ 16 min); feitas: 8.",
   "fonte": "Feitas = visitas com check-in nas jornadas de hoje (inclui a aberta e as sem checkout; pulada ou adiada do roteiro não conta). Meta e horários = configuração do roteiro."
 }
 ```
@@ -3583,7 +3583,7 @@ Códigos de alerta (`code`), na ordem de exibição de mesma severidade; `severi
 ```
 
 Resposta: `{ day, today: n, overdue: n, total: n, truncated: bool, items: FollowupView[] }`, ordenada por `followup_date` (mais antigo primeiro), depois nome. Máximo 200 itens
-(`truncated: true` se houver mais; `today`/`overdue`/`total` contam **todos** os vencidos, não só os 200 devolvidos).
+(`truncated: true` se houver mais; `today`/`overdue`/`total` contam todos os pendentes **lidos**, não só os 200 devolvidos). A leitura olha as 1.000 visitas com retorno vencido mais antigas.
 
 | Método | Rota | Quem | Escopo |
 |---|---|---|---|
@@ -3608,7 +3608,7 @@ Com `FIELD_ROUTES_ENABLED=true` e `retornos_no_roteiro = true`, ao montar o rote
 (§25.4) **das visitas do próprio consultor** entram **antes** da seleção por proximidade, ancorados no começo da ordem (`fixa` só no cálculo da montagem; não é gravada, então
 "Refazer rota" reordena por distância como qualquer parada). Regras: ignoram `dias_sem_revisitar` (o lead foi visitado há pouco, é justamente o caso) e a área de atuação;
 exigem `lat/lng` e (`location_precision` ∈ `point|address` **ou** a visita do retorno com `far_from_place = false`, isto é, o check-in foi no local); pulam lead bloqueado
-(`blocklist`), lead já em roteiro de hoje (de qualquer consultor) e arquivado/teste/estágio ≥ 5. Contam na meta como qualquer parada e respeitam o relógio da janela (podem virar
+(`blocklist`), lead já em roteiro de hoje (de qualquer consultor) e arquivado/teste/estágio ≥ 5. Entram no máximo 10 (os mais antigos). Falha ao ler os retornos só vai para o log e o roteiro sai sem eles. Contam na meta como qualquer parada e respeitam o relógio da janela (podem virar
 reserva se a janela estourar). A equipe, ao montar à mão (`POST /v1/routes`), escolhe os leads — a fila de retornos da tela traz o nome para ela incluir.
 
 ### 25.7 Fechamento da meia-noite (§20.5)
