@@ -35,7 +35,29 @@ function svc(p: ReturnType<typeof fake>, ligado = false, alertas = CONFIG_ALERTA
   const configs = { config: jest.fn().mockResolvedValue(CONFIG_ROTA_PADRAO), alertas: jest.fn().mockResolvedValue(alertas) } as unknown as RotasConfigService;
   return new AtencaoService(p as unknown as PrismaService, configs, ligado);
 }
+function comPayouts(p: ReturnType<typeof fake>, ligado: boolean) {
+  const configs = { config: jest.fn().mockResolvedValue(CONFIG_ROTA_PADRAO), alertas: jest.fn().mockResolvedValue(CONFIG_ALERTAS_PADRAO) } as unknown as RotasConfigService;
+  const payouts = { alertas: jest.fn().mockResolvedValue([{ kind: 'pix_bloqueado', payout_id: 'p1', consultant_id: C1, name: 'Ana', message: 'x' }]) };
+  const svc = new AtencaoService(p as unknown as PrismaService, configs, false, { ligado }, payouts as never);
+  return { svc, payouts };
+}
 const falha = async (f: () => Promise<unknown>) => f().then(() => null, (e: unknown) => e);
+
+describe('AtencaoService — alertas de Pix (F9, §29.8)', () => {
+  it('flag desligada: sem o campo e SEM consulta de pagamentos', async () => {
+    const { svc, payouts } = comPayouts(fake(), false);
+    const r = await svc.painel(undefined, AGORA);
+    expect(r).not.toHaveProperty('payout_alerts');
+    expect(payouts.alertas).not.toHaveBeenCalled();
+  });
+
+  it('flag ligada: traz os alertas de Pix bloqueado/falho', async () => {
+    const { svc, payouts } = comPayouts(fake(), true);
+    const r = await svc.painel(PRACA, AGORA);
+    expect(r.payout_alerts).toEqual([expect.objectContaining({ kind: 'pix_bloqueado', name: 'Ana' })]);
+    expect(payouts.alertas).toHaveBeenCalledWith(PRACA);
+  });
+});
 
 describe('AtencaoService — meta e "Atenção agora" da equipe', () => {
   it('junta jornadas, visitas e pontos: Ana ok, Bruno não iniciou, Carla com visita aberta há 52 min', async () => {

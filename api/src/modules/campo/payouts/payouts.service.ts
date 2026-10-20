@@ -283,7 +283,7 @@ export class PayoutsService {
         else out.blocked++;
       });
     }
-    const rows = (await this.repo.listar({ week_start: week, consultant_ids: ids2 })).filter((r) => ids2.includes(r.id));
+    const rows = (await this.repo.listar({ week_start: week })).filter((r) => ids2.includes(r.id));
     return { week: { from: week, to }, ...out, payouts: await this.montar(rows, cal) };
   }
 
