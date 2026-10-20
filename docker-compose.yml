@@ -77,6 +77,8 @@ services:
       # Pagamento por Pix manual (contrato §29): exige FIELD_EARNINGS_ENABLED. Só registra; não move dinheiro.
       FIELD_PAYOUTS_ENABLED: ${FIELD_PAYOUTS_ENABLED:-false}
       FIELD_VISIT_FLOW_SELECT_ENABLED: ${FIELD_VISIT_FLOW_SELECT_ENABLED:-false}
+      # Modo do chefe S3 (contrato §32.5): ganho por cadastro declarado. Exige FIELD_EARNINGS_ENABLED.
+      FIELD_DECLARED_SIGNUPS_ENABLED: ${FIELD_DECLARED_SIGNUPS_ENABLED:-false}
     ports:
       - '3014:3014'
 

@@ -24,7 +24,12 @@ import {
   dentroDoPrazoTardio,
   diaMes,
   inicioDaSemana,
+  CHAVES_NOVAS_PADRAO,
   LIMITES_REGRA,
+  LIMITES_REGRA_NOVOS,
+  normalizarRegra,
+  PRESET_CHEFE,
+  PRESET_COMPLETO,
   planejarLancamentos,
   plural,
   proximoPagamento,
@@ -37,14 +42,14 @@ import {
   type DeltaLancamento,
   type EntradaDia,
   type JaLancado,
-  type RegraRemuneracao,
+  type RegraBruta,
   type ResultadoDia,
   type ResultadoSemana,
 } from '../../../domain/earnings-rules';
 import type { RegraConfirmacao } from '../../../domain/signup-sync-rules';
 import { RotasConfigService } from '../../rotas/rotas-config.service';
 import type { AjusteDto, ConfigRemuneracaoDto, EstornoDto, SimularDto } from './dto/earnings.dto';
-import { EARNINGS_INPUTS, type ConsultorBasico, type DiaBruto, type EarningsInputs } from './earnings-inputs';
+import { EARNINGS_INPUTS, type ConsultorBasico, type DiaBruto, type EarningsInputs, type InsumosExtras } from './earnings-inputs';
 import {
   EARNINGS_REPOSITORY,
   type EarningsRepository,
@@ -60,6 +65,8 @@ export const FONTE_EARNINGS = 'Cadastros confirmados pelo Freela (sincronizado) 
 const MAX_SEMANAS_AUTOCLOSE = 8;
 const LIMITE_LANCAMENTOS = 200;
 const SEMANAS_ANTERIORES = 4;
+
+const CHAVES_VAZIAS = PRESET_COMPLETO as RegraBruta;
 
 const notFoundConsultor = () =>
   new NotFoundException({ code: 'NOT_FOUND', message: 'Consultor não encontrado.' });
@@ -84,6 +91,18 @@ export interface Visao {
   extras_cents: number;
   posted: LancamentoRow[];
   planned: DeltaLancamento[];
+}
+
+export interface SimulacaoView {
+  day: { total_cents: number; conta: string[]; rule_version: number | null };
+  week?: {
+    total_cents: number;
+    days_cents: number;
+    week_part_cents: number;
+    days: Array<{ day: string; total_cents: number; conta: string[] }>;
+    conta: string[];
+    rule_version: number | null;
+  };
 }
 
 export interface Ator {
@@ -113,7 +132,10 @@ export const versaoView = (v: VersaoRegistrada) => ({
   reason: v.reason,
   created_by: v.created_by_name,
   created_at: v.created_at.toISOString(),
+  /** Como foi gravada (13 chaves + as novas que existirem). */
   config: v.config,
+  /** A regra completa (chaves ausentes preenchidas com o padrão = comportamento atual). */
+  config_effective: normalizarRegra(v.config),
 });
 
 @Injectable()
@@ -150,6 +172,14 @@ export class EarningsService {
     return Array.from({ length: k }, (_, i) => addDays(from, -7 * (i + 1)));
   }
 
+  /** Quais insumos extras buscar: só se alguma versão da regra usa o recurso (sem uso, nenhuma consulta nova). */
+  private extras(ctx: Ctx): InsumosExtras {
+    return {
+      declared: ctx.versoes.some((v) => v.config.signup_source === 'declared'),
+      routes: ctx.versoes.some((v) => v.config.daily_base_condition === 'route_assigned' && (v.config.daily_base_cents ?? 0) > 0),
+    };
+  }
+
   private entradasDaSemana(
     ctx: Ctx,
     c: ConsultorBasico,
@@ -160,15 +190,35 @@ export class EarningsService {
     for (let i = 0; i < 7; i++) {
       const dia = addDays(from, i);
       const raw = brutos?.get(dia);
-      const regra = versaoVigente(ctx.versoes, dia)?.config;
+      const bruta = versaoVigente(ctx.versoes, dia)?.config;
+      const regra = bruta ? normalizarRegra(bruta) : undefined;
       const visits =
         regra?.visits_count === 'checkout' ? (raw?.visits_checkout ?? 0) : (raw?.visits_checkin ?? 0);
+      let signups = raw?.signups ?? 0;
+      let acima = 0;
+      let anuladas = 0;
+      if (regra?.signup_source === 'declared') {
+        // S3: quem paga é a declaração (menos as anuladas), limitada por `declared_daily_cap` da regra do dia.
+        const decl = raw?.declared ?? 0;
+        signups = regra.declared_daily_cap === null ? decl : Math.min(decl, regra.declared_daily_cap);
+        acima = decl - signups;
+        anuladas = raw?.declared_voided ?? 0;
+      } else if (raw?.pareados_declarados?.length) {
+        // Pagar uma vez por empresa: confirmado pareado a declaração JÁ paga sob regra `declared` não conta de novo.
+        const jaPagas = raw.pareados_declarados.filter(
+          (dd) => normalizarRegra(versaoVigente(ctx.versoes, dd)?.config ?? CHAVES_VAZIAS).signup_source === 'declared',
+        ).length;
+        signups = Math.max(0, signups - jaPagas);
+      }
       out[dia] = {
         dia,
-        signups: raw?.signups ?? 0,
+        signups,
         visits,
         journey_open: raw?.journey ?? false,
         elegivel: c.active && dia >= c.created_day,
+        ...(raw?.route_equipe ? { route_assigned: true } : {}),
+        ...(acima > 0 ? { declared_over_cap: acima } : {}),
+        ...(anuladas > 0 ? { declared_voided: anuladas } : {}),
       };
     }
     return out;
@@ -190,6 +240,7 @@ export class EarningsService {
       from,
       to,
       ctx.regraConfirmacao,
+      this.extras(ctx),
     );
     for (const c of consultores) {
       for (const w of semanas) {
@@ -252,6 +303,9 @@ export class EarningsService {
   ): Promise<number> {
     let n = 0;
     for (const { delta, calc, payout } of deltas) {
+      // Delta NEGATIVO de um dia com declaração anulada = estorno da anulação (contrato §32.5); o `kind` continua accrual.
+      const diaDelta = delta.scope === 'day' ? calc.days.find((x) => x.dia === delta.work_day) : undefined;
+      const anulacao = delta.delta_cents < 0 && (diaDelta?.declared_voided ?? 0) > 0;
       const novo: LancamentoNovo = {
         consultant_id: consultantId,
         kind: 'accrual',
@@ -261,11 +315,11 @@ export class EarningsService {
         work_week: delta.work_week,
         payout_week: payout,
         rule_version: delta.rule_version,
-        source,
+        source: anulacao ? 'declaration_void' : source,
         reason: null,
         reverses_id: null,
         idempotency_key: delta.idempotency_key,
-        snapshot: this.snapshot(ctx, delta, calc, extra),
+        snapshot: this.snapshot(ctx, delta, calc, anulacao ? { ...extra, declaration_void: true } : extra),
         created_by: ator.id,
         created_by_name: ator.name,
       };
@@ -514,12 +568,31 @@ export class EarningsService {
       history: [...versoes].reverse().slice(0, 50).map(versaoView),
       default_config: REGRA_PADRAO,
       limits: LIMITES_REGRA,
+      // Modo do chefe (contrato §32.2): presets que só PREENCHEM o formulário; padrões e limites das chaves novas.
+      presets: { completo: PRESET_COMPLETO, chefe: PRESET_CHEFE },
+      extended: { defaults: CHAVES_NOVAS_PADRAO, limits: LIMITES_REGRA_NOVOS },
+      features: {
+        routes_enabled: this.opcoes.rotasLigadas ?? false,
+        declared_signups_enabled: this.opcoes.declaradasLigado ?? false,
+      },
     };
   }
 
   async salvarConfig(dto: ConfigRemuneracaoDto, user: AuthUser, agora = new Date()) {
     const r = validarRegra(dto.config);
     if (!r.ok) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: r.erro });
+    if (r.regra.daily_base_condition === 'route_assigned' && !this.opcoes.rotasLigadas)
+      throw new ConflictException({
+        code: 'ROUTES_DISABLED',
+        message:
+          'daily_base_condition: a diária por rota atribuída precisa de FIELD_ROUTES_ENABLED ligada; sem rotas da equipe ela pagaria R$ 0 em silêncio.',
+      });
+    if (r.regra.signup_source === 'declared' && !this.opcoes.declaradasLigado)
+      throw new ConflictException({
+        code: 'DECLARED_DISABLED',
+        message:
+          'signup_source: o cadastro declarado precisa de FIELD_DECLARED_SIGNUPS_ENABLED (e FIELD_EARNINGS_ENABLED) ligadas.',
+      });
     const versoes = await this.repo.versoes();
     const travada = await this.repo.existeRazaoOuFechamento();
     const erro = validarVigencia({
@@ -543,9 +616,9 @@ export class EarningsService {
     return versaoView(v);
   }
 
-  /** Mesma função do cálculo real; não grava nada. */
-  async simular(dto: SimularDto, agora = new Date()) {
-    let regra: RegraRemuneracao;
+  /** Mesma função do cálculo real; não grava nada. Com `days`, calcula a SEMANA (contrato §32.3). */
+  async simular(dto: SimularDto, agora = new Date()): Promise<SimulacaoView> {
+    let regra: RegraBruta;
     let version: number | null = null;
     if (dto.config !== undefined) {
       const r = validarRegra(dto.config);
@@ -564,10 +637,43 @@ export class EarningsService {
         visits: dto.visits ?? 0,
         journey_open: dto.journey_open ?? false,
         elegivel: true,
+        ...(dto.route_assigned ? { route_assigned: true } : {}),
       },
       version,
     );
-    return { day: { total_cents: d.total_cents, conta: d.conta, rule_version: version } };
+    const base = { day: { total_cents: d.total_cents, conta: d.conta, rule_version: version } };
+    if (!dto.days?.length) return base;
+    const from = inicioDaSemana(todaySp(agora), regra.week_start_weekday);
+    const entradas: Record<string, EntradaDia> = {};
+    dto.days.forEach((x, i) => {
+      const dia = addDays(from, i);
+      entradas[dia] = {
+        dia,
+        signups: x.signups,
+        visits: x.visits ?? 0,
+        journey_open: x.journey_open ?? false,
+        elegivel: true,
+        ...(x.route_assigned ? { route_assigned: true } : {}),
+      };
+    });
+    const w = calcularSemana({
+      from,
+      to: addDays(from, 6),
+      hoje: addDays(from, dto.days.length - 1),
+      versoes: [{ version: version ?? 0, valid_from: '1970-01-01', config: regra }],
+      entradas,
+    });
+    return {
+      ...base,
+      week: {
+        total_cents: w.total_cents,
+        days_cents: w.days_cents,
+        week_part_cents: w.week_part_cents,
+        days: w.days.filter((x) => !x.futuro).map((x) => ({ day: x.dia, total_cents: x.total_cents, conta: x.conta })),
+        conta: w.conta,
+        rule_version: version,
+      },
+    };
   }
 
   // ── fechamento ──────────────────────────────────────────────────────────

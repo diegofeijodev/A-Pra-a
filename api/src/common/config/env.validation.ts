@@ -80,6 +80,8 @@ const envBase = z.object({
 
   // Modo do chefe S1 (contrato §31). Desligado = `fluxo_visita` é ignorado e toda visita nasce `completo` (prod idêntica).
   FIELD_VISIT_FLOW_SELECT_ENABLED: z.string().default('false'),
+  // Modo do chefe S3 (contrato §32.5). Efetiva só com FIELD_EARNINGS_ENABLED. Desligada: ninguém declara cadastro.
+  FIELD_DECLARED_SIGNUPS_ENABLED: z.string().default('false'),
 
   SWAGGER_ENABLED: z.string().optional(),
 

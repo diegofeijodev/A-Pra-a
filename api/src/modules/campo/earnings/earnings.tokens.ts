@@ -6,6 +6,10 @@ export interface OpcoesEarnings {
   autoClose: boolean;
   /** Janela dos "ainda não confirmados" mostrados ao consultor (mesma da reconciliação do F7). */
   janelaNaoConfirmadosDias: number;
+  /** `FIELD_ROUTES_ENABLED` (a diária `route_assigned` só existe com rotas da equipe, contrato §32.1). */
+  rotasLigadas?: boolean;
+  /** `FIELD_DECLARED_SIGNUPS_ENABLED` E `FIELD_EARNINGS_ENABLED` (contrato §32.5). */
+  declaradasLigado?: boolean;
 }
 
 /** `FIELD_EARNINGS_ENABLED` / `FIELD_EARNINGS_AUTOCLOSE_ENABLED` (contrato §28.8). */
@@ -19,6 +23,8 @@ export const earningsOpcoesProvider: Provider = {
       ligado: e.FIELD_EARNINGS_ENABLED === 'true',
       autoClose: e.FIELD_EARNINGS_ENABLED === 'true' && e.FIELD_EARNINGS_AUTOCLOSE_ENABLED === 'true',
       janelaNaoConfirmadosDias: e.FIELD_SIGNUP_RECONCILE_DAYS,
+      rotasLigadas: e.FIELD_ROUTES_ENABLED === 'true',
+      declaradasLigado: e.FIELD_EARNINGS_ENABLED === 'true' && e.FIELD_DECLARED_SIGNUPS_ENABLED === 'true',
     };
   },
 };

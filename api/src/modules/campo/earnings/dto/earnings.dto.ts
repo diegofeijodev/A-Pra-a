@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsInt, IsObject, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, ValidateNested, IsBoolean, IsInt, IsObject, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { IsDayString } from '../../../../common/validation/is-day.decorator';
 
 /** Nova versão da regra. O corpo de `config` é conferido por `validarRegra` (domínio): chave desconhecida = 400. */
@@ -9,8 +9,18 @@ export class ConfigRemuneracaoDto {
   @IsObject() config!: Record<string, unknown>;
 }
 
+export class DiaSimuladoDto {
+  @Type(() => Number) @IsInt() @Min(0) @Max(1000) signups!: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(1000) visits?: number;
+  @IsOptional() @IsBoolean() journey_open?: boolean;
+  @IsOptional() @IsBoolean() route_assigned?: boolean;
+}
+
 export class SimularDto {
   @IsOptional() @IsObject() config?: Record<string, unknown>;
+  @IsOptional() @IsBoolean() route_assigned?: boolean;
+  /** Contrato §32.3: 1–7 dias a partir do 1º dia da semana → calcula a semana inteira. */
+  @IsOptional() @IsArray() @ArrayMaxSize(7) @ValidateNested({ each: true }) @Type(() => DiaSimuladoDto) days?: DiaSimuladoDto[];
   @Type(() => Number) @IsInt() @Min(0) @Max(1000) signups_confirmed!: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(1000) visits?: number;
   @IsOptional() @IsBoolean() journey_open?: boolean;

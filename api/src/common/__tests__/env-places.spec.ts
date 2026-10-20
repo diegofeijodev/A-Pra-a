@@ -71,3 +71,10 @@ describe('env — fluxo da visita (modo do chefe, §31.1)', () => {
     expect(validateEnv({ ...BASE, FIELD_VISIT_FLOW_SELECT_ENABLED: 'true' }).FIELD_VISIT_FLOW_SELECT_ENABLED).toBe('true');
   });
 });
+
+describe('env — ganho por cadastro declarado (modo do chefe S3, §32.5)', () => {
+  it('desligado por padrão e aceita true', () => {
+    expect(validateEnv(BASE).FIELD_DECLARED_SIGNUPS_ENABLED).toBe('false');
+    expect(validateEnv({ ...BASE, FIELD_DECLARED_SIGNUPS_ENABLED: 'true' }).FIELD_DECLARED_SIGNUPS_ENABLED).toBe('true');
+  });
+});

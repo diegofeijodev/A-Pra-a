@@ -224,6 +224,7 @@ model leads {
   route_stops  field_route_stops[]
   company_signups field_company_signups[]
   signups_freela  field_signups[]
+  declared_signups field_declared_signups[]
 
   @@index([praca_id, lat, lng])
   @@unique([source, source_ref])
@@ -606,6 +607,7 @@ model field_consultants {
   routes   field_routes[]
   company_signups field_company_signups[]
   signups         field_signups[]
+  declared_signups field_declared_signups[]
   signup_sync     field_signup_sync_state?
   earnings        field_earnings_ledger[]
   payout_periods  field_payout_periods[]
@@ -704,6 +706,7 @@ model field_visits {
   lead              leads             @relation(fields: [lead_id], references: [id], onDelete: Cascade)
   route_stops       field_route_stops[]
   company_signups   field_company_signups[]
+  declared_signup   field_declared_signups?
 
   // Mais o índice único PARCIAL `field_visits_one_open_per_consultant`.
   @@index([consultant_id, checkin_at])
@@ -1089,4 +1092,41 @@ model field_payout_events {
   payout field_payouts @relation(fields: [payout_id], references: [id], onDelete: Restrict)
 
   @@index([payout_id, created_at])
+}
+
+// ── ganho por cadastro declarado (modo do chefe S3, contrato §32.8) ───────────
+// Fato IMUTÁVEL (só INSERT; trigger barra UPDATE/DELETE). Uma por visita e UMA POR EMPRESA em toda a base.
+// Nasce dentro do checkout `simples` com result = cadastrou e a flag FIELD_DECLARED_SIGNUPS_ENABLED ligada.
+model field_declared_signups {
+  id            String   @id @default(uuid()) @db.Uuid
+  consultant_id String   @db.Uuid
+  visit_id      String   @unique @db.Uuid
+  lead_id       String   @unique @db.Uuid
+  declared_at   DateTime @default(now())
+  declared_day  String
+  company_name  String
+  rule_version  Int?
+  client_id     String   @unique @db.Uuid
+  flow          String   @default("simples")
+
+  consultant field_consultants              @relation(fields: [consultant_id], references: [id], onDelete: Restrict)
+  visit      field_visits                   @relation(fields: [visit_id], references: [id], onDelete: Restrict)
+  lead       leads                          @relation(fields: [lead_id], references: [id], onDelete: Restrict)
+  void       field_declared_signup_voids?
+
+  @@index([consultant_id, declared_day])
+}
+
+// Anulação: outro fato, nunca edita a declaração. A correção de uma anulação errada é um ajuste manual positivo.
+model field_declared_signup_voids {
+  id             String   @id @default(uuid()) @db.Uuid
+  declared_id    String   @unique @db.Uuid
+  reason         String // not_confirmed | duplicate | admin_review | fraud
+  note           String
+  voided_at      DateTime @default(now())
+  voided_by      String?  @db.Uuid
+  voided_by_name String?
+  client_id      String   @unique @db.Uuid
+
+  declared field_declared_signups @relation(fields: [declared_id], references: [id], onDelete: Restrict)
 }
