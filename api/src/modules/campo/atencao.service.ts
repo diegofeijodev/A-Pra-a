@@ -99,7 +99,7 @@ export class AtencaoService {
       }),
       this.prisma.field_visits.findMany({
         where: { consultant_id: { in: ids }, journey: { day: hoje } },
-        select: { consultant_id: true, checkin_at: true, checkout_at: true, auto_closed: true, lead: { select: { name: true } } },
+        select: { consultant_id: true, checkin_at: true, checkout_at: true, auto_closed: true, outcome: true, lead: { select: { name: true } } },
       }),
       this.rotasLigadas
         ? this.prisma.field_route_stops.findMany({
@@ -143,7 +143,8 @@ export class AtencaoService {
         situacao,
         ultimoRegistro: instantes.length ? new Date(Math.max(...instantes.map((d) => d.getTime()))) : null,
         visitaAberta: aberta ? { nome: aberta.lead.name, checkin_at: aberta.checkin_at } : null,
-        feitas: vs.length,
+        // §30.1: estabelecimento fechado não conta como visita para a meta.
+        feitas: vs.filter((v) => v.outcome !== 'fechado').length,
         paradasPendentes: paradas
           ? paradas.filter((s) => s.route.consultant_id === c.id).map((s) => ({ nome: s.name_snap, eta_min: s.eta_min! }))
           : null,

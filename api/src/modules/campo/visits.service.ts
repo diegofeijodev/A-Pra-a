@@ -18,6 +18,9 @@ import {
   estagioDepoisDaVisita,
   faltando,
   marcaLonge,
+  normalizarRecusa,
+  normalizarRetorno,
+  normalizarTelefoneContato,
   resumoVisita,
   ROTULO_CARGO,
 } from '../../domain/campo-rules';
@@ -232,6 +235,32 @@ export class VisitsService {
     if (dto.followup_what !== undefined) data.followup_what = texto(dto.followup_what);
     if (dto.followup_date !== undefined) data.followup_date = dto.followup_date;
     if (dto.notes !== undefined) data.notes = texto(dto.notes);
+    if (dto.outcome !== undefined) data.outcome = dto.outcome;
+    if (dto.contact_phone !== undefined) {
+      const tel = normalizarTelefoneContato(dto.contact_phone);
+      // A mensagem NÃO repete o número (dado pessoal de terceiro) e nada disso vai para log.
+      if (!tel.ok)
+        throw new BadRequestException({
+          code: 'VALIDATION_ERROR',
+          message: 'contact_phone: informe o DDD e o número, com 10 ou 11 dígitos.',
+        });
+      data.contact_phone = tel.valor;
+    }
+    // Motivo de recusa e hora do retorno dependem de outros campos: valem sobre o estado MESCLADO
+    // (o PATCH é parcial), então a cada gravação o estado antigo + o pedido é normalizado de novo.
+    const mesclado = {
+      interest: dto.interest !== undefined ? dto.interest : v.interest,
+      outcome: dto.outcome !== undefined ? dto.outcome : v.outcome,
+      needs_followup: dto.needs_followup !== undefined ? dto.needs_followup : v.needs_followup,
+      refusal_reason: dto.refusal_reason !== undefined ? dto.refusal_reason : (v.refusal_reason ?? null),
+      refusal_note: dto.refusal_note !== undefined ? texto(dto.refusal_note) : (v.refusal_note ?? null),
+      followup_time: dto.followup_time !== undefined ? dto.followup_time : (v.followup_time ?? null),
+    };
+    const recusa = normalizarRecusa(mesclado);
+    const retorno = normalizarRetorno(mesclado);
+    if (recusa.refusal_reason !== (v.refusal_reason ?? null)) data.refusal_reason = recusa.refusal_reason;
+    if (recusa.refusal_note !== (v.refusal_note ?? null)) data.refusal_note = recusa.refusal_note;
+    if (retorno.followup_time !== (v.followup_time ?? null)) data.followup_time = retorno.followup_time;
     await this.prisma.field_visits.update({ where: { id: v.id }, data });
     return this.porId(v.id, agora);
   }
@@ -258,7 +287,10 @@ export class VisitsService {
       where: { id: v.lead_id },
       select: { id: true, stage: true },
     });
-    const estagio = estagioDepoisDaVisita(lead.stage);
+    // Estabelecimento fechado (§30.1) não é conversa: não grava atendente, contato nem retorno no lead
+    // e não avança o estágio. O evento do CRM vira `note` (`visit` contaria como contato).
+    const fechado = respostas.outcome === 'fechado';
+    const estagio = fechado ? lead.stage : estagioDepoisDaVisita(lead.stage);
     const mudou = estagio !== lead.stage;
 
     await this.prisma.$transaction(async (tx) => {
@@ -285,25 +317,28 @@ export class VisitsService {
           clock_adjusted: ajustado,
         },
       });
-      await tx.leads.update({
-        where: { id: lead.id },
-        data: {
-          decisor: respostas.interlocutor_name!.trim(),
-          decisor_role: ROTULO_CARGO[respostas.interlocutor_role!] ?? '',
-          last_contact_at: at,
-          ...(mudou ? { stage: estagio, stage_since: todaySp(at) } : {}),
-          ...(respostas.needs_followup
-            ? { next_step_what: respostas.followup_what!.trim(), next_step_date: respostas.followup_date }
-            : {}),
-        },
-      });
+      if (!fechado) {
+        await tx.leads.update({
+          where: { id: lead.id },
+          data: {
+            decisor: respostas.interlocutor_name!.trim(),
+            decisor_role: ROTULO_CARGO[respostas.interlocutor_role!] ?? '',
+            last_contact_at: at,
+            ...(mudou ? { stage: estagio, stage_since: todaySp(at) } : {}),
+            ...(respostas.needs_followup
+              ? { next_step_what: respostas.followup_what!.trim(), next_step_date: respostas.followup_date }
+              : {}),
+          },
+        });
+      }
       await tx.lead_events.create({
         data: {
           lead_id: lead.id,
           at,
           author_label: `Consultor: ${c.name}`,
           // `visit` (e não "visita"): é o tipo do catálogo — rótulo "Visita" e conta como contato.
-          kind: 'visit',
+          // Fechado: `note` (não conta como contato).
+          kind: fechado ? 'note' : 'visit',
           text: resumoVisita(respostas),
           stage_to: mudou ? estagio : null,
         },

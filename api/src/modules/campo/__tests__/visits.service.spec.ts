@@ -477,3 +477,84 @@ describe('VisitsService.photo', () => {
     await expect(s.photo(C, CLIENT)).rejects.toMatchObject({ response: { code: 'NOT_FOUND' } });
   });
 });
+
+describe('P0 §30 — fechado, motivo de recusa, hora e telefone', () => {
+  const salvar = async (visita: Record<string, unknown>, dto: Record<string, unknown>) => {
+    const p = fakePrisma();
+    p.field_visits.findFirst.mockResolvedValue({ ...VISITA, ...visita });
+    await montar(p).s.saveAnswers(C, CLIENT, dto as never, AGORA);
+    return dataDo(p.field_visits.update);
+  };
+
+  it('checkout "fechado" sem questionário: não grava decisor/contato/estágio e o evento do CRM é "note"', async () => {
+    const p = fakePrisma();
+    p.field_visits.findFirst.mockResolvedValue({
+      ...VISITA,
+      outcome: 'fechado',
+      interlocutor_name: null,
+      interlocutor_role: null,
+      freela_status: null,
+      interest: null,
+      open_vagas: null,
+      vaga_roles: [],
+      freelas_per_week: null,
+      channels: [],
+      needs_followup: null,
+      followup_what: null,
+      followup_date: null,
+    });
+
+    await montar(p).s.checkout(C, CLIENT, POS, AGORA);
+
+    expect(p.field_visits.updateMany).toHaveBeenCalled();
+    expect(p.leads.update).not.toHaveBeenCalled();
+    expect(dataDo(p.lead_events.create)).toMatchObject({ kind: 'note', stage_to: null, text: 'Visita de campo — estabelecimento fechado.' });
+    expect(dataDo(p.field_points.create)).toMatchObject({ kind: 'checkout' });
+  });
+
+  it('conversa continua exigindo o questionário (nada muda para o que existe)', async () => {
+    const p = fakePrisma();
+    p.field_visits.findFirst.mockResolvedValue({ ...VISITA, outcome: 'conversa', interest: null });
+    await expect(montar(p).s.checkout(C, CLIENT, POS, AGORA)).rejects.toMatchObject({ status: 422 });
+  });
+
+  it('motivo de recusa: vale com interesse "nenhum"; a nota só com "outro"', async () => {
+    expect(await salvar({ interest: 'nenhum' }, { refusal_reason: 'preco', refusal_note: 'x' })).toMatchObject({ refusal_reason: 'preco' });
+    expect(await salvar({ interest: 'nenhum' }, { refusal_reason: 'preco', refusal_note: 'x' })).not.toHaveProperty('refusal_note', 'x');
+    expect(await salvar({ interest: 'nenhum' }, { refusal_reason: 'outro', refusal_note: ' vai vender ' })).toMatchObject({ refusal_reason: 'outro', refusal_note: 'vai vender' });
+  });
+
+  it('PATCH parcial: mudar o interesse para "alto" limpa o motivo que já estava gravado', async () => {
+    const d = await salvar({ interest: 'nenhum', refusal_reason: 'preco' }, { interest: 'alto' });
+    expect(d).toMatchObject({ interest: 'alto', refusal_reason: null });
+  });
+
+  it('marcar "fechado" limpa motivo de recusa', async () => {
+    expect(await salvar({ interest: 'nenhum', refusal_reason: 'preco' }, { outcome: 'fechado' })).toMatchObject({ outcome: 'fechado', refusal_reason: null });
+  });
+
+  it('hora do retorno só fica com retorno pedido; sem retorno vira null', async () => {
+    expect(await salvar({ needs_followup: true }, { followup_time: '15:30' })).toMatchObject({ followup_time: '15:30' });
+    expect(await salvar({ needs_followup: true, followup_time: '15:30' }, { needs_followup: false })).toMatchObject({ followup_time: null });
+  });
+
+  it('telefone do contato: guarda só dígitos; inválido = 400 sem repetir o número', async () => {
+    expect(await salvar({}, { contact_phone: '(11) 98765-4321' })).toMatchObject({ contact_phone: '11987654321' });
+    expect(await salvar({ contact_phone: '11987654321' }, { contact_phone: null })).toMatchObject({ contact_phone: null });
+    const p = fakePrisma();
+    p.field_visits.findFirst.mockResolvedValue(VISITA);
+    const erro = await montar(p).s.saveAnswers(C, CLIENT, { contact_phone: '12345' } as never, AGORA).catch((e) => e);
+    expect(erro).toMatchObject({ status: 400, response: { code: 'VALIDATION_ERROR' } });
+    expect(JSON.stringify(erro.getResponse())).not.toContain('12345');
+    expect(p.field_visits.update).not.toHaveBeenCalled();
+  });
+
+  it('o resumo do CRM nunca leva o telefone do contato', async () => {
+    const p = fakePrisma();
+    p.field_visits.findFirst.mockResolvedValue({ ...VISITA, contact_phone: '11987654321', followup_time: '15:30' });
+    await montar(p).s.checkout(C, CLIENT, POS, AGORA);
+    const texto = dataDo(p.lead_events.create).text as string;
+    expect(texto).not.toContain('98765');
+    expect(texto).toContain('às 15:30');
+  });
+});

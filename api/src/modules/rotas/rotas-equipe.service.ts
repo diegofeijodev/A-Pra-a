@@ -8,6 +8,7 @@ import { todaySp } from '../../common/time/dates';
 import { pontoNaArea } from '../../domain/area-rules';
 import { caixaEnvolvente } from '../../domain/campo-rules';
 import { calcularRelogio, paramsDaConfig, planejar, type PontoRota } from '../../domain/rota-rules';
+import { velocidadeCarroKmh } from './rotas.tokens';
 import { violouUnico } from '../campo/prisma-errors';
 import type { CandidatosQueryDto, MontarRotaDto, OrdenarRotaDto, ReotimizarEquipeDto, RotasQueryDto } from './dto/rotas.dto';
 import { RotasConfigService } from './rotas-config.service';
@@ -22,7 +23,7 @@ import {
   ultimaPosicao,
   type LeadParaRota,
 } from './rotas-plano';
-import { COM_PARADAS, lerSnapshot, novoSnapshot, routeView, type RouteView } from './rotas-views';
+import { COM_PARADAS, lerSnapshot, novoSnapshot, paramsDaRota, routeView, type RouteView } from './rotas-views';
 import { ROTAS_LIGADAS } from './rotas.tokens';
 
 export interface CandidateView {
@@ -186,11 +187,17 @@ export class RotasEquipeService {
     }
 
     const config = await this.configs.config();
-    const params = paramsDaConfig(config);
     const existente = await this.prisma.field_routes.findFirst({
       where: { consultant_id: consultor.id, day: dto.day, status: 'ativa' },
       include: { stops: true },
     });
+    // Modo de deslocamento (§30.4): ausente mantém o do roteiro existente (ou a pé num novo). A velocidade de
+    // carro é fotografada no roteiro; trocar o modo (ou escolher carro num roteiro sem foto) regrava a do env.
+    const modo = dto.travel_mode ?? existente?.travel_mode ?? 'a_pe';
+    const snapAtual = existente ? lerSnapshot(existente.params_snapshot) : null;
+    const kmhCarro = modo === 'carro' ? (modo === existente?.travel_mode && snapAtual?.velocidade_carro_kmh ? snapAtual.velocidade_carro_kmh : velocidadeCarroKmh()) : null;
+    const trocouModo = !!existente && modo !== existente.travel_mode;
+    const params = paramsDaConfig(config, modo === 'carro' ? kmhCarro! : undefined);
     const info = new Map<string, LeadParaRota>(
       leads.map((l) => [l.id, { id: l.id, name: l.name, address: l.address, phone: l.phone, lat: l.lat!, lng: l.lng! }]),
     );
@@ -230,9 +237,10 @@ export class RotasEquipeService {
             leads: info,
             candidatos,
             descartar,
-            motivo: 'montagem pela equipe',
+            motivo: trocouModo ? `montagem pela equipe (modo ${modo === 'carro' ? 'de carro' : 'a pé'})` : 'montagem pela equipe',
             por: user.id,
             agora,
+            modo: trocouModo || (modo === 'carro' && !snapAtual?.velocidade_carro_kmh) ? { travel_mode: modo, velocidade_carro_kmh: kmhCarro } : undefined,
             start: dto.start,
             areaId: area ? area.id : undefined,
           }),
@@ -250,10 +258,11 @@ export class RotasEquipeService {
               area_id: area?.id ?? null,
               day: dto.day,
               source: 'equipe',
+              travel_mode: modo,
               start_lat: start.lat,
               start_lng: start.lng,
               created_by: user.id,
-              params_snapshot: novoSnapshot(null, config, plano.excedentes.length, 1, 'montagem pela equipe', user.id, agora) as unknown as Prisma.InputJsonValue,
+              params_snapshot: novoSnapshot(null, config, plano.excedentes.length, 1, 'montagem pela equipe', user.id, agora, kmhCarro) as unknown as Prisma.InputJsonValue,
             },
           });
           await tx.field_route_stops.createMany({
@@ -310,7 +319,7 @@ export class RotasEquipeService {
     const porId = new Map(pendentes.map((s) => [s.id, s]));
     const fixas = new Map(dto.stops.map((s) => [s.id, s.fixa === true]));
     const snap = lerSnapshot(rota.params_snapshot);
-    const params = paramsDaConfig(snap.config);
+    const params = paramsDaRota(rota);
     const plano = calcularRelogio({
       inicio: ultimaPosicao(rota.stops, { lat: rota.start_lat, lng: rota.start_lng }),
       partidaMin: partidaDoDia(rota.day, agora, params),

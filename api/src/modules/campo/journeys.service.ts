@@ -20,7 +20,7 @@ export interface TodayView {
   journeys: JourneyView[];
   open_visit: VisitView | null;
   visits: VisitView[];
-  counters: { visits: number; cadastrou_qr: number };
+  counters: { visits: number; cadastrou_qr: number; closed: number };
   /** Meta e ritmo do próprio consultor, com a conta (contrato §25.5); `null` se a configuração não pôde ser lida. */
   goal: (GoalView & { params: GoalParams }) | null;
   /** Cadastros confirmados pelo Freela hoje/na semana, com a regra e a fonte (contrato §27.8); `null` se não pôde ser lido. */
@@ -113,8 +113,10 @@ export class JourneysService {
       counters: {
         visits: views.length,
         cadastrou_qr: views.filter((v) => v.answers.freela_status === 'cadastrou_qr').length,
+        // §30.1: estabelecimento fechado fica fora da meta; o total (`visits`) não muda de significado.
+        closed: views.filter((v) => v.answers.outcome === 'fechado').length,
       },
-      goal: await this.metaDe(views.length, agora),
+      goal: await this.metaDe(views.filter((v) => v.answers.outcome !== 'fechado').length, agora),
       signups_confirmed: await this.confirmadosDe(c.id, agora),
     };
   }

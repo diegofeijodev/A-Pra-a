@@ -96,6 +96,18 @@ describe('AtencaoService — meta e "Atenção agora" da equipe', () => {
     expect(r.thresholds).toMatchObject({ alerta_visita_aberta_min: 40, alerta_ritmo_atras: 5 });
   });
 
+  it('P0 §30.1: visita "fechado" não conta para a meta (feitas), mas a visita aberta continua valendo', async () => {
+    const p = fake();
+    p.field_journeys.findMany.mockResolvedValue([{ id: 'j1', consultant_id: C1, started_at: brt('09:00'), ended_at: null }]);
+    p.field_visits.findMany.mockResolvedValue([
+      { consultant_id: C1, checkin_at: brt('10:00'), checkout_at: brt('10:20'), auto_closed: false, outcome: 'conversa', lead: { name: 'Bar A' } },
+      { consultant_id: C1, checkin_at: brt('10:30'), checkout_at: brt('10:35'), auto_closed: false, outcome: 'fechado', lead: { name: 'Bar B' } },
+      { consultant_id: C1, checkin_at: brt('10:40'), checkout_at: null, auto_closed: false, outcome: 'conversa', lead: { name: 'Bar C' } },
+    ]);
+    const r = await svc(p).painel(undefined, AGORA);
+    expect(r.consultants.find((c) => c.name === 'Ana')!.goal.feitas).toBe(2);
+  });
+
   it('isolamento: com praca_id filtra só consultores ATIVOS daquela praça; praça inexistente → 404 sem consultar', async () => {
     const p = fake();
     await svc(p).painel(PRACA, AGORA);

@@ -336,6 +336,29 @@ describe('RotasCampoService — retornos vencidos no roteiro automático (§25.6
     expect(p.field_route_stops.createMany.mock.calls[0][0].data.every((d: any) => d.fixa === undefined)).toBe(true);
   });
 
+  it('P0 §30.3: retorno de HOJE com hora vai primeiro, por hora; sem hora segue pela caminhada', async () => {
+    const hoje = (n: number, hora: string | null, lat: number) =>
+      retorno(n, { followup_date: '2026-10-20', followup_time: hora, lead: { ...retorno(n).lead, lat, lng: -46.66 } });
+    const p = cenario([hoje(7, null, -23.601), hoje(8, '16:00', -23.65), hoje(9, '09:30', -23.7)]);
+    await montar(p, true, config).generate(A, POS, AGORA);
+    // a hora ordena: 9 (09:30), 8 (16:00); o sem hora (7) vem depois
+    expect(criadas(p).slice(0, 3).map((id: string) => id)).toEqual([LEAD(9), LEAD(8), LEAD(7)]);
+  });
+
+  it('P0 §30.1: "fechado" não entra no filtro dias_sem_revisitar (o lugar pode voltar a ser sorteado)', async () => {
+    const p = cenario([]);
+    await montar(p, true, config).generate(A, POS, AGORA);
+    const recentes = p.field_visits.findMany.mock.calls.find((c: any) => 'checkin_at' in c[0].where)![0].where;
+    expect(recentes).toMatchObject({ outcome: { not: 'fechado' } });
+  });
+
+  it('P0 §30.3: hora de retorno ATRASADO (data anterior) não ordena — já passou', async () => {
+    const p = cenario([retorno(7, { followup_time: '16:00' }), retorno(8, { followup_time: '09:00', lead: { ...retorno(8).lead, lat: -23.9 } })]);
+    await montar(p, true, config).generate(A, POS, AGORA);
+    // ambos atrasados: vizinho mais próximo a partir da posição (7 é o mais perto), não por hora
+    expect(criadas(p).slice(0, 2)).toEqual([LEAD(7), LEAD(8)]);
+  });
+
   it('pula retorno bloqueado, já em roteiro hoje, de outra praça, sem coordenada confiável e o resolvido por visita posterior', async () => {
     const p = cenario([
       retorno(3, { lead: { ...retorno(3).lead, phone_key: '11999' } }), // bloqueado

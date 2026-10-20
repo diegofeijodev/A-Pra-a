@@ -15,6 +15,7 @@ import {
   IsString,
   IsUUID,
   Length,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -22,7 +23,8 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { IsDayString } from '../../../common/validation/is-day.decorator';
-import { CARGOS, FREELA_STATUS, INTERESSES } from '../../../domain/campo-rules';
+import { CHAVES_MOTIVO_RECUSA } from '../../../domain/catalog/refusal';
+import { CARGOS, FREELA_STATUS, HORA_RETORNO_RE, INTERESSES, RESULTADOS_VISITA } from '../../../domain/campo-rules';
 
 export class CampoLoginDto {
   @IsEmail()
@@ -187,6 +189,32 @@ export class AnswersDto {
   @IsString()
   @MaxLength(2000)
   notes?: string | null;
+
+  /** Contrato §30.1: `conversa` | `fechado`. Sem inicializador (PATCH parcial). */
+  @IsOptional()
+  @IsIn([...RESULTADOS_VISITA])
+  outcome?: string;
+
+  /** Contrato §30.2: slug do catálogo fechado (`domain/catalog/refusal.ts`); `null` limpa. */
+  @IsOptional()
+  @IsIn(CHAVES_MOTIVO_RECUSA)
+  refusal_reason?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  refusal_note?: string | null;
+
+  /** Contrato §30.3: `HH:mm` de Brasília; `null` limpa. */
+  @IsOptional()
+  @Matches(HORA_RETORNO_RE)
+  followup_time?: string | null;
+
+  /** Contrato §30.3: telefone de quem atendeu; normalizado/validado no serviço (a mensagem de erro NÃO repete o número). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  contact_phone?: string | null;
 }
 
 export class PlacesQueryDto {

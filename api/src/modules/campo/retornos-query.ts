@@ -28,6 +28,8 @@ export interface RetornoLinha extends ClasseRetorno {
   consultant_name: string;
   followup_what: string;
   followup_date: string;
+  followup_time: string | null;
+  contact_phone: string | null;
   visited_at: Date;
   interlocutor_name: string | null;
   interest: string | null;
@@ -68,6 +70,8 @@ export async function lerRetornosPendentes(
       checkout_at: true,
       needs_followup: true,
       followup_date: true,
+      followup_time: true,
+      contact_phone: true,
       followup_what: true,
       interlocutor_name: true,
       interest: true,
@@ -82,7 +86,8 @@ export async function lerRetornosPendentes(
   if (candidatas.length === 0) return { itens: [], today: 0, overdue: 0 };
 
   const leadIds = [...new Set(candidatas.map((v) => v.lead_id))];
-  const recentes = await prisma.field_visits.groupBy({ by: ['lead_id'], where: { lead_id: { in: leadIds } }, _max: { checkin_at: true } });
+  // Visita "fechado" (§30.1) não resolve o retorno de uma visita anterior: não houve conversa.
+  const recentes = await prisma.field_visits.groupBy({ by: ['lead_id'], where: { lead_id: { in: leadIds }, outcome: { not: 'fechado' } }, _max: { checkin_at: true } });
   const maisRecente = new Map<string, Date>();
   for (const r of recentes) if (r._max.checkin_at) maisRecente.set(r.lead_id, r._max.checkin_at);
 
@@ -102,6 +107,8 @@ export async function lerRetornosPendentes(
         consultant_name: v.consultant.name,
         followup_what: v.followup_what ?? '',
         followup_date: data,
+        followup_time: v.followup_time,
+        contact_phone: v.contact_phone,
         visited_at: v.checkin_at,
         interlocutor_name: v.interlocutor_name,
         interest: v.interest,

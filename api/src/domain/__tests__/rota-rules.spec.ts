@@ -15,6 +15,7 @@ import {
   velocidadeDoModo,
   VELOCIDADE_CARRO_PADRAO,
   ordenarComFixas,
+  ordenarRetornosAncorados,
   ordenarVizinhoMaisProximo,
   paramsDaConfig,
   planejar,
@@ -327,5 +328,22 @@ describe('P0 §30 — modo de deslocamento a pé / de carro', () => {
   it('texto da conta escrito para a tela', () => {
     expect(textoDoModo('a_pe', 4.5, 1.3)).toBe('A pé: 4,5 km/h × desvio de rua 1,3');
     expect(textoDoModo('carro', 25, 1.3)).toBe('De carro: 25 km/h × desvio de rua 1,3 (média urbana, sem estacionar)');
+  });
+});
+
+describe('P0 §30 — retornos ancorados com hora', () => {
+  const ini = { lat: -23.6, lng: -46.66 };
+  it('com hora primeiro (por hora); sem hora pelo vizinho mais próximo do último', () => {
+    const r = [
+      { id: 'longe', lat: -23.7, lng: -46.66 },
+      { id: 'tarde', lat: -23.62, lng: -46.66, hora: '16:00' },
+      { id: 'perto', lat: -23.601, lng: -46.66 },
+      { id: 'cedo', lat: -23.65, lng: -46.66, hora: '09:30' },
+    ];
+    expect(ordenarRetornosAncorados(ini, r).map((x) => x.id)).toEqual(['cedo', 'tarde', 'perto', 'longe']);
+  });
+  it('sem nenhuma hora o resultado é o do vizinho mais próximo (comportamento anterior)', () => {
+    const r = [{ id: 'b', lat: -23.7, lng: -46.66 }, { id: 'a', lat: -23.601, lng: -46.66 }];
+    expect(ordenarRetornosAncorados(ini, r)).toEqual(ordenarVizinhoMaisProximo(ini, r));
   });
 });

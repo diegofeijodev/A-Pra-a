@@ -20,6 +20,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { IsDayString } from '../../../common/validation/is-day.decorator';
+import { MODOS_DESLOCAMENTO } from '../../../domain/rota-rules';
 
 export const MOTIVOS_PULO = ['fechado', 'sem_dono', 'ja_cliente', 'outro'] as const;
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -90,6 +91,8 @@ export class MontarRotaDto {
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(200) @IsUUID('all', { each: true }) lead_ids!: string[];
   @IsOptional() @IsUUID() area_id?: string;
   @IsOptional() @ValidateNested() @Type(() => PontoDto) start?: PontoDto;
+  /** Contrato §30.4. SEM inicializador: ausente = mantém o modo do roteiro existente (ou `a_pe` num novo). */
+  @IsOptional() @IsIn([...MODOS_DESLOCAMENTO]) travel_mode?: string;
 }
 
 export class RotasQueryDto {

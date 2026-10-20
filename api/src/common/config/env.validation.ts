@@ -60,6 +60,8 @@ const envBase = z.object({
 
   // Roteiro do dia do consultor (F3, contrato §23). Desligado = o bloco A fica idêntico.
   FIELD_ROUTES_ENABLED: z.string().default('false'),
+  // Velocidade média de carro (km/h) do modo "De carro" do roteiro (contrato §30.4). Vazio = 25.
+  ROTA_VELOCIDADE_CARRO_KMH: z.preprocess(vazioComoAusente, z.coerce.number().min(5).max(80).default(25)),
 
   // Cadastro assistido da empresa visitada no Freela, por link de primeiro acesso (F6, contrato §26).
   FIELD_COMPANY_SIGNUP_ENABLED: z.string().default('false'),

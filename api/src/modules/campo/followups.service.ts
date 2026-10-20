@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { CampoConsultant } from '../../common/auth/campo-consultant';
 import { PrismaService } from '../../common/database/prisma.service';
 import { todaySp } from '../../common/time/dates';
+import { mascararTelefoneContato } from '../../domain/campo-rules';
 import { LIMITE_FILA, lerRetornosPendentes, type RetornoLinha } from './retornos-query';
 
 export interface FollowupView {
@@ -15,6 +16,11 @@ export interface FollowupView {
   praca_id: string | null;
   followup_what: string;
   followup_date: string;
+  /** `HH:mm` de Brasília ou `null` (§30.3). */
+  followup_time: string | null;
+  /** `(11) 9****-4321`; o número completo só vai ao consultor dono (`contact_phone`). */
+  contact_phone_masked: string | null;
+  contact_phone?: string | null;
   due: 'hoje' | 'atrasado';
   days_late: number;
   visited_at: string;
@@ -31,7 +37,7 @@ export interface FollowupsResponse {
   items: FollowupView[];
 }
 
-const view = (r: RetornoLinha): FollowupView => ({
+const view = (r: RetornoLinha, completo = false): FollowupView => ({
   visit_id: r.visit_id,
   lead_id: r.lead_id,
   lead_name: r.lead_name,
@@ -42,6 +48,9 @@ const view = (r: RetornoLinha): FollowupView => ({
   praca_id: r.praca_id,
   followup_what: r.followup_what,
   followup_date: r.followup_date,
+  followup_time: r.followup_time,
+  contact_phone_masked: mascararTelefoneContato(r.contact_phone),
+  ...(completo ? { contact_phone: r.contact_phone } : {}),
   due: r.due,
   days_late: r.days_late,
   visited_at: r.visited_at.toISOString(),
@@ -59,23 +68,23 @@ export class FollowupsService {
       const praca = await this.prisma.pracas.findUnique({ where: { id: pracaId }, select: { id: true } });
       if (!praca) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Praça não encontrada.' });
     }
-    return this.montar(await lerRetornosPendentes(this.prisma, { hoje: todaySp(agora), pracaId }), todaySp(agora));
+    return this.montar(await lerRetornosPendentes(this.prisma, { hoje: todaySp(agora), pracaId }), todaySp(agora), false);
   }
 
   /** O consultor só enxerga retornos das próprias visitas — o filtro é do token, nunca do pedido. */
   async doConsultor(c: CampoConsultant, agora = new Date()): Promise<FollowupsResponse> {
     const hoje = todaySp(agora);
-    return this.montar(await lerRetornosPendentes(this.prisma, { hoje, consultantId: c.id }), hoje);
+    return this.montar(await lerRetornosPendentes(this.prisma, { hoje, consultantId: c.id }), hoje, true);
   }
 
-  private montar(l: Awaited<ReturnType<typeof lerRetornosPendentes>>, day: string): FollowupsResponse {
+  private montar(l: Awaited<ReturnType<typeof lerRetornosPendentes>>, day: string, completo: boolean): FollowupsResponse {
     return {
       day,
       today: l.today,
       overdue: l.overdue,
       total: l.itens.length,
       truncated: l.itens.length > LIMITE_FILA,
-      items: l.itens.slice(0, LIMITE_FILA).map(view),
+      items: l.itens.slice(0, LIMITE_FILA).map((r) => view(r, completo)),
     };
   }
 }

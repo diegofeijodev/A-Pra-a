@@ -396,6 +396,20 @@ export function planejar(e: Omit<EntradaRelogio, 'ordem'> & { pontos: PontoRota[
   return calcularRelogio({ inicio: e.inicio, partidaMin: e.partidaMin, ordem, params: e.params, jaFeitas: e.jaFeitas });
 }
 
+/**
+ * Retornos vencidos ancorados no começo do roteiro (§25.6, §30.3): os combinados para HOJE com hora
+ * vêm primeiro, por hora (empate: ordem recebida); os demais seguem o vizinho mais próximo a partir
+ * do último ponto já ocupado. O relógio do roteiro não espera a hora marcada — é só ordem.
+ */
+export function ordenarRetornosAncorados<T extends PontoRota & { hora?: string | null }>(inicio: Coordenada, retornos: T[]): T[] {
+  const comHora = retornos.map((r, i) => ({ r, i })).filter((x) => !!x.r.hora);
+  comHora.sort((a, b) => (a.r.hora! < b.r.hora! ? -1 : a.r.hora! > b.r.hora! ? 1 : a.i - b.i));
+  const marcados = comHora.map((x) => x.r);
+  const resto = retornos.filter((r) => !r.hora);
+  const ultimo: Coordenada = marcados[marcados.length - 1] ?? inicio;
+  return [...marcados, ...(ordenarVizinhoMaisProximo(ultimo, resto) as T[])];
+}
+
 /** Seleção automática: cluster contíguo (vizinho mais próximo encadeado), não "as N mais próximas de um ponto". */
 export function selecionarEncadeados(inicio: Coordenada, candidatos: PontoRota[], n: number): PontoRota[] {
   return ordenarVizinhoMaisProximo(inicio, semRepetidos(candidatos)).slice(0, Math.max(n, 0));

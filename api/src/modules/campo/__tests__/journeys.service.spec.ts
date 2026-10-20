@@ -300,7 +300,7 @@ describe('JourneysService.today', () => {
     expect(t.journeys).toHaveLength(1);
     expect(t.open_visit?.client_id).toBe(CLIENT2);
     expect(t.open_visit?.missing).toContain('interesse');
-    expect(t.counters).toEqual({ visits: 1, cadastrou_qr: 1 });
+    expect(t.counters).toEqual({ visits: 1, cadastrou_qr: 1, closed: 0 });
   });
 
   it('journey é a jornada ABERTA: sem aberta = null, mesmo com jornadas encerradas hoje', async () => {
@@ -335,11 +335,30 @@ describe('JourneysService.today — meta do dia (§25.5)', () => {
     expect(t.goal!.conta).toContain('Às 12:00 já deveriam ser 11 (180 min úteis ÷ 16 min); feitas: 0.');
   });
 
+  it('P0 §30.1: "fechado" fica fora da meta e aparece em counters.closed (o total não muda)', async () => {
+    const p = fakePrisma();
+    const base = {
+      id: 'v1', client_id: CLIENT2, journey_id: 'j1', lead_id: 'l1',
+      checkin_at: new Date('2026-10-08T13:00:00.000Z'), checkin_lat: -19.92, checkin_lng: -43.93, checkin_accuracy: 10,
+      distance_m: null, far_from_place: false, photo_bytes: 1000,
+      checkout_lat: null, checkout_lng: null, auto_closed: false, clock_adjusted: false,
+      interlocutor_name: null, interlocutor_role: null, freela_status: null, interest: null,
+      open_vagas: null, vaga_roles: [], freelas_per_week: null, channels: [], channel_other: null,
+      needs_followup: null, followup_what: null, followup_date: null, notes: null,
+      lead: { name: 'Bar do Mercado', possible_dup: false },
+    };
+    const v = (outcome: string) => ({ ...base, checkout_at: new Date('2026-10-08T15:10:00.000Z'), outcome });
+    p.field_visits.findMany.mockResolvedValue([v('conversa'), v('fechado'), v('fechado')]);
+    const t = await comConfigs(p, configs()).today(C, AGORA);
+    expect(t.counters).toMatchObject({ visits: 3, closed: 2 });
+    expect(t.goal!.feitas).toBe(1);
+  });
+
   it('sem o serviço de configuração (testes antigos) ou com falha nele: goal nulo, o Hoje continua', async () => {
     expect((await montar(fakePrisma()).today(C, AGORA)).goal).toBeNull();
     const ruim = configs({ config: jest.fn().mockRejectedValue(new Error('banco caiu')) });
     const t = await comConfigs(fakePrisma(), ruim).today(C, AGORA);
     expect(t.goal).toBeNull();
-    expect(t.counters).toEqual({ visits: 0, cadastrou_qr: 0 });
+    expect(t.counters).toEqual({ visits: 0, cadastrou_qr: 0, closed: 0 });
   });
 });

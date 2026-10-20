@@ -1,9 +1,12 @@
 import type { Prisma } from '@prisma/client';
 import { minutesSp, todaySp } from '../../common/time/dates';
-import { lerConfigRota, minParaHhmm, paramsDaConfig, ritmo, type ConfigRota } from '../../domain/rota-rules';
+import { lerConfigRota, minParaHhmm, paramsDaConfig, ritmo, textoDoModo, velocidadeDoModo, type ConfigRota, type ParamsPlano } from '../../domain/rota-rules';
+import { velocidadeCarroKmh } from './rotas.tokens';
 
 export type StopRow = Prisma.field_route_stopsGetPayload<object>;
-export type RouteRow = Prisma.field_routesGetPayload<{ include: { stops: true; consultant: { select: { name: true } } } }>;
+/** A parada leva o resultado da visita: "fechado" (§30.1) não conta como visita feita na meta. */
+export type StopComVisita = StopRow & { visit?: { outcome: string } | null };
+export type RouteRow = Omit<Prisma.field_routesGetPayload<{ include: { stops: true; consultant: { select: { name: true } } } }>, 'stops'> & { stops: StopComVisita[] };
 
 export interface StopView {
   id: string;
@@ -40,6 +43,9 @@ export interface RouteView {
   area_id: string | null;
   start: { lat: number; lng: number };
   params: ConfigRota;
+  /** Modo de deslocamento e a conta usada no relógio (contrato §30.4). */
+  travel_mode: string;
+  travel: { mode: string; speed_kmh: number; detour_factor: number; text: string };
   stops: StopView[];
   plan: { planned: number; reserve: number; walk_km: number; fits_meta: boolean; not_fit: number };
   progress: { meta: number; done: number; skipped: number; deferred: number; pending: number; expected_now: number; delta: number };
@@ -50,6 +56,8 @@ export interface RouteView {
 /** Conteúdo de `field_routes.params_snapshot`. */
 export interface ParamsSnapshot {
   config: ConfigRota;
+  /** Velocidade de carro fotografada quando o modo carro foi escolhido (fora de `config`, que limita a 15 km/h). */
+  velocidade_carro_kmh: number | null;
   not_fit: number;
   versoes: { version: number; at: string; motivo: string; por: string | null }[];
 }
@@ -57,7 +65,8 @@ export interface ParamsSnapshot {
 export function lerSnapshot(raw: unknown): ParamsSnapshot {
   const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const versoes = Array.isArray(o.versoes) ? (o.versoes as ParamsSnapshot['versoes']) : [];
-  return { config: lerConfigRota(o.config), not_fit: typeof o.not_fit === 'number' ? o.not_fit : 0, versoes };
+  const kmh = typeof o.velocidade_carro_kmh === 'number' && o.velocidade_carro_kmh >= 5 && o.velocidade_carro_kmh <= 80 ? o.velocidade_carro_kmh : null;
+  return { config: lerConfigRota(o.config), velocidade_carro_kmh: kmh, not_fit: typeof o.not_fit === 'number' ? o.not_fit : 0, versoes };
 }
 
 export function novoSnapshot(
@@ -68,13 +77,27 @@ export function novoSnapshot(
   motivo: string,
   por: string | null,
   agora: Date,
+  /** `undefined` mantém a velocidade fotografada; um número a regrava; `null` limpa. */
+  velocidadeCarro?: number | null,
 ): ParamsSnapshot {
   const velho = lerSnapshot(anterior);
   return {
     config,
+    velocidade_carro_kmh: velocidadeCarro !== undefined ? velocidadeCarro : velho.velocidade_carro_kmh,
     not_fit: notFit,
     versoes: [...velho.versoes, { version, at: agora.toISOString(), motivo, por }].slice(-20),
   };
+}
+
+/** Velocidade do roteiro: a pé = configuração; carro = a fotografada (ou a do env, se o roteiro for antigo). */
+export function velocidadeDaRota(rota: { travel_mode: string; params_snapshot: unknown }): number {
+  const snap = lerSnapshot(rota.params_snapshot);
+  return velocidadeDoModo(rota.travel_mode, snap.config, snap.velocidade_carro_kmh ?? velocidadeCarroKmh());
+}
+
+/** Parâmetros do relógio de um roteiro EXISTENTE (use em todo cálculo sobre ele: pular, adiar, ordenar, refazer, ler). */
+export function paramsDaRota(rota: { travel_mode: string; params_snapshot: unknown }): ParamsPlano {
+  return paramsDaConfig(lerSnapshot(rota.params_snapshot).config, velocidadeDaRota(rota));
 }
 
 export const stopView = (s: StopRow): StopView => ({
@@ -103,13 +126,15 @@ export const stopView = (s: StopRow): StopView => ({
 /** `descartada` só interessa à equipe; o consultor nunca a vê. */
 export function routeView(r: RouteRow, agora: Date, incluirDescartadas = false): RouteView {
   const snap = lerSnapshot(r.params_snapshot);
-  const params = paramsDaConfig(snap.config);
+  const params = paramsDaRota(r);
+  const kmh = velocidadeDaRota(r);
   const stops = [...r.stops]
     .filter((s) => incluirDescartadas || s.status !== 'descartada')
     .sort((a, b) => a.seq - b.seq || (a.id < b.id ? -1 : 1));
-  const conta = (f: (s: StopRow) => boolean) => stops.filter(f).length;
+  const conta = (f: (s: StopComVisita) => boolean) => stops.filter(f).length;
   const pendentesPlan = stops.filter((s) => s.status === 'pendente' && s.kind === 'planejada');
-  const done = conta((s) => s.status === 'visitada');
+  // "Fechado" (§30.1) fica fora da conta de visitas feitas para a meta; a parada segue visitada (não trava o roteiro).
+  const done = conta((s) => s.status === 'visitada' && s.visit?.outcome !== 'fechado');
   const hoje = todaySp(agora);
   const r0 = ritmo({
     agoraMin: r.day === hoje ? minutesSp(agora) : r.day < hoje ? params.janelaFim : 0,
@@ -128,6 +153,8 @@ export function routeView(r: RouteRow, agora: Date, incluirDescartadas = false):
     area_id: r.area_id,
     start: { lat: r.start_lat, lng: r.start_lng },
     params: snap.config,
+    travel_mode: r.travel_mode,
+    travel: { mode: r.travel_mode, speed_kmh: kmh, detour_factor: snap.config.fator_desvio, text: textoDoModo(r.travel_mode, kmh, snap.config.fator_desvio) },
     stops: stops.map(stopView),
     plan: {
       planned: pendentesPlan.length,
@@ -150,4 +177,4 @@ export function routeView(r: RouteRow, agora: Date, incluirDescartadas = false):
   };
 }
 
-export const COM_PARADAS = { stops: true, consultant: { select: { name: true } } } as const;
+export const COM_PARADAS = { stops: { include: { visit: { select: { outcome: true } } } }, consultant: { select: { name: true } } } as const;

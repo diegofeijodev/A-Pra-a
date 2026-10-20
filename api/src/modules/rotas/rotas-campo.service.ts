@@ -8,7 +8,7 @@ import { minutesSp, todaySp } from '../../common/time/dates';
 import { caixaEnvolvente, carimbo } from '../../domain/campo-rules';
 import { retornoRoteirizavel } from '../../domain/followup-rules';
 import { pontoNaArea } from '../../domain/area-rules';
-import { ordenarVizinhoMaisProximo, paramsDaConfig, planejar, selecionarEncadeados, type ConfigRota } from '../../domain/rota-rules';
+import { ordenarRetornosAncorados, paramsDaConfig, planejar, selecionarEncadeados, type ConfigRota } from '../../domain/rota-rules';
 import { lerRetornosPendentes } from '../campo/retornos-query';
 import { violouUnico } from '../campo/prisma-errors';
 import type { AcaoParadaDto, GerarRotaDto, PosicaoRotaDto, PularParadaDto } from './dto/rotas.dto';
@@ -131,7 +131,8 @@ export class RotasCampoService {
     );
     // Retornos vencidos vão ancorados no começo da ordem (§25.6): só no cálculo, não ficam gravados como fixos.
     // Entre si, os retornos seguem a caminhada (mais próximo primeiro), não a ordem das datas.
-    const ancorados = ordenarVizinhoMaisProximo(pos, retornos.map((l) => ({ id: l.id, lat: l.lat, lng: l.lng }))).map((p) => ({ ...p, fixa: true }));
+    // Com hora marcada para hoje vêm primeiro, por hora (§30.3); o resto, pela caminhada.
+    const ancorados = ordenarRetornosAncorados(pos, retornos.map((l) => ({ id: l.id, lat: l.lat, lng: l.lng, hora: l.hora }))).map((p) => ({ id: p.id, lat: p.lat, lng: p.lng, fixa: true }));
     const escolhidos = [...ancorados, ...sorteados];
     if (escolhidos.length === 0) return null;
     const dia = todaySp(agora);
@@ -195,7 +196,7 @@ export class RotasCampoService {
    * Retornos vencidos das visitas do próprio consultor, prontos para o roteiro (contrato §25.6).
    * Item secundário: qualquer falha aqui vira aviso no log e o roteiro sai sem eles.
    */
-  private async retornosVencidos(c: CampoConsultant, agora: Date): Promise<LeadParaRota[]> {
+  private async retornosVencidos(c: CampoConsultant, agora: Date): Promise<(LeadParaRota & { hora: string | null })[]> {
     try {
       if (!(await this.configs.alertas()).retornos_no_roteiro) return [];
       const dia = todaySp(agora);
@@ -214,7 +215,16 @@ export class RotasCampoService {
       const chavesFora = new Set(bloqueados.map((b) => b.phone_key));
       return bons
         .filter((r) => !fora.has(r.lead_id) && !(r.phone_key && chavesFora.has(r.phone_key)))
-        .map((r) => ({ id: r.lead_id, name: r.lead_name, address: r.address, phone: r.phone, lat: r.lat!, lng: r.lng! }));
+        .map((r) => ({
+          id: r.lead_id,
+          name: r.lead_name,
+          address: r.address,
+          phone: r.phone,
+          lat: r.lat!,
+          lng: r.lng!,
+          // Só a hora combinada para HOJE ordena (a de um retorno atrasado já passou).
+          hora: r.due === 'hoje' ? r.followup_time : null,
+        }));
     } catch (e) {
       this.log.warn(`retornos não entraram no roteiro do consultor ${c.id}: ${e instanceof Error ? e.message : String(e)}`);
       return [];
@@ -250,7 +260,8 @@ export class RotasCampoService {
       chaves.length ? this.prisma.blocklist.findMany({ where: { phone_key: { in: chaves } }, select: { phone_key: true } }) : [],
       config.dias_sem_revisitar > 0
         ? this.prisma.field_visits.findMany({
-            where: { lead_id: { in: ids }, checkin_at: { gte: new Date(agora.getTime() - config.dias_sem_revisitar * 86_400_000) } },
+            // Fechado (§30.1) não conta: o lugar pode voltar a ser sorteado.
+            where: { lead_id: { in: ids }, outcome: { not: 'fechado' }, checkin_at: { gte: new Date(agora.getTime() - config.dias_sem_revisitar * 86_400_000) } },
             select: { lead_id: true },
           })
         : [],
@@ -393,7 +404,7 @@ export class RotasCampoService {
           if (r.count === 0) throw naoPendente();
           await tx.field_routes.update({ where: { id: rota.id }, data: { version: { increment: 1 } } });
           const stops = await tx.field_route_stops.findMany({ where: { route_id: rota.id } });
-          await recalcularEtas(tx, rota, stops, snap.config, agora);
+          await recalcularEtas(tx, rota, stops, agora);
         },
         { timeout: 15_000 },
       );

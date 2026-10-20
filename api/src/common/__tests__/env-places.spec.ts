@@ -1,4 +1,5 @@
 import { validateEnv } from '../config/env.validation';
+import { velocidadeCarroKmh } from '../../modules/rotas/rotas.tokens';
 
 const BASE = { DATABASE_URL: 'postgresql://praca:praca@localhost:5437/praca', JWT_SECRET: 'x'.repeat(16) };
 
@@ -42,5 +43,24 @@ describe('env — sync de cadastros confirmados (F7)', () => {
   it('rejeita intervalo e janela fora da faixa', () => {
     expect(() => validateEnv({ ...BASE, FIELD_SIGNUP_SYNC_INTERVAL_MIN: '0' })).toThrow('Configuração de ambiente inválida');
     expect(() => validateEnv({ ...BASE, FIELD_SIGNUP_RECONCILE_DAYS: '3' })).toThrow('Configuração de ambiente inválida');
+  });
+});
+
+describe('env — velocidade de carro do roteiro (§30.4)', () => {
+  it('padrão 25 km/h; vazio conta como ausente; aceita decimal', () => {
+    expect(validateEnv(BASE).ROTA_VELOCIDADE_CARRO_KMH).toBe(25);
+    expect(validateEnv({ ...BASE, ROTA_VELOCIDADE_CARRO_KMH: '' }).ROTA_VELOCIDADE_CARRO_KMH).toBe(25);
+    expect(validateEnv({ ...BASE, ROTA_VELOCIDADE_CARRO_KMH: '32.5' }).ROTA_VELOCIDADE_CARRO_KMH).toBe(32.5);
+  });
+  it('fora de 5–80 derruba a largada', () => {
+    expect(() => validateEnv({ ...BASE, ROTA_VELOCIDADE_CARRO_KMH: '4' })).toThrow('Configuração de ambiente inválida');
+    expect(() => validateEnv({ ...BASE, ROTA_VELOCIDADE_CARRO_KMH: '120' })).toThrow('Configuração de ambiente inválida');
+  });
+  it('velocidadeCarroKmh() lê o ambiente e cai em 25 se vazio ou inválido', () => {
+    expect(velocidadeCarroKmh({})).toBe(25);
+    expect(velocidadeCarroKmh({ ROTA_VELOCIDADE_CARRO_KMH: '' })).toBe(25);
+    expect(velocidadeCarroKmh({ ROTA_VELOCIDADE_CARRO_KMH: '40' })).toBe(40);
+    expect(velocidadeCarroKmh({ ROTA_VELOCIDADE_CARRO_KMH: 'abc' })).toBe(25);
+    expect(velocidadeCarroKmh({ ROTA_VELOCIDADE_CARRO_KMH: '200' })).toBe(25);
   });
 });

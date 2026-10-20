@@ -62,7 +62,7 @@ export interface ConsultorView {
 }
 
 export interface ConsultorListItem extends ConsultorView {
-  today: { status: SituacaoHoje; visits: number; cadastros: number; last_point_at: string | null };
+  today: { status: SituacaoHoje; visits: number; closed: number; cadastros: number; last_point_at: string | null };
   /** Cadastros confirmados pelo Freela hoje/na semana (contrato §27.8); `null` se não pôde ser lido. */
   signups_confirmed: Contagem | null;
 }
@@ -125,7 +125,7 @@ export class ConsultoresService {
       }),
       this.prisma.field_visits.findMany({
         where: { journey: { day: hoje } },
-        select: { consultant_id: true, freela_status: true },
+        select: { consultant_id: true, freela_status: true, outcome: true },
       }),
     ]);
     const ultimos = jornadas.length
@@ -154,6 +154,7 @@ export class ConsultoresService {
         today: {
           status: situacaoHoje(js),
           visits: vs.length,
+          closed: vs.filter((v) => v.outcome === 'fechado').length,
           cadastros: vs.filter((v) => v.freela_status === 'cadastrou_qr').length,
           last_point_at: ultimo?.toISOString() ?? null,
         },

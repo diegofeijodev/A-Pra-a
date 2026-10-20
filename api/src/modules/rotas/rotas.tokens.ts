@@ -1,5 +1,6 @@
 import type { Provider } from '@nestjs/common';
 import { validateEnv } from '../../common/config/env.validation';
+import { VELOCIDADE_CARRO_PADRAO } from '../../domain/rota-rules';
 
 /** `FIELD_ROUTES_ENABLED=true`: liga todo o roteiro do dia (contrato §23). */
 export const ROTAS_LIGADAS = Symbol('ROTAS_LIGADAS');
@@ -9,3 +10,14 @@ export const rotasLigadasProvider: Provider = {
   provide: ROTAS_LIGADAS,
   useFactory: (): boolean => validateEnv(process.env).FIELD_ROUTES_ENABLED === 'true',
 };
+
+/**
+ * `ROTA_VELOCIDADE_CARRO_KMH` (contrato §30.4): média urbana de carro em km/h, 5–80. Lê direto do
+ * ambiente (sem `validateEnv`, que exige as demais variáveis) e cai em 25 se vazio ou fora da faixa.
+ */
+export function velocidadeCarroKmh(env: Record<string, string | undefined> = process.env): number {
+  const bruto = env.ROTA_VELOCIDADE_CARRO_KMH;
+  if (bruto == null || bruto.trim() === '') return VELOCIDADE_CARRO_PADRAO;
+  const n = Number(bruto);
+  return Number.isFinite(n) && n >= 5 && n <= 80 ? n : VELOCIDADE_CARRO_PADRAO;
+}

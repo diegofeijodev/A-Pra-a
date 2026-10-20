@@ -123,6 +123,12 @@ export function respostasDe(v: RespostasVisita): RespostasVisita {
     followup_what: v.followup_what,
     followup_date: v.followup_date,
     notes: v.notes,
+    // P0 §30: sempre explícitos no wire (ausente na linha = default).
+    outcome: v.outcome ?? 'conversa',
+    refusal_reason: v.refusal_reason ?? null,
+    refusal_note: v.refusal_note ?? null,
+    followup_time: v.followup_time ?? null,
+    contact_phone: v.contact_phone ?? null,
   };
 }
 

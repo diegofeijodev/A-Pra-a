@@ -8,7 +8,6 @@ import type { Prisma } from '@prisma/client';
 import { minutesSp, todaySp } from '../../common/time/dates';
 import {
   calcularRelogio,
-  paramsDaConfig,
   planejar,
   type ConfigRota,
   type ParadaPlano,
@@ -16,7 +15,7 @@ import {
   type PontoRota,
   type Plano,
 } from '../../domain/rota-rules';
-import { lerSnapshot, novoSnapshot, type StopRow } from './rotas-views';
+import { novoSnapshot, paramsDaRota, lerSnapshot, type StopRow } from './rotas-views';
 
 export type Db = Prisma.TransactionClient;
 
@@ -53,6 +52,8 @@ export const pontoDaParada = (s: StopRow): PontoRota => ({ id: s.lead_id, lat: s
 
 export interface GravarPlano {
   route: { id: string; day: string; version: number; params_snapshot: unknown };
+  /** Troca o modo de deslocamento do roteiro (§30.4); sem isto o modo atual é mantido. */
+  modo?: { travel_mode: string; velocidade_carro_kmh: number | null };
   stops: StopRow[];
   plano: Plano;
   config: ConfigRota;
@@ -75,7 +76,8 @@ export async function gravarPlano(tx: Db, g: GravarPlano): Promise<void> {
     where: { id: g.route.id, version: g.route.version },
     data: {
       version: { increment: 1 },
-      params_snapshot: novoSnapshot(g.route.params_snapshot, g.config, g.plano.excedentes.length, g.route.version + 1, g.motivo, g.por, g.agora) as unknown as Prisma.InputJsonValue,
+      params_snapshot: novoSnapshot(g.route.params_snapshot, g.config, g.plano.excedentes.length, g.route.version + 1, g.motivo, g.por, g.agora, g.modo?.velocidade_carro_kmh) as unknown as Prisma.InputJsonValue,
+      ...(g.modo ? { travel_mode: g.modo.travel_mode } : {}),
       ...(g.start ? { start_lat: g.start.lat, start_lng: g.start.lng } : {}),
       ...(g.areaId !== undefined ? { area_id: g.areaId } : {}),
     },
@@ -132,12 +134,12 @@ export async function gravarPlano(tx: Db, g: GravarPlano): Promise<void> {
  */
 export async function recalcularEtas(
   tx: Db,
-  route: { day: string; start_lat: number; start_lng: number },
+  route: { day: string; start_lat: number; start_lng: number; travel_mode: string; params_snapshot: unknown },
   stops: StopRow[],
-  config: ConfigRota,
   agora: Date,
 ): Promise<void> {
-  const params = paramsDaConfig(config);
+  // Modo do roteiro (a pé/carro, §30.4): pular, adiar e desfazer recalculam com a MESMA velocidade.
+  const params = paramsDaRota(route);
   const pend = stops
     .filter((s) => s.status === 'pendente')
     .sort((a, b) => (a.kind === b.kind ? a.seq - b.seq : a.kind === 'planejada' ? -1 : 1));
@@ -171,14 +173,14 @@ export type { ParadaPlano };
  */
 export async function reotimizar(
   tx: Db,
-  rota: { id: string; day: string; version: number; params_snapshot: unknown; stops: StopRow[] },
+  rota: { id: string; day: string; version: number; params_snapshot: unknown; travel_mode: string; stops: StopRow[] },
   inicio: { lat: number; lng: number },
   agora: Date,
   motivo: string,
   por: string | null,
 ): Promise<void> {
   const snap = lerSnapshot(rota.params_snapshot);
-  const params = paramsDaConfig(snap.config);
+  const params = paramsDaRota(rota);
   const grupo = (s: StopRow) => (s.status === 'adiada' ? 2 : s.kind === 'planejada' ? 0 : 1);
   const ordem = rota.stops
     .filter((s) => s.status === 'pendente' || (s.status === 'adiada' && s.deferred_to === 'tarde'))

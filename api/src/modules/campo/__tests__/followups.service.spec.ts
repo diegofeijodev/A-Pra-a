@@ -49,7 +49,7 @@ describe('FollowupsService — fila de retornos', () => {
     const p = fake([visita(1), visita(2)], [{ lead_id: 'l1', _max: { checkin_at: new Date('2026-10-18T15:00:00Z') } }, { lead_id: 'l2', _max: { checkin_at: new Date('2026-10-15T15:00:00Z') } }]);
     const r = await svc(p).equipe(undefined, AGORA);
     expect(r.items.map((i) => i.lead_id)).toEqual(['l2']);
-    expect(p.field_visits.groupBy).toHaveBeenCalledWith(expect.objectContaining({ by: ['lead_id'], where: { lead_id: { in: ['l1', 'l2'] } } }));
+    expect(p.field_visits.groupBy).toHaveBeenCalledWith(expect.objectContaining({ by: ['lead_id'], where: { lead_id: { in: ['l1', 'l2'] }, outcome: { not: 'fechado' } } }));
   });
 
   it('isolamento da equipe: praca_id vai para o filtro do LEAD; praça inexistente → 404 sem ler visitas', async () => {
@@ -86,5 +86,33 @@ describe('FollowupsService — fila de retornos', () => {
     const r = await svc(p).equipe(undefined, new Date('2026-10-20T01:30:00.000Z'));
     expect(r.day).toBe('2026-10-19');
     expect(r.items[0]).toMatchObject({ due: 'hoje' });
+  });
+});
+
+describe('P0 §30 — hora e telefone mascarado na fila', () => {
+  it('a equipe recebe a hora e o telefone MASCARADO; o consultor, também o completo', async () => {
+    const v = visita(1, { followup_time: '15:30', contact_phone: '11987654321' });
+    const equipe = await svc(fake([v])).equipe(undefined, AGORA);
+    expect(equipe.items[0]).toMatchObject({ followup_time: '15:30', contact_phone_masked: '(11) 9****-4321' });
+    expect(equipe.items[0]).not.toHaveProperty('contact_phone');
+    expect(JSON.stringify(equipe)).not.toContain('11987654321');
+    const meu = await svc(fake([v])).doConsultor(A, AGORA);
+    expect(meu.items[0]).toMatchObject({ followup_time: '15:30', contact_phone_masked: '(11) 9****-4321', contact_phone: '11987654321' });
+  });
+
+  it('mesma data: com hora antes de sem hora, por hora; sem hora nenhuma segue pelo nome', async () => {
+    const p = fake([
+      visita(1, { followup_date: '2026-10-20', lead: { ...visita(1).lead, name: 'Aaa' } }),
+      visita(2, { followup_date: '2026-10-20', followup_time: '16:00', lead: { ...visita(2).lead, name: 'Zzz' } }),
+      visita(3, { followup_date: '2026-10-20', followup_time: '09:00', lead: { ...visita(3).lead, name: 'Mmm' } }),
+    ]);
+    const r = await svc(p).equipe(undefined, AGORA);
+    expect(r.items.map((i) => i.lead_name)).toEqual(['Mmm', 'Zzz', 'Aaa']);
+  });
+
+  it('visita "fechado" mais nova não resolve o retorno da anterior (maisRecente ignora fechado)', async () => {
+    const p = fake([visita(1)], []);
+    await svc(p).equipe(undefined, AGORA);
+    expect(p.field_visits.groupBy.mock.calls[0][0].where).toMatchObject({ outcome: { not: 'fechado' } });
   });
 });

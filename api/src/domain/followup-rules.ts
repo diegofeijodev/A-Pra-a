@@ -25,7 +25,8 @@ export function retornoVencido(v: VisitaComRetorno, hoje: string): boolean {
 /**
  * Pendentes entre `candidatas` (visitas com retorno vencido): só vale a visita mais
  * recente do lead — qualquer visita posterior, de qualquer consultor, resolve o retorno.
- * `maisRecente` = check-in da visita mais recente de cada lead (todas as visitas, não só as candidatas).
+ * `maisRecente` = check-in da visita mais recente de cada lead (todas as visitas, não só as candidatas;
+ * o chamador deixa de fora as `fechado` — §30.1: visita sem conversa não resolve o retorno).
  */
 export function retornosPendentes<T extends VisitaComRetorno>(candidatas: T[], maisRecente: Map<string, Date>, hoje: string): T[] {
   const ultimaPorLead = new Map<string, T>();

@@ -210,3 +210,90 @@ describe('MontarRotaDto', () => {
     }
   });
 });
+
+describe('P0 §30.4 — modo de deslocamento a pé / de carro', () => {
+  const longe = (n: number) => lead(n, { lat: -23.6 - n * 0.05 });
+  const etasDe = (p: ReturnType<typeof fakePrisma>) =>
+    Object.fromEntries(p.field_route_stops.createMany.mock.calls[0][0].data.map((d: any) => [d.lead_id, d.eta_min]));
+
+  it('roteiro novo: sem travel_mode = a pé; com "carro" grava o modo, fotografa a velocidade e chega antes', async () => {
+    const montarNovo = async (modo?: string) => {
+      const p = fakePrisma();
+      p.field_routes.findFirst.mockResolvedValueOnce(null);
+      p.field_route_stops.findMany.mockResolvedValue([]);
+      p.leads.findMany.mockResolvedValue([longe(1), longe(2), longe(3)]);
+      await montar(p).build({ consultant_id: CONS_A, day: DIA, lead_ids: [LEAD(1), LEAD(2), LEAD(3)], ...(modo ? { travel_mode: modo } : {}) }, ADMIN, AGORA);
+      return p;
+    };
+    const aPe = await montarNovo();
+    const carro = await montarNovo('carro');
+    expect(aPe.field_routes.create.mock.calls[0][0].data).toMatchObject({ travel_mode: 'a_pe' });
+    expect(aPe.field_routes.create.mock.calls[0][0].data.params_snapshot.velocidade_carro_kmh).toBeNull();
+    const dc = carro.field_routes.create.mock.calls[0][0].data;
+    expect(dc).toMatchObject({ travel_mode: 'carro' });
+    expect(dc.params_snapshot.velocidade_carro_kmh).toBe(25);
+    expect(etasDe(carro)[LEAD(2)]).toBeLessThan(etasDe(aPe)[LEAD(2)]);
+  });
+
+  it('refazer sobre roteiro a pé escolhendo "carro" troca o modo, regrava a velocidade e sobe a versão', async () => {
+    const p = fakePrisma();
+    p.field_route_stops.findMany.mockResolvedValue([]);
+    p.leads.findMany.mockResolvedValue([longe(1), longe(2), longe(3)]);
+    await montar(p).build({ consultant_id: CONS_A, day: DIA, lead_ids: [LEAD(1), LEAD(2), LEAD(3)], travel_mode: 'carro' }, ADMIN, AGORA);
+    const upd = p.field_routes.updateMany.mock.calls[0][0];
+    expect(upd.where).toEqual({ id: ROTA, version: 1 });
+    expect(upd.data).toMatchObject({ travel_mode: 'carro' });
+    expect(upd.data.params_snapshot.velocidade_carro_kmh).toBe(25);
+  });
+
+  it('sem travel_mode, o roteiro de carro continua de carro (não volta a pé)', async () => {
+    const p = fakePrisma();
+    const existente = rotaRow({ travel_mode: 'carro', params_snapshot: { config: CONFIG_ROTA_PADRAO, velocidade_carro_kmh: 30, not_fit: 0, versoes: [] } });
+    p.field_routes.findFirst.mockResolvedValue(existente);
+    p.field_routes.findUnique.mockResolvedValue(existente);
+    p.field_route_stops.findMany.mockResolvedValue([]);
+    p.leads.findMany.mockResolvedValue([longe(1), longe(2), longe(3)]);
+    await montar(p).build({ consultant_id: CONS_A, day: DIA, lead_ids: [LEAD(1), LEAD(2), LEAD(3)] }, ADMIN, AGORA);
+    const upd = p.field_routes.updateMany.mock.calls[0][0];
+    expect(upd.data).not.toHaveProperty('travel_mode');
+    expect(upd.data.params_snapshot.velocidade_carro_kmh).toBe(30); // fotografada, não a do env
+  });
+
+  it('reordenar um roteiro de carro usa a velocidade de carro (não a de caminhada)', async () => {
+    const longes = [1, 2, 3].map((n) => stopRow(n, { lat_snap: -23.6 - n * 0.05 }));
+    const etas = async (modo: string) => {
+      const p = fakePrisma();
+      const r = rotaRow({ travel_mode: modo, stops: longes, params_snapshot: { config: CONFIG_ROTA_PADRAO, velocidade_carro_kmh: 25, not_fit: 0, versoes: [] } });
+      p.field_routes.findUnique.mockResolvedValue(r);
+      await montar(p).order(ROTA, { version: 1, stops: [{ id: STOP(1) }, { id: STOP(2) }, { id: STOP(3) }] }, ADMIN, AGORA);
+      return new Map(p.field_route_stops.update.mock.calls.map((c: any[]) => [c[0].where.id, c[0].data.eta_min]));
+    };
+    const [aPe, carro] = [await etas('a_pe'), await etas('carro')];
+    expect(carro.get(STOP(3))! as number).toBeLessThan(aPe.get(STOP(3))! as number);
+  });
+
+  it('a leitura do roteiro traz o modo e a conta escrita; "fechado" fica fora do feito da meta', async () => {
+    const p = fakePrisma();
+    const r = rotaRow({
+      travel_mode: 'carro',
+      params_snapshot: { config: CONFIG_ROTA_PADRAO, velocidade_carro_kmh: 25, not_fit: 0, versoes: [] },
+      stops: [stopRow(1, { status: 'visitada', visit: { outcome: 'conversa' } }), stopRow(2, { status: 'visitada', visit: { outcome: 'fechado' } }), stopRow(3)],
+    });
+    p.field_routes.findUnique.mockResolvedValue(r);
+    const v = await montar(p).get(ROTA, AGORA);
+    expect(v.travel_mode).toBe('carro');
+    expect(v.travel).toMatchObject({ mode: 'carro', speed_kmh: 25, detour_factor: 1.3 });
+    expect(v.travel.text).toBe('De carro: 25 km/h × desvio de rua 1,3 (média urbana, sem estacionar)');
+    expect(v.progress.done).toBe(1);
+    expect(v.stops.filter((s) => s.status === 'visitada')).toHaveLength(2); // a parada segue visitada: não trava o roteiro
+  });
+
+  it('DTO: travel_mode só aceita a_pe | carro e não tem default', async () => {
+    const ok = plainToInstance(MontarRotaDto, { consultant_id: CONS_A, day: DIA, lead_ids: [LEAD(1)], travel_mode: 'carro' });
+    expect(await validate(ok)).toHaveLength(0);
+    const sem = plainToInstance(MontarRotaDto, { consultant_id: CONS_A, day: DIA, lead_ids: [LEAD(1)] });
+    expect(sem.travel_mode).toBeUndefined();
+    const ruim = plainToInstance(MontarRotaDto, { consultant_id: CONS_A, day: DIA, lead_ids: [LEAD(1)], travel_mode: 'moto' });
+    expect((await validate(ruim)).map((e) => e.property)).toContain('travel_mode');
+  });
+});
