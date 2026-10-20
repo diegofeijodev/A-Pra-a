@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAreas } from '@/modules/areas/application/use-areas';
 import { useAuth } from '@/modules/auth/application/use-auth';
+import { useConfigModo, useSalvarConfigModo } from '@/modules/rotas/application/use-rotas-equipe';
+import { alternar, CAMPOS_CONTATO, RESULTADOS_COM_CONTATO, type ConfigModo } from '@/modules/rotas/domain/fluxo-config';
 import { useConsultores } from '@/modules/consultores/application/use-consultores';
 import type { PracaView } from '@/modules/pracas/application/use-pracas';
 import {
@@ -208,6 +210,94 @@ function Configuracao({ admin }: { admin: boolean }) {
   );
 }
 
+/** Escolha do modo da visita (contrato §31.3). Os presets só preenchem o formulário; o admin revisa e salva. */
+function FluxoVisitaConfig({ admin }: { admin: boolean }) {
+  const { data, isPending, isError } = useConfigModo();
+  const salvar = useSalvarConfigModo();
+  const [form, setForm] = useState<ConfigModo | null>(null);
+  useEffect(() => {
+    if (data) setForm({ fluxo_visita: data.fluxo_visita, justificativa_distancia: data.justificativa_distancia, contato_obrigatorio_em: data.contato_obrigatorio_em, contato_campos: data.contato_campos, fechado_conta_na_meta: data.fechado_conta_na_meta, desfazer_segundos: data.desfazer_segundos });
+  }, [data]);
+  if (isPending) return <p className="text-sm text-muted-foreground">Carregando o modo da visita…</p>;
+  if (isError || !data || !form) return <p className="text-sm text-destructive">Não foi possível carregar o modo da visita.</p>;
+  const set = (p: Partial<ConfigModo>) => setForm({ ...form, ...p });
+  const sel = 'h-10 w-full rounded-md border border-border bg-background px-3 text-sm';
+
+  return (
+    <details className="card-surface p-4">
+      <summary className="cursor-pointer text-sm font-bold">Modo da visita do consultor</summary>
+      <div className="mt-3 space-y-3">
+        <p className="text-sm text-muted-foreground">
+          <strong>Simples</strong> = jeito do Diego: o consultor escolhe como foi a visita em 1 toque. <strong>Completo</strong> = o nosso, com mais perguntas. Vale para as visitas abertas daqui em diante;
+          a exceção por consultor fica na ficha dele. Só funciona com a chave “escolha do modo da visita” ligada no servidor; desligada, todos usam o completo.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" disabled={!admin} onClick={() => setForm(data.presets.chefe)} className="h-10">
+            Perfil do chefe
+          </Button>
+          <Button type="button" variant="outline" disabled={!admin} onClick={() => setForm(data.presets.completo)} className="h-10">
+            Perfil completo
+          </Button>
+          <span className="self-center text-xs text-muted-foreground">Só preenche o formulário; confira e salve.</span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label htmlFor="fv-fluxo">Modo padrão</Label>
+            <select id="fv-fluxo" disabled={!admin} className={sel} value={form.fluxo_visita ?? ''} onChange={(e) => set({ fluxo_visita: (e.target.value || null) as ConfigModo['fluxo_visita'] })}>
+              <option value="">Sem escolha (com a chave ligada vale o simples)</option>
+              <option value="simples">Simples (jeito do Diego)</option>
+              <option value="completo">Completo (nosso)</option>
+            </select>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="fv-just">Visita longe do local (mais de 200 m)</Label>
+            <select id="fv-just" disabled={!admin} className={sel} value={form.justificativa_distancia} onChange={(e) => set({ justificativa_distancia: e.target.value as ConfigModo['justificativa_distancia'] })}>
+              <option value="nao">Só marcar</option>
+              <option value="opcional">Pedir o motivo, sem obrigar</option>
+              <option value="obrigatoria">Motivo obrigatório (como a Lovable)</option>
+            </select>
+          </div>
+        </div>
+        <fieldset className="space-y-1">
+          <legend className="text-sm font-bold">Contato de quem atendeu é obrigatório quando o resultado for</legend>
+          <div className="flex flex-wrap gap-3">
+            {RESULTADOS_COM_CONTATO.map(([k, r]) => (
+              <label key={k} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" disabled={!admin} checked={form.contato_obrigatorio_em.includes(k)} onChange={() => set({ contato_obrigatorio_em: alternar(form.contato_obrigatorio_em, k, RESULTADOS_COM_CONTATO) })} />
+                {r}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <fieldset className="space-y-1">
+          <legend className="text-sm font-bold">Nesses casos, exigir</legend>
+          <div className="flex flex-wrap gap-3">
+            {CAMPOS_CONTATO.map(([k, r]) => (
+              <label key={k} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" disabled={!admin} checked={form.contato_campos.includes(k)} onChange={() => set({ contato_campos: alternar(form.contato_campos, k, CAMPOS_CONTATO) })} />
+                {r}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" disabled={!admin} checked={form.fechado_conta_na_meta} onChange={(e) => set({ fechado_conta_na_meta: e.target.checked })} />
+          “Estabelecimento fechado” fotografado conta na meta (só no modo simples; “Pular” nunca conta)
+        </label>
+        <div className="max-w-xs space-y-1">
+          <Label htmlFor="fv-desfazer">Segundos para desfazer a conclusão</Label>
+          <Input id="fv-desfazer" type="number" min={0} max={30} disabled={!admin} value={form.desfazer_segundos} onChange={(e) => set({ desfazer_segundos: Number(e.target.value) })} />
+        </div>
+        {admin && (
+          <Button disabled={salvar.isPending} onClick={() => salvar.mutate(form)} className="h-10">
+            {salvar.isPending ? 'Salvando…' : 'Salvar modo da visita'}
+          </Button>
+        )}
+      </div>
+    </details>
+  );
+}
+
 /** `/consultores/roteiros` — montar o dia dos consultores e acompanhar o planejado × realizado (UX §5.2, contrato §23.4). */
 export function RoteirosEquipe({ praca }: { praca: PracaView }) {
   const { user } = useAuth();
@@ -247,6 +337,7 @@ export function RoteirosEquipe({ praca }: { praca: PracaView }) {
   return (
     <div className="mt-4 space-y-5">
       <Configuracao admin={admin} />
+      <FluxoVisitaConfig admin={admin} />
 
       {desligado ? (
         <p className="card-surface p-4 text-sm">O roteiro do dia está desligado neste servidor. Peça para ligar `FIELD_ROUTES_ENABLED`.</p>

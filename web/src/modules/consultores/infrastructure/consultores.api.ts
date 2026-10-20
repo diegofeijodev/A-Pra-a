@@ -30,6 +30,10 @@ export interface ConsultorView {
   freela_sync_error: string | null;
   freela_synced_at: string | null;
   signup_url: string | null;
+  /** Exceção do fluxo da visita (contrato §31.3); `null`/ausente = seguir o padrão. */
+  visit_flow?: 'simples' | 'completo' | null;
+  /** O fluxo que vale agora para ele (flag + exceção + padrão). */
+  visit_flow_effective?: 'simples' | 'completo';
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -57,7 +61,7 @@ export interface CreateConsultorInput {
   pix_key: string;
 }
 
-export type UpdateConsultorInput = Partial<CreateConsultorInput> & { active?: boolean };
+export type UpdateConsultorInput = Partial<CreateConsultorInput> & { active?: boolean; visit_flow?: 'simples' | 'completo' | null };
 
 export async function listConsultores(): Promise<ConsultorListItem[]> {
   const { data } = await api.get('/v1/consultores');

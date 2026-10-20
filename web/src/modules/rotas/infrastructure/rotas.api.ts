@@ -10,6 +10,7 @@ import {
   type ConfigRotaView,
   type RouteView,
 } from '../domain/rota.schema';
+import { configModoSchema, configModoViewSchema, type ConfigModo, type ConfigModoView } from '../domain/fluxo-config';
 
 /** Roteiros vistos e montados pela equipe — contrato §23.4, validados na borda da rede. */
 export async function listRoutes(day: string, pracaId?: string): Promise<RouteView[]> {
@@ -57,4 +58,15 @@ export async function putRotaConfig(body: Partial<ConfigRota>): Promise<ConfigRo
   // O formulário nasce do GET (que traz `atualizado_por/em`); o PUT recusa campos desconhecidos (whitelist).
   const { data } = await api.put('/v1/consultores/settings/config', configRotaSchema.partial().parse(body));
   return configRotaViewSchema.parse(data);
+}
+
+// ── fluxo da visita (contrato §31.3) ───────────────────────────
+export async function getConfigModo(): Promise<ConfigModoView> {
+  const { data } = await api.get('/v1/consultores/settings/config');
+  return configModoViewSchema.parse(data);
+}
+
+export async function putConfigModo(body: ConfigModo): Promise<ConfigModoView> {
+  const { data } = await api.put('/v1/consultores/settings/config', configModoSchema.parse(body));
+  return configModoViewSchema.parse(data);
 }

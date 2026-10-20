@@ -3,10 +3,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
+import type { ConfigModo } from '../domain/fluxo-config';
 import type { ConfigRota } from '../domain/rota.schema';
 import {
   buildRoute,
+  getConfigModo,
   getRotaConfig,
+  putConfigModo,
   listRouteCandidates,
   listRoutes,
   orderRoute,
@@ -86,5 +89,22 @@ export function useSalvarRotaConfig() {
       toast.success('Configuração salva.');
     },
     onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível salvar a configuração.')),
+  });
+}
+
+export function useConfigModo() {
+  return useQuery({ queryKey: ['rotas', 'config-modo'], queryFn: getConfigModo });
+}
+
+export function useSalvarConfigModo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ConfigModo) => putConfigModo(body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['rotas', 'config-modo'] });
+      void qc.invalidateQueries({ queryKey: ['rotas', 'config'] });
+      toast.success('Modo da visita salvo.');
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível salvar o modo da visita.')),
   });
 }

@@ -26,6 +26,7 @@ export function ConsultorDialog({ aberto, onFechar, consultor }: { aberto: boole
     pix_key: consultor?.pix_key ?? '',
   }));
   const [senha, setSenha] = useState<string | null>(null);
+  const [fluxo, setFluxo] = useState<string>(consultor?.visit_flow ?? '');
   const campo = (k: keyof CreateConsultorInput) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm({ ...form, [k]: e.target.value });
 
@@ -33,7 +34,7 @@ export function ConsultorDialog({ aberto, onFechar, consultor }: { aberto: boole
     const dados = { ...form, praca_id: form.praca_id || pracas[0]?.id || '' };
     try {
       if (consultor) {
-        await editar.mutateAsync(dados);
+        await editar.mutateAsync({ ...dados, visit_flow: (fluxo || null) as 'simples' | 'completo' | null });
         onFechar();
       } else {
         const r = await criar.mutateAsync(dados);
@@ -121,6 +122,20 @@ export function ConsultorDialog({ aberto, onFechar, consultor }: { aberto: boole
                 <Input id="c-pix" value={form.pix_key} onChange={campo('pix_key')} required />
               </div>
             </div>
+            {consultor && (
+              <div className="space-y-1">
+                <Label htmlFor="c-fluxo">Modo da visita</Label>
+                <select id="c-fluxo" value={fluxo} onChange={(e) => setFluxo(e.target.value)} className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm">
+                  <option value="">Seguir o padrão</option>
+                  <option value="simples">Simples (jeito do Diego)</option>
+                  <option value="completo">Completo (nosso, mais perguntas)</option>
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  Vale para as visitas abertas daqui em diante. Hoje para ele: {consultor.visit_flow_effective === 'simples' ? 'simples' : 'completo'}. Só tem efeito com a chave
+                  “escolha do modo da visita” ligada no servidor.
+                </p>
+              </div>
+            )}
             <Button type="submit" disabled={criar.isPending || editar.isPending} className="w-full">
               {consultor ? 'Salvar' : 'Criar e gerar senha'}
             </Button>
