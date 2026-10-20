@@ -50,9 +50,9 @@ Lovable "PRAÇA" para a stack do Freela.
   para ele (e aberta só para a equipe) — é o comportamento seguro por padrão.
   No web, a sessão do consultor é `campoSession` (separada de `authUser`).
 - **Índices únicos parciais (`field_journeys`, `field_visits`, `field_routes`,
-  `field_route_stops`) não existem para o Prisma** (`field_journeys_one_open_per_consultant`,
+  `field_route_stops`, `field_payouts`) não existem para o Prisma** (`field_journeys_one_open_per_consultant`,
   `field_visits_one_open_per_consultant`, `field_routes_one_active_per_day`,
-  `field_route_stops_lead_day_unique`). Toda `prisma migrate dev` futura vai propor `DROP INDEX` deles:
+  `field_route_stops_lead_day_unique`, `field_payouts_one_active_per_week`). Toda `prisma migrate dev` futura vai propor `DROP INDEX` deles:
   gere com `--create-only`, **apague essas linhas do SQL** e aplique com
   `migrate deploy`. (Aviso espelhado em comentário na migração
   `20261008221516_consultores_de_campo`.)
