@@ -32,9 +32,12 @@ export const FUNCOES_VAGA = ['Garçom', 'Cozinheiro', 'Churrasqueiro', 'Motoboy'
 const vazio = (s: string | null | undefined): boolean => !s || !s.trim();
 
 export function faltando(r: VisitAnswers, hoje: string): string[] {
-  // Estabelecimento fechado (§30.1): não houve com quem conversar.
-  if (r.outcome === 'fechado') return [];
   const f: string[] = [];
+  // Estabelecimento fechado (§30.1): sem questionário, mas retorno marcado ("Sim") exige o quê e uma data válida.
+  if (r.outcome === 'fechado') {
+    if (r.needs_followup === true) faltandoRetorno(r, hoje, f);
+    return f;
+  }
   if (vazio(r.interlocutor_name)) f.push('nome de quem atendeu');
   if (!r.interlocutor_role) f.push('cargo de quem atendeu');
   if (!r.freela_status) f.push('situação no Freela');
@@ -44,12 +47,14 @@ export function faltando(r: VisitAnswers, hoje: string): string[] {
   if (r.freelas_per_week == null) f.push('freelancers por semana');
   if (r.channels.length === 0 && vazio(r.channel_other)) f.push('apps e canais que usa');
   if (r.needs_followup == null) f.push('se pediu retorno');
-  else if (r.needs_followup) {
-    if (vazio(r.followup_what)) f.push('o que fazer no retorno');
-    if (!r.followup_date) f.push('data do retorno');
-    else if (r.followup_date < hoje) f.push('data do retorno (não pode ser no passado)');
-  }
+  else if (r.needs_followup) faltandoRetorno(r, hoje, f);
   return f;
+}
+
+function faltandoRetorno(r: VisitAnswers, hoje: string, f: string[]): void {
+  if (vazio(r.followup_what)) f.push('o que fazer no retorno');
+  if (!r.followup_date) f.push('data do retorno');
+  else if (r.followup_date < hoje) f.push('data do retorno (não pode ser no passado)');
 }
 
 const NENHUM = 'Nenhum';

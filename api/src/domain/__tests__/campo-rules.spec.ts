@@ -210,6 +210,13 @@ describe('P0 §30 — resultado "fechado"', () => {
   it('fechado não exige questionário', () => {
     expect(faltando({ ...RESPOSTAS_VAZIAS, outcome: 'fechado' }, '2026-10-08')).toEqual([]);
   });
+  it('fechado com retorno marcado ("Sim") ainda exige o quê e uma data válida', () => {
+    const r = { ...RESPOSTAS_VAZIAS, outcome: 'fechado', needs_followup: true };
+    expect(faltando(r, '2026-10-08')).toEqual(['o que fazer no retorno', 'data do retorno']);
+    expect(faltando({ ...r, followup_what: 'Voltar', followup_date: '2026-10-07' }, '2026-10-08')).toEqual(['data do retorno (não pode ser no passado)']);
+    expect(faltando({ ...r, followup_what: 'Voltar', followup_date: '2026-10-09' }, '2026-10-08')).toEqual([]);
+    expect(faltando({ ...r, needs_followup: false }, '2026-10-08')).toEqual([]);
+  });
   it('conversa (ou ausente) continua exigindo tudo como antes', () => {
     expect(faltando({ ...RESPOSTAS_VAZIAS, outcome: 'conversa' }, '2026-10-08')).toHaveLength(8);
     expect(faltando(RESPOSTAS_VAZIAS, '2026-10-08')).toHaveLength(8);

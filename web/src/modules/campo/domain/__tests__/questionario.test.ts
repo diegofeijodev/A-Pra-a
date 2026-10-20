@@ -81,6 +81,12 @@ describe('P0 §30 — fechado, motivo e hora do retorno', () => {
     delete semOutcome.outcome;
     expect(faltando(semOutcome, '2026-10-08')).toHaveLength(8);
   });
+  it('fechado com retorno marcado ("Sim") ainda exige o quê e uma data válida (espelho do servidor)', () => {
+    const r = { ...RESPOSTAS_VAZIAS, outcome: 'fechado' as const, needs_followup: true };
+    expect(faltando(r, '2026-10-08')).toEqual(['o que fazer no retorno', 'data do retorno']);
+    expect(faltando({ ...r, followup_what: 'Voltar', followup_date: '2026-10-07' }, '2026-10-08')).toEqual(['data do retorno (não pode ser no passado)']);
+    expect(faltando({ ...r, followup_what: 'Voltar', followup_date: '2026-10-09' }, '2026-10-08')).toEqual([]);
+  });
   it('respostas antigas (sem os campos novos) continuam completas', () => {
     expect(faltando(COMPLETAS, '2026-10-08')).toEqual([]);
   });

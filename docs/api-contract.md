@@ -4043,10 +4043,12 @@ Novo campo do rascunho (`AnswersBody`, `PATCH /v1/campo/visits/:ref/answers`) e 
 `fechado` = o consultor chegou e o estabelecimento estava fechado (no horário ou de vez; **sem** distinção entre os dois, de propósito). Valor
 fora da lista → `400 VALIDATION_ERROR`. Regras do `fechado`:
 
-- **Checkout sem questionário:** `faltando()` devolve `[]` (não há com quem conversar). `outcome` volta a `conversa` quando o consultor desfaz a marca (rascunho).
+- **Checkout sem questionário:** `faltando()` só cobra o retorno se o consultor marcou "Sim" (então exige o quê e uma data ≥ hoje, como na conversa); o resto não é cobrado (não há com quem conversar). `outcome` volta a `conversa` quando o consultor desfaz a marca (rascunho).
+- **Retorno de uma visita "fechado"** ("volto amanhã às 10h"): vale e entra na fila (§25.4) pelo `followup_date`/`followup_time`, mas NÃO grava `next_step_what`/`next_step_date` no lead (isso é da conversa) e não muda atendente nem estágio.
 - **Não é conversa:** o checkout NÃO grava `decisor`/`decisor_role`/`last_contact_at`, NÃO avança o estágio do lead e grava o evento do CRM com `kind = 'note'` (e não `visit`, que está em `CONTACT_KINDS` e contaria como contato), texto "Visita de campo — estabelecimento fechado." (sem respostas).
 - **Metas:** fica fora da conta de meta/ritmo: `atencao` (`feitas`), `goal` de `GET /v1/campo/today` e o `progress.done`/`plan.fits_meta` do roteiro. Total e fechadas aparecem **separados**: `GET /v1/campo/today` → `counters.closed`; `GET /v1/consultores` → `today.closed`; `counters.visits` e `today.visits` continuam sendo o total de check-ins do dia (nada muda de significado). A remuneração (`min_visits` do piso, §28) **não** foi alterada: segue contando check-ins/checkouts; é decisão do dono se fechado conta para o piso.
 - **Não bloqueia o roteiro:** a parada continua `visitada` desde o check-in (§23.3) e o próximo lugar segue normal. O `fechado` NÃO entra no filtro `dias_sem_revisitar` do roteiro automático (o lugar pode voltar a ser sorteado; ponto fechado de vez se resolve arquivando o lead) e NÃO "resolve" um retorno pendente de visita anterior (§25.4 (1): a visita mais recente é calculada sem as `fechado`).
+- **Ressalva do roteiro:** `progress.done` e `plan.fits_meta` não contam o `fechado`, mas o planejador (`jaFeitas`) ainda abate toda parada visitada da meta restante; logo, logo depois de um `fechado` o card da equipe pode mostrar "não cabe a meta" (`done + pendentes = meta − fechados`). Não corrigido de propósito: mudar `jaFeitas` deslocaria a numeração (`seq`) das paradas.
 - Mapa de calor/cobertura (§24) não muda: o consultor esteve lá, então o lugar conta como visitado.
 
 ### 30.2 Motivo de recusa
@@ -4080,7 +4082,7 @@ O nome de quem atendeu já é `interlocutor_name` (obrigatório): **não** se cr
 
 `FollowupView` (§25.4, equipe e consultor) ganha: `followup_time` (`HH:mm` | `null`), `contact_phone_masked` (`(11) 9****-4321`; 10 dígitos: `(11) ****-4321`; `null` sem telefone) e **somente** em `GET /v1/campo/followups` (as visitas dele) `contact_phone` (completo, para `tel:`/`wa.me`). A fila da equipe nunca recebe o número completo.
 Ordem da fila (`compararRetornos`): `followup_date` ↑; no mesmo dia, **com hora antes de sem hora**, os com hora por `followup_time` ↑; depois nome (pt-BR) e `visit_id`. Sem nenhuma hora, a ordem é a de antes.
-Roteiro automático (§25.6): os retornos vencidos entram ancorados no começo; agora **com hora vêm primeiro, por hora**, e os sem hora seguem pelo vizinho mais próximo, como antes. O corte `MAX_RETORNOS_NO_ROTEIRO` segue a nova ordem. O relógio do roteiro **não espera** a hora marcada: a hora é só ordem e rótulo (a tela mostra "combinado para 15:30"), o ETA continua sendo o da caminhada.
+Roteiro automático (§25.6): os retornos vencidos entram ancorados no começo; agora **os combinados para HOJE com hora vêm primeiro, por hora** (hora de retorno atrasado, de data anterior, não ordena), e os demais seguem pelo vizinho mais próximo, como antes. O corte `MAX_RETORNOS_NO_ROTEIRO` segue a nova ordem. O relógio do roteiro **não espera** a hora marcada: a hora é só ordem e rótulo (a tela mostra "combinado para 15:30"), o ETA continua sendo o da caminhada.
 
 ### 30.4 Modo de deslocamento: `travel_mode`
 
@@ -4098,3 +4100,7 @@ A velocidade fotografada não muda se o env mudar depois; ao trocar o modo (ou r
 - Todo cálculo sobre roteiro existente usa o modo dele: pular, adiar, desfazer, reordenar (`PUT …/order`), refazer (equipe e consultor) e a leitura (`routeView`). O roteiro automático/do consultor nasce `a_pe` (a equipe escolhe o modo ao montar).
 - `RouteView` ganha `travel_mode` e `travel: { mode, speed_kmh, detour_factor, text }` — `text` é a conta escrita ("A pé: 4,5 km/h × desvio de rua 1,3" / "De carro: 25 km/h × desvio de rua 1,3 (média urbana, sem estacionar)"). `params.velocidade_kmh` continua sendo a de caminhada.
 - Env: `ROTA_VELOCIDADE_CARRO_KMH` (inteiro ou decimal 5–80, vazio = 25). Documentada em `.env.example`.
+
+### 30.5 Ordem de subida (obrigatória)
+
+`migrate deploy` → **API** → **web**. Nunca o web antes da API: o web novo manda `outcome`, `refusal_*`, `followup_time`, `contact_phone` nos rascunhos e `travel_mode` ao montar o roteiro, e a API antiga (`whitelist + forbidNonWhitelisted`) responde `400` a campo que não conhece, quebrando todo salvamento de rascunho e todo "Montar roteiro". API nova com web antigo é seguro (todos os campos são opcionais).
