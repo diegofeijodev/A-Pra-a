@@ -13,7 +13,9 @@ import {
   type VersaoRegra,
 } from '../../../domain/earnings-rules';
 
-export type TipoLancamento = 'accrual' | 'adjustment' | 'reversal';
+export type TipoLancamento = 'accrual' | 'adjustment' | 'reversal' | 'payout' | 'payout_reversal' | 'payout_settlement';
+/** Os tipos da remuneração (F8). Os `payout*` (F9) vivem no mesmo razão, mas NÃO entram nas somas da F8. */
+export const TIPOS_REMUNERACAO: readonly TipoLancamento[] = ['accrual', 'adjustment', 'reversal'];
 export type EscopoLancamento = 'day' | 'week' | 'manual';
 
 export interface LancamentoNovo {
@@ -76,6 +78,8 @@ export interface FiltroLancamentos {
   payout_week?: string;
   work_weeks?: string[];
   kind?: TipoLancamento;
+  /** Padrão: só os tipos da remuneração (F8). Os lançamentos de pagamento (F9) só vêm se pedidos aqui. */
+  kinds?: readonly TipoLancamento[];
   limit?: number;
 }
 
@@ -90,6 +94,7 @@ export interface EarningsLeitura {
   /** Soma e contagem dos `accrual` (e SÓ eles) por período de trabalho: chave `chaveTrabalho`. */
   lancadoAccrual(consultantIds: string[], workWeeks: string[]): Promise<Map<string, Map<string, JaLancado>>>;
   lancamentoPorId(id: string): Promise<LancamentoRow | null>;
+  lancamentoPorChave(consultantId: string, kind: TipoLancamento, key: string): Promise<LancamentoRow | null>;
 }
 
 /** Dentro da transação, já com o consultor travado. */
@@ -107,6 +112,9 @@ export interface EarningsRepository extends EarningsLeitura {
 }
 
 export const EARNINGS_REPOSITORY = Symbol('EARNINGS_REPOSITORY');
+
+/** O MESMO lock serve ao fechamento, ao ajuste e ao pagamento (F9): nada intercala por consultor. */
+export const chaveDoLock = (consultantId: string): string => 'field_earnings:' + consultantId;
 
 type Cliente = Prisma.TransactionClient | PrismaService;
 
@@ -205,7 +213,7 @@ class Leitor implements EarningsLeitura {
         consultant_id: { in: consultantIds },
         ...(f.payout_week ? { payout_week: f.payout_week } : {}),
         ...(f.work_weeks ? { work_week: { in: f.work_weeks } } : {}),
-        ...(f.kind ? { kind: f.kind } : {}),
+        kind: f.kind ? f.kind : { in: [...(f.kinds ?? TIPOS_REMUNERACAO)] },
       },
       orderBy: [{ created_at: 'desc' }, { id: 'asc' }],
       ...(f.limit ? { take: f.limit } : {}),
@@ -236,10 +244,18 @@ class Leitor implements EarningsLeitura {
     const r = await this.db.field_earnings_ledger.findUnique({ where: { id } });
     return r ? paraLancamento(r) : null;
   }
+
+  async lancamentoPorChave(consultantId: string, kind: TipoLancamento, key: string): Promise<LancamentoRow | null> {
+    const r = await this.db.field_earnings_ledger.findFirst({
+      where: { consultant_id: consultantId, kind, idempotency_key: key },
+    });
+    return r ? paraLancamento(r) : null;
+  }
 }
 
-class TxPrisma extends Leitor implements EarningsTx {
-  constructor(private readonly tx: Prisma.TransactionClient) {
+/** Exportada para a F9 compor o MESMO cliente de transação (razão + pagamento atômicos). */
+export class TxPrisma extends Leitor implements EarningsTx {
+  constructor(protected readonly tx: Prisma.TransactionClient) {
     super(tx);
   }
 
@@ -281,7 +297,7 @@ export class PrismaEarningsRepository extends Leitor implements EarningsReposito
   async emTransacao<T>(consultantId: string, fn: (tx: EarningsTx) => Promise<T>): Promise<T> {
     return this.prisma.$transaction(
       async (client) => {
-        await client.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'field_earnings:' + consultantId}))`;
+        await client.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${chaveDoLock(consultantId)}))`;
         return fn(new TxPrisma(client));
       },
       { timeout: 20_000 },

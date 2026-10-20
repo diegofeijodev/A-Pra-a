@@ -20,6 +20,11 @@ import { EARNINGS_REPOSITORY, PrismaEarningsRepository } from './earnings/earnin
 import { EarningsScheduler } from './earnings/earnings.scheduler';
 import { EarningsService } from './earnings/earnings.service';
 import { earningsOpcoesProvider } from './earnings/earnings.tokens';
+import { PayoutsCampoController, PayoutsEquipeController } from './payouts/payouts.controller';
+import { PayoutsLigadoGuard } from './payouts/payouts.guard';
+import { PAYOUTS_REPOSITORY, PrismaPayoutsRepository } from './payouts/payouts.repository';
+import { PayoutsService } from './payouts/payouts.service';
+import { payoutsOpcoesProvider } from './payouts/payouts.tokens';
 import { FollowupsService } from './followups.service';
 import { HeatmapService } from './heatmap.service';
 import { JourneysService } from './journeys.service';
@@ -44,6 +49,8 @@ import { VisitsService } from './visits.service';
     // Antes de ConsultoresController: `GET /v1/consultores/signups` e `/earnings` não podem cair em `:id`.
     SignupsEquipeController,
     EarningsEquipeController,
+    PayoutsEquipeController,
+    PayoutsCampoController,
     EarningsCampoController,
     SignupsCampoController,
     CampoAuthController,
@@ -73,6 +80,10 @@ import { VisitsService } from './visits.service';
     EarningsScheduler,
     EarningsLigadoGuard,
     earningsOpcoesProvider,
+    PayoutsService,
+    PayoutsLigadoGuard,
+    payoutsOpcoesProvider,
+    { provide: PAYOUTS_REPOSITORY, useClass: PrismaPayoutsRepository },
     { provide: EARNINGS_REPOSITORY, useClass: PrismaEarningsRepository },
     { provide: EARNINGS_INPUTS, useClass: PrismaEarningsInputs },
     // O `.env` já está em `process.env` (ConfigModule.forRoot) e foi validado na

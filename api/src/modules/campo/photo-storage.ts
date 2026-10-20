@@ -63,15 +63,22 @@ export function tipoDaImagem(b: Buffer): MimeImagem | null {
 }
 
 const EXT: Record<MimeImagem, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
-const MIME_DA_EXT: Record<string, MimeImagem> = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+const MIME_DA_EXT: Record<string, string> = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp', pdf: 'application/pdf' };
 
 export const CHAVE_FOTO_RE = /^campo\/[0-9a-f-]{36}\/\d{4}-\d{2}-\d{2}\/[0-9a-f-]{36}\.(jpg|png|webp)$/;
+
+/** Comprovantes de pagamento (F9, contrato §29.3): `pagamentos/<consultor>/<uuid>.<ext>`. Mesmo armazenamento privado das fotos. */
+export const CHAVE_COMPROVANTE_RE = /^pagamentos\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|pdf)$/;
+
+export function chaveDoComprovante(consultantId: string, proofId: string, ext: 'jpg' | 'png' | 'pdf'): string {
+  return `pagamentos/${consultantId}/${proofId}.${ext}`;
+}
 
 export function chaveDaFoto(consultantId: string, day: string, visitId: string, mime: MimeImagem): string {
   return `campo/${consultantId}/${day}/${visitId}.${EXT[mime]}`;
 }
 
-export function mimeDaChave(key: string): MimeImagem {
+export function mimeDaChave(key: string): string {
   return MIME_DA_EXT[key.slice(key.lastIndexOf('.') + 1)] ?? 'image/jpeg';
 }
 
@@ -79,7 +86,7 @@ export class DiskPhotoStorage implements PhotoStorage {
   constructor(private readonly dir: string) {}
 
   private caminho(key: string): string {
-    if (!CHAVE_FOTO_RE.test(key)) throw new Error(`chave de foto inválida: ${key}`);
+    if (!CHAVE_FOTO_RE.test(key) && !CHAVE_COMPROVANTE_RE.test(key)) throw new Error(`chave de foto inválida: ${key}`);
     return path.join(path.resolve(this.dir), ...key.split('/'));
   }
 

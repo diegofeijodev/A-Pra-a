@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
 import { minutesSp, todaySp, weekdayOf } from '../../common/time/dates';
 import {
@@ -15,6 +15,8 @@ import { minParaHhmm } from '../../domain/rota-rules';
 import { RotasConfigService } from '../rotas/rotas-config.service';
 import { ROTAS_LIGADAS } from '../rotas/rotas.tokens';
 import { COM_PRACA } from './campo-prisma';
+import { PayoutsService } from './payouts/payouts.service';
+import { PAYOUTS_OPCOES, type OpcoesPayouts } from './payouts/payouts.tokens';
 
 export interface AtencaoConsultor {
   consultant_id: string;
@@ -38,6 +40,8 @@ export interface AtencaoView {
   >;
   alerts: Alerta[];
   consultants: AtencaoConsultor[];
+  /** F9 (contrato §29.8): Pix bloqueado/falho. Ausente com `FIELD_PAYOUTS_ENABLED` desligada (e sem consulta). */
+  payout_alerts?: Awaited<ReturnType<PayoutsService['alertas']>>;
 }
 
 /** "Atenção agora" e meta da equipe (contrato §25.3): tudo calculado na leitura, nada gravado. */
@@ -47,9 +51,17 @@ export class AtencaoService {
     private readonly prisma: PrismaService,
     private readonly configs: RotasConfigService,
     @Inject(ROTAS_LIGADAS) private readonly rotasLigadas: boolean,
+    @Optional() @Inject(PAYOUTS_OPCOES) private readonly payoutsOpcoes?: OpcoesPayouts,
+    @Optional() private readonly payouts?: PayoutsService,
   ) {}
 
   async painel(pracaId: string | undefined, agora = new Date()): Promise<AtencaoView> {
+    const v = await this.painelBase(pracaId, agora);
+    if (!this.payoutsOpcoes?.ligado || !this.payouts) return v;
+    return { ...v, payout_alerts: await this.payouts.alertas(pracaId) };
+  }
+
+  private async painelBase(pracaId: string | undefined, agora: Date): Promise<AtencaoView> {
     if (pracaId) {
       const praca = await this.prisma.pracas.findUnique({ where: { id: pracaId }, select: { id: true } });
       if (!praca) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Praça não encontrada.' });

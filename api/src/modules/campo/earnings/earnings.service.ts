@@ -755,6 +755,17 @@ export class EarningsService {
     return { posted, total_cents: total };
   }
 
+  /** Início da semana de pagamento corrente (a que recebe ajustes), pela regra vigente. */
+  async semanaCorrente(agora = new Date()): Promise<string> {
+    return (await this.contexto(agora)).semanaAtual;
+  }
+
+  /** Calendário da regra vigente (F9): hoje, semana corrente, 1º dia da semana e dia do Pix. */
+  async calendario(agora = new Date()): Promise<{ hoje: string; semanaAtual: string; weekStart: number; payoutWeekday: number }> {
+    const ctx = await this.contexto(agora);
+    return { hoje: ctx.hoje, semanaAtual: ctx.semanaAtual, weekStart: ctx.weekStart, payoutWeekday: ctx.vigente.config.payout_weekday };
+  }
+
   // ── ajustes manuais ─────────────────────────────────────────────────────
 
   async ajustar(dto: AjusteDto, user: AuthUser, agora = new Date()) {
@@ -803,6 +814,12 @@ export class EarningsService {
         code: 'NOT_REVERSIBLE',
         message:
           'Só ajuste manual pode ser estornado. Para desfazer um ganho calculado, lance um ajuste negativo com motivo.',
+      });
+    }
+    if (orig.source === 'payout_difference') {
+      throw new UnprocessableEntityException({
+        code: 'NOT_REVERSIBLE',
+        message: 'Este ajuste veio de um Pix pago com valor diferente. Para desfazer, estorne o pagamento na tela de Pagamentos.',
       });
     }
     const reason = dto.reason.trim();

@@ -74,6 +74,8 @@ services:
       # Remuneração do consultor (contrato §28). Valores e faixas ficam no banco (tela de Configurações), nunca aqui.
       FIELD_EARNINGS_ENABLED: ${FIELD_EARNINGS_ENABLED:-false}
       FIELD_EARNINGS_AUTOCLOSE_ENABLED: ${FIELD_EARNINGS_AUTOCLOSE_ENABLED:-false}
+      # Pagamento por Pix manual (contrato §29): exige FIELD_EARNINGS_ENABLED. Só registra; não move dinheiro.
+      FIELD_PAYOUTS_ENABLED: ${FIELD_PAYOUTS_ENABLED:-false}
     ports:
       - '3014:3014'
 

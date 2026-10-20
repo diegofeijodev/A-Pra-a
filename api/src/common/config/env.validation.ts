@@ -73,6 +73,9 @@ const envBase = z.object({
   FIELD_EARNINGS_ENABLED: z.string().default('false'),
   FIELD_EARNINGS_AUTOCLOSE_ENABLED: z.string().default('false'),
 
+  // Pagamento por Pix MANUAL (F9, contrato §29). Exige FIELD_EARNINGS_ENABLED. Sem chamada a provedor de pagamento.
+  FIELD_PAYOUTS_ENABLED: z.string().default('false'),
+
   SWAGGER_ENABLED: z.string().optional(),
 
   /**

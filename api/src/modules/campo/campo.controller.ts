@@ -25,6 +25,7 @@ import { FollowupsService } from './followups.service';
 import { JourneysService } from './journeys.service';
 import { lerCheckinMultipart } from './multipart-checkin';
 import { EARNINGS_OPCOES, type OpcoesEarnings } from './earnings/earnings.tokens';
+import { PAYOUTS_OPCOES, type OpcoesPayouts } from './payouts/payouts.tokens';
 import { PlacesService } from './places.service';
 import { VisitsService } from './visits.service';
 
@@ -42,13 +43,14 @@ export class CampoController {
     private readonly followups: FollowupsService,
     @Optional() @Inject(COMPANY_SIGNUP_LIGADO) private readonly signupLigado: boolean = false,
     @Optional() @Inject(EARNINGS_OPCOES) private readonly earnings?: OpcoesEarnings,
+    @Optional() @Inject(PAYOUTS_OPCOES) private readonly payouts?: OpcoesPayouts,
   ) {}
 
   @AllowPendingPassword()
   @Get('me')
   async me(@CurrentConsultant() c: CampoConsultant) {
     // `features` esconde o botão "Cadastrar no Freela" no web quando a flag está desligada (§26.3).
-    return { ...(await this.auth.me(c.id)), features: { company_signup: this.signupLigado, earnings: this.earnings?.ligado ?? false } };
+    return { ...(await this.auth.me(c.id)), features: { company_signup: this.signupLigado, earnings: this.earnings?.ligado ?? false, payouts: this.payouts?.ligado ?? false } };
   }
 
   @Get('today')

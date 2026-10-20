@@ -7,6 +7,7 @@ import {
 } from '../../../../domain/earnings-rules';
 import type { RegraConfirmacao } from '../../../../domain/signup-sync-rules';
 import type { ConsultorBasico, DiaBruto, EarningsInputs } from '../earnings-inputs';
+import { TIPOS_REMUNERACAO } from '../earnings.repository';
 import type {
   EarningsRepository,
   EarningsTx,
@@ -83,7 +84,7 @@ export class FakeRepo implements EarningsRepository {
       .filter((l) => ids.includes(l.consultant_id))
       .filter((l) => !f.payout_week || l.payout_week === f.payout_week)
       .filter((l) => !f.work_weeks || f.work_weeks.includes(l.work_week))
-      .filter((l) => !f.kind || l.kind === f.kind)
+      .filter((l) => (f.kind ? l.kind === f.kind : (f.kinds ?? TIPOS_REMUNERACAO).includes(l.kind)))
       .reverse();
     return f.limit ? rows.slice(0, f.limit) : rows;
   }
@@ -97,6 +98,9 @@ export class FakeRepo implements EarningsRepository {
       m.set(k, { soma: cur.soma + l.amount_cents, qtd: cur.qtd + 1 });
     }
     return out;
+  }
+  async lancamentoPorChave(consultantId: string, kind: LancamentoRow['kind'], key: string) {
+    return this.ledger.find((l) => l.consultant_id === consultantId && l.kind === kind && l.idempotency_key === key) ?? null;
   }
   async lancamentoPorId(id: string) {
     return this.ledger.find((l) => l.id === id) ?? null;

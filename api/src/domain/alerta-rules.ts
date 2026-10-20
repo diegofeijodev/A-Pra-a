@@ -20,6 +20,8 @@ export interface ConfigAlertas {
   /** 0 = domingo … 6 = sábado (Brasília). */
   dias_trabalho: number[];
   retornos_no_roteiro: boolean;
+  /** F9 (contrato §29.3): marcar Pix como pago exige comprovante. */
+  payout_proof_required: boolean;
 }
 
 export const CONFIG_ALERTAS_PADRAO: ConfigAlertas = {
@@ -30,6 +32,7 @@ export const CONFIG_ALERTAS_PADRAO: ConfigAlertas = {
   alerta_parada_vencida_min: 30,
   dias_trabalho: [1, 2, 3, 4, 5, 6],
   retornos_no_roteiro: true,
+  payout_proof_required: true,
 };
 
 const inteiro = (min: number, max: number) => (v: unknown) => Number.isInteger(v) && (v as number) >= min && (v as number) <= max;
@@ -44,6 +47,7 @@ const VALIDADORES_ALERTAS: Record<keyof ConfigAlertas, (v: unknown) => boolean> 
   alerta_parada_vencida_min: inteiro(5, 240),
   dias_trabalho: diasValidos,
   retornos_no_roteiro: (v) => typeof v === 'boolean',
+  payout_proof_required: (v) => typeof v === 'boolean',
 };
 
 export const CHAVES_CONFIG_ALERTAS = Object.keys(VALIDADORES_ALERTAS) as (keyof ConfigAlertas)[];
