@@ -1,5 +1,6 @@
 /** Wire do consultor de campo — contrato §20 (`docs/api-contract.md`); roteiro: §23; metas: §25. */
 import type { GoalView } from '@/modules/consultores/domain/atencao';
+import type { CadastrosConfirmados } from './cadastros-confirmados';
 import type { SignupPayload } from './cadastro-empresa';
 import type { MotivoPulo } from '@/modules/rotas/domain/rota.schema';
 
@@ -117,6 +118,8 @@ export interface TodayView {
   counters: { visits: number; cadastrou_qr: number };
   /** Meta e ritmo do próprio consultor com a conta (contrato §25.5); ausente em respostas antigas guardadas no aparelho. */
   goal?: (GoalView & { params: GoalParams }) | null;
+  /** Cadastros confirmados pelo Freela hoje/na semana (contrato §27.8); ausente em respostas antigas. */
+  signups_confirmed?: CadastrosConfirmados | null;
 }
 
 /** Horários da configuração: o aparelho recalcula o ritmo com o relógio dele. */

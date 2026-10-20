@@ -1,4 +1,5 @@
 import { api } from '@/modules/shared/infrastructure/http';
+import type { CadastrosConfirmados } from '@/modules/campo/domain/cadastros-confirmados';
 import type { JourneyView, PointView, VisitView } from '@/modules/campo/domain/campo.types';
 import {
   atencaoSchema,
@@ -36,6 +37,8 @@ export interface ConsultorView {
 
 export interface ConsultorListItem extends ConsultorView {
   today: { status: 'em_jornada' | 'encerrou' | 'nao_iniciou'; visits: number; cadastros: number; last_point_at: string | null };
+  /** Confirmados pelo Freela (contrato §27.8); `null` se a leitura falhou, ausente em servidor antigo. */
+  signups_confirmed?: CadastrosConfirmados | null;
 }
 
 export interface DiaConsultor {

@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { AvisoGps } from '@/components/campo/AvisoGps';
 import { CampoTopo } from '@/components/campo/CampoTopo';
 import { FaixaFila } from '@/components/campo/FaixaFila';
+import { CadastrosConfirmadosCard } from '@/components/campo/CadastrosConfirmadosCard';
 import { MetaCard } from '@/components/campo/MetaCard';
 import { RetornosCampo } from '@/components/campo/RetornosCampo';
 import { RoteiroCard } from '@/components/campo/RoteiroCard';
@@ -62,6 +63,7 @@ export function HojeTela() {
       {gps && <AvisoGps motivo={gps} onFechar={() => setGps(null)} />}
 
       {!carregando && !rot.carregando && !(rot.habilitado && rot.route) && <MetaCard />}
+      {!carregando && <CadastrosConfirmadosCard />}
 
       {carregando ? (
         <p className="text-sm text-muted-foreground">Carregando…</p>
