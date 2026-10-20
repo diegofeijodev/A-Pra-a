@@ -3746,3 +3746,110 @@ Item novo da fila: `signup` (`{ visit_ref, payload: SignupCreateDto }`), idempot
 1. `activated` na F6 só vem do `409 ALREADY_ACTIVATED` do `reissue-link`; a leitura `listRegistrations` (com `activatedAt`) é da F7.
 2. A equipe só **lista** (sem criar nem reemitir pelo painel).
 3. O `409` por duplicidade não traz `userId`: a linha fica `already_registered` e a F7 a reconcilia.
+
+## 27. Cadastros confirmados pelo Freela (sincronização) — `/v1/consultores/signups`, `/v1/campo/signups`
+
+F7 da prospecção. O Praça passa a **trazer do Freela** a lista de empresas cadastradas por cada consultor e a data em que cada uma foi **confirmada** (primeiro acesso, primeira vaga ou
+primeiro serviço concluído). É a base de pagamento da F8: "só vale cadastro confirmado pelo Freela". O "cadastrou agora" do questionário da visita continua sendo **só declaração** e nunca entra nesta conta.
+Tudo atrás de `FIELD_SIGNUP_SYNC_ENABLED` (padrão `false`) para o **job**; as leituras respondem sempre (vazias enquanto nada foi sincronizado).
+
+### 27.1 Desvios intencionais
+
+1. Tabela `field_signups` (nome do spec; a F6 usou `field_company_signups` para o cadastro **iniciado pelo consultor**). `field_signups` guarda o que o **Freela confirmou**, inclusive os cadastros por **QR** (sem linha em `field_company_signups`).
+2. O Praça **não guarda telefone, e-mail nem CNPJ inteiros** do Freela (§26.0): só o nome da empresa e as datas. Telefone/CNPJ/e-mail vêm na resposta do Freela, servem para casar com lead/cadastro **em memória** e são descartados.
+3. A tabela guarda **fatos imutáveis** (datas de cada evento, preenchidas uma vez). "Confirmado em que dia, sob qual regra" é uma **função pura sobre esses fatos, avaliada na leitura** (§27.4): trocar a regra nunca reescreve o histórico. A F8 deve ler pela mesma função e **fotografar** a regra e o dia no seu próprio ledger quando pagar.
+4. Não existe estado `link_issued` em `field_company_signups`: "link emitido" é `pending`.
+
+### 27.2 Banco (migração aditiva `20261022100000_field_signups`)
+
+`field_signups`:
+
+| Coluna | Tipo | Observação |
+|---|---|---|
+| `id` | uuid PK | |
+| `consultant_id` | uuid FK `field_consultants` (cascade) | isolamento: toda leitura filtra por ele |
+| `freela_user_id` | text | **UNIQUE com `consultant_id`**: re-sincronizar nunca duplica |
+| `freela_contractor_id` | text? | |
+| `company_name` | text | |
+| `source` | text? | `on_behalf` · `qr` · null (o Freela pode mandar null) |
+| `freela_created_at` | timestamptz | `createdAt` no Freela; é o campo do `since` |
+| `activated_at`, `first_vacancy_at`, `first_job_completed_at` | timestamptz? | **escrita única**: só preenche nulo; valor existente nunca é sobrescrito nem volta a nulo (divergência = contador no log) |
+| `created_day`, `activated_day`, `first_vacancy_day`, `first_job_day` | text? `YYYY-MM-DD` | o dia em **Brasília** do instante correspondente (filtros de dia/semana viram comparação de texto indexada) |
+| `signup_id` | uuid? FK `field_company_signups` (set null) | vínculo ao cadastro iniciado pelo consultor |
+| `lead_id` | uuid? FK `leads` (set null) | vínculo ao lead |
+| `match_status` | text CHECK | `linked` (vínculo único) · `ambiguous` (mais de um candidato: **nada é ligado**, vai para revisão) · `none` (sem candidato; normal no QR) |
+| `first_seen_at`, `synced_at`, `updated_at` | timestamptz | |
+
+Índices: `UNIQUE(consultant_id, freela_user_id)`, `(consultant_id, activated_day)`, `(consultant_id, first_vacancy_day)`, `(consultant_id, first_job_day)`, `(signup_id)`, `(lead_id)`.
+
+`field_signup_sync_state` (uma linha por consultor): `consultant_id` PK/FK cascade, `watermark` timestamptz? (maior `freela_created_at` visto numa passada **completa**), `last_run_at`, `last_ok_at`,
+`last_error_code`, `last_error` (**sanitizado**: sem URL, token, telefone ou corpo), `last_count` int.
+
+### 27.3 O job
+
+`FIELD_SIGNUP_SYNC_ENABLED=true` + Freela configurado. `@Cron` a cada minuto (Brasília); só roda se passaram `FIELD_SIGNUP_SYNC_INTERVAL_MIN` (padrão 10) minutos desde a última rodada e dentro de 06:00–23:59. Trava de reentrância
+na instância **e** `pg_try_advisory_lock` (duas instâncias nunca sincronizam juntas). O erro nunca sai do `@Cron`.
+
+Por consultor com `freela_consultant_id` (**inclui inativos**: cadastro feito antes de sair ainda vale):
+1. `since = max(agora − FIELD_SIGNUP_RECONCILE_DAYS, min(watermark − 1 dia, `freela_created_at` do cadastro mais antigo ainda **sem** a data do evento da regra))`; sem watermark = `agora − FIELD_SIGNUP_RECONCILE_DAYS` (padrão 45; 1ª rodada traz a janela inteira). Motivo: o `since` do Freela filtra por `createdAt`, mas `activatedAt`/`firstVacancyAt`/`firstJobCompletedAt` chegam depois; a janela de reconciliação reabre os ainda não confirmados.
+2. Pagina com `limit=200` e `cursor` até `nextCursor` nulo. **Teto de 25 páginas por consultor por rodada**; cursor repetido interrompe (sem laço infinito). O watermark só avança quando a passada termina; a próxima continua do mesmo ponto (os upserts são idempotentes).
+3. Por item: upsert por `(consultant_id, freela_user_id)` (datas de escrita única), casamento (§27.5), reconciliação do `field_company_signups` (§27.6) e avanço do lead (§27.7), cada item na sua transação.
+4. Falha: `429` encerra a **rodada inteira** (todos os consultores); `404`/`403`/`5xx`/rede/formato inválido gravam `last_error_code` + `last_error` sanitizado **daquele** consultor e seguem para o próximo. Freela não configurado: o job não roda.
+
+### 27.4 Regra de "confirmado" (configurável)
+
+`app_settings.field_config.confirmation_rule` (mesmo `GET/PUT /v1/consultores/settings/config`, validado; chave desconhecida = `400`):
+
+| Valor | Confirmado quando | Data que vale |
+|---|---|---|
+| `activated` (**padrão**) | `activated_at` não nulo | `activated_day` |
+| `first_vacancy` | `first_vacancy_at` não nulo | `first_vacancy_day` |
+| `first_job_completed` | `first_job_completed_at` não nulo | `first_job_day` |
+
+`activatedAt` nulo = **não confirmado** (a conta pode estar ativa só por "esqueci a senha"). Origem `qr`: o Freela já manda `activatedAt = createdAt`. O dia vale em Brasília; a **semana** é segunda a domingo de Brasília.
+O ajuste da regra grava `atualizado_por`/`atualizado_em` como o resto da config. Mudar a regra muda a contagem **a partir da leitura**; o histórico dos fatos não é tocado.
+
+### 27.5 Casamento (nunca sobrescreve dado humano)
+
+Em ordem, sempre dentro do **mesmo consultor**: (1) `field_company_signups.freela_user_id = userId`; (2) cadastro sem `freela_user_id` do consultor cujo `phone_masked` = máscara do telefone do Freela **e** nome normalizado igual
+(sem acento, caixa, pontuação). Mais de um candidato = `ambiguous`. Lead: o `lead_id` do cadastro; senão leads **da mesma praça do consultor** com o mesmo `phone_key` ou CNPJ; só liga se houver **exatamente um**.
+Só preenche vínculos nulos; nunca troca um vínculo existente nem altera nome/telefone/cnpj do lead.
+
+### 27.6 Reconciliação de `field_company_signups`
+
+Linha ligada, em `creating`/`pending`/`already_registered`/`failed` (sem `freela_user_id`): grava `freela_user_id` e `freela_contractor_id` quando nulos; `creating`/`failed` → `pending`. Se o Freela trouxe `activatedAt`:
+status `activated` e `activated_at` (se nulo). Linha `activated` não regride.
+
+### 27.7 Lead → "Cadastrado" (5)
+
+Só quando o cadastro está **confirmado pela regra vigente**, o lead está ligado (§27.5), não é `archived`, não é `is_test` e `stage < 5` (nunca retrocede; **etapa 8 "Perdido" não é tocada**: a decisão de reabrir é humana, o vínculo fica registrado).
+Transação: `stage = 5`, `stage_since = hoje (Brasília)`, `lead_events { kind: 'stage', stage_to: 5, author_label: 'Freela (sincronização)', text }` sem `author_id`. Idempotente pelo `stage < 5`.
+
+### 27.8 Leituras
+
+`GET /v1/consultores/signups?praca_id=&consultant_id=&from=&to=` (equipe; `from`/`to` = dias `YYYY-MM-DD` de Brasília, inclusive; padrão = a semana atual; `to` ≥ `from`, no máximo 92 dias; `praca_id`/`consultant_id` uuid):
+
+```
+{ "rule": "activated", "field": "activated_at", "from": "2026-10-19", "to": "2026-10-25",
+  "source": "Freela GET /v1/admins/consultants/:id/registrations (sincronizado)",
+  "formula": "cadastros do Freela com activated_at preenchido e dia de Brasília entre from e to",
+  "total": 3, "pending_review": 1, "last_sync_at": "…" | null,
+  "consultants": [ { "consultant_id", "name", "praca_id", "confirmed": 2, "not_confirmed": 1, "sync_error": "…" | null, "last_ok_at": "…" | null } ],
+  "items": [ { "id", "consultant_id", "company_name", "source": "on_behalf"|"qr"|null, "confirmed_day": "YYYY-MM-DD", "confirmed_at": "…", "created_at": "…", "match_status", "lead_id": uuid|null } ] }
+```
+`items` traz só os **confirmados** no período (limite 500, mais novos primeiro); `not_confirmed` conta os sincronizados criados no período e ainda sem o evento da regra. Equipe lê tudo; não há `@CampoRoute()` (token de consultor = `401`).
+
+`GET /v1/campo/signups?from=&to=` (consultor; **só os dele**; mesmos padrões): `{ rule, field, from, to, source, total, items: [ { id, company_name, confirmed_day, status: 'confirmed' } ] }` — sem telefone, e-mail, CNPJ, `freela_user_id` ou `lead_id`.
+Aparecem também os **não confirmados** criados no período com `status: 'waiting'` (empresa e data de criação), para o consultor saber que falta o dono acessar.
+
+Resumo: `GET /v1/campo/today` ganha `signups_confirmed: { today, week, rule, source }` e cada item de `GET /v1/consultores` ganha `today.confirmed_signups` e `week_confirmed_signups`, com a mesma `source`. Contagem = linhas de `field_signups` do consultor cujo dia do evento da regra cai no dia / na semana (segunda–domingo, Brasília).
+
+### 27.9 Variáveis
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `FIELD_SIGNUP_SYNC_ENABLED` | `false` | liga o job |
+| `FIELD_SIGNUP_SYNC_INTERVAL_MIN` | `10` | intervalo mínimo entre rodadas (1–120) |
+| `FIELD_SIGNUP_RECONCILE_DAYS` | `45` | janela de reconciliação (7–180) |
+
+**Para produção:** `migrate deploy` antes do código; api-freela com `GET …/registrations` no ar e a conta de serviço com a permissão `CONSULTANTS`; ligar a flag; conferir a tela `/consultores` (contagem e `sync_error`) antes de a F8 usar.
