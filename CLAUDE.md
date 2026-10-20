@@ -56,6 +56,7 @@ Lovable "PRAÇA" para a stack do Freela.
   gere com `--create-only`, **apague essas linhas do SQL** e aplique com
   `migrate deploy`. (Aviso espelhado em comentário na migração
   `20261008221516_consultores_de_campo`.)
+- **Modo do chefe (contrato §31):** a flag `FIELD_VISIT_FLOW_SELECT_ENABLED` (padrão `false`) liga a escolha do fluxo da visita (`simples` | `completo`). Desligada, toda visita é `completo` e nada muda. O fluxo é gravado em `field_visits.flow` na abertura e o checkout o obedece; no web, `/campo` roteia pelas telas de `components/campo/simples/` só com a flag ligada e o fluxo resolvido `simples`. Os testes `*caracterizacao*` congelam o fluxo completo: não editar para "fazer passar". `scripts/smoke-modo-chefe.sh` roda com a flag LIGADA (não junto do `smoke.sh`).
 - Fotos do campo passam pela API (`PhotoStorage`): nunca link público do bucket.
 - Ao rodar verificações nesta máquina: **um build/typecheck por vez** (a
   máquina do usuário trava com builds paralelos). Prefira `tsc --noEmit`, o

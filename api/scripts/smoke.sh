@@ -2073,6 +2073,19 @@ check "CRM: lead foi para Conversa aberta" "3" "$(echo "$LEAD_DEPOIS" | jq .stag
 check "CRM: decisor é quem atendeu" "João|Dono" "$(echo "$LEAD_DEPOIS" | jq -r '"\(.decisor)|\(.decisor_role)"')"
 check "CRM: próximo passo é o retorno pedido" "Ligar na sexta|$HOJE3" \
   "$(echo "$LEAD_DEPOIS" | jq -r '"\(.next_step.what)|\(.next_step.date)"')"
+
+echo "── Modo do chefe (§31), flag desligada: nada muda ──"
+# Com FIELD_VISIT_FLOW_SELECT_ENABLED=false (padrão) o fluxo é sempre o completo. A flag ligada é provada por
+# `scripts/smoke-modo-chefe.sh` (que não roda junto: o checkout completo daqui não vale numa visita simples).
+ME_FLAG=$(curl -s $API/v1/campo/me -H "$HC")
+check "/me: flag do fluxo desligada e fluxo completo" "false|completo" "$(echo "$ME_FLAG" | jq -r '"\(.features.visit_flow)|\(.visit_flow)"')"
+check "/me: sem visit_config com a flag desligada" "false" "$(echo "$ME_FLAG" | jq 'has("visit_config")')"
+check "a visita nasceu no fluxo completo" "completo" "$(curl -s $API/v1/campo/today -H "$HC" | jq -r --arg v "$V1" '.visits[] | select(.client_id==$v) | .flow')"
+check "cancelar visita com a flag desligada = FLOW_SELECT_DISABLED" "FLOW_SELECT_DISABLED" \
+  "$(curl -s -X DELETE $API/v1/campo/visits/$V1 -H "$HC" | jq -r .error.code)"
+check "config: fluxo_visita sem escolha e presets presentes" "null|true" \
+  "$(curl -s $API/v1/consultores/settings/config -H "$HD" | jq -r '"\(.fluxo_visita)|\(.presets.chefe.justificativa_distancia == "obrigatoria")"')"
+
 check "CRM: UM evento de visita do consultor, com a etapa nova" "1|3" \
   "$(echo "$LEAD_DEPOIS" | jq -r --arg a "Consultor: Consultor $SUF" '[.events[] | select(.kind=="visit" and .author_label==$a)] | "\(length)|\(.[0].stage_to)"')"
 check "foto da visita para o consultor" "image/jpeg" \
