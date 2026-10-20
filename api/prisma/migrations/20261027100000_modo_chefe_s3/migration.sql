@@ -1,5 +1,5 @@
 -- Modo do chefe S3 (contrato §32.8): ganho por cadastro declarado. ADITIVA: duas tabelas novas, nenhuma coluna nova em tabela existente.
--- Gerada por `prisma migrate diff`; sem DROP INDEX dos índices parciais conhecidos (field_journeys_one_open_per_consultant, field_visits_one_open_per_consultant, field_routes_one_active_per_day, field_route_stops_lead_day_unique, field_payouts_one_active_per_week).
+-- Gerada por `prisma migrate diff`; as linhas que o Prisma propõe para derrubar os índices únicos parciais conhecidos foram removidas (o diff desta migração não as continha; conferido por teste).
 
 -- CreateTable
 CREATE TABLE "field_declared_signups" (
