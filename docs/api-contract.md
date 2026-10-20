@@ -3853,3 +3853,102 @@ Resumo: `GET /v1/campo/today` ganha `signups_confirmed: { today, week, rule, sou
 | `FIELD_SIGNUP_RECONCILE_DAYS` | `45` | janela de reconciliação (7–180) |
 
 **Para produção:** `migrate deploy` antes do código; api-freela com `GET …/registrations` no ar e a conta de serviço com a permissão `CONSULTANTS`; ligar a flag; conferir a tela `/consultores` (contagem e `sync_error`) antes de a F8 usar.
+
+## 28. Remuneração do consultor — `/v1/consultores/earnings/*`, `GET /v1/campo/earnings`
+
+F8 da prospecção. Calcula **em centavos inteiros** quanto cada consultor ganhou por dia e por semana a partir dos cadastros **confirmados pelo Freela** (§27) e das jornadas/visitas do dia, com a **conta escrita**. Tudo atrás de `FIELD_EARNINGS_ENABLED` (padrão `false`): desligada, **todas** as rotas abaixo respondem `404 EARNINGS_DISABLED`, `features.earnings` em `GET /v1/campo/me` é `false` e a UI some. Pagamento (Pix) NÃO está aqui: é a F9. Nenhuma resposta traz chave Pix, telefone, e-mail ou CNPJ.
+Dinheiro: **inteiro em centavos** no banco, no cálculo e no fio (campos `*_cents`); nunca ponto flutuante. Não há divisão no cálculo, logo não há arredondamento.
+
+### 28.1 Desvios intencionais
+
+1. Nomes: `field_earnings_ledger` (razão) e `field_payout_periods` (fechamento) no lugar de `field_payout_entries`/`field_payout_closings` do spec; tipos `accrual` · `adjustment` · `reversal` (o `pagamento` entra na F9); flag `FIELD_EARNINGS_ENABLED` no lugar de `FIELD_PAYROLL_ENABLED`.
+2. **Nenhum valor é fixo no código.** `REGRA_PADRAO` (R$ 10,00 por cadastro; faixas 10 → R$ 100,00 e 20 → R$ 250,00; modo `max`; faixa **por dia**; **sem piso**; fechamento na segunda) é só a versão 1, gravada pela migração e **editável** por nova versão.
+3. O padrão **não** inclui piso (`floor_cents = 0`): a leitura "piso R$ 100 por diária" do dono é ambígua e, sem condição, pagaria dia sem trabalho. Para ter piso, o admin liga `floor_cents` e escolhe a condição.
+4. Fuso: **sempre Brasília** (`America/Sao_Paulo`). O dia de cada cadastro confirmado já foi gravado em Brasília (§27.2); outro fuso desalinharia dia e razão. Não é parâmetro.
+5. Dia da confirmação = dia (Brasília) do **evento da regra** `confirmation_rule` (§27.4), não o dia em que o consultor cadastrou. Cadastro ainda sem o evento é **"Ainda não confirmado"** e vale R$ 0.
+
+### 28.2 Regra (parâmetros) e vigência
+
+Uma **versão** = `{ version, valid_from, config, reason, created_by, created_at }`, tabela `field_pay_rule_versions` (só insere; **nunca** `UPDATE`/`DELETE`). `config`:
+
+| Campo | Tipo / limites | Padrão | Significado |
+|---|---|---|---|
+| `unit_cents` | int 0–1.000.000 | `1000` | valor por cadastro confirmado |
+| `tiers_period` | `day` \| `week` | `day` | faixas contam cadastros no dia ou na semana |
+| `tiers` | até 10 de `{ min_signups 1–1000, amount_cents 1–10.000.000 }`; `min_signups` estritamente crescente; `amount_cents` não decrescente | `[10→10000, 20→25000]` | valor **fixo** ao atingir a faixa (vale a maior atingida) |
+| `combine` | `max` \| `sum` \| `tier_only` | `max` | `max`: o maior entre `n × unit_cents` e a faixa · `sum`: soma · `tier_only`: só a faixa (`unit_cents` ignorado; o piso continua valendo) |
+| `cap_cents` | int ≥ 1 \| `null` | `null` | teto **por período** (`tiers_period`); `null` = sem teto. Deve ser ≥ `floor_cents` |
+| `floor_cents` | int 0–10.000.000 | `0` | piso **por diária**; `0` = sem piso |
+| `floor_condition` | `none` \| `journey_open` \| `min_visits` | `none` | quando o piso vale: sempre (só consultor ativo) · houve jornada iniciada no dia · ao menos `floor_min_visits` visitas |
+| `floor_min_visits` | int 0–1000 | `0` | obrigatório ≥ 1 com `min_visits` |
+| `visits_count` | `checkin` \| `checkout` | `checkin` | visita conta ao fazer check-in ou só com checkout; dia = `field_journeys.day` da visita |
+| `week_start_weekday` | 0–6 (0 = domingo) | `1` | primeiro dia da semana de pagamento |
+| `payout_weekday` | 0–6 | `1` | dia do Pix (o primeiro depois do fim da semana) e dia do fechamento automático |
+| `autoclose_hour` | 0–23 | `6` | hora (Brasília) a partir da qual o job fecha |
+| `late_grace_days` | 0–92 | `14` | quantos dias após o fim de uma semana fechada uma confirmação tardia ainda gera ajuste |
+
+**Fórmula do dia** (`n` = cadastros confirmados no dia): `núcleo = combine(n × unit_cents, faixa(n))` (faixa só se `tiers_period = day`; senão o núcleo é `n × unit_cents`, ou 0 em `tier_only`) → **piso** (`max(núcleo, floor_cents)` se a condição vale) → **teto** (`min`, só se `tiers_period = day`). O dia ainda não terminado é calculado "até agora".
+**Fórmula da semana, faixa por dia:** soma dos dias. **Faixa semanal** (`tiers_period = week`): `N` = cadastros confirmados na semana; `Σd` = soma dos dias (núcleo `n × unit` + piso, sem teto); semana = `max(Σd, faixa(N))` (modo `max`) · `Σd + faixa(N)` (`sum`) · `Σd + faixa(N)` com `unit` ignorado (`tier_only`); depois `min(cap_cents)`. No razão, a parte semanal é um lançamento próprio (`work_scope = 'week'`) de valor `semana − Σd`.
+**Vigência:** cada dia usa a versão com maior `valid_from ≤ dia` (empate: maior `version`). Parâmetros semanais (faixa, teto) seguem a versão vigente no **primeiro dia da semana**.
+
+### 28.3 Banco (migração aditiva `20261023100000_field_earnings`)
+
+- `field_pay_rule_versions`: `id` uuid PK, `version` int UNIQUE (autoincremento), `valid_from` text `YYYY-MM-DD`, `config` jsonb, `reason` text?, `created_by` uuid? (FK `users`; nulo na versão 1), `created_at`. Índice `(valid_from, version)`. A versão 1 (`valid_from = '1970-01-01'`) é inserida pela migração.
+- `field_earnings_ledger` (**razão append-only**): `id` uuid PK, `consultant_id` uuid FK **Restrict**, `kind` CHECK `accrual|adjustment|reversal`, `amount_cents` int (com sinal; `accrual` ≠ 0 não é obrigatório), `work_scope` CHECK `day|week|manual`, `work_day` text?, `work_week` text (início da semana trabalhada), `payout_week` text (início da semana em que entra no pagamento), `rule_version` int? FK `field_pay_rule_versions(version)`, `source` text, `reason` text? (**obrigatório** e não vazio em `adjustment`/`reversal`, CHECK), `reverses_id` uuid? FK própria, **UNIQUE** (um lançamento só é estornado uma vez; CHECK: `reversal` ⇔ `reverses_id` nulo ou não), `idempotency_key` text, `snapshot` jsonb (regra completa, `confirmation_rule`, contagens usadas, a conta), `created_by` uuid? (FK `users`; nulo = sistema), `created_at`. **UNIQUE `(consultant_id, payout_week, kind, idempotency_key)`**. Índices `(consultant_id, payout_week)` e `(consultant_id, work_week, work_scope, work_day)`. **Trigger** barra `UPDATE` e `DELETE` (última linha de defesa); o código também só insere e lê.
+- `field_payout_periods`: `id` uuid PK, `consultant_id` FK **Restrict**, `week_start`, `week_end`, `status` CHECK `open|closed`, `total_cents` int, `entries` int, `rule_version` int (vigente no fechamento), `closed_at`, `closed_by` uuid? (nulo = job), `closed_mode` `manual|auto`. **UNIQUE `(consultant_id, week_start)`**. Só linhas `closed` são gravadas (semana aberta é calculada).
+- FKs `Restrict`: um consultor com razão não pode ser apagado (`DELETE /v1/consultores/:id` → `409 HAS_EARNINGS`; desative em vez de apagar).
+
+### 28.4 Razão: o que entra e como não duplica
+
+- **Uma só conta** serve a leitura e o fechamento: `alvo` (função pura sobre cadastros confirmados, jornadas e visitas) menos `já lançado` (**somente** lançamentos `accrual` daquele período de trabalho) = `delta`. Ajustes e estornos manuais **nunca** entram nessa subtração (senão o próximo fechamento desfaria o ajuste). Delta 0 não grava nada.
+- **Fechar uma semana** (`W`, já encerrada) = em transação, travando o consultor (`pg_advisory_xact_lock`): lançar os deltas dos dias de `W` (e a parte semanal) em `payout_week = W`; somar o razão de `payout_week = W`; gravar `field_payout_periods` (`UNIQUE` impede o duplo fechamento; repetir devolve o fechamento existente, `already_closed: true`). Semana fechada **não reabre**.
+- **Confirmação tardia:** dia de uma semana **já fechada**, dentro de `late_grace_days` do fim dela, com `alvo` diferente do lançado → delta entra na **semana corrente** (`payout_week` = semana de hoje), `source = 'late'`, com o dia de origem no `snapshot`. Fora do prazo nada é lançado (ajuste manual, se o dono quiser).
+- **Leitura = lançado + planejado:** o total de uma semana é o que já está no razão (`payout_week`) **mais** os deltas que seriam lançados agora para essa semana. Assim a tela mostra o mesmo número que o fechamento grava, inclusive confirmações tardias ainda não lançadas.
+- **Idempotência:** chave do lançamento `acc:<escopo>:<dia|semana>:<n>`, `n` = quantidade de `accrual` já existentes naquele período de trabalho + 1, calculado dentro da transação travada; conflito `UNIQUE` = já lançado (nada duplica).
+- **Ajuste manual** (`adjustment`): valor com sinal ≠ 0 e **motivo obrigatório**, sempre na semana corrente; chave = `client_id` enviado pelo cliente. **Estorno** (`reversal`): só de `adjustment`, valor = oposto do original, motivo obrigatório, uma vez só. Para desfazer um ganho do sistema, lance um `adjustment` negativo com motivo.
+
+### 28.5 Equipe — `/v1/consultores/earnings` (estáticas, antes de `:id`)
+
+Leitura: equipe. Escrita: `@AdminOnly()`. Token de consultor de campo → `401`. Flag desligada → `404 EARNINGS_DISABLED`.
+
+| Método e rota | Corpo / query | Resposta |
+|---|---|---|
+| `GET /v1/consultores/earnings/config` | — | `{ current: Versão, upcoming: Versão[], history: Versão[] (50 últimas), default_config, limits }` |
+| `PUT /v1/consultores/earnings/config` | `{ valid_from, reason?, ...config completo }` (admin) | `201` nova `Versão`. `valid_from` ≥ hoje (Brasília); chave desconhecida ou fora dos limites → `400 VALIDATION_ERROR` (a mensagem diz o campo). Com faixa/teto semanal (na nova ou na vigente), `valid_from` tem de ser o 1º dia da semana. Mudar `week_start_weekday` depois que existe razão/fechamento → `409 WEEK_START_LOCKED`. Nunca edita versão antiga |
+| `POST /v1/consultores/earnings/simulate` | `{ config?, signups_confirmed (0–1000), visits (0–1000), journey_open }` (equipe) | `{ day: { total_cents, conta: string[] } }`; sem `config` usa a vigente. Não grava nada. Mesma função do cálculo real |
+| `GET /v1/consultores/earnings` | `?week=YYYY-MM-DD` (qualquer dia da semana; padrão a atual) `&praca_id= &consultant_id=` | `{ week: {from, to}, source, rule_version, confirmation_rule, total_cents, consultants: [ { consultant_id, name, praca_id, active, status: 'open'\|'closed', total_cents, confirmed_signups, closed_at, closed_mode, days: [ { day, total_cents, confirmed_signups, visits, journey_open, rule_version, conta: string[] } ], week_part_cents, extras_cents, conta: string[] } ], ledger?: Lançamento[] (só com consultant_id; até 200) }` |
+| `POST /v1/consultores/earnings/close` | `{ week_start, consultant_id? }` (admin) | `{ week: {from,to}, closed: n, already_closed: n, total_cents, periods: [ { consultant_id, total_cents, already_closed } ] }`. Semana não encerrada → `409 WEEK_NOT_ENDED`; `week_start` que não é início de semana → `400` |
+| `POST /v1/consultores/earnings/reconcile` | `{ consultant_id? }` (admin) | `{ posted: n, total_cents }` lança as confirmações tardias na semana corrente |
+| `POST /v1/consultores/earnings/adjustments` | `{ consultant_id, amount_cents (≠ 0, |v| ≤ 10.000.000), reason (3–500), client_id (uuid) }` (admin) | `201 Lançamento` (repetir o mesmo `client_id` devolve o mesmo, `200`) |
+| `POST /v1/consultores/earnings/adjustments/:id/reverse` | `{ reason, client_id }` (admin) | `201 Lançamento`; `409 ALREADY_REVERSED`; `422 NOT_REVERSIBLE` (só `adjustment`) |
+
+`Lançamento`: `{ id, kind, amount_cents, work_scope, work_day, work_week, payout_week, rule_version, source, reason, reverses_id, created_by, created_at }`. Consultor inexistente → `404 NOT_FOUND`.
+
+### 28.6 Consultor — `GET /v1/campo/earnings` (`@CampoRoute()`)
+
+Só os ganhos **dele** (id vem do token). Resposta:
+
+```
+{ "rule_version": 1, "confirmation_rule": "activated",
+  "source": "Cadastros confirmados pelo Freela (sincronizado) × regra de remuneração versão 1",
+  "as_of": "…",
+  "today": { "day": "2026-10-20", "total_cents": 10000, "confirmed_signups": 10, "visits": 8, "journey_open": true, "conta": ["10 cadastros confirmados × R$ 10,00 = R$ 100,00.", "…"] },
+  "week": { "from": "2026-10-19", "to": "2026-10-25", "total_cents": 18000, "extras_cents": 0, "days": [ { "day", "total_cents", "confirmed_signups" } ], "conta": ["…"] },
+  "unconfirmed": { "count": 3, "text": "3 cadastros ainda não confirmados pelo Freela: não entram na conta e contam no dia em que o dono acessar." },
+  "pix": { "date": "2026-10-26", "week_to": "2026-10-25", "text": "Pix previsto para 26/10/2026, referente a 19/10 a 25/10." },
+  "previous_weeks": [ { "from", "to", "total_cents", "status": "closed"|"open" } ] }
+```
+Seção "Confirmado pelo Freela" = `confirmed_signups` e `total_cents`; "Ainda não confirmado" = `unconfirmed` (sem valor em reais). `previous_weeks`: 4 anteriores. `GET /v1/campo/me` ganha `features.earnings`.
+
+### 28.7 Fechamento automático
+
+`FIELD_EARNINGS_AUTOCLOSE_ENABLED=true` (e `FIELD_EARNINGS_ENABLED=true`): `@Cron` a cada 30 min (Brasília) que decide no código: só quando o dia da semana de hoje é o `payout_weekday` vigente, a hora é ≥ `autoclose_hour` e ainda não rodou hoje (memória; reiniciar repete, e é idempotente). Fecha todas as semanas **encerradas e abertas** (até 8 semanas atrás) de todos os consultores e reconcilia confirmações tardias. Trava de reentrância (`rodando`), instância única, `try/catch` completo (o erro nunca sai do `@Cron`).
+
+### 28.8 Variáveis
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `FIELD_EARNINGS_ENABLED` | `false` | habilita rotas e UI |
+| `FIELD_EARNINGS_AUTOCLOSE_ENABLED` | `false` | liga o fechamento automático |
+
+**Para produção:** `migrate deploy` antes do código; F7 já ligada e conferida (a F8 só vale com cadastros sincronizados); ligar `FIELD_EARNINGS_ENABLED`; conferir 2 semanas **em sombra** na tela da equipe (conta × cálculo à mão) antes de ligar o fechamento automático e antes da F9.
