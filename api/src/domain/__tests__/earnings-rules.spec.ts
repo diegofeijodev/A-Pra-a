@@ -24,9 +24,21 @@ import {
 } from '../earnings-rules';
 
 const regra = (o: Partial<RegraRemuneracao> = {}): RegraRemuneracao => ({ ...REGRA_PADRAO, ...o });
-const entrada = (signups: number, o: Partial<EntradaDia> = {}): EntradaDia => ({ dia: '2026-10-20', signups, visits: 0, journey_open: false, elegivel: true, ...o });
-const dia = (r: RegraRemuneracao, n: number, o: Partial<EntradaDia> = {}) => calcularDia(r, entrada(n, o)).total_cents;
-const v = (version: number, valid_from: string, o: Partial<RegraRemuneracao> = {}): VersaoRegra => ({ version, valid_from, config: regra(o) });
+const entrada = (signups: number, o: Partial<EntradaDia> = {}): EntradaDia => ({
+  dia: '2026-10-20',
+  signups,
+  visits: 0,
+  journey_open: false,
+  elegivel: true,
+  ...o,
+});
+const dia = (r: RegraRemuneracao, n: number, o: Partial<EntradaDia> = {}) =>
+  calcularDia(r, entrada(n, o)).total_cents;
+const v = (version: number, valid_from: string, o: Partial<RegraRemuneracao> = {}): VersaoRegra => ({
+  version,
+  valid_from,
+  config: regra(o),
+});
 
 describe('brl', () => {
   it('formata centavos inteiros', () => {
@@ -140,7 +152,9 @@ describe('calcularDia — piso por diária', () => {
     expect(dia(r, 4)).toBe(10000);
     expect(dia(r, 12)).toBe(12000);
     expect(dia(r, 0, { elegivel: false })).toBe(0);
-    expect(calcularDia(r, entrada(4)).conta).toContain('Piso do dia de R$ 100,00 (dia de consultor ativo): sobe de R$ 40,00 para R$ 100,00.');
+    expect(calcularDia(r, entrada(4)).conta).toContain(
+      'Piso do dia de R$ 100,00 (dia de consultor ativo): sobe de R$ 40,00 para R$ 100,00.',
+    );
   });
 
   it('piso já superado é dito e não é "aplicado"', () => {
@@ -153,7 +167,9 @@ describe('calcularDia — piso por diária', () => {
     const r = regra({ floor_cents: 10000, floor_condition: 'journey_open' });
     expect(dia(r, 0, { journey_open: false })).toBe(0);
     expect(dia(r, 0, { journey_open: true })).toBe(10000);
-    expect(calcularDia(r, entrada(0)).conta).toContain('Piso do dia de R$ 100,00 não vale: não houve jornada iniciada no dia.');
+    expect(calcularDia(r, entrada(0)).conta).toContain(
+      'Piso do dia de R$ 100,00 não vale: não houve jornada iniciada no dia.',
+    );
   });
 
   it('condição mínimo de visitas: exatamente no mínimo vale', () => {
@@ -161,11 +177,15 @@ describe('calcularDia — piso por diária', () => {
     expect(dia(r, 0, { visits: 9 })).toBe(0);
     expect(dia(r, 0, { visits: 10 })).toBe(10000);
     expect(dia(r, 0, { visits: 30 })).toBe(10000);
-    expect(calcularDia(r, entrada(0, { visits: 9 })).conta).toContain('Piso do dia de R$ 100,00 não vale: foram 9 visitas e o mínimo é 10.');
+    expect(calcularDia(r, entrada(0, { visits: 9 })).conta).toContain(
+      'Piso do dia de R$ 100,00 não vale: foram 9 visitas e o mínimo é 10.',
+    );
   });
 
   it('piso zero = sem piso', () => {
-    expect(dia(regra({ floor_cents: 0, floor_condition: 'journey_open' }), 0, { journey_open: true })).toBe(0);
+    expect(dia(regra({ floor_cents: 0, floor_condition: 'journey_open' }), 0, { journey_open: true })).toBe(
+      0,
+    );
   });
 
   it('piso + modo soma + teto, na ordem núcleo → piso → teto', () => {
@@ -232,7 +252,13 @@ describe('calcularSemana', () => {
     Object.fromEntries(Object.entries(n).map(([d, s]) => [d, entrada(s, { dia: d, ...extra })]));
 
   it('faixa por dia: soma dos dias; dias futuros valem zero', () => {
-    const s = calcularSemana({ from: SEG, to: DOM, hoje: '2026-10-21', versoes: [v(1, '1970-01-01')], entradas: entradas({ '2026-10-19': 4, '2026-10-20': 20, '2026-10-21': 10, '2026-10-22': 99 }) });
+    const s = calcularSemana({
+      from: SEG,
+      to: DOM,
+      hoje: '2026-10-21',
+      versoes: [v(1, '1970-01-01')],
+      entradas: entradas({ '2026-10-19': 4, '2026-10-20': 20, '2026-10-21': 10, '2026-10-22': 99 }),
+    });
     expect(s.days.map((d) => d.total_cents)).toEqual([4000, 25000, 10000, 0, 0, 0, 0]);
     expect(s.days_cents).toBe(39000);
     expect(s.week_part_cents).toBe(0);
@@ -249,7 +275,13 @@ describe('calcularSemana', () => {
 
   it('mudança de regra no meio da semana: cada dia com a sua versão', () => {
     const vs = [v(1, '1970-01-01'), v(2, '2026-10-22', { unit_cents: 2000, tiers: [] })];
-    const s = calcularSemana({ from: SEG, to: DOM, hoje: DOM, versoes: vs, entradas: entradas({ '2026-10-21': 10, '2026-10-22': 10 }) });
+    const s = calcularSemana({
+      from: SEG,
+      to: DOM,
+      hoje: DOM,
+      versoes: vs,
+      entradas: entradas({ '2026-10-21': 10, '2026-10-22': 10 }),
+    });
     expect(s.days[2]!.total_cents).toBe(10000); // qua: versão 1, faixa
     expect(s.days[2]!.rule_version).toBe(1);
     expect(s.days[3]!.total_cents).toBe(20000); // qui: versão 2, 10 × R$ 20
@@ -258,60 +290,129 @@ describe('calcularSemana', () => {
 
   it('virada de dia: cadastros do domingo e da segunda ficam em semanas diferentes', () => {
     const vs = [v(1, '1970-01-01')];
-    const a = calcularSemana({ from: SEG, to: DOM, hoje: '2026-10-26', versoes: vs, entradas: entradas({ '2026-10-25': 3 }) });
-    const b = calcularSemana({ from: '2026-10-26', to: '2026-11-01', hoje: '2026-10-26', versoes: vs, entradas: entradas({ '2026-10-26': 2 }) });
+    const a = calcularSemana({
+      from: SEG,
+      to: DOM,
+      hoje: '2026-10-26',
+      versoes: vs,
+      entradas: entradas({ '2026-10-25': 3 }),
+    });
+    const b = calcularSemana({
+      from: '2026-10-26',
+      to: '2026-11-01',
+      hoje: '2026-10-26',
+      versoes: vs,
+      entradas: entradas({ '2026-10-26': 2 }),
+    });
     expect(a.total_cents).toBe(3000);
     expect(b.total_cents).toBe(2000);
   });
 
   describe('faixa semanal', () => {
-    const sem = (o: Partial<RegraRemuneracao> = {}) => [v(1, '1970-01-01', { tiers_period: 'week', tiers: [{ min_signups: 20, amount_cents: 25000 }], ...o })];
+    const sem = (o: Partial<RegraRemuneracao> = {}) => [
+      v(1, '1970-01-01', { tiers_period: 'week', tiers: [{ min_signups: 20, amount_cents: 25000 }], ...o }),
+    ];
     it('max: vale o maior entre a soma dos dias e a faixa; parte semanal = diferença', () => {
-      const s = calcularSemana({ from: SEG, to: DOM, hoje: DOM, versoes: sem(), entradas: entradas({ '2026-10-19': 8, '2026-10-20': 7, '2026-10-21': 5 }) });
+      const s = calcularSemana({
+        from: SEG,
+        to: DOM,
+        hoje: DOM,
+        versoes: sem(),
+        entradas: entradas({ '2026-10-19': 8, '2026-10-20': 7, '2026-10-21': 5 }),
+      });
       expect(s.signups_week).toBe(20);
       expect(s.days_cents).toBe(20000);
       expect(s.total_cents).toBe(25000);
       expect(s.week_part_cents).toBe(5000);
-      expect(s.conta).toContain('Faixa semanal atingida: 20 cadastros na semana = R$ 250,00 (a semana teve 20 cadastros confirmados).');
+      expect(s.conta).toContain(
+        'Faixa semanal atingida: 20 cadastros na semana = R$ 250,00 (a semana teve 20 cadastros confirmados).',
+      );
     });
     it('abaixo da faixa semanal: só os dias, diz quantos faltam', () => {
-      const s = calcularSemana({ from: SEG, to: DOM, hoje: DOM, versoes: sem(), entradas: entradas({ '2026-10-19': 19 }) });
+      const s = calcularSemana({
+        from: SEG,
+        to: DOM,
+        hoje: DOM,
+        versoes: sem(),
+        entradas: entradas({ '2026-10-19': 19 }),
+      });
       expect(s.total_cents).toBe(19000);
       expect(s.week_part_cents).toBe(0);
       expect(s.conta).toContain('Faltam 1 cadastro confirmado na semana para a faixa semanal de R$ 250,00.');
     });
     it('soma: dias + faixa', () => {
-      const s = calcularSemana({ from: SEG, to: DOM, hoje: DOM, versoes: sem({ combine: 'sum' }), entradas: entradas({ '2026-10-19': 20 }) });
+      const s = calcularSemana({
+        from: SEG,
+        to: DOM,
+        hoje: DOM,
+        versoes: sem({ combine: 'sum' }),
+        entradas: entradas({ '2026-10-19': 20 }),
+      });
       expect(s.total_cents).toBe(20000 + 25000);
     });
     it('tier_only: só faixa semanal (unitário ignorado)', () => {
-      const s = calcularSemana({ from: SEG, to: DOM, hoje: DOM, versoes: sem({ combine: 'tier_only' }), entradas: entradas({ '2026-10-19': 20 }) });
+      const s = calcularSemana({
+        from: SEG,
+        to: DOM,
+        hoje: DOM,
+        versoes: sem({ combine: 'tier_only' }),
+        entradas: entradas({ '2026-10-19': 20 }),
+      });
       expect(s.days_cents).toBe(0);
       expect(s.total_cents).toBe(25000);
-      const p = calcularSemana({ from: SEG, to: DOM, hoje: DOM, versoes: sem({ combine: 'tier_only' }), entradas: entradas({ '2026-10-19': 19 }) });
+      const p = calcularSemana({
+        from: SEG,
+        to: DOM,
+        hoje: DOM,
+        versoes: sem({ combine: 'tier_only' }),
+        entradas: entradas({ '2026-10-19': 19 }),
+      });
       expect(p.total_cents).toBe(0);
     });
     it('teto semanal limita (parte semanal pode ser negativa)', () => {
-      const s = calcularSemana({ from: SEG, to: DOM, hoje: DOM, versoes: sem({ cap_cents: 15000 }), entradas: entradas({ '2026-10-19': 30 }) });
+      const s = calcularSemana({
+        from: SEG,
+        to: DOM,
+        hoje: DOM,
+        versoes: sem({ cap_cents: 15000 }),
+        entradas: entradas({ '2026-10-19': 30 }),
+      });
       expect(s.days_cents).toBe(30000);
       expect(s.total_cents).toBe(15000);
       expect(s.week_part_cents).toBe(-15000);
       expect(s.conta).toContain('Teto da semana de R$ 150,00 aplicado.');
     });
     it('piso diário continua valendo dentro da semana', () => {
-      const s = calcularSemana({ from: SEG, to: DOM, hoje: '2026-10-20', versoes: sem({ floor_cents: 5000, floor_condition: 'journey_open' }), entradas: entradas({ '2026-10-19': 1, '2026-10-20': 0 }, { journey_open: true }) });
+      const s = calcularSemana({
+        from: SEG,
+        to: DOM,
+        hoje: '2026-10-20',
+        versoes: sem({ floor_cents: 5000, floor_condition: 'journey_open' }),
+        entradas: entradas({ '2026-10-19': 1, '2026-10-20': 0 }, { journey_open: true }),
+      });
       expect(s.days_cents).toBe(10000);
     });
     it('parâmetros semanais seguem a versão vigente no primeiro dia da semana', () => {
-      const vs = [v(1, '1970-01-01', { tiers_period: 'week', tiers: [{ min_signups: 5, amount_cents: 9000 }] }), v(2, '2026-10-22', { tiers_period: 'week', tiers: [{ min_signups: 5, amount_cents: 99999 }] })];
-      const s = calcularSemana({ from: SEG, to: DOM, hoje: DOM, versoes: vs, entradas: entradas({ '2026-10-19': 5 }) });
+      const vs = [
+        v(1, '1970-01-01', { tiers_period: 'week', tiers: [{ min_signups: 5, amount_cents: 9000 }] }),
+        v(2, '2026-10-22', { tiers_period: 'week', tiers: [{ min_signups: 5, amount_cents: 99999 }] }),
+      ];
+      const s = calcularSemana({
+        from: SEG,
+        to: DOM,
+        hoje: DOM,
+        versoes: vs,
+        entradas: entradas({ '2026-10-19': 5 }),
+      });
       expect(s.total_cents).toBe(9000);
       expect(s.rule_version).toBe(1);
     });
   });
 
   it('sem nenhuma versão vigente é erro explícito (nunca paga com palpite)', () => {
-    expect(() => calcularSemana({ from: SEG, to: DOM, hoje: DOM, versoes: [v(1, '2027-01-01')], entradas: {} })).toThrow(/Nenhuma versão/);
+    expect(() =>
+      calcularSemana({ from: SEG, to: DOM, hoje: DOM, versoes: [v(1, '2027-01-01')], entradas: {} }),
+    ).toThrow(/Nenhuma versão/);
   });
 });
 
@@ -330,7 +431,13 @@ describe('razão: alvos e deltas', () => {
   it('um alvo por dia + a parte semanal', () => {
     const alvos = alvosDaSemana(sem({ '2026-10-19': 4 }));
     expect(alvos).toHaveLength(8);
-    expect(alvos[0]).toMatchObject({ scope: 'day', work_day: '2026-10-19', work_week: SEG, cents: 4000, rule_version: 1 });
+    expect(alvos[0]).toMatchObject({
+      scope: 'day',
+      work_day: '2026-10-19',
+      work_week: SEG,
+      cents: 4000,
+      rule_version: 1,
+    });
     expect(alvos[7]).toMatchObject({ scope: 'week', work_day: null, cents: 0 });
   });
 
@@ -341,25 +448,42 @@ describe('razão: alvos e deltas', () => {
   });
 
   it('já lançado tudo: nenhum delta (idempotente)', () => {
-    const d = planejarLancamentos(alvosDaSemana(sem({ '2026-10-19': 4 })), lancado({ 'day:2026-10-19': { soma: 4000, qtd: 1 } }));
+    const d = planejarLancamentos(
+      alvosDaSemana(sem({ '2026-10-19': 4 })),
+      lancado({ 'day:2026-10-19': { soma: 4000, qtd: 1 } }),
+    );
     expect(d).toEqual([]);
   });
 
   it('confirmação tardia: delta positivo com a próxima chave da sequência', () => {
-    const d = planejarLancamentos(alvosDaSemana(sem({ '2026-10-19': 10 })), lancado({ 'day:2026-10-19': { soma: 4000, qtd: 1 } }));
+    const d = planejarLancamentos(
+      alvosDaSemana(sem({ '2026-10-19': 10 })),
+      lancado({ 'day:2026-10-19': { soma: 4000, qtd: 1 } }),
+    );
     expect(d[0]).toMatchObject({ delta_cents: 6000, idempotency_key: 'acc:day:2026-10-19:2' });
   });
 
   it('valor que sobe e volta ao mesmo número não repete a chave (sequência, não valor)', () => {
-    const a = planejarLancamentos(alvosDaSemana(sem({ '2026-10-19': 10 })), lancado({ 'day:2026-10-19': { soma: 12000, qtd: 2 } }));
+    const a = planejarLancamentos(
+      alvosDaSemana(sem({ '2026-10-19': 10 })),
+      lancado({ 'day:2026-10-19': { soma: 12000, qtd: 2 } }),
+    );
     expect(a[0]).toMatchObject({ delta_cents: -2000, idempotency_key: 'acc:day:2026-10-19:3' });
   });
 
   it('parte semanal vira lançamento próprio, delta pode ser negativo', () => {
-    const s = sem({ '2026-10-19': 30 }, { tiers_period: 'week', tiers: [{ min_signups: 20, amount_cents: 25000 }], cap_cents: 15000 });
+    const s = sem(
+      { '2026-10-19': 30 },
+      { tiers_period: 'week', tiers: [{ min_signups: 20, amount_cents: 25000 }], cap_cents: 15000 },
+    );
     const d = planejarLancamentos(alvosDaSemana(s), lancado({ 'day:2026-10-19': { soma: 30000, qtd: 1 } }));
     expect(d).toHaveLength(1);
-    expect(d[0]).toMatchObject({ scope: 'week', work_day: null, delta_cents: -15000, idempotency_key: `acc:week:${SEG}:1` });
+    expect(d[0]).toMatchObject({
+      scope: 'week',
+      work_day: null,
+      delta_cents: -15000,
+      idempotency_key: `acc:week:${SEG}:1`,
+    });
   });
 
   it('semana fechada nunca reabre: o delta vai para a primeira semana aberta depois dela', () => {
@@ -408,18 +532,36 @@ describe('validarRegra (estrita)', () => {
     expect(campo({ late_grace_days: 93 })).toBe('late_grace_days');
   });
   it('faixas: crescentes, valores não decrescentes, no máximo 10, tier_only exige faixa', () => {
-    expect(campo({ tiers: [{ min_signups: 10, amount_cents: 100 }, { min_signups: 10, amount_cents: 200 }] })).toBe('tiers');
-    expect(campo({ tiers: [{ min_signups: 10, amount_cents: 300 }, { min_signups: 20, amount_cents: 200 }] })).toBe('tiers');
+    expect(
+      campo({
+        tiers: [
+          { min_signups: 10, amount_cents: 100 },
+          { min_signups: 10, amount_cents: 200 },
+        ],
+      }),
+    ).toBe('tiers');
+    expect(
+      campo({
+        tiers: [
+          { min_signups: 10, amount_cents: 300 },
+          { min_signups: 20, amount_cents: 200 },
+        ],
+      }),
+    ).toBe('tiers');
     expect(campo({ tiers: [{ min_signups: 0, amount_cents: 100 }] })).toBe('tiers');
     expect(campo({ tiers: [{ min_signups: 1, amount_cents: 1.5 }] })).toBe('tiers');
     expect(campo({ tiers: [{ min_signups: 1, amount_cents: 100, extra: 1 }] })).toBe('tiers');
-    expect(campo({ tiers: Array.from({ length: 11 }, (_, i) => ({ min_signups: i + 1, amount_cents: 100 })) })).toBe('tiers');
+    expect(
+      campo({ tiers: Array.from({ length: 11 }, (_, i) => ({ min_signups: i + 1, amount_cents: 100 })) }),
+    ).toBe('tiers');
     expect(campo({ tiers: 'x' })).toBe('tiers');
     expect(campo({ combine: 'tier_only', tiers: [] })).toBe('tiers');
     expect(ok({ tiers: [] }).ok).toBe(true);
   });
   it('piso: min_visits exige o mínimo; teto não pode ficar abaixo do piso', () => {
-    expect(campo({ floor_cents: 10000, floor_condition: 'min_visits', floor_min_visits: 0 })).toBe('floor_min_visits');
+    expect(campo({ floor_cents: 10000, floor_condition: 'min_visits', floor_min_visits: 0 })).toBe(
+      'floor_min_visits',
+    );
     expect(ok({ floor_cents: 10000, floor_condition: 'min_visits', floor_min_visits: 10 }).ok).toBe(true);
     expect(campo({ floor_cents: 10000, cap_cents: 9000 })).toBe('cap_cents');
     expect(ok({ floor_cents: 10000, cap_cents: 10000 }).ok).toBe(true);
@@ -437,24 +579,52 @@ describe('validarVigencia', () => {
   const base = { hoje: '2026-10-20', versoes: [v(1, '1970-01-01')], semanaTravada: false };
   it('não aceita data inválida nem passado', () => {
     expect(validarVigencia({ ...base, valid_from: '2026-02-31', nova: regra() })?.campo).toBe('valid_from');
-    expect(validarVigencia({ ...base, valid_from: '2026-10-19', nova: regra() })?.message).toContain('de hoje em diante');
+    expect(validarVigencia({ ...base, valid_from: '2026-10-19', nova: regra() })?.message).toContain(
+      'de hoje em diante',
+    );
   });
   it('hoje e futuro valem', () => {
     expect(validarVigencia({ ...base, valid_from: '2026-10-20', nova: regra() })).toBeNull();
     expect(validarVigencia({ ...base, valid_from: '2026-10-22', nova: regra() })).toBeNull();
   });
   it('faixa semanal só começa no primeiro dia da semana', () => {
-    expect(validarVigencia({ ...base, valid_from: '2026-10-22', nova: regra({ tiers_period: 'week' }) })?.campo).toBe('valid_from');
-    expect(validarVigencia({ ...base, valid_from: '2026-10-26', nova: regra({ tiers_period: 'week' }) })).toBeNull();
+    expect(
+      validarVigencia({ ...base, valid_from: '2026-10-22', nova: regra({ tiers_period: 'week' }) })?.campo,
+    ).toBe('valid_from');
+    expect(
+      validarVigencia({ ...base, valid_from: '2026-10-26', nova: regra({ tiers_period: 'week' }) }),
+    ).toBeNull();
   });
   it('sair de faixa semanal no meio da semana também é barrado', () => {
     const versoes = [v(1, '1970-01-01', { tiers_period: 'week' })];
-    expect(validarVigencia({ ...base, versoes, valid_from: '2026-10-22', nova: regra({ tiers_period: 'day' }) })?.campo).toBe('valid_from');
+    expect(
+      validarVigencia({ ...base, versoes, valid_from: '2026-10-22', nova: regra({ tiers_period: 'day' }) })
+        ?.campo,
+    ).toBe('valid_from');
   });
   it('início da semana trava depois que há razão', () => {
-    const e = validarVigencia({ ...base, semanaTravada: true, valid_from: '2026-10-26', nova: regra({ week_start_weekday: 0 }) });
+    const e = validarVigencia({
+      ...base,
+      semanaTravada: true,
+      valid_from: '2026-10-26',
+      nova: regra({ week_start_weekday: 0 }),
+    });
     expect(e?.code).toBe('WEEK_START_LOCKED');
-    expect(validarVigencia({ ...base, semanaTravada: false, valid_from: '2026-10-25', nova: regra({ week_start_weekday: 0 }) })).toBeNull();
-    expect(validarVigencia({ ...base, semanaTravada: true, valid_from: '2026-10-22', nova: regra({ unit_cents: 1 }) })).toBeNull();
+    expect(
+      validarVigencia({
+        ...base,
+        semanaTravada: false,
+        valid_from: '2026-10-25',
+        nova: regra({ week_start_weekday: 0 }),
+      }),
+    ).toBeNull();
+    expect(
+      validarVigencia({
+        ...base,
+        semanaTravada: true,
+        valid_from: '2026-10-22',
+        nova: regra({ unit_cents: 1 }),
+      }),
+    ).toBeNull();
   });
 });

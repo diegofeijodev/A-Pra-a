@@ -3952,3 +3952,75 @@ Seção "Confirmado pelo Freela" = `confirmed_signups` e `total_cents`; "Ainda n
 | `FIELD_EARNINGS_AUTOCLOSE_ENABLED` | `false` | liga o fechamento automático |
 
 **Para produção:** `migrate deploy` antes do código; F7 já ligada e conferida (a F8 só vale com cadastros sincronizados); ligar `FIELD_EARNINGS_ENABLED`; conferir 2 semanas **em sombra** na tela da equipe (conta × cálculo à mão) antes de ligar o fechamento automático e antes da F9.
+
+## 29. Pagamento por Pix MANUAL — `/v1/consultores/payouts/*`, `GET /v1/campo/payouts`
+
+F9 da prospecção. Da semana **fechada** (§28) sai uma fila de pagamentos por consultor/semana; o admin paga **fora do sistema** (app do banco) e aqui só **registra** (marcar como pago, comprovante, CSV). **Nenhuma chamada a provedor de pagamento, nenhum envio automático de dinheiro** (o Pix automático é a F10, fora desta fase). Tudo atrás de `FIELD_PAYOUTS_ENABLED` (padrão `false`) **e** `FIELD_EARNINGS_ENABLED`: sem as duas, **todas** as rotas abaixo respondem `404 PAYOUTS_DISABLED`, `features.payouts` em `GET /v1/campo/me` é `false` e a UI some.
+Dinheiro: **inteiro em centavos** (`*_cents`) em todo o stack. Erro: `{ "error": { "code", "message" } }` (§1).
+
+### 29.1 Desvios intencionais
+
+1. O spec previa `field_payout_payments` + entrada `pagamento`; aqui: `field_payouts` (a obrigação semanal, com a chave Pix **fotografada**) + `field_payout_events` (auditoria append-only) + lançamentos `payout*` no razão da F8.
+2. A tabela do pagamento tem **colunas de estado** (`status`, `paid_*`, comprovante) que mudam **só** por transição válida, sempre com um evento na mesma transação; um trigger no banco barra `DELETE` e qualquer mudança de `consultant_id`, `week_start`, `week_end`, `due_cents`, chave Pix/tipo e `created_at`.
+3. O comprovante é opcional/obrigatório conforme `payout_proof_required` em `field_config` (padrão **`true`**, editável por `PUT /v1/consultores/settings/config`).
+
+### 29.2 Banco (migração aditiva `20261024100000_field_payouts`)
+
+- `field_payouts`: `id` uuid PK, `consultant_id` FK **Restrict**, `week_start`, `week_end` (text `YYYY-MM-DD`), `due_cents` int **> 0** (total do fechamento `field_payout_periods.total_cents`, fotografado), `pix_key`, `pix_key_type` (**copiados** do cadastro no momento da geração; nulos se a chave estava ausente/inválida), `block_reason` (`NO_PIX_KEY` ou nulo: **bloqueado**), `status` CHECK `pending|paid|failed|cancelled`, `paid_cents` int?, `paid_at`, `paid_by`, `paid_by_name`, `method` (`pix_manual`), `proof_key`, `proof_mime`, `proof_size`, `note`, `diff_reason`, `created_by`, `created_by_name`, `created_at`. **UNIQUE parcial `(consultant_id, week_start) WHERE status <> 'cancelled'`** (não duplica a fila; cancelado pode ser gerado de novo). CHECK de coerência (pago ⇒ `paid_cents`/`paid_at`; bloqueado ⇒ sem chave; diferença ⇒ `diff_reason`).
+- `field_payout_events` (**append-only**, trigger barra `UPDATE`/`DELETE`): `id`, `payout_id` FK Restrict, `type` (`created|paid|failed|retried|cancelled|reversed|pix_key_viewed|exported`), `from_status`, `to_status`, `actor_id`, `actor_name`, `reason`, `data` jsonb (**nunca** a chave Pix), `created_at`.
+- `field_earnings_ledger.kind` passa a aceitar também `payout`, `payout_reversal`, `payout_settlement` (CHECK recriado; `work_scope = 'manual'`, motivo obrigatório como nos ajustes). Esses tipos **não entram** nas somas da F8 (visão, fechamento, extras): só o saldo do §29.5.
+
+### 29.3 Regras
+
+1. **Gerar a fila** (`POST …/generate {week_start}`): semana **fechada** (§28). Para cada `field_payout_periods` da semana com `total_cents > 0` e sem pagamento ativo cria `pending` com `due_cents = total_cents`. Total ≤ 0 não gera (a semana negativa já se compensa nas seguintes pelo razão). Chave `pixValido(tipo, chave)` falsa/ausente ⇒ nasce **bloqueado** (`block_reason = 'NO_PIX_KEY'`), visível na equipe e em "Atenção agora". Rodar de novo não duplica (UNIQUE parcial) e **reavalia os bloqueados**: se o consultor já tem chave válida, o bloqueado é cancelado (evento, motivo "chave Pix cadastrada") e um novo `pending` é criado com a chave atual.
+2. **Transições** (todas travam o consultor com o mesmo advisory lock da F8, fazem *compare-and-set* no status e gravam o evento na mesma transação): `pending → paid | failed | cancelled` · `failed → pending (retry) | paid | cancelled` · `paid → cancelled (reverse, com motivo)` · `cancelled →` nada. Bloqueado só pode ser cancelado. Outra transição ⇒ `409 INVALID_TRANSITION`.
+3. **Marcar como pago é idempotente:** já `paid` ⇒ `200` com o pagamento existente e `already_paid: true`, **sem** novo evento, lançamento nem arquivo.
+4. **Valor pago ≠ devido** exige `reason` (`400 REASON_REQUIRED`) e vira acerto: razão de `W` (semana paga) ganha `payout −paid` e `payout_settlement −(due−paid)` (fecha `W` em zero), e a **semana corrente** ganha um `adjustment` `+(due−paid)` (`source = 'payout_difference'`; paga a menos ⇒ o resto vai no próximo Pix; paga a mais ⇒ desconta). `paid_cents` ≥ 1 e ≤ 10.000.000.
+5. **Comprovante:** multipart, campo `proof`, **JPEG, PNG ou PDF** conferidos pelos **bytes mágicos** (não pelo mimetype), até **5 MB** (`413 FILE_TOO_LARGE`; `415 INVALID_PROOF` tipo inválido). Guardado no storage das fotos (S3 privado ou disco) sob `pagamentos/<consultant_id>/<uuid>.<ext>` (no S3, sob o prefixo do bucket, p. ex. `praca/pagamentos/…`). **Nunca URL pública:** só os endpoints autenticados de stream (`Cache-Control: no-store`, `X-Content-Type-Options: nosniff`). `payout_proof_required = true` e sem arquivo ⇒ `400 PROOF_REQUIRED`. Já pago ⇒ o arquivo enviado é ignorado; transação falhou ⇒ o arquivo é removido.
+6. **Estorno de pagamento** (`reverse`): grava `payout_reversal +paid` (e desfaz o acerto, se houve: `payout_settlement` oposto + `reversal` do ajuste `payout_difference`), o pagamento vira `cancelled` e a semana volta a poder ser gerada. O ajuste `payout_difference` não pode ser estornado pela rota da F8 (`422 NOT_REVERSIBLE`): estorne pelo pagamento.
+7. **Segurança:** a chave completa só sai em `GET …/:id/pix-key` (admin) e no CSV com `include_pix_key=true` (admin) — ambos gravam evento (`pix_key_viewed`/`exported`) **sem a chave**; em nenhuma lista, log ou erro. Isolamento: consultor só enxerga o que é dele (id do token; pagamento de outro = `404`); equipe filtra por `praca_id`.
+
+### 29.4 Equipe — `/v1/consultores/payouts` (estáticas antes de `:id`)
+
+Leitura: equipe. Escrita: `@AdminOnly()`. Token de consultor de campo ⇒ `401`.
+
+| Método e rota | Corpo / query | Resposta |
+|---|---|---|
+| `GET /v1/consultores/payouts` | `?week=YYYY-MM-DD` (qualquer dia da semana; padrão a última encerrada) `&consultant_id= &praca_id= &status=` | `{ week: {from,to}, pix_date, summary: { to_pay_cents, blocked_cents, failed_cents, paid_cents, counts: {pending,blocked,failed,paid,cancelled}, conta: string[], source }, proof_required, payouts: Pagamento[] }` (cancelados só com `status=cancelled`) |
+| `POST /v1/consultores/payouts/generate` | `{ week_start }` (admin) | `{ week, created, blocked, existing, unblocked, skipped_non_positive, payouts: Pagamento[] }`; `409 WEEK_NOT_CLOSED` se nenhum consultor tem a semana fechada |
+| `GET /v1/consultores/payouts/export.csv` | `?week= &consultant_id= &praca_id= &include_pix_key=true` (a opção é admin) | CSV (§29.7) |
+| `GET /v1/consultores/payouts/:id` | — | `Pagamento` + `events: Evento[]` |
+| `POST /v1/consultores/payouts/:id/pay` | multipart: `proof?` (arquivo), `paid_cents?` (padrão `due_cents`), `reason?`, `note?` (admin) | `200 Pagamento` + `already_paid` |
+| `POST /v1/consultores/payouts/:id/fail` | `{ reason }` 3–500 (admin) | `200 Pagamento` |
+| `POST /v1/consultores/payouts/:id/retry` | `{}` (admin) — "Tentar de novo" (manual) | `200 Pagamento` (volta a `pending`) |
+| `POST /v1/consultores/payouts/:id/cancel` | `{ reason }` (admin) | `200 Pagamento` |
+| `POST /v1/consultores/payouts/:id/reverse` | `{ reason }` (admin) | `200 Pagamento` (cancelado) |
+| `GET /v1/consultores/payouts/:id/proof` | — | stream do arquivo; `404` sem comprovante |
+| `GET /v1/consultores/payouts/:id/pix-key` | — (admin) | `{ pix_key, pix_key_type }` (grava evento) |
+
+`Pagamento`: `{ id, consultant_id, consultant_name, praca_id, week: {from,to}, due_cents, status, blocked, block_reason, pix_key_type, pix_key_masked, pix_date, pix_label, paid_cents, diff_cents, diff_reason, paid_at, paid_by, method, has_proof, proof_mime, note, last_reason, created_at, conta: string[] }`. `pix_date` = dia absoluto do Pix (§28: primeiro `payout_weekday` depois do fim da semana); `pix_label` p.ex. `seg 26/10`. Máscaras: CPF `***.***.***-44`, e-mail `a***@dominio.com`, telefone `(**) *****-1234`, aleatória `…ab12cd34`.
+
+### 29.5 Saldo
+
+Saldo da semana = **fechado − pago líquido**: `due_cents − (Σ payout + Σ payout_settlement + Σ payout_reversal)` no razão (com o sinal do razão). Pago exatamente ⇒ 0; pago a menos ⇒ 0 na semana e o resto reaparece como `adjustment` na corrente (uma vez só); o razão do consultor soma 0 quando tudo está pago.
+
+### 29.6 Consultor — `GET /v1/campo/payouts` (`@CampoRoute()`)
+
+Só os dele (id do token). `{ payouts: [ { id, week: {from,to}, due_cents, status, label, pix_date, pix_label, paid_cents, paid_at, has_proof, text } ] }` (até 12 semanas, as mais recentes primeiro; sem chave Pix; bloqueado aparece como `status: 'pending'` com `text` "Falta cadastrar sua chave Pix"). `GET /v1/campo/payouts/:id/proof` entrega o comprovante dele (de outro ⇒ `404`).
+
+### 29.7 CSV — `GET …/export.csv`
+
+UTF-8 **com BOM**, separador `;`, quebra `\r\n`, campos com `;`, `"`, quebra de linha entre aspas (aspas dobradas). Colunas: `Semana início;Semana fim;Consultor;Praça;Tipo da chave;Chave Pix;Valor devido (R$);Valor devido (centavos);Valor pago (R$);Valor pago (centavos);Situação;Pago em;Data do Pix;Observação`. Valores em reais com vírgula (`1.234,50` **sem** milhar: `1234,50`) e também centavos. A chave Pix sai **mascarada**; `include_pix_key=true` (admin) inclui a completa. **Injeção de fórmula:** célula de TEXTO que começa com `=`, `+`, `-`, `@`, tab ou CR recebe um `'` na frente (colunas de valor ficam numéricas, nunca prefixadas). Telefone completo (`5511…`) é gravado só com dígitos, sem `+`, para não ser prefixado. Cancelados ficam fora.
+
+### 29.8 "Atenção agora"
+
+Com as duas flags ligadas, `GET /v1/consultores/attention` ganha `payout_alerts: [ { kind: 'pix_bloqueado'|'pix_falhou', payout_id, consultant_id, name, week, message } ]` (flag desligada ⇒ campo ausente e **nenhuma consulta**).
+
+### 29.9 Variáveis e produção
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `FIELD_PAYOUTS_ENABLED` | `false` | habilita rotas e UI (exige `FIELD_EARNINGS_ENABLED=true`) |
+
+Config: `payout_proof_required` (boolean, padrão `true`) em `field_config`.
+**Para produção:** `migrate deploy` antes do código; 2 semanas de F8 conferidas; conferir o storage de fotos (S3 privado) ou `PHOTOS_DIR`; ligar `FIELD_PAYOUTS_ENABLED`; na segunda: **Gerar fila** → pagar no banco → **Marcar como pago** com o comprovante → **Baixar CSV** para a contabilidade.

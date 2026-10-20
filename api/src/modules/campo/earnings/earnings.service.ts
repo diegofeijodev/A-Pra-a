@@ -3,7 +3,15 @@
  * append-only e o fechamento semanal. UMA conta serve a leitura e o fechamento:
  * `alvo (função pura) − já lançado (só accrual) = delta`; a leitura soma o razão e os deltas ainda não lançados.
  */
-import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { AuthUser } from '../../../common/auth/auth-user';
 import { CampoConsultant } from '../../../common/auth/campo-consultant';
 import { addDays, minutesSp, todaySp, weekdaySp } from '../../../common/time/dates';
@@ -53,7 +61,8 @@ const MAX_SEMANAS_AUTOCLOSE = 8;
 const LIMITE_LANCAMENTOS = 200;
 const SEMANAS_ANTERIORES = 4;
 
-const notFoundConsultor = () => new NotFoundException({ code: 'NOT_FOUND', message: 'Consultor não encontrado.' });
+const notFoundConsultor = () =>
+  new NotFoundException({ code: 'NOT_FOUND', message: 'Consultor não encontrado.' });
 
 interface Ctx {
   versoes: VersaoRegistrada[];
@@ -126,7 +135,14 @@ export class EarningsService {
     const vigente = versaoVigente(versoes, hoje);
     if (!vigente) throw new Error('Nenhuma versão da regra de remuneração vigora hoje.');
     const weekStart = vigente.config.week_start_weekday;
-    return { versoes, hoje, regraConfirmacao: cad.confirmation_rule, vigente, weekStart, semanaAtual: inicioDaSemana(hoje, weekStart) };
+    return {
+      versoes,
+      hoje,
+      regraConfirmacao: cad.confirmation_rule,
+      vigente,
+      weekStart,
+      semanaAtual: inicioDaSemana(hoje, weekStart),
+    };
   }
 
   /** Semana (início) anterior à `from`, `k` vezes. */
@@ -134,49 +150,92 @@ export class EarningsService {
     return Array.from({ length: k }, (_, i) => addDays(from, -7 * (i + 1)));
   }
 
-  private entradasDaSemana(ctx: Ctx, c: ConsultorBasico, from: string, brutos: Map<string, DiaBruto> | undefined): Record<string, EntradaDia> {
+  private entradasDaSemana(
+    ctx: Ctx,
+    c: ConsultorBasico,
+    from: string,
+    brutos: Map<string, DiaBruto> | undefined,
+  ): Record<string, EntradaDia> {
     const out: Record<string, EntradaDia> = {};
     for (let i = 0; i < 7; i++) {
       const dia = addDays(from, i);
       const raw = brutos?.get(dia);
       const regra = versaoVigente(ctx.versoes, dia)?.config;
-      const visits = regra?.visits_count === 'checkout' ? (raw?.visits_checkout ?? 0) : (raw?.visits_checkin ?? 0);
-      out[dia] = { dia, signups: raw?.signups ?? 0, visits, journey_open: raw?.journey ?? false, elegivel: c.active && dia >= c.created_day };
+      const visits =
+        regra?.visits_count === 'checkout' ? (raw?.visits_checkout ?? 0) : (raw?.visits_checkin ?? 0);
+      out[dia] = {
+        dia,
+        signups: raw?.signups ?? 0,
+        visits,
+        journey_open: raw?.journey ?? false,
+        elegivel: c.active && dia >= c.created_day,
+      };
     }
     return out;
   }
 
   /** Cálculo puro das semanas pedidas, para vários consultores, com UMA leitura de insumos. */
-  private async calcular(ctx: Ctx, consultores: ConsultorBasico[], semanas: string[]): Promise<Map<string, Map<string, ResultadoSemana>>> {
+  private async calcular(
+    ctx: Ctx,
+    consultores: ConsultorBasico[],
+    semanas: string[],
+  ): Promise<Map<string, Map<string, ResultadoSemana>>> {
     const out = new Map<string, Map<string, ResultadoSemana>>(consultores.map((c) => [c.id, new Map()]));
     if (!consultores.length || !semanas.length) return out;
     const ordenadas = [...semanas].sort();
     const from = ordenadas[0] as string;
     const to = addDays(ordenadas[ordenadas.length - 1] as string, 6);
-    const brutos = await this.inputs.dias(consultores.map((c) => c.id), from, to, ctx.regraConfirmacao);
+    const brutos = await this.inputs.dias(
+      consultores.map((c) => c.id),
+      from,
+      to,
+      ctx.regraConfirmacao,
+    );
     for (const c of consultores) {
       for (const w of semanas) {
-        out.get(c.id)?.set(
-          w,
-          calcularSemana({ from: w, to: addDays(w, 6), hoje: ctx.hoje, versoes: ctx.versoes, entradas: this.entradasDaSemana(ctx, c, w, brutos.get(c.id)) }),
-        );
+        out
+          .get(c.id)
+          ?.set(
+            w,
+            calcularSemana({
+              from: w,
+              to: addDays(w, 6),
+              hoje: ctx.hoje,
+              versoes: ctx.versoes,
+              entradas: this.entradasDaSemana(ctx, c, w, brutos.get(c.id)),
+            }),
+          );
       }
     }
     return out;
   }
 
-  private snapshot(ctx: Ctx, d: DeltaLancamento, calc: ResultadoSemana, extra: Record<string, unknown> = {}): Record<string, unknown> {
-    const regra = (d.rule_version !== null ? ctx.versoes.find((v) => v.version === d.rule_version)?.config : null) ?? ctx.vigente.config;
+  private snapshot(
+    ctx: Ctx,
+    d: DeltaLancamento,
+    calc: ResultadoSemana,
+    extra: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    const regra =
+      (d.rule_version !== null ? ctx.versoes.find((v) => v.version === d.rule_version)?.config : null) ??
+      ctx.vigente.config;
     const dia = d.scope === 'day' ? calc.days.find((x) => x.dia === d.work_day) : null;
     return {
       rule_version: d.rule_version,
       rule: regra,
       confirmation_rule: ctx.regraConfirmacao,
-      confirmation_day_field: ctx.regraConfirmacao === 'activated' ? 'activated_day' : ctx.regraConfirmacao === 'first_vacancy' ? 'first_vacancy_day' : 'first_job_day',
+      confirmation_day_field:
+        ctx.regraConfirmacao === 'activated'
+          ? 'activated_day'
+          : ctx.regraConfirmacao === 'first_vacancy'
+            ? 'first_vacancy_day'
+            : 'first_job_day',
       scope: d.scope,
       target_cents: d.cents,
       delta_cents: d.delta_cents,
-      inputs: dia ? { signups: dia.signups, visits: dia.visits, journey_open: dia.journey_open } : { signups_week: calc.signups_week },
+      inputs: dia
+        ? { signups: dia.signups, visits: dia.visits, journey_open: dia.journey_open }
+        : { signups_week: calc.signups_week },
       conta: dia ? dia.conta : calc.conta,
       ...extra,
     };
@@ -227,29 +286,45 @@ export class EarningsService {
   private tardiasPara(ctx: Ctx, semana: string, fechadas: ReadonlySet<string>): string[] {
     const grace = ctx.vigente.config.late_grace_days;
     return this.semanasAtras(semana, this.janelaTardia(ctx)).filter(
-      (w) => fechadas.has(w) && dentroDoPrazoTardio(addDays(w, 6), ctx.hoje, grace) && semanaDePagamento(w, fechadas) === semana,
+      (w) =>
+        fechadas.has(w) &&
+        dentroDoPrazoTardio(addDays(w, 6), ctx.hoje, grace) &&
+        semanaDePagamento(w, fechadas) === semana,
     );
   }
 
   /** Deltas ainda não lançados que são pagos em `semana`: os dela e os tardios que caem nela. A MESMA conta lê e fecha. */
-  private plano(semana: string, tardias: readonly string[], calcs: ReadonlyMap<string, ResultadoSemana> | undefined, lancado: ReadonlyMap<string, JaLancado>) {
+  private plano(
+    semana: string,
+    tardias: readonly string[],
+    calcs: ReadonlyMap<string, ResultadoSemana> | undefined,
+    lancado: ReadonlyMap<string, JaLancado>,
+  ) {
     const out: Array<{ delta: DeltaLancamento; calc: ResultadoSemana; payout: string }> = [];
     for (const w of [semana, ...tardias]) {
       const calc = calcs?.get(w);
       if (!calc) continue;
-      for (const delta of planejarLancamentos(alvosDaSemana(calc), lancado)) out.push({ delta, calc, payout: semana });
+      for (const delta of planejarLancamentos(alvosDaSemana(calc), lancado))
+        out.push({ delta, calc, payout: semana });
     }
     return out;
   }
 
-  private async fechadasDe(ids: string[], semanas: string[]): Promise<{ periodos: PeriodoRow[]; porConsultor: Map<string, Set<string>> }> {
+  private async fechadasDe(
+    ids: string[],
+    semanas: string[],
+  ): Promise<{ periodos: PeriodoRow[]; porConsultor: Map<string, Set<string>> }> {
     const periodos = await this.repo.periodos(ids, semanas);
     const porConsultor = new Map<string, Set<string>>(ids.map((id) => [id, new Set()]));
     for (const p of periodos) porConsultor.get(p.consultant_id)?.add(p.week_start);
     return { periodos, porConsultor };
   }
 
-  private async visoes(ctx: Ctx, consultores: ConsultorBasico[], semana: string): Promise<Map<string, Visao>> {
+  private async visoes(
+    ctx: Ctx,
+    consultores: ConsultorBasico[],
+    semana: string,
+  ): Promise<Map<string, Visao>> {
     const ids = consultores.map((c) => c.id);
     const [{ periodos, porConsultor: fechadasDe }, posted] = await Promise.all([
       this.fechadasDe(ids, [semana, ...this.semanasAtras(semana, this.janelaTardia(ctx))]),
@@ -257,19 +332,39 @@ export class EarningsService {
     ]);
 
     // Semana aberta: calcula a própria e as fechadas cujo delta tardio cai nela.
-    const tardiasDe = new Map(consultores.map((c) => [c.id, fechadasDe.get(c.id)?.has(semana) ? [] : this.tardiasPara(ctx, semana, fechadasDe.get(c.id) ?? new Set())]));
+    const tardiasDe = new Map(
+      consultores.map((c) => [
+        c.id,
+        fechadasDe.get(c.id)?.has(semana)
+          ? []
+          : this.tardiasPara(ctx, semana, fechadasDe.get(c.id) ?? new Set()),
+      ]),
+    );
     const todasSemanas = [...new Set([semana, ...[...tardiasDe.values()].flat()])];
-    const [calcs, lancado] = await Promise.all([this.calcular(ctx, consultores, todasSemanas), this.repo.lancadoAccrual(ids, todasSemanas)]);
+    const [calcs, lancado] = await Promise.all([
+      this.calcular(ctx, consultores, todasSemanas),
+      this.repo.lancadoAccrual(ids, todasSemanas),
+    ]);
 
     const out = new Map<string, Visao>();
     for (const c of consultores) {
       const periodo = periodos.find((p) => p.consultant_id === c.id && p.week_start === semana) ?? null;
       const calculo = calcs.get(c.id)?.get(semana) as ResultadoSemana;
-      const planned = periodo ? [] : this.plano(semana, tardiasDe.get(c.id) ?? [], calcs.get(c.id), lancado.get(c.id) ?? new Map()).map((x) => x.delta);
+      const planned = periodo
+        ? []
+        : this.plano(semana, tardiasDe.get(c.id) ?? [], calcs.get(c.id), lancado.get(c.id) ?? new Map()).map(
+            (x) => x.delta,
+          );
       const meus = posted.filter((l) => l.consultant_id === c.id);
-      const extrasPosted = meus.filter((l) => !(l.kind === 'accrual' && l.work_week === semana)).reduce((a, l) => a + l.amount_cents, 0);
-      const extrasPlanned = planned.filter((d) => d.work_week !== semana).reduce((a, d) => a + d.delta_cents, 0);
-      const total = periodo ? periodo.total_cents : meus.reduce((a, l) => a + l.amount_cents, 0) + planned.reduce((a, d) => a + d.delta_cents, 0);
+      const extrasPosted = meus
+        .filter((l) => !(l.kind === 'accrual' && l.work_week === semana))
+        .reduce((a, l) => a + l.amount_cents, 0);
+      const extrasPlanned = planned
+        .filter((d) => d.work_week !== semana)
+        .reduce((a, d) => a + d.delta_cents, 0);
+      const total = periodo
+        ? periodo.total_cents
+        : meus.reduce((a, l) => a + l.amount_cents, 0) + planned.reduce((a, d) => a + d.delta_cents, 0);
       out.set(c.id, {
         consultor: c,
         week: { from: semana, to: addDays(semana, 6) },
@@ -287,7 +382,8 @@ export class EarningsService {
 
   private contaVisao(v: Visao): string[] {
     const conta = [...v.calculo.conta];
-    if (v.extras_cents !== 0) conta.push(`Ajustes e confirmações tardias que entram nesta semana: ${brl(v.extras_cents)}.`);
+    if (v.extras_cents !== 0)
+      conta.push(`Ajustes e confirmações tardias que entram nesta semana: ${brl(v.extras_cents)}.`);
     conta.push(
       v.periodo
         ? `Semana fechada: total a pagar ${brl(v.periodo.total_cents)} (soma do razão).`
@@ -301,12 +397,17 @@ export class EarningsService {
   async equipe(q: { week?: string; praca_id?: string; consultant_id?: string }, agora = new Date()) {
     const ctx = await this.contexto(agora);
     const semana = q.week ? inicioDaSemana(q.week, ctx.weekStart) : ctx.semanaAtual;
-    const todos = await this.inputs.consultores({ ...(q.praca_id ? { praca_id: q.praca_id } : {}), ...(q.consultant_id ? { ids: [q.consultant_id] } : {}) });
+    const todos = await this.inputs.consultores({
+      ...(q.praca_id ? { praca_id: q.praca_id } : {}),
+      ...(q.consultant_id ? { ids: [q.consultant_id] } : {}),
+    });
     if (q.consultant_id && todos.length === 0) throw notFoundConsultor();
     const consultores = todos.filter((c) => c.created_day <= addDays(semana, 6));
     const visoes = await this.visoes(ctx, consultores, semana);
     const lista = consultores.map((c) => visoes.get(c.id) as Visao);
-    const ledger = q.consultant_id ? await this.repo.lancamentos([q.consultant_id], { payout_week: semana, limit: LIMITE_LANCAMENTOS }) : undefined;
+    const ledger = q.consultant_id
+      ? await this.repo.lancamentos([q.consultant_id], { payout_week: semana, limit: LIMITE_LANCAMENTOS })
+      : undefined;
     return {
       week: { from: semana, to: addDays(semana, 6) },
       source: `${FONTE_EARNINGS} (versão ${ctx.vigente.version} vigente hoje)`,
@@ -377,7 +478,11 @@ export class EarningsService {
         to: visao.week.to,
         total_cents: visao.total_cents,
         extras_cents: visao.extras_cents,
-        days: visao.calculo.days.map((d) => ({ day: d.dia, total_cents: d.total_cents, confirmed_signups: d.signups })),
+        days: visao.calculo.days.map((d) => ({
+          day: d.dia,
+          total_cents: d.total_cents,
+          confirmed_signups: d.signups,
+        })),
         conta: this.contaVisao(visao),
       },
       unconfirmed: {
@@ -417,7 +522,13 @@ export class EarningsService {
     if (!r.ok) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: r.erro });
     const versoes = await this.repo.versoes();
     const travada = await this.repo.existeRazaoOuFechamento();
-    const erro = validarVigencia({ valid_from: dto.valid_from, nova: r.regra, hoje: todaySp(agora), versoes, semanaTravada: travada });
+    const erro = validarVigencia({
+      valid_from: dto.valid_from,
+      nova: r.regra,
+      hoje: todaySp(agora),
+      versoes,
+      semanaTravada: travada,
+    });
     if (erro) {
       const body = { code: erro.code, message: erro.message };
       throw erro.code === 'WEEK_START_LOCKED' ? new ConflictException(body) : new BadRequestException(body);
@@ -445,40 +556,93 @@ export class EarningsService {
       regra = ctx.vigente.config;
       version = ctx.vigente.version;
     }
-    const d = calcularDia(regra, { dia: todaySp(agora), signups: dto.signups_confirmed, visits: dto.visits ?? 0, journey_open: dto.journey_open ?? false, elegivel: true }, version);
+    const d = calcularDia(
+      regra,
+      {
+        dia: todaySp(agora),
+        signups: dto.signups_confirmed,
+        visits: dto.visits ?? 0,
+        journey_open: dto.journey_open ?? false,
+        elegivel: true,
+      },
+      version,
+    );
     return { day: { total_cents: d.total_cents, conta: d.conta, rule_version: version } };
   }
 
   // ── fechamento ──────────────────────────────────────────────────────────
 
-  async fechar(p: { week_start: string; consultant_id?: string }, ator: Ator, modo: 'manual' | 'auto', agora = new Date()) {
+  async fechar(
+    p: { week_start: string; consultant_id?: string },
+    ator: Ator,
+    modo: 'manual' | 'auto',
+    agora = new Date(),
+  ) {
     const ctx = await this.contexto(agora);
     if (p.week_start !== inicioDaSemana(p.week_start, ctx.weekStart)) {
-      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'week_start: informe o primeiro dia de uma semana de pagamento.' });
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'week_start: informe o primeiro dia de uma semana de pagamento.',
+      });
     }
     const to = addDays(p.week_start, 6);
-    if (!semanaEncerrada(to, ctx.hoje)) throw new ConflictException({ code: 'WEEK_NOT_ENDED', message: `A semana ${diaMes(p.week_start)} a ${diaMes(to)} ainda não terminou; só dá para fechar semana encerrada.` });
+    if (!semanaEncerrada(to, ctx.hoje))
+      throw new ConflictException({
+        code: 'WEEK_NOT_ENDED',
+        message: `A semana ${diaMes(p.week_start)} a ${diaMes(to)} ainda não terminou; só dá para fechar semana encerrada.`,
+      });
     const todos = await this.inputs.consultores(p.consultant_id ? { ids: [p.consultant_id] } : {});
     if (p.consultant_id && todos.length === 0) throw notFoundConsultor();
     return this.fecharSemana(ctx, p.week_start, todos, ator, modo, agora, !!p.consultant_id);
   }
 
-  private async fecharSemana(ctx: Ctx, semana: string, todos: ConsultorBasico[], ator: Ator, modo: 'manual' | 'auto', agora: Date, propagarErro: boolean) {
+  private async fecharSemana(
+    ctx: Ctx,
+    semana: string,
+    todos: ConsultorBasico[],
+    ator: Ator,
+    modo: 'manual' | 'auto',
+    agora: Date,
+    propagarErro: boolean,
+  ) {
     const to = addDays(semana, 6);
     const consultores = todos.filter((c) => c.created_day <= to);
     const ids = consultores.map((c) => c.id);
-    const { porConsultor: fechadasDe } = await this.fechadasDe(ids, this.semanasAtras(semana, this.janelaTardia(ctx)));
-    const tardiasDe = new Map(consultores.map((c) => [c.id, this.tardiasPara(ctx, semana, fechadasDe.get(c.id) ?? new Set())]));
-    const calcs = await this.calcular(ctx, consultores, [...new Set([semana, ...[...tardiasDe.values()].flat()])]);
+    const { porConsultor: fechadasDe } = await this.fechadasDe(
+      ids,
+      this.semanasAtras(semana, this.janelaTardia(ctx)),
+    );
+    const tardiasDe = new Map(
+      consultores.map((c) => [c.id, this.tardiasPara(ctx, semana, fechadasDe.get(c.id) ?? new Set())]),
+    );
+    const calcs = await this.calcular(ctx, consultores, [
+      ...new Set([semana, ...[...tardiasDe.values()].flat()]),
+    ]);
     const periodos: Array<{ consultant_id: string; total_cents: number; already_closed: boolean }> = [];
     const erros: Array<{ consultant_id: string; message: string }> = [];
     for (const c of consultores) {
       try {
-        periodos.push(await this.fecharConsultor(ctx, c, semana, tardiasDe.get(c.id) ?? [], calcs.get(c.id), ator, modo, agora));
+        periodos.push(
+          await this.fecharConsultor(
+            ctx,
+            c,
+            semana,
+            tardiasDe.get(c.id) ?? [],
+            calcs.get(c.id),
+            ator,
+            modo,
+            agora,
+          ),
+        );
       } catch (e) {
         if (propagarErro) throw e;
-        this.log.error(`fechamento ${semana} falhou para um consultor: ${e instanceof Error ? e.constructor.name : 'erro'}`);
-        erros.push({ consultant_id: c.id, message: 'Não foi possível fechar este consultor; tente de novo.' });
+        this.log.error(
+          `fechamento ${semana} falhou para um consultor: ${e instanceof Error ? e.constructor.name : 'erro'}`,
+        );
+        erros.push({
+          consultant_id: c.id,
+          message: 'Não foi possível fechar este consultor; tente de novo.',
+        });
       }
     }
     return {
@@ -504,10 +668,26 @@ export class EarningsService {
     return this.repo.emTransacao(c.id, async (tx) => {
       const [existente] = await tx.periodos([c.id], [semana]);
       if (existente) return { consultant_id: c.id, total_cents: existente.total_cents, already_closed: true };
-      const lancado = (await tx.lancadoAccrual([c.id], [semana, ...tardias])).get(c.id) ?? new Map<string, JaLancado>();
+      const lancado =
+        (await tx.lancadoAccrual([c.id], [semana, ...tardias])).get(c.id) ?? new Map<string, JaLancado>();
       const deltas = this.plano(semana, tardias, calcs, lancado);
-      await this.lancarDeltas(tx, ctx, c.id, deltas.filter((d) => d.delta.work_week === semana), 'weekly_close', ator);
-      await this.lancarDeltas(tx, ctx, c.id, deltas.filter((d) => d.delta.work_week !== semana), 'late_confirmation', ator, { late: true });
+      await this.lancarDeltas(
+        tx,
+        ctx,
+        c.id,
+        deltas.filter((d) => d.delta.work_week === semana),
+        'weekly_close',
+        ator,
+      );
+      await this.lancarDeltas(
+        tx,
+        ctx,
+        c.id,
+        deltas.filter((d) => d.delta.work_week !== semana),
+        'late_confirmation',
+        ator,
+        { late: true },
+      );
       const entradas = await tx.lancamentos([c.id], { payout_week: semana });
       const total = entradas.reduce((a, l) => a + l.amount_cents, 0);
       const r = await tx.inserirPeriodo({
@@ -541,7 +721,10 @@ export class EarningsService {
     const tardiasDe = new Map(
       consultores.map((c) => {
         const f = fechadasDe.get(c.id) ?? new Set<string>();
-        return [c.id, candidatas.filter((w) => f.has(w) && dentroDoPrazoTardio(addDays(w, 6), ctx.hoje, grace))] as const;
+        return [
+          c.id,
+          candidatas.filter((w) => f.has(w) && dentroDoPrazoTardio(addDays(w, 6), ctx.hoje, grace)),
+        ] as const;
       }),
     );
     const calcs = await this.calcular(ctx, consultores, [...new Set([...tardiasDe.values()].flat())]);
@@ -555,7 +738,13 @@ export class EarningsService {
         const lancado = (await tx.lancadoAccrual([c.id], minhas)).get(c.id) ?? new Map<string, JaLancado>();
         const deltas = minhas.flatMap((w) => {
           const calc = calcs.get(c.id)?.get(w);
-          return calc ? planejarLancamentos(alvosDaSemana(calc), lancado).map((delta) => ({ delta, calc, payout: semanaDePagamento(w, fechadas) })) : [];
+          return calc
+            ? planejarLancamentos(alvosDaSemana(calc), lancado).map((delta) => ({
+                delta,
+                calc,
+                payout: semanaDePagamento(w, fechadas),
+              }))
+            : [];
         });
         const n = await this.lancarDeltas(tx, ctx, c.id, deltas, 'late_confirmation', ator, { late: true });
         return { n, soma: deltas.reduce((a, d) => a + d.delta.delta_cents, 0) };
@@ -573,8 +762,16 @@ export class EarningsService {
     const [c] = await this.inputs.consultores({ ids: [dto.consultant_id] });
     if (!c) throw notFoundConsultor();
     const reason = dto.reason.trim();
-    if (reason.length < 3) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'reason: informe o motivo do ajuste (ao menos 3 caracteres).' });
-    if (dto.amount_cents === 0) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'amount_cents: o ajuste precisa ter valor diferente de zero.' });
+    if (reason.length < 3)
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'reason: informe o motivo do ajuste (ao menos 3 caracteres).',
+      });
+    if (dto.amount_cents === 0)
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'amount_cents: o ajuste precisa ter valor diferente de zero.',
+      });
     const r = await this.repo.emTransacao(c.id, (tx) =>
       tx.inserirLancamento({
         consultant_id: c.id,
@@ -602,12 +799,22 @@ export class EarningsService {
     const orig = await this.repo.lancamentoPorId(id);
     if (!orig) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Lançamento não encontrado.' });
     if (orig.kind !== 'adjustment') {
-      throw new UnprocessableEntityException({ code: 'NOT_REVERSIBLE', message: 'Só ajuste manual pode ser estornado. Para desfazer um ganho calculado, lance um ajuste negativo com motivo.' });
+      throw new UnprocessableEntityException({
+        code: 'NOT_REVERSIBLE',
+        message:
+          'Só ajuste manual pode ser estornado. Para desfazer um ganho calculado, lance um ajuste negativo com motivo.',
+      });
     }
     const reason = dto.reason.trim();
-    if (reason.length < 3) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'reason: informe o motivo do estorno (ao menos 3 caracteres).' });
+    if (reason.length < 3)
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'reason: informe o motivo do estorno (ao menos 3 caracteres).',
+      });
     const r = await this.repo.emTransacao(orig.consultant_id, async (tx) => {
-      const jaEstornado = (await tx.lancamentos([orig.consultant_id], { kind: 'reversal' })).find((l) => l.reverses_id === orig.id);
+      const jaEstornado = (await tx.lancamentos([orig.consultant_id], { kind: 'reversal' })).find(
+        (l) => l.reverses_id === orig.id,
+      );
       if (jaEstornado) {
         if (jaEstornado.idempotency_key === dto.client_id) return { criado: false, row: jaEstornado };
         throw new ConflictException({ code: 'ALREADY_REVERSED', message: 'Este ajuste já foi estornado.' });
@@ -639,7 +846,9 @@ export class EarningsService {
   async deveFecharAgora(agora: Date): Promise<boolean> {
     const vig = versaoVigente(await this.repo.versoes(), todaySp(agora));
     if (!vig) return false;
-    return weekdaySp(agora) === vig.config.payout_weekday && minutesSp(agora) >= vig.config.autoclose_hour * 60;
+    return (
+      weekdaySp(agora) === vig.config.payout_weekday && minutesSp(agora) >= vig.config.autoclose_hour * 60
+    );
   }
 
   /**
@@ -647,7 +856,9 @@ export class EarningsService {
    * Nunca inventa histórico: cada consultor continua a partir do SEU último fechamento; quem ainda não tem
    * nenhum começa pela última semana encerrada.
    */
-  async fecharEncerradas(agora = new Date()): Promise<{ semanas: number; fechados: number; tardios: number }> {
+  async fecharEncerradas(
+    agora = new Date(),
+  ): Promise<{ semanas: number; fechados: number; tardios: number }> {
     const ctx = await this.contexto(agora);
     const ator: Ator = { id: null, name: 'sistema (fechamento automático)' };
     const ultimaEncerrada = addDays(ctx.semanaAtual, -7);

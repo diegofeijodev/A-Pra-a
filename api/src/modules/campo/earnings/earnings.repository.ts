@@ -6,7 +6,12 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/database/prisma.service';
-import { chaveTrabalho, lerRegraSalva, type JaLancado, type VersaoRegra } from '../../../domain/earnings-rules';
+import {
+  chaveTrabalho,
+  lerRegraSalva,
+  type JaLancado,
+  type VersaoRegra,
+} from '../../../domain/earnings-rules';
 
 export type TipoLancamento = 'accrual' | 'adjustment' | 'reversal';
 export type EscopoLancamento = 'day' | 'week' | 'manual';
@@ -145,14 +150,23 @@ function paraPeriodo(r: Record<string, any>): PeriodoRow {
 }
 
 function paraVersao(r: Record<string, any>): VersaoRegistrada {
-  return { version: r.version, valid_from: r.valid_from, config: lerRegraSalva(r.config), reason: r.reason, created_by_name: r.created_by_name, created_at: r.created_at };
+  return {
+    version: r.version,
+    valid_from: r.valid_from,
+    config: lerRegraSalva(r.config),
+    reason: r.reason,
+    created_by_name: r.created_by_name,
+    created_at: r.created_at,
+  };
 }
 
 class Leitor implements EarningsLeitura {
   constructor(protected readonly db: Cliente) {}
 
   async versoes(): Promise<VersaoRegistrada[]> {
-    const rows = await this.db.field_pay_rule_versions.findMany({ orderBy: [{ valid_from: 'asc' }, { version: 'asc' }] });
+    const rows = await this.db.field_pay_rule_versions.findMany({
+      orderBy: [{ valid_from: 'asc' }, { version: 'asc' }],
+    });
     return rows.map(paraVersao);
   }
 
@@ -166,13 +180,21 @@ class Leitor implements EarningsLeitura {
 
   async primeiraSemanaPorConsultor(consultantIds: string[]): Promise<Map<string, string>> {
     if (!consultantIds.length) return new Map();
-    const g = await this.db.field_payout_periods.groupBy({ by: ['consultant_id'], where: { consultant_id: { in: consultantIds } }, _min: { week_start: true } });
-    return new Map(g.flatMap((r) => (r._min.week_start ? [[r.consultant_id, r._min.week_start] as const] : [])));
+    const g = await this.db.field_payout_periods.groupBy({
+      by: ['consultant_id'],
+      where: { consultant_id: { in: consultantIds } },
+      _min: { week_start: true },
+    });
+    return new Map(
+      g.flatMap((r) => (r._min.week_start ? [[r.consultant_id, r._min.week_start] as const] : [])),
+    );
   }
 
   async periodos(consultantIds: string[], weeks: string[]): Promise<PeriodoRow[]> {
     if (!consultantIds.length || !weeks.length) return [];
-    const rows = await this.db.field_payout_periods.findMany({ where: { consultant_id: { in: consultantIds }, week_start: { in: weeks } } });
+    const rows = await this.db.field_payout_periods.findMany({
+      where: { consultant_id: { in: consultantIds }, week_start: { in: weeks } },
+    });
     return rows.map(paraPeriodo);
   }
 
@@ -191,7 +213,10 @@ class Leitor implements EarningsLeitura {
     return rows.map(paraLancamento);
   }
 
-  async lancadoAccrual(consultantIds: string[], workWeeks: string[]): Promise<Map<string, Map<string, JaLancado>>> {
+  async lancadoAccrual(
+    consultantIds: string[],
+    workWeeks: string[],
+  ): Promise<Map<string, Map<string, JaLancado>>> {
     const out = new Map<string, Map<string, JaLancado>>(consultantIds.map((id) => [id, new Map()]));
     if (!consultantIds.length || !workWeeks.length) return out;
     const g = await this.db.field_earnings_ledger.groupBy({
@@ -220,14 +245,20 @@ class TxPrisma extends Leitor implements EarningsTx {
 
   async inserirLancamento(n: LancamentoNovo): Promise<{ criado: boolean; row: LancamentoRow }> {
     // Dentro do advisory lock do consultor não há corrida; o lookup evita abortar a transação com P2002.
-    const existente = await this.tx.field_earnings_ledger.findFirst({ where: { consultant_id: n.consultant_id, kind: n.kind, idempotency_key: n.idempotency_key } });
+    const existente = await this.tx.field_earnings_ledger.findFirst({
+      where: { consultant_id: n.consultant_id, kind: n.kind, idempotency_key: n.idempotency_key },
+    });
     if (existente) return { criado: false, row: paraLancamento(existente) };
-    const row = await this.tx.field_earnings_ledger.create({ data: { ...n, snapshot: n.snapshot as Prisma.InputJsonValue } });
+    const row = await this.tx.field_earnings_ledger.create({
+      data: { ...n, snapshot: n.snapshot as Prisma.InputJsonValue },
+    });
     return { criado: true, row: paraLancamento(row) };
   }
 
   async inserirPeriodo(p: PeriodoNovo): Promise<{ criado: boolean; row: PeriodoRow }> {
-    const existente = await this.tx.field_payout_periods.findUnique({ where: { consultant_id_week_start: { consultant_id: p.consultant_id, week_start: p.week_start } } });
+    const existente = await this.tx.field_payout_periods.findUnique({
+      where: { consultant_id_week_start: { consultant_id: p.consultant_id, week_start: p.week_start } },
+    });
     if (existente) return { criado: false, row: paraPeriodo(existente) };
     const row = await this.tx.field_payout_periods.create({ data: { ...p, status: 'closed' } });
     return { criado: true, row: paraPeriodo(row) };
@@ -241,7 +272,9 @@ export class PrismaEarningsRepository extends Leitor implements EarningsReposito
   }
 
   async inserirVersao(v: VersaoNova): Promise<VersaoRegistrada> {
-    const r = await this.prisma.field_pay_rule_versions.create({ data: { ...v, config: v.config as Prisma.InputJsonValue } });
+    const r = await this.prisma.field_pay_rule_versions.create({
+      data: { ...v, config: v.config as Prisma.InputJsonValue },
+    });
     return paraVersao(r);
   }
 

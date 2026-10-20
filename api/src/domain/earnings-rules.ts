@@ -100,46 +100,84 @@ export const dataBR = (dia: string): string => `${diaMes(dia)}/${dia.slice(0, 4)
 
 // ── validação (estrita) ───────────────────────────────────────────────────
 
-const ehInt = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
-const oneOf = <T extends string>(lista: readonly T[], v: unknown): v is T => typeof v === 'string' && (lista as readonly string[]).includes(v);
+const ehInt = (v: unknown, min: number, max: number): v is number =>
+  typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
+const oneOf = <T extends string>(lista: readonly T[], v: unknown): v is T =>
+  typeof v === 'string' && (lista as readonly string[]).includes(v);
 
-export type ResultadoValidacao = { ok: true; regra: RegraRemuneracao } | { ok: false; campo: string; erro: string };
+export type ResultadoValidacao =
+  { ok: true; regra: RegraRemuneracao } | { ok: false; campo: string; erro: string };
 
 /** Valida a configuração COMPLETA. Chave desconhecida ou ausente = erro com o nome do campo. */
 export function validarRegra(raw: unknown): ResultadoValidacao {
-  const falha = (campo: string, erro: string): ResultadoValidacao => ({ ok: false, campo, erro: `${campo}: ${erro}` });
+  const falha = (campo: string, erro: string): ResultadoValidacao => ({
+    ok: false,
+    campo,
+    erro: `${campo}: ${erro}`,
+  });
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return falha('config', 'envie um objeto.');
   const o = raw as Record<string, unknown>;
-  for (const k of Object.keys(o)) if (!(CHAVES_REGRA as string[]).includes(k)) return falha(k, 'campo desconhecido.');
+  for (const k of Object.keys(o))
+    if (!(CHAVES_REGRA as string[]).includes(k)) return falha(k, 'campo desconhecido.');
   for (const k of CHAVES_REGRA) if (o[k] === undefined) return falha(k, 'obrigatório.');
   const L = LIMITES_REGRA;
-  if (!ehInt(o.unit_cents, L.unit_cents.min, L.unit_cents.max)) return falha('unit_cents', `inteiro em centavos de ${L.unit_cents.min} a ${L.unit_cents.max}.`);
+  if (!ehInt(o.unit_cents, L.unit_cents.min, L.unit_cents.max))
+    return falha('unit_cents', `inteiro em centavos de ${L.unit_cents.min} a ${L.unit_cents.max}.`);
   if (!oneOf(PERIODOS_FAIXA, o.tiers_period)) return falha('tiers_period', 'use day ou week.');
-  if (!Array.isArray(o.tiers) || o.tiers.length > L.tiers_max) return falha('tiers', `lista de até ${L.tiers_max} faixas.`);
+  if (!Array.isArray(o.tiers) || o.tiers.length > L.tiers_max)
+    return falha('tiers', `lista de até ${L.tiers_max} faixas.`);
   const tiers: Faixa[] = [];
   for (const [i, t] of o.tiers.entries()) {
     const f = (t ?? {}) as Record<string, unknown>;
-    if (!t || typeof t !== 'object' || Object.keys(f).some((k) => k !== 'min_signups' && k !== 'amount_cents')) return falha('tiers', `faixa ${i + 1}: use só min_signups e amount_cents.`);
-    if (!ehInt(f.min_signups, L.tier_min_signups.min, L.tier_min_signups.max)) return falha('tiers', `faixa ${i + 1}: min_signups inteiro de ${L.tier_min_signups.min} a ${L.tier_min_signups.max}.`);
-    if (!ehInt(f.amount_cents, L.tier_amount_cents.min, L.tier_amount_cents.max)) return falha('tiers', `faixa ${i + 1}: amount_cents inteiro em centavos de ${L.tier_amount_cents.min} a ${L.tier_amount_cents.max}.`);
+    if (
+      !t ||
+      typeof t !== 'object' ||
+      Object.keys(f).some((k) => k !== 'min_signups' && k !== 'amount_cents')
+    )
+      return falha('tiers', `faixa ${i + 1}: use só min_signups e amount_cents.`);
+    if (!ehInt(f.min_signups, L.tier_min_signups.min, L.tier_min_signups.max))
+      return falha(
+        'tiers',
+        `faixa ${i + 1}: min_signups inteiro de ${L.tier_min_signups.min} a ${L.tier_min_signups.max}.`,
+      );
+    if (!ehInt(f.amount_cents, L.tier_amount_cents.min, L.tier_amount_cents.max))
+      return falha(
+        'tiers',
+        `faixa ${i + 1}: amount_cents inteiro em centavos de ${L.tier_amount_cents.min} a ${L.tier_amount_cents.max}.`,
+      );
     const ant = tiers[i - 1];
-    if (ant && f.min_signups <= ant.min_signups) return falha('tiers', `faixa ${i + 1}: min_signups precisa ser maior que o da faixa anterior.`);
-    if (ant && f.amount_cents < ant.amount_cents) return falha('tiers', `faixa ${i + 1}: uma faixa maior não pode pagar menos que a anterior.`);
+    if (ant && f.min_signups <= ant.min_signups)
+      return falha('tiers', `faixa ${i + 1}: min_signups precisa ser maior que o da faixa anterior.`);
+    if (ant && f.amount_cents < ant.amount_cents)
+      return falha('tiers', `faixa ${i + 1}: uma faixa maior não pode pagar menos que a anterior.`);
     tiers.push({ min_signups: f.min_signups, amount_cents: f.amount_cents });
   }
   if (!oneOf(COMBINACOES, o.combine)) return falha('combine', 'use max, sum ou tier_only.');
-  if (o.combine === 'tier_only' && tiers.length === 0) return falha('tiers', 'no modo tier_only é preciso ao menos uma faixa.');
-  if (o.cap_cents !== null && !ehInt(o.cap_cents, L.cap_cents.min, L.cap_cents.max)) return falha('cap_cents', 'inteiro em centavos ou null (sem teto).');
-  if (!ehInt(o.floor_cents, L.floor_cents.min, L.floor_cents.max)) return falha('floor_cents', `inteiro em centavos de ${L.floor_cents.min} a ${L.floor_cents.max} (0 = sem piso).`);
-  if (!oneOf(CONDICOES_PISO, o.floor_condition)) return falha('floor_condition', 'use none, journey_open ou min_visits.');
-  if (!ehInt(o.floor_min_visits, L.floor_min_visits.min, L.floor_min_visits.max)) return falha('floor_min_visits', 'inteiro de 0 a 1000.');
-  if (o.floor_condition === 'min_visits' && o.floor_cents > 0 && o.floor_min_visits < 1) return falha('floor_min_visits', 'com a condição min_visits informe ao menos 1 visita.');
+  if (o.combine === 'tier_only' && tiers.length === 0)
+    return falha('tiers', 'no modo tier_only é preciso ao menos uma faixa.');
+  if (o.cap_cents !== null && !ehInt(o.cap_cents, L.cap_cents.min, L.cap_cents.max))
+    return falha('cap_cents', 'inteiro em centavos ou null (sem teto).');
+  if (!ehInt(o.floor_cents, L.floor_cents.min, L.floor_cents.max))
+    return falha(
+      'floor_cents',
+      `inteiro em centavos de ${L.floor_cents.min} a ${L.floor_cents.max} (0 = sem piso).`,
+    );
+  if (!oneOf(CONDICOES_PISO, o.floor_condition))
+    return falha('floor_condition', 'use none, journey_open ou min_visits.');
+  if (!ehInt(o.floor_min_visits, L.floor_min_visits.min, L.floor_min_visits.max))
+    return falha('floor_min_visits', 'inteiro de 0 a 1000.');
+  if (o.floor_condition === 'min_visits' && o.floor_cents > 0 && o.floor_min_visits < 1)
+    return falha('floor_min_visits', 'com a condição min_visits informe ao menos 1 visita.');
   if (!oneOf(CONTAGENS_VISITA, o.visits_count)) return falha('visits_count', 'use checkin ou checkout.');
-  if (!ehInt(o.week_start_weekday, 0, 6)) return falha('week_start_weekday', 'dia da semana de 0 (domingo) a 6 (sábado).');
-  if (!ehInt(o.payout_weekday, 0, 6)) return falha('payout_weekday', 'dia da semana de 0 (domingo) a 6 (sábado).');
+  if (!ehInt(o.week_start_weekday, 0, 6))
+    return falha('week_start_weekday', 'dia da semana de 0 (domingo) a 6 (sábado).');
+  if (!ehInt(o.payout_weekday, 0, 6))
+    return falha('payout_weekday', 'dia da semana de 0 (domingo) a 6 (sábado).');
   if (!ehInt(o.autoclose_hour, 0, 23)) return falha('autoclose_hour', 'hora de 0 a 23.');
-  if (!ehInt(o.late_grace_days, L.late_grace_days.min, L.late_grace_days.max)) return falha('late_grace_days', `inteiro de ${L.late_grace_days.min} a ${L.late_grace_days.max}.`);
-  if (o.cap_cents !== null && o.cap_cents < o.floor_cents) return falha('cap_cents', 'o teto não pode ser menor que o piso.');
+  if (!ehInt(o.late_grace_days, L.late_grace_days.min, L.late_grace_days.max))
+    return falha('late_grace_days', `inteiro de ${L.late_grace_days.min} a ${L.late_grace_days.max}.`);
+  if (o.cap_cents !== null && o.cap_cents < o.floor_cents)
+    return falha('cap_cents', 'o teto não pode ser menor que o piso.');
   return {
     ok: true,
     regra: {
@@ -170,11 +208,19 @@ export function lerRegraSalva(raw: unknown): RegraRemuneracao {
 // ── vigência ──────────────────────────────────────────────────────────────
 
 /** Versão com maior `valid_from ≤ dia`; empate: maior `version`. `null` se nenhuma começou. */
-export function versaoVigente<T extends { version: number; valid_from: string }>(versoes: readonly T[], dia: string): T | null {
+export function versaoVigente<T extends { version: number; valid_from: string }>(
+  versoes: readonly T[],
+  dia: string,
+): T | null {
   let melhor: T | null = null;
   for (const v of versoes) {
     if (v.valid_from > dia) continue;
-    if (!melhor || v.valid_from > melhor.valid_from || (v.valid_from === melhor.valid_from && v.version > melhor.version)) melhor = v;
+    if (
+      !melhor ||
+      v.valid_from > melhor.valid_from ||
+      (v.valid_from === melhor.valid_from && v.version > melhor.version)
+    )
+      melhor = v;
   }
   return melhor;
 }
@@ -201,15 +247,31 @@ export function validarVigencia(p: {
   versoes: readonly VersaoRegra[];
   semanaTravada: boolean;
 }): ErroVigencia | null {
-  if (!isDateString(p.valid_from)) return { code: 'VALIDATION_ERROR', campo: 'valid_from', message: 'valid_from: use uma data AAAA-MM-DD.' };
-  if (p.valid_from < p.hoje) return { code: 'VALIDATION_ERROR', campo: 'valid_from', message: 'valid_from: a regra só vale de hoje em diante; dias passados não são reescritos.' };
+  if (!isDateString(p.valid_from))
+    return { code: 'VALIDATION_ERROR', campo: 'valid_from', message: 'valid_from: use uma data AAAA-MM-DD.' };
+  if (p.valid_from < p.hoje)
+    return {
+      code: 'VALIDATION_ERROR',
+      campo: 'valid_from',
+      message: 'valid_from: a regra só vale de hoje em diante; dias passados não são reescritos.',
+    };
   const antes = versaoVigente(p.versoes, p.valid_from);
   if (antes && antes.config.week_start_weekday !== p.nova.week_start_weekday && p.semanaTravada) {
-    return { code: 'WEEK_START_LOCKED', campo: 'week_start_weekday', message: 'week_start_weekday: não dá para mudar o início da semana depois que há ganhos lançados ou semanas fechadas.' };
+    return {
+      code: 'WEEK_START_LOCKED',
+      campo: 'week_start_weekday',
+      message:
+        'week_start_weekday: não dá para mudar o início da semana depois que há ganhos lançados ou semanas fechadas.',
+    };
   }
   const semanal = p.nova.tiers_period === 'week' || antes?.config.tiers_period === 'week';
   if (semanal && p.valid_from !== inicioDaSemana(p.valid_from, p.nova.week_start_weekday)) {
-    return { code: 'VALIDATION_ERROR', campo: 'valid_from', message: 'valid_from: com faixa ou teto semanal (nesta regra ou na vigente) a regra precisa começar no primeiro dia da semana.' };
+    return {
+      code: 'VALIDATION_ERROR',
+      campo: 'valid_from',
+      message:
+        'valid_from: com faixa ou teto semanal (nesta regra ou na vigente) a regra precisa começar no primeiro dia da semana.',
+    };
   }
   return null;
 }
@@ -268,25 +330,43 @@ export function proximaFaixa(tiers: readonly Faixa[], n: number): ProximaFaixa |
 
 function condicaoPisoTexto(r: RegraRemuneracao): string {
   if (r.floor_condition === 'journey_open') return 'houve jornada iniciada no dia';
-  if (r.floor_condition === 'min_visits') return `ao menos ${plural(r.floor_min_visits, 'visita', 'visitas')} no dia`;
+  if (r.floor_condition === 'min_visits')
+    return `ao menos ${plural(r.floor_min_visits, 'visita', 'visitas')} no dia`;
   return 'dia de consultor ativo';
 }
 
 function pisoVale(r: RegraRemuneracao, e: EntradaDia): { vale: boolean; motivo: string | null } {
   if (r.floor_cents <= 0) return { vale: false, motivo: null };
-  if (r.floor_condition === 'none') return e.elegivel ? { vale: true, motivo: null } : { vale: false, motivo: 'o consultor não está ativo' };
-  if (r.floor_condition === 'journey_open') return e.journey_open ? { vale: true, motivo: null } : { vale: false, motivo: 'não houve jornada iniciada no dia' };
-  return e.visits >= r.floor_min_visits ? { vale: true, motivo: null } : { vale: false, motivo: `foram ${plural(e.visits, 'visita', 'visitas')} e o mínimo é ${r.floor_min_visits}` };
+  if (r.floor_condition === 'none')
+    return e.elegivel ? { vale: true, motivo: null } : { vale: false, motivo: 'o consultor não está ativo' };
+  if (r.floor_condition === 'journey_open')
+    return e.journey_open
+      ? { vale: true, motivo: null }
+      : { vale: false, motivo: 'não houve jornada iniciada no dia' };
+  return e.visits >= r.floor_min_visits
+    ? { vale: true, motivo: null }
+    : {
+        vale: false,
+        motivo: `foram ${plural(e.visits, 'visita', 'visitas')} e o mínimo é ${r.floor_min_visits}`,
+      };
 }
 
 /** Valor de UM dia com a regra que vigora nele. */
-export function calcularDia(regra: RegraRemuneracao, e: EntradaDia, version: number | null = null): ResultadoDia {
+export function calcularDia(
+  regra: RegraRemuneracao,
+  e: EntradaDia,
+  version: number | null = null,
+): ResultadoDia {
   const n = e.signups;
   const porCadastro = regra.combine === 'tier_only' ? 0 : n * regra.unit_cents;
   const diaria = regra.tiers_period === 'day';
   const faixa = diaria ? faixaAtingida(regra.tiers, n) : null;
   const faixaCents = faixa?.amount_cents ?? 0;
-  const nucleo = !diaria ? porCadastro : regra.combine === 'max' ? Math.max(porCadastro, faixaCents) : porCadastro + faixaCents;
+  const nucleo = !diaria
+    ? porCadastro
+    : regra.combine === 'max'
+      ? Math.max(porCadastro, faixaCents)
+      : porCadastro + faixaCents;
   const piso = pisoVale(regra, e);
   const comPiso = piso.vale ? Math.max(nucleo, regra.floor_cents) : nucleo;
   const total = diaria && regra.cap_cents !== null ? Math.min(comPiso, regra.cap_cents) : comPiso;
@@ -296,15 +376,26 @@ export function calcularDia(regra: RegraRemuneracao, e: EntradaDia, version: num
 
   const conta: string[] = [];
   if (regra.combine === 'tier_only') {
-    conta.push(`${plural(n, 'cadastro confirmado', 'cadastros confirmados')}; nesta regra só vale a faixa, não o valor por cadastro.`);
+    conta.push(
+      `${plural(n, 'cadastro confirmado', 'cadastros confirmados')}; nesta regra só vale a faixa, não o valor por cadastro.`,
+    );
   } else {
-    conta.push(`${plural(n, 'cadastro confirmado', 'cadastros confirmados')} × ${brl(regra.unit_cents)} = ${brl(porCadastro)}.`);
+    conta.push(
+      `${plural(n, 'cadastro confirmado', 'cadastros confirmados')} × ${brl(regra.unit_cents)} = ${brl(porCadastro)}.`,
+    );
   }
   if (diaria) {
-    if (faixa) conta.push(`Faixa atingida: ${plural(faixa.min_signups, 'cadastro', 'cadastros')} = ${brl(faixa.amount_cents)}.`);
+    if (faixa)
+      conta.push(
+        `Faixa atingida: ${plural(faixa.min_signups, 'cadastro', 'cadastros')} = ${brl(faixa.amount_cents)}.`,
+      );
     if (faixa && regra.combine === 'max' && porCadastro > 0) conta.push(`Vale o maior: ${brl(nucleo)}.`);
-    if (faixa && regra.combine !== 'max' && porCadastro > 0) conta.push(`Soma do valor por cadastro com a faixa: ${brl(nucleo)}.`);
-    if (prox) conta.push(`Faltam ${plural(prox.faltam, 'cadastro confirmado', 'cadastros confirmados')} para a faixa de ${brl(prox.amount_cents)} (${plural(prox.min_signups, 'cadastro', 'cadastros')}).`);
+    if (faixa && regra.combine !== 'max' && porCadastro > 0)
+      conta.push(`Soma do valor por cadastro com a faixa: ${brl(nucleo)}.`);
+    if (prox)
+      conta.push(
+        `Faltam ${plural(prox.faltam, 'cadastro confirmado', 'cadastros confirmados')} para a faixa de ${brl(prox.amount_cents)} (${plural(prox.min_signups, 'cadastro', 'cadastros')}).`,
+      );
   }
   if (regra.floor_cents > 0) {
     if (piso.vale) {
@@ -317,7 +408,10 @@ export function calcularDia(regra: RegraRemuneracao, e: EntradaDia, version: num
       conta.push(`Piso do dia de ${brl(regra.floor_cents)} não vale: ${piso.motivo}.`);
     }
   }
-  if (tetoAplicado) conta.push(`Teto do dia de ${brl(regra.cap_cents as number)} aplicado: o valor cai de ${brl(comPiso)} para ${brl(total)}.`);
+  if (tetoAplicado)
+    conta.push(
+      `Teto do dia de ${brl(regra.cap_cents as number)} aplicado: o valor cai de ${brl(comPiso)} para ${brl(total)}.`,
+    );
   conta.push(`Total do dia: ${brl(total)}.`);
 
   return {
@@ -374,7 +468,13 @@ export function calcularSemana(p: {
   const days: ResultadoDia[] = eachDay(p.from, p.to).map((dia) => {
     const v = versaoVigente(p.versoes, dia);
     if (!v) throw new Error(`Nenhuma versão da regra de remuneração vigora em ${dia}.`);
-    if (dia > p.hoje) return { ...calcularDia(v.config, diaVazio(dia), v.version), futuro: true, total_cents: 0, conta: ['Dia ainda não chegou.'] };
+    if (dia > p.hoje)
+      return {
+        ...calcularDia(v.config, diaVazio(dia), v.version),
+        futuro: true,
+        total_cents: 0,
+        conta: ['Dia ainda não chegou.'],
+      };
     return calcularDia(v.config, p.entradas[dia] ?? diaVazio(dia), v.version);
   });
   const daysCents = days.reduce((a, d) => a + d.total_cents, 0);
@@ -382,7 +482,9 @@ export function calcularSemana(p: {
   const conta: string[] = [];
   for (const d of days) {
     if (d.futuro) continue;
-    conta.push(`${rotuloDia(d.dia)}: ${brl(d.total_cents)} (${plural(d.signups, 'cadastro confirmado', 'cadastros confirmados')}).`);
+    conta.push(
+      `${rotuloDia(d.dia)}: ${brl(d.total_cents)} (${plural(d.signups, 'cadastro confirmado', 'cadastros confirmados')}).`,
+    );
   }
   conta.push(`Soma dos dias: ${brl(daysCents)}.`);
 
@@ -395,17 +497,37 @@ export function calcularSemana(p: {
     const semana = rs.cap_cents !== null ? Math.min(pre, rs.cap_cents) : pre;
     parte = semana - daysCents;
     if (faixa) {
-      conta.push(`Faixa semanal atingida: ${plural(faixa.min_signups, 'cadastro', 'cadastros')} na semana = ${brl(faixa.amount_cents)} (a semana teve ${plural(signupsWeek, 'cadastro confirmado', 'cadastros confirmados')}).`);
-      conta.push(rs.combine === 'max' ? `Vale o maior entre a soma dos dias e a faixa: ${brl(Math.max(daysCents, faixaCents))}.` : `Soma dos dias com a faixa: ${brl(daysCents + faixaCents)}.`);
+      conta.push(
+        `Faixa semanal atingida: ${plural(faixa.min_signups, 'cadastro', 'cadastros')} na semana = ${brl(faixa.amount_cents)} (a semana teve ${plural(signupsWeek, 'cadastro confirmado', 'cadastros confirmados')}).`,
+      );
+      conta.push(
+        rs.combine === 'max'
+          ? `Vale o maior entre a soma dos dias e a faixa: ${brl(Math.max(daysCents, faixaCents))}.`
+          : `Soma dos dias com a faixa: ${brl(daysCents + faixaCents)}.`,
+      );
     } else {
       const prox = proximaFaixa(rs.tiers, signupsWeek);
-      if (prox) conta.push(`Faltam ${plural(prox.faltam, 'cadastro confirmado', 'cadastros confirmados')} na semana para a faixa semanal de ${brl(prox.amount_cents)}.`);
+      if (prox)
+        conta.push(
+          `Faltam ${plural(prox.faltam, 'cadastro confirmado', 'cadastros confirmados')} na semana para a faixa semanal de ${brl(prox.amount_cents)}.`,
+        );
     }
-    if (rs.cap_cents !== null && pre > rs.cap_cents) conta.push(`Teto da semana de ${brl(rs.cap_cents)} aplicado.`);
+    if (rs.cap_cents !== null && pre > rs.cap_cents)
+      conta.push(`Teto da semana de ${brl(rs.cap_cents)} aplicado.`);
   }
   const total = daysCents + parte;
   conta.push(`Total da semana: ${brl(total)}.`);
-  return { from: p.from, to: p.to, rule_version: vSemana?.version ?? null, days, signups_week: signupsWeek, days_cents: daysCents, week_part_cents: parte, total_cents: total, conta };
+  return {
+    from: p.from,
+    to: p.to,
+    rule_version: vSemana?.version ?? null,
+    days,
+    signups_week: signupsWeek,
+    days_cents: daysCents,
+    week_part_cents: parte,
+    total_cents: total,
+    conta,
+  };
 }
 
 // ── razão: alvos, deltas, semana de pagamento ─────────────────────────────
@@ -424,12 +546,25 @@ export interface AlvoLancamento {
 export function alvosDaSemana(s: ResultadoSemana): AlvoLancamento[] {
   const alvos: AlvoLancamento[] = s.days
     .filter((d) => !d.futuro)
-    .map((d) => ({ scope: 'day' as const, work_day: d.dia, work_week: s.from, cents: d.total_cents, rule_version: d.rule_version }));
-  alvos.push({ scope: 'week', work_day: null, work_week: s.from, cents: s.week_part_cents, rule_version: s.rule_version });
+    .map((d) => ({
+      scope: 'day' as const,
+      work_day: d.dia,
+      work_week: s.from,
+      cents: d.total_cents,
+      rule_version: d.rule_version,
+    }));
+  alvos.push({
+    scope: 'week',
+    work_day: null,
+    work_week: s.from,
+    cents: s.week_part_cents,
+    rule_version: s.rule_version,
+  });
   return alvos;
 }
 
-export const chaveTrabalho = (scope: EscopoTrabalho, work_day: string | null, work_week: string): string => `${scope}:${scope === 'day' ? work_day : work_week}`;
+export const chaveTrabalho = (scope: EscopoTrabalho, work_day: string | null, work_week: string): string =>
+  `${scope}:${scope === 'day' ? work_day : work_week}`;
 
 export interface JaLancado {
   /** Soma dos lançamentos `accrual` do período de trabalho (ajustes e estornos NÃO entram). */
@@ -444,7 +579,10 @@ export interface DeltaLancamento extends AlvoLancamento {
 }
 
 /** alvo − já lançado (só `accrual`). Delta 0 não gera lançamento. */
-export function planejarLancamentos(alvos: readonly AlvoLancamento[], lancado: ReadonlyMap<string, JaLancado>): DeltaLancamento[] {
+export function planejarLancamentos(
+  alvos: readonly AlvoLancamento[],
+  lancado: ReadonlyMap<string, JaLancado>,
+): DeltaLancamento[] {
   const out: DeltaLancamento[] = [];
   for (const a of alvos) {
     const k = chaveTrabalho(a.scope, a.work_day, a.work_week);

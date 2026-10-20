@@ -1,7 +1,11 @@
 import { CanActivate, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { EARNINGS_OPCOES, type OpcoesEarnings } from './earnings.tokens';
 
-export const earningsDesligado = () => new NotFoundException({ code: 'EARNINGS_DISABLED', message: 'A remuneração dos consultores não está habilitada.' });
+export const earningsDesligado = () =>
+  new NotFoundException({
+    code: 'EARNINGS_DISABLED',
+    message: 'A remuneração dos consultores não está habilitada.',
+  });
 
 /** Flag desligada = 404 em todas as rotas da remuneração (contrato §28). */
 @Injectable()
