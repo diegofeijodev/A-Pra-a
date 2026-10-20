@@ -684,6 +684,12 @@ model field_visits {
   followup_what     String?
   followup_date     String?
   notes             String?
+  // P0 comparação Lovable (contrato §30): resultado da visita, motivo de recusa, hora do retorno, telefone do contato.
+  outcome           String            @default("conversa") // conversa | fechado
+  refusal_reason    String? // slug de MOTIVOS_RECUSA (domain/catalog/refusal.ts)
+  refusal_note      String?
+  followup_time     String? // HH:mm (Brasília)
+  contact_phone     String? // só dígitos (10–11); nunca em log
   created_at        DateTime          @default(now())
   updated_at        DateTime          @updatedAt
   journey           field_journeys    @relation(fields: [journey_id], references: [id], onDelete: Cascade)
@@ -803,6 +809,7 @@ model field_routes {
   status          String   @default("ativa") // ativa | encerrada
   version         Int      @default(1)
   source          String // equipe | auto | consultor
+  travel_mode     String   @default("a_pe") // a_pe | carro (contrato §30.4)
   start_lat       Float
   start_lng       Float
   params_snapshot Json

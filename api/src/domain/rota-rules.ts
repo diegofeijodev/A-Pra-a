@@ -14,6 +14,12 @@ import { distanciaM, type Coordenada } from './campo-rules';
 
 export const RESERVA_MAX = 10;
 
+/** Modo de deslocamento do roteiro (contrato §30.4). */
+export const MODOS_DESLOCAMENTO = ['a_pe', 'carro'] as const;
+export type ModoDeslocamento = (typeof MODOS_DESLOCAMENTO)[number];
+/** Média urbana de carro em movimento (sem estacionar), km/h — valor de partida a validar com os consultores. */
+export const VELOCIDADE_CARRO_PADRAO = 25;
+
 export interface PontoRota extends Coordenada {
   id: string;
   /** Âncora: mantém a posição; o resto é reordenado dentro de cada trecho entre duas fixas. */
@@ -170,7 +176,21 @@ export function aplicarConfigRota(atual: ConfigRota, parcial: Record<string, unk
   return h ? { ok: false, erro: h } : { ok: true, config: cfg };
 }
 
-export function paramsDaConfig(c: ConfigRota): ParamsPlano {
+/** A pé: a velocidade da configuração; carro: a do carro (do env, fotografada no roteiro). Modo desconhecido = a pé. */
+export function velocidadeDoModo(modo: string, c: Pick<ConfigRota, 'velocidade_kmh'>, kmhCarro: number): number {
+  return modo === 'carro' ? kmhCarro : c.velocidade_kmh;
+}
+
+/** A conta escrita do modo, para a tela (regra "todo número diz o que é e a conta"). */
+export function textoDoModo(modo: string, kmh: number, fator: number): string {
+  const n = (x: number) => String(x).replace('.', ',');
+  return modo === 'carro'
+    ? `De carro: ${n(kmh)} km/h × desvio de rua ${n(fator)} (média urbana, sem estacionar)`
+    : `A pé: ${n(kmh)} km/h × desvio de rua ${n(fator)}`;
+}
+
+/** `velocidadeKmh` opcional troca só a velocidade (modo carro); sem ele é a de caminhada da configuração. */
+export function paramsDaConfig(c: ConfigRota, velocidadeKmh?: number): ParamsPlano {
   return {
     meta: c.meta_diaria,
     janelaIni: hhmmParaMin(c.janela_inicio)!,
@@ -178,7 +198,7 @@ export function paramsDaConfig(c: ConfigRota): ParamsPlano {
     almocoIni: hhmmParaMin(c.almoco_inicio)!,
     almocoFim: hhmmParaMin(c.almoco_fim)!,
     minutosPorVisita: c.minutos_por_visita,
-    velocidadeKmh: c.velocidade_kmh,
+    velocidadeKmh: velocidadeKmh ?? c.velocidade_kmh,
     fatorDesvio: c.fator_desvio,
   };
 }

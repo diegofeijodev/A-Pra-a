@@ -75,3 +75,22 @@ describe('retornoRoteirizavel', () => {
     expect(retornoRoteirizavel({ lat: -23.6, lng: -46.6, location_precision: 'city' }, true)).toBe(false);
   });
 });
+
+describe('P0 §30 — compararRetornos com hora', () => {
+  const r = (over: Partial<Parameters<typeof compararRetornos>[0]>) => ({ followup_date: '2026-10-20', followup_time: null as string | null, lead_name: 'M', visit_id: 'a', ...over });
+  it('mesmo dia: com hora antes de sem hora; com hora por hora', () => {
+    const lista = [r({ lead_name: 'A' }), r({ lead_name: 'Z', followup_time: '16:00' }), r({ lead_name: 'M', followup_time: '09:30' })];
+    expect(lista.sort(compararRetornos).map((x) => x.lead_name)).toEqual(['M', 'Z', 'A']);
+  });
+  it('a data manda mais que a hora', () => {
+    const lista = [r({ followup_date: '2026-10-21', followup_time: '08:00', lead_name: 'B' }), r({ followup_date: '2026-10-19', lead_name: 'C' })];
+    expect(lista.sort(compararRetornos).map((x) => x.lead_name)).toEqual(['C', 'B']);
+  });
+  it('sem nenhuma hora a ordem é a de antes (nome, depois id)', () => {
+    const lista = [r({ lead_name: 'Bia', visit_id: 'z' }), r({ lead_name: 'Ana', visit_id: 'y' }), r({ lead_name: 'Ana', visit_id: 'x' })];
+    expect(lista.sort(compararRetornos).map((x) => x.visit_id)).toEqual(['x', 'y', 'z']);
+  });
+  it('objeto sem followup_time (chamador antigo) funciona', () => {
+    expect(compararRetornos({ followup_date: '2026-10-20', lead_name: 'A', visit_id: 'a' }, { followup_date: '2026-10-20', lead_name: 'B', visit_id: 'b' })).toBeLessThan(0);
+  });
+});

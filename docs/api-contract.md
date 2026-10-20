@@ -4024,3 +4024,77 @@ Com as duas flags ligadas, `GET /v1/consultores/attention` ganha `payout_alerts:
 
 Config: `payout_proof_required` (boolean, padrão `true`) em `field_config`.
 **Para produção:** `migrate deploy` antes do código; 2 semanas de F8 conferidas; conferir o storage de fotos (S3 privado) ou `PHOTOS_DIR`; ligar `FIELD_PAYOUTS_ENABLED`; na segunda: **Gerar fila** → pagar no banco → **Marcar como pago** com o comprovante → **Baixar CSV** para a contabilidade.
+
+## 30. P0 da comparação com a versão Lovable — resultado "fechado", motivo de recusa, retorno com hora e contato, modo a pé/carro
+
+Origem: `docs/superpowers/specs/2026-10-20-comparacao-versao-lovable-chefe.md` (§5, P0 1–3). **Sem flag nova.** Todos os campos novos são
+opcionais ou têm default (`outcome = 'conversa'`, `travel_mode = 'a_pe'`): o que já existe não muda. Migração aditiva
+`20261025100000_p0_comparacao_lovable` (`migrate deploy` antes do código). Nomes no wire em inglês/`snake_case`, como o resto do contrato
+(`outcome`, `refusal_reason`, `followup_time`, `contact_phone`, `travel_mode`).
+
+### 30.1 Resultado da visita: `outcome`
+
+Novo campo do rascunho (`AnswersBody`, `PATCH /v1/campo/visits/:ref/answers`) e de `VisitView.answers`:
+
+| Campo | Valores | Padrão |
+|---|---|---|
+| `outcome` | `conversa` \| `fechado` | `conversa` (coluna `NOT NULL DEFAULT 'conversa'`: toda visita antiga é `conversa`) |
+
+`fechado` = o consultor chegou e o estabelecimento estava fechado (no horário ou de vez; **sem** distinção entre os dois, de propósito). Valor
+fora da lista → `400 VALIDATION_ERROR`. Regras do `fechado`:
+
+- **Checkout sem questionário:** `faltando()` devolve `[]` (não há com quem conversar). `outcome` volta a `conversa` quando o consultor desfaz a marca (rascunho).
+- **Não é conversa:** o checkout NÃO grava `decisor`/`decisor_role`/`last_contact_at`, NÃO avança o estágio do lead e grava o evento do CRM com `kind = 'note'` (e não `visit`, que está em `CONTACT_KINDS` e contaria como contato), texto "Visita de campo — estabelecimento fechado." (sem respostas).
+- **Metas:** fica fora da conta de meta/ritmo: `atencao` (`feitas`), `goal` de `GET /v1/campo/today` e o `progress.done`/`plan.fits_meta` do roteiro. Total e fechadas aparecem **separados**: `GET /v1/campo/today` → `counters.closed`; `GET /v1/consultores` → `today.closed`; `counters.visits` e `today.visits` continuam sendo o total de check-ins do dia (nada muda de significado). A remuneração (`min_visits` do piso, §28) **não** foi alterada: segue contando check-ins/checkouts; é decisão do dono se fechado conta para o piso.
+- **Não bloqueia o roteiro:** a parada continua `visitada` desde o check-in (§23.3) e o próximo lugar segue normal. O `fechado` NÃO entra no filtro `dias_sem_revisitar` do roteiro automático (o lugar pode voltar a ser sorteado; ponto fechado de vez se resolve arquivando o lead) e NÃO "resolve" um retorno pendente de visita anterior (§25.4 (1): a visita mais recente é calculada sem as `fechado`).
+- Mapa de calor/cobertura (§24) não muda: o consultor esteve lá, então o lugar conta como visitado.
+
+### 30.2 Motivo de recusa
+
+Catálogo FECHADO no código (`api/src/domain/catalog/refusal.ts`; **lista padrão, ajustável — o dono confirma**). Espelho de rótulos em `web/src/modules/campo/domain/recusa.ts` (mesmo padrão de `MOTIVOS_PULO`):
+
+| `refusal_reason` | Rótulo |
+|---|---|
+| `ja_usa_outro_app` | Já usa outro app |
+| `sem_interesse_momento` | Sem interesse no momento |
+| `nao_contrata_freelancers` | Não contrata freelancers |
+| `decisor_ausente` | Dono/decisor ausente |
+| `preco` | Preço |
+| `outro` | Outro |
+
+Campos do rascunho: `refusal_reason` (slug acima ou `null`) e `refusal_note` (texto livre ≤ 120, **só** com `refusal_reason = 'outro'`). A tela pergunta quando `interest = 'nenhum'`.
+Normalização no servidor, sempre sobre o estado **já mesclado** (o PATCH é parcial): `refusal_reason` só vale com `interest = 'nenhum'` e `outcome = 'conversa'` (senão vira `null`); `refusal_note` só vale com `refusal_reason = 'outro'` (senão `null`). Slug fora do catálogo → `400 VALIDATION_ERROR`.
+**Não é exigido no checkout** (`faltando()` não muda): um rascunho enfileirado antes do deploy não pode tomar `422` e travar a fila offline; a tela é quem pede. O motivo aparece no detalhe da visita (equipe: linha do tempo do consultor) e em `resumoVisita` (evento do CRM).
+Indicadores por motivo (ranking de recusas): **não feitos** — fica para depois (não há lugar natural hoje; os indicadores do campo ainda não agregam respostas do questionário).
+
+### 30.3 Retorno com hora e contato do atendente
+
+Campos novos no rascunho e em `VisitView.answers`:
+
+| Campo | Formato | Regra |
+|---|---|---|
+| `followup_time` | `HH:mm` (24 h, Brasília) ou `null` | opcional; só vale com `needs_followup = true` (senão `null`); **não** se rejeita hora que já passou (a hora pode passar durante a visita ou offline); `followup_date` continua só-dia e é quem define `hoje`/`atrasado` |
+| `contact_phone` | só dígitos, 10–11 (DDD + número) | opcional; o servidor tira tudo que não é dígito e um `55` inicial quando sobram 12–13 dígitos; inválido → `400 VALIDATION_ERROR` com mensagem que **não repete o número**. `null`/`""` limpa |
+
+O nome de quem atendeu já é `interlocutor_name` (obrigatório): **não** se criou campo de nome novo. O telefone é dado pessoal de terceiro: nunca vai para log, erro ou `lead_events`/`resumoVisita`; só trafega em `VisitView.answers` (consultor dono e equipe, detalhe da visita).
+
+`FollowupView` (§25.4, equipe e consultor) ganha: `followup_time` (`HH:mm` | `null`), `contact_phone_masked` (`(11) 9****-4321`; 10 dígitos: `(11) ****-4321`; `null` sem telefone) e **somente** em `GET /v1/campo/followups` (as visitas dele) `contact_phone` (completo, para `tel:`/`wa.me`). A fila da equipe nunca recebe o número completo.
+Ordem da fila (`compararRetornos`): `followup_date` ↑; no mesmo dia, **com hora antes de sem hora**, os com hora por `followup_time` ↑; depois nome (pt-BR) e `visit_id`. Sem nenhuma hora, a ordem é a de antes.
+Roteiro automático (§25.6): os retornos vencidos entram ancorados no começo; agora **com hora vêm primeiro, por hora**, e os sem hora seguem pelo vizinho mais próximo, como antes. O corte `MAX_RETORNOS_NO_ROTEIRO` segue a nova ordem. O relógio do roteiro **não espera** a hora marcada: a hora é só ordem e rótulo (a tela mostra "combinado para 15:30"), o ETA continua sendo o da caminhada.
+
+### 30.4 Modo de deslocamento: `travel_mode`
+
+`field_routes.travel_mode` (`NOT NULL DEFAULT 'a_pe'`): `a_pe` | `carro`. Define a **velocidade** usada no relógio do roteiro (ETA de cada parada e quantas paradas cabem na janela/meta):
+
+| Modo | Velocidade | Conta do trecho |
+|---|---|---|
+| `a_pe` | `velocidade_kmh` da configuração (§23.1; padrão 4,5) | `ceil( metros_em_linha_reta × fator_desvio ÷ (velocidade × 1000 ÷ 60) )` minutos |
+| `carro` | env `ROTA_VELOCIDADE_CARRO_KMH` (padrão **25**; faixa 5–80), **fotografada** no roteiro (`params_snapshot.velocidade_carro_kmh`) | a mesma conta; `fator_desvio` continua valendo |
+
+Exemplo com `fator_desvio = 1,3`: 1,0 km em linha reta → 1,3 km de rua → a pé (4,5 km/h) `ceil(1300 ÷ 75)` = 18 min; de carro (25 km/h) `ceil(1300 ÷ 416,67)` = 4 min. O tempo parado em cada visita (`minutos_por_visita`) não muda com o modo — **o 25 km/h é média urbana com o carro em movimento, sem estacionar** (por isso o padrão é conservador e vale validar com os consultores).
+A velocidade fotografada não muda se o env mudar depois; ao trocar o modo (ou remontar escolhendo `carro` num roteiro que ainda não tinha foto) ela é gravada de novo a partir do env atual.
+
+- `POST /v1/routes` (`MontarRotaDto`, §23.4) ganha `travel_mode?` (sem default no DTO): ausente = **mantém** o modo do roteiro existente, ou `a_pe` num roteiro novo. Valor fora da lista → `400`. Trocar o modo recalcula ETAs e o corte pelo plano completo (sobe `version`).
+- Todo cálculo sobre roteiro existente usa o modo dele: pular, adiar, desfazer, reordenar (`PUT …/order`), refazer (equipe e consultor) e a leitura (`routeView`). O roteiro automático/do consultor nasce `a_pe` (a equipe escolhe o modo ao montar).
+- `RouteView` ganha `travel_mode` e `travel: { mode, speed_kmh, detour_factor, text }` — `text` é a conta escrita ("A pé: 4,5 km/h × desvio de rua 1,3" / "De carro: 25 km/h × desvio de rua 1,3 (média urbana, sem estacionar)"). `params.velocidade_kmh` continua sendo a de caminhada.
+- Env: `ROTA_VELOCIDADE_CARRO_KMH` (inteiro ou decimal 5–80, vazio = 25). Documentada em `.env.example`.

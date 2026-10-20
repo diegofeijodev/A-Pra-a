@@ -49,10 +49,20 @@ export function classificarRetorno(followupDate: string, hoje: string): ClasseRe
   return { due: atraso === 0 ? 'hoje' : 'atrasado', days_late: atraso };
 }
 
-/** Ordem da fila: data mais antiga primeiro, depois nome, depois id (determinística). */
-export function compararRetornos(a: { followup_date: string; lead_name: string; visit_id: string }, b: { followup_date: string; lead_name: string; visit_id: string }): number {
+/** No mesmo dia: com hora antes de sem hora; com hora, a mais cedo primeiro (HH:mm ordena como texto). */
+export function compararHora(a: string | null | undefined, b: string | null | undefined): number {
+  if (a && b) return a < b ? -1 : a > b ? 1 : 0;
+  return a ? -1 : b ? 1 : 0;
+}
+
+/** Ordem da fila: data mais antiga primeiro; no dia, com hora antes de sem hora (por hora); depois nome e id (determinística). */
+export function compararRetornos(
+  a: { followup_date: string; followup_time?: string | null; lead_name: string; visit_id: string },
+  b: { followup_date: string; followup_time?: string | null; lead_name: string; visit_id: string },
+): number {
   return (
     (a.followup_date < b.followup_date ? -1 : a.followup_date > b.followup_date ? 1 : 0) ||
+    compararHora(a.followup_time, b.followup_time) ||
     a.lead_name.localeCompare(b.lead_name, 'pt-BR') ||
     (a.visit_id < b.visit_id ? -1 : a.visit_id > b.visit_id ? 1 : 0)
   );

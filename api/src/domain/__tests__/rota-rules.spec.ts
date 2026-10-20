@@ -9,7 +9,11 @@ import {
   lerConfigRota,
   melhorarDoisOpt,
   minParaHhmm,
+  MODOS_DESLOCAMENTO,
   minutosUteisAte,
+  textoDoModo,
+  velocidadeDoModo,
+  VELOCIDADE_CARRO_PADRAO,
   ordenarComFixas,
   ordenarVizinhoMaisProximo,
   paramsDaConfig,
@@ -286,5 +290,42 @@ describe('minutesSp (hora de Brasília, não UTC)', () => {
     expect(minutesSp(new Date('2026-10-20T14:00:00Z'))).toBe(11 * 60);
     expect(minutesSp(new Date('2026-10-20T02:30:00Z'))).toBe(23 * 60 + 30); // ainda dia 19 em Brasília
     expect(minutesSp(new Date('2026-10-20T03:00:00Z'))).toBe(0);
+  });
+});
+
+describe('P0 §30 — modo de deslocamento a pé / de carro', () => {
+  const pontos = (n: number): PontoRota[] =>
+    Array.from({ length: n }, (_, i) => ({ id: `p${String(i).padStart(2, '0')}`, lat: -23.6 - i * 0.01, lng: -46.66 }));
+  const inicio = { lat: -23.6, lng: -46.66 };
+
+  it('catálogo e padrão', () => {
+    expect(MODOS_DESLOCAMENTO).toEqual(['a_pe', 'carro']);
+    expect(VELOCIDADE_CARRO_PADRAO).toBe(25);
+  });
+  it('velocidadeDoModo: a pé usa a configuração; carro usa a do carro; fotografada vence o padrão', () => {
+    expect(velocidadeDoModo('a_pe', CONFIG_ROTA_PADRAO, 25)).toBe(4.5);
+    expect(velocidadeDoModo('carro', CONFIG_ROTA_PADRAO, 25)).toBe(25);
+    expect(velocidadeDoModo('carro', CONFIG_ROTA_PADRAO, 40)).toBe(40);
+    expect(velocidadeDoModo('qualquer', CONFIG_ROTA_PADRAO, 25)).toBe(4.5);
+  });
+  it('paramsDaConfig(config) sem segundo argumento fica idêntico ao de antes (a pé)', () => {
+    expect(paramsDaConfig(CONFIG_ROTA_PADRAO).velocidadeKmh).toBe(4.5);
+    expect(paramsDaConfig(CONFIG_ROTA_PADRAO, 25).velocidadeKmh).toBe(25);
+  });
+  it('a conta: 1 km em linha reta x 1,3 = 1.300 m → 18 min a pé, 4 min de carro', () => {
+    expect(caminhadaMin(1300, 4.5)).toBe(18);
+    expect(caminhadaMin(1300, 25)).toBe(4);
+  });
+  it('de carro as paradas chegam antes e cabem mais paradas na mesma janela', () => {
+    const base = { inicio, partidaMin: 540, pontos: pontos(40) };
+    const aPe = planejar({ ...base, params: { ...paramsDaConfig({ ...CONFIG_ROTA_PADRAO, meta_diaria: 100 }) } });
+    const carro = planejar({ ...base, params: { ...paramsDaConfig({ ...CONFIG_ROTA_PADRAO, meta_diaria: 100 }, 25) } });
+    const plan = (x: typeof aPe) => x.paradas.filter((p) => p.kind === 'planejada');
+    expect(plan(carro).length).toBeGreaterThan(plan(aPe).length);
+    expect(plan(carro)[3]!.eta_min!).toBeLessThan(plan(aPe)[3]!.eta_min!);
+  });
+  it('texto da conta escrito para a tela', () => {
+    expect(textoDoModo('a_pe', 4.5, 1.3)).toBe('A pé: 4,5 km/h × desvio de rua 1,3');
+    expect(textoDoModo('carro', 25, 1.3)).toBe('De carro: 25 km/h × desvio de rua 1,3 (média urbana, sem estacionar)');
   });
 });

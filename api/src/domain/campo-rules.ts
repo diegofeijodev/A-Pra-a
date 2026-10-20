@@ -7,6 +7,7 @@
  */
 import { randomInt } from 'node:crypto';
 import { isUuid } from '../common/ids/uuid';
+import { MOTIVO_RECUSA_COM_TEXTO, CHAVES_MOTIVO_RECUSA, rotuloMotivoRecusa } from './catalog/refusal';
 import { norm } from './dedup';
 
 export const RAIO_LONGE_M = 200;
@@ -20,6 +21,10 @@ export const PASSADO_MAXIMO_MS = 24 * 60 * 60_000;
 export const CARGOS = ['dono', 'gerente', 'outro'] as const;
 export const FREELA_STATUS = ['ja_usa', 'cadastrou_qr', 'nao_cadastrou'] as const;
 export const INTERESSES = ['alto', 'medio', 'baixo', 'nenhum'] as const;
+/** Resultado da visita (contrato §30.1): `fechado` = chegou e o estabelecimento estava fechado. */
+export const RESULTADOS_VISITA = ['conversa', 'fechado'] as const;
+export type ResultadoVisita = (typeof RESULTADOS_VISITA)[number];
+export const HORA_RETORNO_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 export const PIX_TIPOS = ['cpf', 'email', 'telefone', 'aleatoria'] as const;
 
 /** Lista inicial de "apps e canais que usa hoje" (§5, `app_settings.field_channels`). */
@@ -96,6 +101,12 @@ export interface RespostasVisita {
   followup_what: string | null;
   followup_date: string | null;
   notes: string | null;
+  /** P0 §30 — todos opcionais: ausente = `conversa` / sem motivo / sem hora / sem telefone. */
+  outcome?: string | null;
+  refusal_reason?: string | null;
+  refusal_note?: string | null;
+  followup_time?: string | null;
+  contact_phone?: string | null;
 }
 
 export const RESPOSTAS_VAZIAS: RespostasVisita = {
@@ -112,12 +123,19 @@ export const RESPOSTAS_VAZIAS: RespostasVisita = {
   followup_what: null,
   followup_date: null,
   notes: null,
+  outcome: 'conversa',
+  refusal_reason: null,
+  refusal_note: null,
+  followup_time: null,
+  contact_phone: null,
 };
 
 const vazio = (s: string | null | undefined): boolean => !s || !s.trim();
 
 /** O que falta para o checkout (§7, "Questionário completo"), na ordem da tela. */
 export function faltando(r: RespostasVisita, hoje: string): string[] {
+  // Estabelecimento fechado: não houve com quem conversar (§30.1).
+  if (r.outcome === 'fechado') return [];
   const f: string[] = [];
   if (vazio(r.interlocutor_name)) f.push('nome de quem atendeu');
   if (!r.interlocutor_role) f.push('cargo de quem atendeu');
@@ -145,10 +163,20 @@ const diaBR = (s: string | null): string => {
 
 /** Texto do evento `visit` no CRM — uma frase por pergunta. */
 export function resumoVisita(r: RespostasVisita): string {
+  if (r.outcome === 'fechado') {
+    return `Visita de campo — estabelecimento fechado.${vazio(r.notes) ? '' : ` Obs.: ${semPontoFinal(r.notes!)}.`}`;
+  }
   const partes = [
     `Visita de campo — atendeu: ${r.interlocutor_name?.trim() || '—'} (${ROTULO_CARGO[r.interlocutor_role ?? ''] ?? '—'})`,
     `Freela: ${ROTULO_FREELA[r.freela_status ?? ''] ?? '—'}`,
     `Interesse: ${ROTULO_INTERESSE[r.interest ?? ''] ?? '—'}`,
+    ...(rotuloMotivoRecusa(r.refusal_reason)
+      ? [
+          `Motivo da recusa: ${rotuloMotivoRecusa(r.refusal_reason)}${
+            r.refusal_reason === MOTIVO_RECUSA_COM_TEXTO && !vazio(r.refusal_note) ? ` (${semPontoFinal(r.refusal_note!)})` : ''
+          }`,
+        ]
+      : []),
     (r.open_vagas ?? 0) > 0 ? `Vagas abertas: ${r.open_vagas} (${r.vaga_roles.join(', ')})` : 'Vagas abertas: 0',
     `Freelancers por semana: ${r.freelas_per_week ?? 0}`,
   ];
@@ -156,11 +184,56 @@ export function resumoVisita(r: RespostasVisita): string {
   partes.push(`Canais: ${canais.join(', ') || '—'}`);
   partes.push(
     r.needs_followup
-      ? `Retorno: ${semPontoFinal(r.followup_what ?? '')} em ${diaBR(r.followup_date)}`
+      ? `Retorno: ${semPontoFinal(r.followup_what ?? '')} em ${diaBR(r.followup_date)}${r.followup_time ? ` às ${r.followup_time}` : ''}`
       : 'Retorno: não pediu',
   );
   if (!vazio(r.notes)) partes.push(`Obs.: ${semPontoFinal(r.notes!)}`);
   return `${partes.join('. ')}.`;
+}
+
+/**
+ * Motivo de recusa sobre o estado JÁ MESCLADO (o PATCH é parcial): só vale com interesse "nenhum"
+ * numa conversa; a nota (texto livre curto) só vale com o motivo "outro".
+ */
+export function normalizarRecusa(m: {
+  interest: string | null;
+  outcome?: string | null;
+  refusal_reason: string | null;
+  refusal_note: string | null;
+}): { refusal_reason: string | null; refusal_note: string | null } {
+  const vale = m.interest === 'nenhum' && (m.outcome ?? 'conversa') === 'conversa' && !!m.refusal_reason && CHAVES_MOTIVO_RECUSA.includes(m.refusal_reason);
+  if (!vale) return { refusal_reason: null, refusal_note: null };
+  const nota = m.refusal_reason === MOTIVO_RECUSA_COM_TEXTO ? m.refusal_note?.trim() || null : null;
+  return { refusal_reason: m.refusal_reason, refusal_note: nota };
+}
+
+/** A hora do retorno só faz sentido se o consultor pediu retorno. */
+export function normalizarRetorno(m: { needs_followup: boolean | null; followup_time: string | null }): { followup_time: string | null } {
+  return { followup_time: m.needs_followup === true && m.followup_time && HORA_RETORNO_RE.test(m.followup_time) ? m.followup_time : null };
+}
+
+/**
+ * Telefone do contato (§30.3): só dígitos; tira o `55` quando sobram 12–13; exige 10–11 com DDD
+ * 11–99 e não aceita todos os dígitos iguais. Vazio/nulo limpa. Nunca devolve o texto recebido
+ * em mensagem de erro (dado pessoal de terceiro).
+ */
+export function normalizarTelefoneContato(bruto: string | null | undefined): { ok: true; valor: string | null } | { ok: false } {
+  if (bruto == null) return { ok: true, valor: null };
+  let d = bruto.replace(/\D/g, '');
+  if (d === '') return bruto.trim() === '' ? { ok: true, valor: null } : { ok: false };
+  if ((d.length === 12 || d.length === 13) && d.startsWith('55')) d = d.slice(2);
+  if (d.length !== 10 && d.length !== 11) return { ok: false };
+  if (Number(d.slice(0, 2)) < 11 || /^(\d)\1+$/.test(d)) return { ok: false };
+  return { ok: true, valor: d };
+}
+
+/** `(11) 9****-4321` (11 dígitos) ou `(11) ****-7890` (10). */
+export function mascararTelefoneContato(d: string | null | undefined): string | null {
+  if (!d) return null;
+  const x = d.replace(/\D/g, '');
+  if (x.length === 11) return `(${x.slice(0, 2)}) ${x[2]}****-${x.slice(7)}`;
+  if (x.length === 10) return `(${x.slice(0, 2)}) ****-${x.slice(6)}`;
+  return null;
 }
 
 /** A visita é conversa presencial: 1 ou 2 → 3; de 3 em diante mantém (5 é do bloco C). */

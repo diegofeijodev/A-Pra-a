@@ -7,7 +7,11 @@ import {
   faltando,
   gerarSenhaProvisoria,
   marcaLonge,
+  mascararTelefoneContato,
   nomeParecido,
+  normalizarRecusa,
+  normalizarRetorno,
+  normalizarTelefoneContato,
   normalizarPix,
   pixValido,
   RESPOSTAS_VAZIAS,
@@ -199,5 +203,80 @@ describe('situação de hoje e senha provisória', () => {
     expect(gerarSenhaProvisoria(() => 0)).toBe('aaaaaaaaaa');
     const senha = gerarSenhaProvisoria();
     expect(senha).toMatch(/^[abcdefghjkmnpqrstuvwxyz23456789]{10}$/);
+  });
+});
+
+describe('P0 §30 — resultado "fechado"', () => {
+  it('fechado não exige questionário', () => {
+    expect(faltando({ ...RESPOSTAS_VAZIAS, outcome: 'fechado' }, '2026-10-08')).toEqual([]);
+  });
+  it('conversa (ou ausente) continua exigindo tudo como antes', () => {
+    expect(faltando({ ...RESPOSTAS_VAZIAS, outcome: 'conversa' }, '2026-10-08')).toHaveLength(8);
+    expect(faltando(RESPOSTAS_VAZIAS, '2026-10-08')).toHaveLength(8);
+  });
+  it('resumo do fechado não cita atendente nem telefone', () => {
+    const t = resumoVisita({ ...RESPOSTAS_VAZIAS, outcome: 'fechado', notes: 'Portão baixo.' });
+    expect(t).toBe('Visita de campo — estabelecimento fechado. Obs.: Portão baixo.');
+  });
+  it('resumo da conversa traz o motivo da recusa e nunca o telefone', () => {
+    const t = resumoVisita({
+      ...COMPLETAS,
+      interest: 'nenhum',
+      refusal_reason: 'preco',
+      contact_phone: '11987654321',
+      followup_time: '15:30',
+    });
+    expect(t).toContain('Motivo da recusa: Preço');
+    expect(t).toContain('às 15:30');
+    expect(t).not.toContain('98765');
+  });
+  it('resumo "Outro" leva a nota', () => {
+    const t = resumoVisita({ ...COMPLETAS, interest: 'nenhum', refusal_reason: 'outro', refusal_note: 'Vai vender o bar' });
+    expect(t).toContain('Motivo da recusa: Outro (Vai vender o bar)');
+  });
+});
+
+describe('P0 §30 — motivo de recusa (normalização sobre o estado mesclado)', () => {
+  it('só vale com interesse "nenhum" e conversa', () => {
+    expect(normalizarRecusa({ interest: 'nenhum', outcome: 'conversa', refusal_reason: 'preco', refusal_note: 'x' })).toEqual({ refusal_reason: 'preco', refusal_note: null });
+    expect(normalizarRecusa({ interest: 'alto', outcome: 'conversa', refusal_reason: 'preco', refusal_note: null })).toEqual({ refusal_reason: null, refusal_note: null });
+    expect(normalizarRecusa({ interest: 'nenhum', outcome: 'fechado', refusal_reason: 'preco', refusal_note: null })).toEqual({ refusal_reason: null, refusal_note: null });
+    expect(normalizarRecusa({ interest: null, outcome: 'conversa', refusal_reason: 'preco', refusal_note: null })).toEqual({ refusal_reason: null, refusal_note: null });
+  });
+  it('nota só com "outro", aparada; vazia vira null', () => {
+    expect(normalizarRecusa({ interest: 'nenhum', outcome: 'conversa', refusal_reason: 'outro', refusal_note: '  Vai fechar  ' })).toEqual({ refusal_reason: 'outro', refusal_note: 'Vai fechar' });
+    expect(normalizarRecusa({ interest: 'nenhum', outcome: 'conversa', refusal_reason: 'outro', refusal_note: '   ' })).toEqual({ refusal_reason: 'outro', refusal_note: null });
+  });
+});
+
+describe('P0 §30 — hora do retorno', () => {
+  it('hora só vale com retorno pedido', () => {
+    expect(normalizarRetorno({ needs_followup: true, followup_time: '15:30' })).toEqual({ followup_time: '15:30' });
+    expect(normalizarRetorno({ needs_followup: false, followup_time: '15:30' })).toEqual({ followup_time: null });
+    expect(normalizarRetorno({ needs_followup: null, followup_time: '15:30' })).toEqual({ followup_time: null });
+    expect(normalizarRetorno({ needs_followup: true, followup_time: null })).toEqual({ followup_time: null });
+  });
+});
+
+describe('P0 §30 — telefone do contato', () => {
+  it('normaliza para só dígitos (10–11) e tira o 55', () => {
+    expect(normalizarTelefoneContato('(11) 98765-4321')).toEqual({ ok: true, valor: '11987654321' });
+    expect(normalizarTelefoneContato('11 3456-7890')).toEqual({ ok: true, valor: '1134567890' });
+    expect(normalizarTelefoneContato('+55 11 98765-4321')).toEqual({ ok: true, valor: '11987654321' });
+    expect(normalizarTelefoneContato('5511987654321')).toEqual({ ok: true, valor: '11987654321' });
+  });
+  it('vazio ou nulo limpa', () => {
+    expect(normalizarTelefoneContato(null)).toEqual({ ok: true, valor: null });
+    expect(normalizarTelefoneContato('  ')).toEqual({ ok: true, valor: null });
+  });
+  it('inválido: curto, longo, DDD 0x, repetido', () => {
+    for (const x of ['1234', '119876543210000', '0198765432', '99999999999', 'abc']) {
+      expect(normalizarTelefoneContato(x).ok).toBe(false);
+    }
+  });
+  it('máscara: 11 e 10 dígitos', () => {
+    expect(mascararTelefoneContato('11987654321')).toBe('(11) 9****-4321');
+    expect(mascararTelefoneContato('1134567890')).toBe('(11) ****-7890');
+    expect(mascararTelefoneContato(null)).toBeNull();
   });
 });
