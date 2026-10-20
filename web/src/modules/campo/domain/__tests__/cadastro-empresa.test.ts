@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   FORM_VAZIO,
   formInicial,
+  manterClientId,
   mensagemDoErro,
   montarPayload,
   situacao,
@@ -115,6 +116,15 @@ describe('situacao', () => {
     const r = situacao(sv({ status: 'already_registered', last_error_code: 'PHONE_ALREADY_REGISTERED_BY_YOU' }), false);
     expect(r).toMatchObject({ tipo: 'ja_cadastrada', vinculada: true });
     expect(situacao(sv({ status: 'already_registered', last_error_code: 'PHONE_ALREADY_REGISTERED' }), false)).toMatchObject({ vinculada: false });
+  });
+});
+
+describe('manterClientId', () => {
+  it('mantém quando o Freela pode ter criado a conta', () => {
+    for (const s of [undefined, 0, 408, 429, 500, 502, 503]) expect(manterClientId(s)).toBe(true);
+  });
+  it('troca só em recusa definitiva', () => {
+    for (const s of [400, 403, 404, 409, 422]) expect(manterClientId(s)).toBe(false);
   });
 });
 

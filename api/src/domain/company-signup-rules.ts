@@ -135,7 +135,13 @@ const DUPLICIDADE: Record<string, string> = {
  * `null` = não é um caso conhecido (o serviço relança como `FREELA_ERROR`).
  */
 export function erroDoFreela(
-  e: { freelaStatus: number; code?: string | undefined; alreadyLinkedToThisConsultant?: boolean | undefined },
+  e: {
+    freelaStatus: number;
+    code?: string | undefined;
+    alreadyLinkedToThisConsultant?: boolean | undefined;
+    /** Mensagem do Freela, repassada (sanitizada) nos 400: é ela que diz o que corrigir. */
+    message?: string | undefined;
+  },
   operacao: 'criar' | 'reemitir',
 ): TraducaoErro | null {
   const { freelaStatus: s, code } = e;
@@ -176,6 +182,9 @@ export function erroDoFreela(
     return f(429, code, 'Limite de cadastros do dia atingido. Tente de novo amanhã.');
   if (code === 'IDEMPOTENCY_KEY_REUSED')
     return f(422, code, 'Este cadastro já foi enviado com outros dados. Comece um novo.');
-  if (s === 400 && code) return f(400, code, code === 'INVALID_CNPJ' ? 'CNPJ inválido.' : 'Dados recusados pelo Freela.');
+  if (s === 400 && code) {
+    const deles = e.message ? sanitizarErroDoFreela(e.message) : '';
+    return f(400, code, deles || (code === 'INVALID_CNPJ' ? 'CNPJ inválido.' : 'Dados recusados pelo Freela.'));
+  }
   return null;
 }

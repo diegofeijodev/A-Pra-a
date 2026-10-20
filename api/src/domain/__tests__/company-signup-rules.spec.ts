@@ -111,7 +111,10 @@ describe('erroDoFreela', () => {
     expect(um(409, 'EMAIL_ALREADY_REGISTERED')).toMatchObject({ code: 'EMAIL_ALREADY_REGISTERED' });
   });
   it('400, 422 e 429 repassam o código do Freela', () => {
-    expect(um(400, 'INVALID_CNPJ')).toMatchObject({ status: 400, code: 'INVALID_CNPJ', local: 'failed' });
+    expect(um(400, 'INVALID_CNPJ')).toMatchObject({ status: 400, code: 'INVALID_CNPJ', local: 'failed', message: 'CNPJ inválido.' });
+    expect(
+      erroDoFreela({ freelaStatus: 400, code: 'CITY_NOT_FOUND', message: 'Cidade "Xanxerê" não encontrada.' }, 'criar'),
+    ).toMatchObject({ code: 'CITY_NOT_FOUND', message: 'Cidade "Xanxerê" não encontrada.' });
     expect(um(422, 'IDEMPOTENCY_KEY_REUSED')).toMatchObject({ status: 422, code: 'IDEMPOTENCY_KEY_REUSED' });
     expect(um(422, 'ACCESS_MODE_NOT_AVAILABLE')).toMatchObject({ status: 503, code: 'SIGNUP_UNAVAILABLE' });
     expect(um(429, 'DAILY_REGISTRATION_LIMIT')).toMatchObject({ status: 429, code: 'DAILY_REGISTRATION_LIMIT' });

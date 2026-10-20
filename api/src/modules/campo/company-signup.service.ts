@@ -304,7 +304,7 @@ export class CompanySignupService {
    */
   private async registrarFalha(id: string, e: unknown, operacao: 'criar' | 'reemitir'): Promise<unknown> {
     if (!(e instanceof FreelaHttpError)) return e;
-    const t = erroDoFreela({ freelaStatus: e.freelaStatus, ...e.freelaError }, operacao);
+    const t = erroDoFreela({ freelaStatus: e.freelaStatus, ...e.freelaError, message: e.message }, operacao);
     const code = t?.code ?? 'FREELA_ERROR';
     const message = sanitizarErroDoFreela(t?.message ?? e.message);
     const ativado = t?.code === 'ALREADY_ACTIVATED';

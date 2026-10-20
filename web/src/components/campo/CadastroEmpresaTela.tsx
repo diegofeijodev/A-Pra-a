@@ -10,12 +10,13 @@ import { FaixaFila } from '@/components/campo/FaixaFila';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useCampoSession } from '@/modules/campo/application/campo-session.store';
-import { useDia } from '@/modules/campo/application/use-campo';
+import { useCampoMe, useDia } from '@/modules/campo/application/use-campo';
 import { enfileirar, useFilaStore } from '@/modules/campo/application/use-fila';
 import { useOnline } from '@/modules/campo/application/use-online';
 import { irPara } from '@/modules/campo/application/use-tela';
 import {
   formInicial,
+  manterClientId,
   mensagemDoErro,
   montarPayload,
   ROTULO_SITUACAO,
@@ -56,6 +57,7 @@ export function CadastroEmpresaTela({ refVisita }: { refVisita: string }) {
   const online = useOnline();
   const qc = useQueryClient();
   const { dia } = useDia();
+  const me = useCampoMe();
   const nomeLocal = dia.visitas.find((v) => v.ref === refVisita)?.nome ?? '';
 
   const consulta = useQuery({
@@ -122,8 +124,10 @@ export function CadastroEmpresaTela({ refVisita }: { refVisita: string }) {
         }
         const code = axios.isAxiosError(falha) ? (falha.response?.data as { error?: { code?: string } } | undefined)?.error?.code : undefined;
         setErro(mensagemDoErro(code, apiErrorMessage(falha, 'Não foi possível cadastrar agora.')));
-        // Recusa definitiva: o próximo envio, com dados corrigidos, é um cadastro novo.
-        clientId.current = crypto.randomUUID();
+        // Recusa definitiva: o próximo envio, com dados corrigidos, é um cadastro novo. Se o Freela pode
+        // ter criado a conta (5xx, 429), a MESMA chave evita 409 "já cadastrada" no reenvio.
+        const status = axios.isAxiosError(falha) ? falha.response?.status : undefined;
+        if (!manterClientId(status)) clientId.current = crypto.randomUUID();
         void qc.invalidateQueries({ queryKey: ['campo', 'company-signup', refVisita] });
       }
     } catch {
@@ -149,6 +153,24 @@ export function CadastroEmpresaTela({ refVisita }: { refVisita: string }) {
       setOcupado(false);
     }
   }
+
+  if (me.data && me.data.features?.company_signup !== true) {
+    return (
+      <main className="space-y-4">
+        <CampoTopo titulo="Cadastrar no Freela" />
+        <p className="card-surface p-5 text-sm">O cadastro assistido não está disponível agora. Use o QR code do seu código.</p>
+        <button type="button" onClick={voltar} className="flex h-12 w-full items-center justify-center rounded-md border border-border text-sm font-bold">
+          Voltar para a visita
+        </button>
+      </main>
+    );
+  }
+
+  // Sem saber o estado da visita, o formulário poderia duplicar um cadastro que já existe.
+  const carregando = online && consulta.isPending;
+  const falhouAoLer = consulta.isError;
+  const falhaCodigo = axios.isAxiosError(consulta.error) ? (consulta.error.response?.data as { error?: { code?: string } } | undefined)?.error?.code : undefined;
+  const indisponivel = falhaCodigo === 'SIGNUP_UNAVAILABLE' || falhaCodigo === 'FREELA_NOT_CONFIGURED';
 
   if (comLink?.setup_link) {
     return (
@@ -191,9 +213,27 @@ export function CadastroEmpresaTela({ refVisita }: { refVisita: string }) {
         </p>
       )}
 
-      <p className="text-sm font-bold" data-testid="situacao-cadastro">
-        {ROTULO_SITUACAO[sit.tipo]}
-      </p>
+      {carregando && <p className="text-sm text-muted-foreground">Carregando…</p>}
+      {falhouAoLer && !naFila && (
+        <div role="alert" className="space-y-2 rounded-md border border-danger/40 bg-danger/10 p-3 text-sm">
+          <p>
+            {indisponivel
+              ? mensagemDoErro('SIGNUP_UNAVAILABLE', '')
+              : `Não deu para ver se esta empresa já foi cadastrada: ${apiErrorMessage(consulta.error, 'erro ao carregar')}.`}
+          </p>
+          {!indisponivel && (
+            <button type="button" onClick={() => void consulta.refetch()} className="flex h-12 items-center rounded-md border border-border px-4 text-sm font-bold">
+              Tentar de novo
+            </button>
+          )}
+        </div>
+      )}
+
+      {!carregando && (!falhouAoLer || naFila) && (
+        <p className="text-sm font-bold" data-testid="situacao-cadastro">
+          {ROTULO_SITUACAO[sit.tipo]}
+        </p>
+      )}
 
       {sit.tipo === 'na_fila' && (
         <p className="card-surface p-4 text-sm">
@@ -224,7 +264,7 @@ export function CadastroEmpresaTela({ refVisita }: { refVisita: string }) {
         </p>
       )}
 
-      {(sit.tipo === 'novo' || sit.tipo === 'tentar_de_novo' || sit.tipo === 'ja_cadastrada') && (
+      {!carregando && !indisponivel && (sit.tipo === 'novo' || sit.tipo === 'tentar_de_novo' || sit.tipo === 'ja_cadastrada') && (
         <form
           className="space-y-4"
           onSubmit={(ev) => {

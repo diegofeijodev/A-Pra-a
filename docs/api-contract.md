@@ -3719,7 +3719,7 @@ Item novo da fila: `signup` (`{ visit_ref, payload: SignupCreateDto }`), idempot
 | consultor sem `freela_consultant_id` ou `404 CONSULTANT_NOT_FOUND` | `409 FREELA_CODE_PENDING` |
 | `409 PHONE_ALREADY_REGISTERED` | `409 PHONE_ALREADY_REGISTERED` ou, se `alreadyLinkedToThisConsultant`, `409 PHONE_ALREADY_REGISTERED_BY_YOU` |
 | `409 EMAIL_…` / `CNPJ_ALREADY_REGISTERED` | idem, com o sufixo `_BY_YOU` quando o Freela confirma o vínculo ao consultor (linha local = `already_registered`) |
-| `400 INVALID_CNPJ`, `CITY_NOT_FOUND`, validação | `400` com o mesmo `code` (a mensagem é a do Freela) |
+| `400 INVALID_CNPJ`, `CITY_NOT_FOUND`, validação | `400` com o mesmo `code` e a mensagem do Freela (sanitizada) |
 | `422 IDEMPOTENCY_KEY_REUSED` | `422 IDEMPOTENCY_KEY_REUSED` |
 | `429 DAILY_REGISTRATION_LIMIT` / `RESET_LIMIT` | `429` com o mesmo `code` |
 | `reissue`: `409 ALREADY_ACTIVATED` | `409 ALREADY_ACTIVATED` (linha local vira `activated`) |

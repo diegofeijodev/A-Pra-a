@@ -190,6 +190,16 @@ export const ROTULO_SITUACAO: Record<SituacaoCadastro['tipo'], string> = {
   novo: 'Ainda não cadastrada',
 };
 
+/**
+ * O reenvio depois de uma falha reaproveita o `client_id`? Sim quando o Freela PODE ter criado a conta
+ * (sem resposta, 408, 429, 5xx): trocar a chave faria o reenvio bater em 409 "já cadastrada" com a linha
+ * antiga presa em `creating`. Só recusa definitiva (demais 4xx) pede chave nova.
+ */
+export function manterClientId(status: number | undefined): boolean {
+  if (status === undefined || status === 0) return true;
+  return status === 408 || status === 429 || status >= 500;
+}
+
 /** Erros de regra da API com texto próprio para quem está na calçada. */
 export function mensagemDoErro(code: string | undefined, fallback: string): string {
   switch (code) {
