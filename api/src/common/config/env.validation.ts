@@ -78,6 +78,9 @@ const envBase = z.object({
   // Pagamento por Pix MANUAL (F9, contrato §29). Exige FIELD_EARNINGS_ENABLED. Sem chamada a provedor de pagamento.
   FIELD_PAYOUTS_ENABLED: z.string().default('false'),
 
+  // Modo do chefe S1 (contrato §31). Desligado = `fluxo_visita` é ignorado e toda visita nasce `completo` (prod idêntica).
+  FIELD_VISIT_FLOW_SELECT_ENABLED: z.string().default('false'),
+
   SWAGGER_ENABLED: z.string().optional(),
 
   /**

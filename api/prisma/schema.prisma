@@ -593,6 +593,8 @@ model field_consultants {
   freela_code          String?
   freela_sync_error    String?
   freela_synced_at     DateTime?
+  // Exceção por consultor do fluxo da visita (contrato §31.3): simples | completo; nulo = seguir o padrão.
+  visit_flow           String?
   created_by           String    @db.Uuid
   created_at           DateTime  @default(now())
   updated_at           DateTime  @updatedAt
@@ -690,6 +692,11 @@ model field_visits {
   refusal_note      String?
   followup_time     String? // HH:mm (Brasília)
   contact_phone     String? // só dígitos (10–11); nunca em log
+  // Modo do chefe S1 (contrato §31): fluxo gravado na abertura da visita (simples | completo), o resultado
+  // escolhido no fluxo simples (cadastrou | ja_usa | retorno | sem_interesse | fechado) e a justificativa de distância.
+  flow              String            @default("completo")
+  result            String?
+  distance_note     String?
   created_at        DateTime          @default(now())
   updated_at        DateTime          @updatedAt
   journey           field_journeys    @relation(fields: [journey_id], references: [id], onDelete: Cascade)

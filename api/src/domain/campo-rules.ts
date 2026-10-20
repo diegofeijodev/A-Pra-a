@@ -35,6 +35,8 @@ export const ROTULO_FREELA: Record<string, string> = {
   ja_usa: 'já usa o Freela',
   cadastrou_qr: 'cadastrou agora pelo QR',
   nao_cadastrou: 'não cadastrou',
+  // Modo do chefe (contrato §31.5): valor derivado do resultado `cadastrou`; não é aceito no rascunho (FREELA_STATUS).
+  declarou: 'declarou o cadastro',
 };
 export const ROTULO_INTERESSE: Record<string, string> = { alto: 'alto', medio: 'médio', baixo: 'baixo', nenhum: 'nenhum' };
 
@@ -107,6 +109,9 @@ export interface RespostasVisita {
   refusal_note?: string | null;
   followup_time?: string | null;
   contact_phone?: string | null;
+  /** Modo do chefe §31 — só o fluxo `simples` preenche; ausente = `null`. */
+  result?: string | null;
+  distance_note?: string | null;
 }
 
 export const RESPOSTAS_VAZIAS: RespostasVisita = {
@@ -128,9 +133,11 @@ export const RESPOSTAS_VAZIAS: RespostasVisita = {
   refusal_note: null,
   followup_time: null,
   contact_phone: null,
+  result: null,
+  distance_note: null,
 };
 
-const vazio = (s: string | null | undefined): boolean => !s || !s.trim();
+export const vazio = (s: string | null | undefined): boolean => !s || !s.trim();
 
 /** O que falta para o checkout (§7, "Questionário completo"), na ordem da tela. */
 export function faltando(r: RespostasVisita, hoje: string): string[] {
@@ -204,10 +211,12 @@ export function resumoVisita(r: RespostasVisita): string {
 export function normalizarRecusa(m: {
   interest: string | null;
   outcome?: string | null;
+  /** Modo do chefe §31.5: o resultado `sem_interesse` vale como interesse "nenhum" para o motivo. */
+  result?: string | null;
   refusal_reason: string | null;
   refusal_note: string | null;
 }): { refusal_reason: string | null; refusal_note: string | null } {
-  const vale = m.interest === 'nenhum' && (m.outcome ?? 'conversa') === 'conversa' && !!m.refusal_reason && CHAVES_MOTIVO_RECUSA.includes(m.refusal_reason);
+  const vale = (m.interest === 'nenhum' || m.result === 'sem_interesse') && (m.outcome ?? 'conversa') === 'conversa' && !!m.refusal_reason && CHAVES_MOTIVO_RECUSA.includes(m.refusal_reason);
   if (!vale) return { refusal_reason: null, refusal_note: null };
   const nota = m.refusal_reason === MOTIVO_RECUSA_COM_TEXTO ? m.refusal_note?.trim() || null : null;
   return { refusal_reason: m.refusal_reason, refusal_note: nota };

@@ -64,3 +64,10 @@ describe('env — velocidade de carro do roteiro (§30.4)', () => {
     expect(velocidadeCarroKmh({ ROTA_VELOCIDADE_CARRO_KMH: '200' })).toBe(25);
   });
 });
+
+describe('env — fluxo da visita (modo do chefe, §31.1)', () => {
+  it('desligado por padrão e aceita true', () => {
+    expect(validateEnv(BASE).FIELD_VISIT_FLOW_SELECT_ENABLED).toBe('false');
+    expect(validateEnv({ ...BASE, FIELD_VISIT_FLOW_SELECT_ENABLED: 'true' }).FIELD_VISIT_FLOW_SELECT_ENABLED).toBe('true');
+  });
+});

@@ -13,12 +13,19 @@ export const MOTIVOS_RECUSA = [
   { key: 'outro', label: 'Outro' },
 ] as const;
 
-export type MotivoRecusa = (typeof MOTIVOS_RECUSA)[number]['key'];
+/**
+ * Modo do chefe §31.5: a Lovable tem "Sem demanda" (`MOTIVOS_NAO` em `src/lib/visita.ts`) e o catálogo não tinha.
+ * Só se ACRESCENTA, e só na lista do fluxo simples: o questionário completo segue com as 6 de antes (nada muda em prod).
+ */
+export const MOTIVOS_RECUSA_SIMPLES = [...MOTIVOS_RECUSA, { key: 'sem_demanda', label: 'Sem demanda' }] as const;
 
-export const CHAVES_MOTIVO_RECUSA: readonly string[] = MOTIVOS_RECUSA.map((m) => m.key);
+export type MotivoRecusa = (typeof MOTIVOS_RECUSA_SIMPLES)[number]['key'];
+
+/** O servidor aceita qualquer das 7 em qualquer fluxo; quem decide o que mostrar é a tela. */
+export const CHAVES_MOTIVO_RECUSA: readonly string[] = MOTIVOS_RECUSA_SIMPLES.map((m) => m.key);
 
 /** Motivo que aceita texto livre curto. */
 export const MOTIVO_RECUSA_COM_TEXTO: MotivoRecusa = 'outro';
 
 export const rotuloMotivoRecusa = (key: string | null | undefined): string | null =>
-  MOTIVOS_RECUSA.find((m) => m.key === key)?.label ?? null;
+  MOTIVOS_RECUSA_SIMPLES.find((m) => m.key === key)?.label ?? null;

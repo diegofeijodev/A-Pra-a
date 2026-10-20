@@ -11,10 +11,13 @@ export const MOTIVOS_RECUSA = [
   { key: 'outro', label: 'Outro' },
 ] as const;
 
-export type MotivoRecusa = (typeof MOTIVOS_RECUSA)[number]['key'];
+/** Fluxo `simples` (contrato §31.5): as 6 de antes + "Sem demanda" (Lovable `MOTIVOS_NAO`). O questionário completo segue com `MOTIVOS_RECUSA`. */
+export const MOTIVOS_RECUSA_SIMPLES = [...MOTIVOS_RECUSA, { key: 'sem_demanda', label: 'Sem demanda' }] as const;
+
+export type MotivoRecusa = (typeof MOTIVOS_RECUSA_SIMPLES)[number]['key'];
 
 export const rotuloMotivoRecusa = (key: string | null | undefined): string | null =>
-  MOTIVOS_RECUSA.find((m) => m.key === key)?.label ?? null;
+  MOTIVOS_RECUSA_SIMPLES.find((m) => m.key === key)?.label ?? null;
 
 /** A pergunta do motivo só aparece numa conversa com interesse "nenhum" (espelho do servidor). */
 export const pedeMotivoRecusa = (r: { interest: string | null; outcome?: string | null }): boolean =>
