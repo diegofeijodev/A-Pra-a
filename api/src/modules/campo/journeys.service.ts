@@ -10,6 +10,7 @@ import type { PontosDto, PosicaoDto, StartJourneyDto } from './dto/campo.dto';
 import { RotasCampoService } from '../rotas/rotas-campo.service';
 import { RotasConfigService } from '../rotas/rotas-config.service';
 import { violouUnico } from './prisma-errors';
+import { SignupsLeituraService, type Contagem } from './signups-leitura.service';
 
 export interface TodayView {
   day: string;
@@ -22,6 +23,8 @@ export interface TodayView {
   counters: { visits: number; cadastrou_qr: number };
   /** Meta e ritmo do próprio consultor, com a conta (contrato §25.5); `null` se a configuração não pôde ser lida. */
   goal: (GoalView & { params: GoalParams }) | null;
+  /** Cadastros confirmados pelo Freela hoje/na semana, com a regra e a fonte (contrato §27.8); `null` se não pôde ser lido. */
+  signups_confirmed: Contagem | null;
 }
 
 /** Horários da configuração: o aparelho recalcula o ritmo com o relógio dele, mesmo sem sinal. */
@@ -48,6 +51,7 @@ export class JourneysService {
     private readonly prisma: PrismaService,
     @Optional() private readonly rotas?: RotasCampoService,
     @Optional() private readonly configs?: RotasConfigService,
+    @Optional() private readonly signups?: SignupsLeituraService,
   ) {}
 
   /** Meta do dia do consultor. A leitura do Hoje nunca falha por causa dela. */
@@ -77,6 +81,16 @@ export class JourneysService {
     }
   }
 
+  /** Cadastros confirmados hoje/semana (contrato §27.8). A leitura do Hoje nunca falha por causa dela. */
+  private async confirmadosDe(consultantId: string, agora: Date): Promise<TodayView['signups_confirmed']> {
+    if (!this.signups) return null;
+    try {
+      return await this.signups.resumoDoConsultor(consultantId, agora);
+    } catch {
+      return null;
+    }
+  }
+
   async today(c: CampoConsultant, agora = new Date()): Promise<TodayView> {
     await this.closeStale(agora, c.id);
     const hoje = todaySp(agora);
@@ -101,6 +115,7 @@ export class JourneysService {
         cadastrou_qr: views.filter((v) => v.answers.freela_status === 'cadastrou_qr').length,
       },
       goal: await this.metaDe(views.length, agora),
+      signups_confirmed: await this.confirmadosDe(c.id, agora),
     };
   }
 

@@ -64,6 +64,11 @@ const envBase = z.object({
   // Cadastro assistido da empresa visitada no Freela, por link de primeiro acesso (F6, contrato §26).
   FIELD_COMPANY_SIGNUP_ENABLED: z.string().default('false'),
 
+  // Sync dos cadastros confirmados pelo Freela (F7, contrato §27). Desligado = o job não roda.
+  FIELD_SIGNUP_SYNC_ENABLED: z.string().default('false'),
+  FIELD_SIGNUP_SYNC_INTERVAL_MIN: z.preprocess(vazioComoAusente, z.coerce.number().int().min(1).max(120).default(10)),
+  FIELD_SIGNUP_RECONCILE_DAYS: z.preprocess(vazioComoAusente, z.coerce.number().int().min(7).max(180).default(45)),
+
   SWAGGER_ENABLED: z.string().optional(),
 
   /**

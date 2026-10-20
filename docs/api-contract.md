@@ -3788,7 +3788,7 @@ Tudo atrás de `FIELD_SIGNUP_SYNC_ENABLED` (padrão `false`) para o **job**; as 
 ### 27.3 O job
 
 `FIELD_SIGNUP_SYNC_ENABLED=true` + Freela configurado. `@Cron` a cada minuto (Brasília); só roda se passaram `FIELD_SIGNUP_SYNC_INTERVAL_MIN` (padrão 10) minutos desde a última rodada e dentro de 06:00–23:59. Trava de reentrância
-na instância **e** `pg_try_advisory_lock` (duas instâncias nunca sincronizam juntas). O erro nunca sai do `@Cron`.
+na instância (a API roda em UMA instância; se duas rodassem, o `UNIQUE`, a escrita única e o `stage < 5` mantêm o sync idempotente). O erro nunca sai do `@Cron`.
 
 Por consultor com `freela_consultant_id` (**inclui inativos**: cadastro feito antes de sair ainda vale):
 1. `since = max(agora − FIELD_SIGNUP_RECONCILE_DAYS, min(watermark − 1 dia, `freela_created_at` do cadastro mais antigo ainda **sem** a data do evento da regra))`; sem watermark = `agora − FIELD_SIGNUP_RECONCILE_DAYS` (padrão 45; 1ª rodada traz a janela inteira). Motivo: o `since` do Freela filtra por `createdAt`, mas `activatedAt`/`firstVacancyAt`/`firstJobCompletedAt` chegam depois; a janela de reconciliação reabre os ainda não confirmados.
@@ -3833,7 +3833,7 @@ Transação: `stage = 5`, `stage_since = hoje (Brasília)`, `lead_events { kind:
 { "rule": "activated", "field": "activated_at", "from": "2026-10-19", "to": "2026-10-25",
   "source": "Freela GET /v1/admins/consultants/:id/registrations (sincronizado)",
   "formula": "cadastros do Freela com activated_at preenchido e dia de Brasília entre from e to",
-  "total": 3, "pending_review": 1, "last_sync_at": "…" | null,
+  "total": 3, "pending_review": 1 /* vínculos ambíguos de todo o histórico dos consultores filtrados */, "last_sync_at": "…" | null,
   "consultants": [ { "consultant_id", "name", "praca_id", "confirmed": 2, "not_confirmed": 1, "sync_error": "…" | null, "last_ok_at": "…" | null } ],
   "items": [ { "id", "consultant_id", "company_name", "source": "on_behalf"|"qr"|null, "confirmed_day": "YYYY-MM-DD", "confirmed_at": "…", "created_at": "…", "match_status", "lead_id": uuid|null } ] }
 ```
@@ -3842,7 +3842,7 @@ Transação: `stage = 5`, `stage_since = hoje (Brasília)`, `lead_events { kind:
 `GET /v1/campo/signups?from=&to=` (consultor; **só os dele**; mesmos padrões): `{ rule, field, from, to, source, total, items: [ { id, company_name, confirmed_day, status: 'confirmed' } ] }` — sem telefone, e-mail, CNPJ, `freela_user_id` ou `lead_id`.
 Aparecem também os **não confirmados** criados no período com `status: 'waiting'` (empresa e data de criação), para o consultor saber que falta o dono acessar.
 
-Resumo: `GET /v1/campo/today` ganha `signups_confirmed: { today, week, rule, source }` e cada item de `GET /v1/consultores` ganha `today.confirmed_signups` e `week_confirmed_signups`, com a mesma `source`. Contagem = linhas de `field_signups` do consultor cujo dia do evento da regra cai no dia / na semana (segunda–domingo, Brasília).
+Resumo: `GET /v1/campo/today` ganha `signups_confirmed: { today, week, rule, source }` e cada item de `GET /v1/consultores` ganha `signups_confirmed` (mesmo formato), `null` se a leitura falhar. Contagem = linhas de `field_signups` do consultor cujo dia do evento da regra cai no dia / na semana (segunda–domingo, Brasília).
 
 ### 27.9 Variáveis
 

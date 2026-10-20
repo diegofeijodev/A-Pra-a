@@ -8,10 +8,16 @@ import {
   lerConfigAlertas,
   type ConfigAlertas,
 } from '../../domain/alerta-rules';
+import {
+  aplicarConfigCadastro,
+  CHAVES_CONFIG_CADASTRO,
+  lerConfigCadastro,
+  type ConfigCadastro,
+} from '../../domain/signup-sync-rules';
 import { aplicarConfigRota, lerConfigRota, type ConfigRota } from '../../domain/rota-rules';
 import type { ConfigRotaDto } from './dto/rotas.dto';
 
-export interface ConfigView extends ConfigRota, ConfigAlertas {
+export interface ConfigView extends ConfigRota, ConfigAlertas, ConfigCadastro {
   atualizado_por: string | null;
   atualizado_em: string | null;
 }
@@ -37,11 +43,17 @@ export class RotasConfigService {
     return lerConfigAlertas(await this.bruto());
   }
 
+  /** Regra de "cadastro confirmado" (contrato §27.4). */
+  async cadastro(): Promise<ConfigCadastro> {
+    return lerConfigCadastro(await this.bruto());
+  }
+
   async view(): Promise<ConfigView> {
     const raw = await this.bruto();
     return {
       ...lerConfigRota(raw),
       ...lerConfigAlertas(raw),
+      ...lerConfigCadastro(raw),
       atualizado_por: typeof raw.atualizado_por === 'string' ? raw.atualizado_por : null,
       atualizado_em: typeof raw.atualizado_em === 'string' ? raw.atualizado_em : null,
     };
@@ -52,13 +64,17 @@ export class RotasConfigService {
     const parcial = Object.fromEntries(Object.entries(dto).filter(([, v]) => v !== undefined));
     const chavesAlerta = new Set<string>(CHAVES_CONFIG_ALERTAS);
     const doAlerta = Object.fromEntries(Object.entries(parcial).filter(([k]) => chavesAlerta.has(k)));
-    const daRota = Object.fromEntries(Object.entries(parcial).filter(([k]) => !chavesAlerta.has(k)));
+    const chavesCadastro = new Set<string>(CHAVES_CONFIG_CADASTRO);
+    const doCadastro = Object.fromEntries(Object.entries(parcial).filter(([k]) => chavesCadastro.has(k)));
+    const daRota = Object.fromEntries(Object.entries(parcial).filter(([k]) => !chavesAlerta.has(k) && !chavesCadastro.has(k)));
     const r = aplicarConfigRota(lerConfigRota(raw), daRota);
     if (!r.ok) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: r.erro });
     const a = aplicarConfigAlertas(lerConfigAlertas(raw), doAlerta);
     if (!a.ok) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: a.erro });
+    const c = aplicarConfigCadastro(lerConfigCadastro(raw), doCadastro);
+    if (!c.ok) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: c.erro });
     // Preserva as chaves de outras fases que já estejam no JSON.
-    const novo = { ...raw, ...r.config, ...a.config, atualizado_por: user.id, atualizado_em: agora.toISOString() };
+    const novo = { ...raw, ...r.config, ...a.config, ...c.config, atualizado_por: user.id, atualizado_em: agora.toISOString() };
     await this.prisma.app_settings.upsert({
       where: { id: 1 },
       update: { field_config: novo as Prisma.InputJsonValue },

@@ -50,7 +50,7 @@ export const cadastroListadoSchema = z.object({
   cnpj: z.string().nullable().optional(),
   phone: z.string().nullable().optional(),
   email: z.string().nullable().optional(),
-  source: z.string(),
+  source: z.string().nullable().optional(),
   accessMode: z.string().nullable().optional(),
   createdAt: data,
   activatedAt: data.nullable().optional(),

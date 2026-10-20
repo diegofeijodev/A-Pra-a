@@ -67,6 +67,10 @@ services:
       FIELD_ROUTES_ENABLED: ${FIELD_ROUTES_ENABLED:-false}
       # Cadastro assistido no Freela (contrato §26). Só ligar com o api-freela e a página /primeiro-acesso no ar.
       FIELD_COMPANY_SIGNUP_ENABLED: ${FIELD_COMPANY_SIGNUP_ENABLED:-false}
+      # Sync dos cadastros confirmados pelo Freela (contrato §27). A regra de "confirmado" fica em app_settings.field_config.
+      FIELD_SIGNUP_SYNC_ENABLED: ${FIELD_SIGNUP_SYNC_ENABLED:-false}
+      FIELD_SIGNUP_SYNC_INTERVAL_MIN: ${FIELD_SIGNUP_SYNC_INTERVAL_MIN:-10}
+      FIELD_SIGNUP_RECONCILE_DAYS: ${FIELD_SIGNUP_RECONCILE_DAYS:-45}
     ports:
       - '3014:3014'
 

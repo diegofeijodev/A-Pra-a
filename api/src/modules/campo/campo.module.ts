@@ -18,6 +18,11 @@ import { HeatmapService } from './heatmap.service';
 import { JourneysService } from './journeys.service';
 import { criarPhotoStorage, PHOTO_STORAGE } from './photo-storage';
 import { PlacesService } from './places.service';
+import { SignupSyncScheduler } from './signup-sync.scheduler';
+import { SignupSyncService } from './signup-sync.service';
+import { signupSyncOpcoesProvider } from './signup-sync.tokens';
+import { SignupsCampoController, SignupsEquipeController } from './signups.controller';
+import { SignupsLeituraService } from './signups-leitura.service';
 import { VisitsService } from './visits.service';
 
 /**
@@ -29,6 +34,9 @@ import { VisitsService } from './visits.service';
 @Module({
   imports: [FreelaClientModule, RotasModule],
   controllers: [
+    // Antes de ConsultoresController: `GET /v1/consultores/signups` não pode cair em `:id`.
+    SignupsEquipeController,
+    SignupsCampoController,
     CampoAuthController,
     CampoController,
     ConsultoresController,
@@ -48,6 +56,10 @@ import { VisitsService } from './visits.service';
     VisitsService,
     CompanySignupService,
     companySignupLigadoProvider,
+    SignupSyncService,
+    SignupSyncScheduler,
+    signupSyncOpcoesProvider,
+    SignupsLeituraService,
     // O `.env` já está em `process.env` (ConfigModule.forRoot) e foi validado na
     // largada; reler pelo mesmo schema dá o PHOTO_STORAGE já resolvido.
     { provide: PHOTO_STORAGE, useFactory: () => criarPhotoStorage(validateEnv(process.env)) },

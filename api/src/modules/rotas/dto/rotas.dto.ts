@@ -47,6 +47,8 @@ export class ConfigRotaDto {
   @IsOptional() @IsInt() @Min(5) @Max(240) alerta_parada_vencida_min?: number;
   @IsOptional() @IsArray() @ArrayMinSize(1) @ArrayMaxSize(7) @IsInt({ each: true }) @Min(0, { each: true }) @Max(6, { each: true }) dias_trabalho?: number[];
   @IsOptional() @IsBoolean() retornos_no_roteiro?: boolean;
+  // F7 (contrato §27.4): regra de "cadastro confirmado". Os valores são conferidos no domínio.
+  @IsOptional() @IsString() confirmation_rule?: string;
 }
 
 export class PosicaoRotaDto {

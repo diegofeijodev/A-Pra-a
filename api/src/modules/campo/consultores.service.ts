@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
@@ -24,6 +25,7 @@ import { CampoFreelaService } from './campo-freela.service';
 import { lerCanais } from './campo-canais';
 import { signupUrl } from './campo-links';
 import { COM_PRACA } from './campo-prisma';
+import { SignupsLeituraService, type Contagem } from './signups-leitura.service';
 import {
   COM_LEAD,
   journeyView,
@@ -61,6 +63,8 @@ export interface ConsultorView {
 
 export interface ConsultorListItem extends ConsultorView {
   today: { status: SituacaoHoje; visits: number; cadastros: number; last_point_at: string | null };
+  /** Cadastros confirmados pelo Freela hoje/na semana (contrato §27.8); `null` se não pôde ser lido. */
+  signups_confirmed: Contagem | null;
 }
 
 export type ConsultorRow = Prisma.field_consultantsGetPayload<{
@@ -105,6 +109,7 @@ export class ConsultoresService {
     private readonly prisma: PrismaService,
     private readonly freela: CampoFreelaService,
     @Inject(PHOTO_STORAGE) private readonly fotos: PhotoStorage,
+    @Optional() private readonly signups?: SignupsLeituraService,
   ) {}
 
   async list(agora = new Date()): Promise<ConsultorListItem[]> {
@@ -132,6 +137,13 @@ export class ConsultoresService {
       : [];
     const ultimoPorJornada = new Map(ultimos.map((u) => [u.journey_id, u._max.at]));
 
+    let conf: Awaited<ReturnType<SignupsLeituraService['contagens']>> | null = null;
+    try {
+      conf = this.signups ? await this.signups.contagens(consultores.map((c) => c.id), agora) : null;
+    } catch {
+      conf = null; // a lista da equipe não cai por causa do contador
+    }
+
     return consultores.map((c) => {
       const js = jornadas.filter((j) => j.consultant_id === c.id);
       const vs = visitas.filter((v) => v.consultant_id === c.id);
@@ -145,6 +157,9 @@ export class ConsultoresService {
           cadastros: vs.filter((v) => v.freela_status === 'cadastrou_qr').length,
           last_point_at: ultimo?.toISOString() ?? null,
         },
+        signups_confirmed: conf
+          ? { today: conf.porConsultor.get(c.id)?.today ?? 0, week: conf.porConsultor.get(c.id)?.week ?? 0, rule: conf.rule, source: conf.source }
+          : null,
       };
     });
   }
