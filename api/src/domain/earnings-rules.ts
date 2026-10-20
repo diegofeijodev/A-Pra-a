@@ -14,6 +14,14 @@ export type CondicaoPiso = (typeof CONDICOES_PISO)[number];
 export const CONTAGENS_VISITA = ['checkin', 'checkout'] as const;
 export type ContagemVisita = (typeof CONTAGENS_VISITA)[number];
 
+/** Modo do chefe S2 (contrato §32): chaves OPCIONAIS da regra. Ausente = comportamento da v1 (nada muda). */
+export const FONTES_CADASTRO = ['freela_confirmed', 'declared'] as const;
+export type FonteCadastro = (typeof FONTES_CADASTRO)[number];
+export const CONDICOES_DIARIA = ['none', 'journey_open', 'min_visits', 'route_assigned'] as const;
+export type CondicaoDiaria = (typeof CONDICOES_DIARIA)[number];
+export const MODOS_FAIXA = ['highest', 'cumulative'] as const;
+export type ModoFaixa = (typeof MODOS_FAIXA)[number];
+
 export interface Faixa {
   min_signups: number;
   amount_cents: number;
@@ -35,10 +43,33 @@ export interface RegraRemuneracao {
   late_grace_days: number;
 }
 
+/** As 8 chaves da S2/S3. Todas opcionais na regra gravada/enviada; `normalizarRegra` preenche o padrão. */
+export interface ChavesNovas {
+  /** De onde vem o "cadastro" que paga. */
+  signup_source: FonteCadastro;
+  /** Diária ADITIVA (não é piso), em centavos; 0 = sem diária. */
+  daily_base_cents: number;
+  daily_base_condition: CondicaoDiaria;
+  daily_base_min_visits: number;
+  /** Além da condição, exige jornada iniciada no dia. */
+  daily_base_requires_journey: boolean;
+  /** `highest`: vale a maior faixa atingida · `cumulative`: soma todas as faixas atingidas. */
+  tiers_mode: ModoFaixa;
+  /** Limite diário de cadastros declarados que entram na conta; null = sem limite. */
+  declared_daily_cap: number | null;
+  /** Reservado à anulação automática (S4, desligada): dias sem confirmação do Freela; null = desligado. */
+  declared_confirm_days: number | null;
+}
+
+/** A regra como é gravada e lida: as 13 chaves da v1 + as novas que existirem (cruas, sem preencher). */
+export type RegraBruta = RegraRemuneracao & Partial<ChavesNovas>;
+/** A regra completa, pronta para calcular. */
+export type RegraNormalizada = RegraRemuneracao & ChavesNovas;
+
 export interface VersaoRegra {
   version: number;
   valid_from: string;
-  config: RegraRemuneracao;
+  config: RegraBruta;
 }
 
 /** Padrão INICIAL (versão 1). Editável: nunca é lido como constante de negócio fora daqui. */
@@ -76,6 +107,65 @@ export const LIMITES_REGRA = {
 
 export const CHAVES_REGRA = Object.keys(REGRA_PADRAO) as (keyof RegraRemuneracao)[];
 
+/**
+ * Padrão das chaves novas = o comportamento ATUAL (v1): fonte confirmada pelo Freela, sem diária, maior faixa.
+ * `daily_base_requires_journey = true` só vale quando alguém liga a diária e não diz o contrário.
+ */
+export const CHAVES_NOVAS_PADRAO: ChavesNovas = {
+  signup_source: 'freela_confirmed',
+  daily_base_cents: 0,
+  daily_base_condition: 'none',
+  daily_base_min_visits: 0,
+  daily_base_requires_journey: true,
+  tiers_mode: 'highest',
+  declared_daily_cap: null,
+  declared_confirm_days: null,
+};
+export const CHAVES_REGRA_NOVAS = Object.keys(CHAVES_NOVAS_PADRAO) as (keyof ChavesNovas)[];
+
+export const LIMITES_REGRA_NOVOS = {
+  daily_base_cents: { min: 0, max: 10_000_000 },
+  daily_base_min_visits: { min: 0, max: 1000 },
+  declared_daily_cap: { min: 1, max: 1000 },
+  declared_confirm_days: { min: 1, max: 91 },
+} as const;
+
+/**
+ * Presets do formulário da equipe (contrato §32.4). O servidor NÃO conhece "perfil": só entrega estas configs para o
+ * web preencher o formulário; quem publica é o admin, por nova versão.
+ *  - `completo`: a regra atual (v1) com as chaves novas explícitas nos padrões.
+ *  - `chefe`: o COMPORTAMENTO da versão Lovable (`src/lib/financeiro.ts`, `calcularPagamento`): diária por dia com rota da
+ *    equipe (sem exigir presença), comissão por cadastro DECLARADO, bônus por meta que SOMAM (cumulativo), contados
+ *    na semana (o `periodo` padrão de `regras_bonus` é 'semana'). A Lovable NÃO traz valores padrão: diária,
+ *    comissão e metas são cadastrados por representante e nascem em 0 (`representantes.valor_diaria`,
+ *    `valor_comissao_cadastro`, `regras_bonus.meta/valor` default 0). Por isso os valores em dinheiro vão zerados
+ *    para o admin preencher; `declared_daily_cap = 30` é a meta diária do nosso campo (`meta_diaria`), uma
+ *    salvaguarda nossa, não da Lovable.
+ */
+export const PRESET_COMPLETO: RegraNormalizada = { ...REGRA_PADRAO, tiers: REGRA_PADRAO.tiers.map((t) => ({ ...t })), ...CHAVES_NOVAS_PADRAO };
+export const PRESET_CHEFE: RegraNormalizada = {
+  ...REGRA_PADRAO,
+  unit_cents: 0,
+  tiers_period: 'week',
+  tiers: [],
+  combine: 'sum',
+  signup_source: 'declared',
+  daily_base_cents: 0,
+  daily_base_condition: 'route_assigned',
+  daily_base_min_visits: 0,
+  daily_base_requires_journey: false,
+  tiers_mode: 'cumulative',
+  declared_daily_cap: 30,
+  declared_confirm_days: null,
+};
+
+/** Regra completa: chave ausente (ou null) vira o comportamento atual. NÃO muda a regra de entrada. */
+export function normalizarRegra(r: RegraBruta): RegraNormalizada {
+  const n = { ...CHAVES_NOVAS_PADRAO } as Record<string, unknown>;
+  for (const k of CHAVES_REGRA_NOVAS) if (r[k] !== undefined && r[k] !== null) n[k] = r[k];
+  return { ...r, ...(n as unknown as ChavesNovas) };
+}
+
 // ── formatação ────────────────────────────────────────────────────────────
 
 /** "R$ 1.234,50"; negativo "-R$ 10,00". Só aritmética inteira. */
@@ -106,7 +196,7 @@ const oneOf = <T extends string>(lista: readonly T[], v: unknown): v is T =>
   typeof v === 'string' && (lista as readonly string[]).includes(v);
 
 export type ResultadoValidacao =
-  { ok: true; regra: RegraRemuneracao } | { ok: false; campo: string; erro: string };
+  { ok: true; regra: RegraBruta } | { ok: false; campo: string; erro: string };
 
 /** Valida a configuração COMPLETA. Chave desconhecida ou ausente = erro com o nome do campo. */
 export function validarRegra(raw: unknown): ResultadoValidacao {
@@ -118,9 +208,30 @@ export function validarRegra(raw: unknown): ResultadoValidacao {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return falha('config', 'envie um objeto.');
   const o = raw as Record<string, unknown>;
   for (const k of Object.keys(o))
-    if (!(CHAVES_REGRA as string[]).includes(k)) return falha(k, 'campo desconhecido.');
+    if (!(CHAVES_REGRA as string[]).includes(k) && !(CHAVES_REGRA_NOVAS as string[]).includes(k))
+      return falha(k, 'campo desconhecido.');
   for (const k of CHAVES_REGRA) if (o[k] === undefined) return falha(k, 'obrigatório.');
   const L = LIMITES_REGRA;
+  // Chaves novas (S2/S3): opcionais; `null` vale como ausente (o web atual reenvia o que recebeu).
+  const N = LIMITES_REGRA_NOVOS;
+  const nv = (k: keyof ChavesNovas): unknown => (o[k] === null ? undefined : o[k]);
+  if (nv('signup_source') !== undefined && !oneOf(FONTES_CADASTRO, nv('signup_source')))
+    return falha('signup_source', 'use freela_confirmed ou declared.');
+  if (nv('daily_base_cents') !== undefined && !ehInt(nv('daily_base_cents'), N.daily_base_cents.min, N.daily_base_cents.max))
+    return falha('daily_base_cents', `inteiro em centavos de ${N.daily_base_cents.min} a ${N.daily_base_cents.max} (0 = sem diária).`);
+  if (nv('daily_base_condition') !== undefined && !oneOf(CONDICOES_DIARIA, nv('daily_base_condition')))
+    return falha('daily_base_condition', 'use none, journey_open, min_visits ou route_assigned.');
+  if (nv('daily_base_min_visits') !== undefined && !ehInt(nv('daily_base_min_visits'), N.daily_base_min_visits.min, N.daily_base_min_visits.max))
+    return falha('daily_base_min_visits', 'inteiro de 0 a 1000.');
+  if (nv('daily_base_requires_journey') !== undefined && typeof nv('daily_base_requires_journey') !== 'boolean')
+    return falha('daily_base_requires_journey', 'use true ou false.');
+  if (nv('tiers_mode') !== undefined && !oneOf(MODOS_FAIXA, nv('tiers_mode')))
+    return falha('tiers_mode', 'use highest ou cumulative.');
+  if (nv('declared_daily_cap') !== undefined && !ehInt(nv('declared_daily_cap'), N.declared_daily_cap.min, N.declared_daily_cap.max))
+    return falha('declared_daily_cap', `inteiro de ${N.declared_daily_cap.min} a ${N.declared_daily_cap.max} ou null (sem limite).`);
+  if (nv('declared_confirm_days') !== undefined && !ehInt(nv('declared_confirm_days'), N.declared_confirm_days.min, N.declared_confirm_days.max))
+    return falha('declared_confirm_days', `inteiro de ${N.declared_confirm_days.min} a ${N.declared_confirm_days.max} ou null (desligado).`);
+  const cumulativo = nv('tiers_mode') === 'cumulative';
   if (!ehInt(o.unit_cents, L.unit_cents.min, L.unit_cents.max))
     return falha('unit_cents', `inteiro em centavos de ${L.unit_cents.min} a ${L.unit_cents.max}.`);
   if (!oneOf(PERIODOS_FAIXA, o.tiers_period)) return falha('tiers_period', 'use day ou week.');
@@ -148,7 +259,8 @@ export function validarRegra(raw: unknown): ResultadoValidacao {
     const ant = tiers[i - 1];
     if (ant && f.min_signups <= ant.min_signups)
       return falha('tiers', `faixa ${i + 1}: min_signups precisa ser maior que o da faixa anterior.`);
-    if (ant && f.amount_cents < ant.amount_cents)
+    // No modo cumulativo o valor de cada meta é um ADICIONAL (soma), então pode ser menor que o da anterior.
+    if (!cumulativo && ant && f.amount_cents < ant.amount_cents)
       return falha('tiers', `faixa ${i + 1}: uma faixa maior não pode pagar menos que a anterior.`);
     tiers.push({ min_signups: f.min_signups, amount_cents: f.amount_cents });
   }
@@ -178,6 +290,15 @@ export function validarRegra(raw: unknown): ResultadoValidacao {
     return falha('late_grace_days', `inteiro de ${L.late_grace_days.min} a ${L.late_grace_days.max}.`);
   if (o.cap_cents !== null && o.cap_cents < o.floor_cents)
     return falha('cap_cents', 'o teto não pode ser menor que o piso.');
+  if (nv('daily_base_condition') === 'min_visits' && ((nv('daily_base_cents') as number | undefined) ?? 0) > 0 && !((nv('daily_base_min_visits') as number | undefined) ?? 0))
+    return falha('daily_base_min_visits', 'com a condição min_visits informe ao menos 1 visita.');
+  if (nv('declared_confirm_days') !== undefined && (nv('declared_confirm_days') as number) >= o.late_grace_days)
+    return falha('declared_confirm_days', 'precisa ser menor que late_grace_days, senão a anulação cairia fora do prazo e nada seria lançado.');
+  const novas: Partial<ChavesNovas> = {};
+  for (const k of CHAVES_REGRA_NOVAS) {
+    const v = nv(k);
+    if (v !== undefined) (novas as Record<string, unknown>)[k] = v;
+  }
   return {
     ok: true,
     regra: {
@@ -194,12 +315,13 @@ export function validarRegra(raw: unknown): ResultadoValidacao {
       payout_weekday: o.payout_weekday,
       autoclose_hour: o.autoclose_hour,
       late_grace_days: o.late_grace_days,
+      ...novas,
     },
   };
 }
 
 /** JSON já salvo (validado ao entrar). Se estiver corrompido, falha alto: pagar com regra errada é pior que parar. */
-export function lerRegraSalva(raw: unknown): RegraRemuneracao {
+export function lerRegraSalva(raw: unknown): RegraBruta {
   const r = validarRegra(raw);
   if (!r.ok) throw new Error(`Regra de remuneração salva inválida (${r.campo}).`);
   return r.regra;
@@ -242,7 +364,7 @@ export type ErroVigencia = { code: 'VALIDATION_ERROR' | 'WEEK_START_LOCKED'; cam
  */
 export function validarVigencia(p: {
   valid_from: string;
-  nova: RegraRemuneracao;
+  nova: RegraBruta;
   hoje: string;
   versoes: readonly VersaoRegra[];
   semanaTravada: boolean;
@@ -280,7 +402,7 @@ export function validarVigencia(p: {
 
 export interface EntradaDia {
   dia: string;
-  /** Cadastros confirmados cujo dia do evento (Brasília) é `dia`. */
+  /** Cadastros que pagam no dia (confirmados pelo Freela ou declarados, conforme `signup_source` do dia). */
   signups: number;
   /** Visitas do dia conforme `visits_count`. */
   visits: number;
@@ -288,6 +410,12 @@ export interface EntradaDia {
   journey_open: boolean;
   /** Consultor existia e está ativo (condição `none` do piso). */
   elegivel: boolean;
+  /** S2: o consultor tinha rota da EQUIPE atribuída no dia (`daily_base_condition = route_assigned`). */
+  route_assigned?: boolean;
+  /** S3: declarações do dia acima de `declared_daily_cap` (não entram em `signups`). */
+  declared_over_cap?: number;
+  /** S3: declarações do dia anuladas (já fora de `signups`). */
+  declared_voided?: number;
 }
 
 export interface ProximaFaixa {
@@ -314,6 +442,10 @@ export interface ResultadoDia {
   teto_aplicado: boolean;
   proxima_faixa: ProximaFaixa | null;
   conta: string[];
+  /** Só presentes quando a regra usa o recurso (a v1 não ganha chave nova). */
+  diaria_cents?: number;
+  declared_over_cap?: number;
+  declared_voided?: number;
 }
 
 export function faixaAtingida(tiers: readonly Faixa[], n: number): Faixa | null {
@@ -322,10 +454,28 @@ export function faixaAtingida(tiers: readonly Faixa[], n: number): Faixa | null 
   return r;
 }
 
+/** Todas as faixas atingidas (modo cumulativo), da menor para a maior. */
+export function faixasAtingidas(tiers: readonly Faixa[], n: number): Faixa[] {
+  return tiers.filter((t) => n >= t.min_signups).sort((a, b) => a.min_signups - b.min_signups);
+}
+
+/** Valor da(s) faixa(s) para `n` cadastros: a maior (`highest`) ou a soma de todas (`cumulative`). */
+export function valorDasFaixas(regra: RegraNormalizada, n: number): number {
+  if (regra.tiers_mode === 'cumulative') return faixasAtingidas(regra.tiers, n).reduce((a, t) => a + t.amount_cents, 0);
+  return faixaAtingida(regra.tiers, n)?.amount_cents ?? 0;
+}
+
 export function proximaFaixa(tiers: readonly Faixa[], n: number): ProximaFaixa | null {
   let r: Faixa | null = null;
   for (const t of tiers) if (t.min_signups > n && (!r || t.min_signups < r.min_signups)) r = t;
   return r ? { ...r, faltam: r.min_signups - n } : null;
+}
+
+/** Rótulo do cadastro que paga: "confirmado" (Freela, v1) ou "declarado" (S3). */
+function rotuloCadastro(r: RegraNormalizada, n: number): string {
+  return r.signup_source === 'declared'
+    ? plural(n, 'cadastro declarado', 'cadastros declarados')
+    : plural(n, 'cadastro confirmado', 'cadastros confirmados');
 }
 
 function condicaoPisoTexto(r: RegraRemuneracao): string {
@@ -351,17 +501,48 @@ function pisoVale(r: RegraRemuneracao, e: EntradaDia): { vale: boolean; motivo: 
       };
 }
 
-/** Valor de UM dia com a regra que vigora nele. */
+function condicaoDiariaTexto(r: RegraNormalizada): string {
+  const partes: string[] = [];
+  if (r.daily_base_condition === 'route_assigned') partes.push('rota da equipe atribuída no dia');
+  else if (r.daily_base_condition === 'min_visits')
+    partes.push(`ao menos ${plural(r.daily_base_min_visits, 'visita', 'visitas')} no dia`);
+  else if (r.daily_base_condition === 'journey_open') partes.push('jornada iniciada no dia');
+  else partes.push('dia de consultor ativo');
+  if (r.daily_base_requires_journey && r.daily_base_condition !== 'journey_open')
+    partes.push('jornada iniciada no dia');
+  return partes.join(' e ');
+}
+
+/** A diária ADITIVA vale neste dia? (todas as condições configuradas precisam valer). */
+function diariaVale(r: RegraNormalizada, e: EntradaDia): { vale: boolean; motivo: string | null } {
+  if (r.daily_base_cents <= 0) return { vale: false, motivo: null };
+  if (r.daily_base_condition === 'none' && !e.elegivel)
+    return { vale: false, motivo: 'o consultor não está ativo' };
+  if (r.daily_base_condition === 'route_assigned' && !e.route_assigned)
+    return { vale: false, motivo: 'não havia rota da equipe atribuída no dia' };
+  if (r.daily_base_condition === 'min_visits' && e.visits < r.daily_base_min_visits)
+    return { vale: false, motivo: `foram ${plural(e.visits, 'visita', 'visitas')} e o mínimo é ${r.daily_base_min_visits}` };
+  if ((r.daily_base_condition === 'journey_open' || r.daily_base_requires_journey) && !e.journey_open)
+    return { vale: false, motivo: 'não houve jornada iniciada no dia' };
+  return { vale: true, motivo: null };
+}
+
+/**
+ * Valor de UM dia com a regra que vigora nele.
+ * Ordem: núcleo (cadastros × valor, faixa/metas) → piso → teto → + diária ADITIVA (a diária fica fora do piso e do teto).
+ * Aceita a regra crua (v1 ou com chaves novas): normaliza antes.
+ */
 export function calcularDia(
-  regra: RegraRemuneracao,
+  regraBruta: RegraBruta,
   e: EntradaDia,
   version: number | null = null,
 ): ResultadoDia {
+  const regra = normalizarRegra(regraBruta);
   const n = e.signups;
   const porCadastro = regra.combine === 'tier_only' ? 0 : n * regra.unit_cents;
   const diaria = regra.tiers_period === 'day';
   const faixa = diaria ? faixaAtingida(regra.tiers, n) : null;
-  const faixaCents = faixa?.amount_cents ?? 0;
+  const faixaCents = diaria ? valorDasFaixas(regra, n) : 0;
   const nucleo = !diaria
     ? porCadastro
     : regra.combine === 'max'
@@ -369,32 +550,49 @@ export function calcularDia(
       : porCadastro + faixaCents;
   const piso = pisoVale(regra, e);
   const comPiso = piso.vale ? Math.max(nucleo, regra.floor_cents) : nucleo;
-  const total = diaria && regra.cap_cents !== null ? Math.min(comPiso, regra.cap_cents) : comPiso;
+  const comTeto = diaria && regra.cap_cents !== null ? Math.min(comPiso, regra.cap_cents) : comPiso;
   const pisoAplicado = piso.vale && regra.floor_cents > nucleo;
   const tetoAplicado = diaria && regra.cap_cents !== null && comPiso > regra.cap_cents;
   const prox = diaria ? proximaFaixa(regra.tiers, n) : null;
+  const dv = diariaVale(regra, e);
+  const diariaCents = dv.vale ? regra.daily_base_cents : 0;
+  const total = comTeto + diariaCents;
+  const cumulativo = regra.tiers_mode === 'cumulative';
 
   const conta: string[] = [];
   if (regra.combine === 'tier_only') {
     conta.push(
-      `${plural(n, 'cadastro confirmado', 'cadastros confirmados')}; nesta regra só vale a faixa, não o valor por cadastro.`,
+      `${rotuloCadastro(regra, n)}; nesta regra só vale a faixa, não o valor por cadastro.`,
     );
   } else {
-    conta.push(
-      `${plural(n, 'cadastro confirmado', 'cadastros confirmados')} × ${brl(regra.unit_cents)} = ${brl(porCadastro)}.`,
-    );
+    conta.push(`${rotuloCadastro(regra, n)} × ${brl(regra.unit_cents)} = ${brl(porCadastro)}.`);
   }
+  if ((e.declared_over_cap ?? 0) > 0 && regra.declared_daily_cap !== null)
+    conta.push(
+      `Limite diário de ${plural(regra.declared_daily_cap, 'cadastro declarado', 'cadastros declarados')}: ${plural(e.declared_over_cap as number, 'declaração acima do limite não entra', 'declarações acima do limite não entram')} na conta.`,
+    );
+  if ((e.declared_voided ?? 0) > 0)
+    conta.push(
+      `${plural(e.declared_voided as number, 'declaração anulada', 'declarações anuladas')} no dia (não ${(e.declared_voided as number) === 1 ? 'entra' : 'entram'} na conta).`,
+    );
   if (diaria) {
-    if (faixa)
+    if (cumulativo) {
+      const atingidas = faixasAtingidas(regra.tiers, n);
+      if (atingidas.length > 0)
+        conta.push(
+          `Metas atingidas (todas somam): ${atingidas.map((t) => `${plural(t.min_signups, 'cadastro', 'cadastros')} = ${brl(t.amount_cents)}`).join('; ')}. Soma das metas: ${brl(faixaCents)}.`,
+        );
+    } else if (faixa) {
       conta.push(
         `Faixa atingida: ${plural(faixa.min_signups, 'cadastro', 'cadastros')} = ${brl(faixa.amount_cents)}.`,
       );
+    }
     if (faixa && regra.combine === 'max' && porCadastro > 0) conta.push(`Vale o maior: ${brl(nucleo)}.`);
     if (faixa && regra.combine !== 'max' && porCadastro > 0)
-      conta.push(`Soma do valor por cadastro com a faixa: ${brl(nucleo)}.`);
+      conta.push(`Soma do valor por cadastro com a ${cumulativo ? 'soma das metas' : 'faixa'}: ${brl(nucleo)}.`);
     if (prox)
       conta.push(
-        `Faltam ${plural(prox.faltam, 'cadastro confirmado', 'cadastros confirmados')} para a faixa de ${brl(prox.amount_cents)} (${plural(prox.min_signups, 'cadastro', 'cadastros')}).`,
+        `Faltam ${rotuloCadastro(regra, prox.faltam)} para a ${cumulativo ? 'meta' : 'faixa'} de ${brl(prox.amount_cents)} (${plural(prox.min_signups, 'cadastro', 'cadastros')}).`,
       );
   }
   if (regra.floor_cents > 0) {
@@ -410,8 +608,15 @@ export function calcularDia(
   }
   if (tetoAplicado)
     conta.push(
-      `Teto do dia de ${brl(regra.cap_cents as number)} aplicado: o valor cai de ${brl(comPiso)} para ${brl(total)}.`,
+      `Teto do dia de ${brl(regra.cap_cents as number)} aplicado: o valor cai de ${brl(comPiso)} para ${brl(comTeto)}.`,
     );
+  if (regra.daily_base_cents > 0) {
+    conta.push(
+      dv.vale
+        ? `Diária de ${brl(regra.daily_base_cents)} (${condicaoDiariaTexto(regra)}), somada ao valor acima: ${brl(comTeto)} + ${brl(diariaCents)} = ${brl(total)}.`
+        : `Diária de ${brl(regra.daily_base_cents)} não vale: ${dv.motivo}.`,
+    );
+  }
   conta.push(`Total do dia: ${brl(total)}.`);
 
   return {
@@ -432,6 +637,9 @@ export function calcularDia(
     teto_aplicado: tetoAplicado,
     proxima_faixa: prox,
     conta,
+    ...(regra.daily_base_cents > 0 ? { diaria_cents: diariaCents } : {}),
+    ...((e.declared_over_cap ?? 0) > 0 ? { declared_over_cap: e.declared_over_cap } : {}),
+    ...((e.declared_voided ?? 0) > 0 ? { declared_voided: e.declared_voided } : {}),
   };
 }
 
@@ -441,7 +649,7 @@ export interface ResultadoSemana {
   rule_version: number | null;
   days: ResultadoDia[];
   signups_week: number;
-  /** Soma dos dias (já com piso; teto só nos dias de faixa diária). */
+  /** Soma dos dias (já com piso e diária; teto só nos dias de faixa diária). */
   days_cents: number;
   /** Parte semanal (faixa/teto semanal) = semana − soma dos dias. 0 com faixa por dia. */
   week_part_cents: number;
@@ -455,7 +663,8 @@ function diaVazio(dia: string): EntradaDia {
 
 /**
  * Valor de uma semana (`from`…`to`) até `hoje`: dias futuros valem 0. Cada dia usa a versão vigente nele;
- * a parte semanal usa a versão vigente no primeiro dia da semana.
+ * a parte semanal usa a versão vigente no primeiro dia da semana. A diária aditiva fica FORA da faixa
+ * e do teto semanais: eles se aplicam à soma dos núcleos dos dias.
  */
 export function calcularSemana(p: {
   from: string;
@@ -478,38 +687,49 @@ export function calcularSemana(p: {
     return calcularDia(v.config, p.entradas[dia] ?? diaVazio(dia), v.version);
   });
   const daysCents = days.reduce((a, d) => a + d.total_cents, 0);
+  const diariasCents = days.reduce((a, d) => a + (d.diaria_cents ?? 0), 0);
+  const nucleosCents = daysCents - diariasCents;
   const signupsWeek = days.reduce((a, d) => a + d.signups, 0);
+  const rs = vSemana ? normalizarRegra(vSemana.config) : undefined;
   const conta: string[] = [];
   for (const d of days) {
     if (d.futuro) continue;
-    conta.push(
-      `${rotuloDia(d.dia)}: ${brl(d.total_cents)} (${plural(d.signups, 'cadastro confirmado', 'cadastros confirmados')}).`,
-    );
+    const dr = normalizarRegra(versaoVigente(p.versoes, d.dia)?.config ?? (rs as RegraBruta));
+    conta.push(`${rotuloDia(d.dia)}: ${brl(d.total_cents)} (${rotuloCadastro(dr, d.signups)}).`);
   }
+  if (diariasCents > 0) conta.push(`Diárias da semana: ${brl(diariasCents)} (já somadas nos dias).`);
   conta.push(`Soma dos dias: ${brl(daysCents)}.`);
 
   let parte = 0;
-  const rs = vSemana?.config;
   if (rs && rs.tiers_period === 'week') {
     const faixa = faixaAtingida(rs.tiers, signupsWeek);
-    const faixaCents = faixa?.amount_cents ?? 0;
-    const pre = rs.combine === 'max' ? Math.max(daysCents, faixaCents) : daysCents + faixaCents;
+    const faixaCents = valorDasFaixas(rs, signupsWeek);
+    const cumulativo = rs.tiers_mode === 'cumulative';
+    const pre = rs.combine === 'max' ? Math.max(nucleosCents, faixaCents) : nucleosCents + faixaCents;
     const semana = rs.cap_cents !== null ? Math.min(pre, rs.cap_cents) : pre;
-    parte = semana - daysCents;
+    parte = semana - nucleosCents;
+    const base = diariasCents > 0 ? 'a soma dos dias (sem as diárias)' : 'a soma dos dias';
     if (faixa) {
-      conta.push(
-        `Faixa semanal atingida: ${plural(faixa.min_signups, 'cadastro', 'cadastros')} na semana = ${brl(faixa.amount_cents)} (a semana teve ${plural(signupsWeek, 'cadastro confirmado', 'cadastros confirmados')}).`,
-      );
+      if (cumulativo) {
+        const atingidas = faixasAtingidas(rs.tiers, signupsWeek);
+        conta.push(
+          `Metas semanais atingidas (todas somam): ${atingidas.map((t) => `${plural(t.min_signups, 'cadastro', 'cadastros')} = ${brl(t.amount_cents)}`).join('; ')}. Soma das metas: ${brl(faixaCents)} (a semana teve ${rotuloCadastro(rs, signupsWeek)}).`,
+        );
+      } else {
+        conta.push(
+          `Faixa semanal atingida: ${plural(faixa.min_signups, 'cadastro', 'cadastros')} na semana = ${brl(faixa.amount_cents)} (a semana teve ${rotuloCadastro(rs, signupsWeek)}).`,
+        );
+      }
       conta.push(
         rs.combine === 'max'
-          ? `Vale o maior entre a soma dos dias e a faixa: ${brl(Math.max(daysCents, faixaCents))}.`
-          : `Soma dos dias com a faixa: ${brl(daysCents + faixaCents)}.`,
+          ? `Vale o maior entre ${base} e a ${cumulativo ? 'soma das metas' : 'faixa'}: ${brl(Math.max(nucleosCents, faixaCents))}.`
+          : `Soma dos dias${diariasCents > 0 ? ' (sem as diárias)' : ''} com a ${cumulativo ? 'soma das metas' : 'faixa'}: ${brl(nucleosCents + faixaCents)}.`,
       );
     } else {
       const prox = proximaFaixa(rs.tiers, signupsWeek);
       if (prox)
         conta.push(
-          `Faltam ${plural(prox.faltam, 'cadastro confirmado', 'cadastros confirmados')} na semana para a faixa semanal de ${brl(prox.amount_cents)}.`,
+          `Faltam ${rotuloCadastro(rs, prox.faltam)} na semana para a ${cumulativo ? 'meta' : 'faixa'} semanal de ${brl(prox.amount_cents)}.`,
         );
     }
     if (rs.cap_cents !== null && pre > rs.cap_cents)
