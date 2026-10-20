@@ -31,3 +31,16 @@ describe('env — roteiro do dia', () => {
     expect(validateEnv({ ...BASE, FIELD_ROUTES_ENABLED: 'true' }).FIELD_ROUTES_ENABLED).toBe('true');
   });
 });
+
+describe('env — sync de cadastros confirmados (F7)', () => {
+  it('desligado por padrão, intervalo 10 min e janela 45 dias', () => {
+    const e = validateEnv(BASE);
+    expect(e.FIELD_SIGNUP_SYNC_ENABLED).toBe('false');
+    expect(e.FIELD_SIGNUP_SYNC_INTERVAL_MIN).toBe(10);
+    expect(e.FIELD_SIGNUP_RECONCILE_DAYS).toBe(45);
+  });
+  it('rejeita intervalo e janela fora da faixa', () => {
+    expect(() => validateEnv({ ...BASE, FIELD_SIGNUP_SYNC_INTERVAL_MIN: '0' })).toThrow('Configuração de ambiente inválida');
+    expect(() => validateEnv({ ...BASE, FIELD_SIGNUP_RECONCILE_DAYS: '3' })).toThrow('Configuração de ambiente inválida');
+  });
+});

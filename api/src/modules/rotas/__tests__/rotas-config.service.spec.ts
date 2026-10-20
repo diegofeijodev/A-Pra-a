@@ -11,7 +11,7 @@ const falha = async (f: () => Promise<unknown>) => f().then(() => null, (e: unkn
 describe('RotasConfigService', () => {
   it('sem linha no banco: devolve os padrões e nenhum autor', async () => {
     const s = new RotasConfigService(fakePrisma() as unknown as PrismaService);
-    expect(await s.view()).toEqual({ ...CONFIG_ROTA_PADRAO, ...CONFIG_ALERTAS_PADRAO, atualizado_por: null, atualizado_em: null });
+    expect(await s.view()).toEqual({ ...CONFIG_ROTA_PADRAO, ...CONFIG_ALERTAS_PADRAO, confirmation_rule: 'activated', atualizado_por: null, atualizado_em: null });
   });
 
   it('PUT parcial: mescla, grava quem/quando e preserva chaves de outras fases', async () => {
@@ -47,5 +47,18 @@ describe('RotasConfigService', () => {
     p.app_settings.findUnique.mockResolvedValue({ field_config: { alerta_sem_registro_min: 45 } });
     const s = new RotasConfigService(p as unknown as PrismaService);
     expect(await s.alertas()).toEqual({ ...CONFIG_ALERTAS_PADRAO, alerta_sem_registro_min: 45 });
+  });
+
+  it('F7: confirmation_rule é validada, gravada com as demais e padrão é activated', async () => {
+    const p = fakePrisma();
+    p.app_settings.findUnique.mockResolvedValue({ field_config: { meta_diaria: 25 } });
+    const s = new RotasConfigService(p as unknown as PrismaService);
+    expect((await s.cadastro()).confirmation_rule).toBe('activated');
+    await s.atualizar({ confirmation_rule: 'first_vacancy' }, ADMIN, AGORA);
+    expect(p.app_settings.upsert.mock.calls[0][0].update.field_config).toMatchObject({ meta_diaria: 25, confirmation_rule: 'first_vacancy' });
+    const p2 = fakePrisma();
+    const e = await falha(() => new RotasConfigService(p2 as unknown as PrismaService).atualizar({ confirmation_rule: 'qualquer' }, ADMIN, AGORA));
+    expect((e as { getStatus: () => number }).getStatus()).toBe(400);
+    expect(p2.app_settings.upsert).not.toHaveBeenCalled();
   });
 });
