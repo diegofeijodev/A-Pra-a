@@ -2095,26 +2095,60 @@ curl -s -X PATCH $API/v1/campo/visits/$V2/answers -H "$J" -H "$HC" \
   -d '{"interlocutor_name":"Maria","interlocutor_role":"gerente","freela_status":"ja_usa","interest":"medio","open_vagas":0,"freelas_per_week":0,"channels":["Nenhum"],"needs_followup":false}' > /dev/null
 curl -s -X POST $API/v1/campo/visits/$V2/checkout -H "$J" -H "$HC" -d "{$POS_CAMPO}" > /dev/null
 check "segunda visita: etapa ≥ 3 se mantém" "3" "$(curl -s $API/v1/leads/$LEAD_CAMPO -H "$HD" | jq .stage)"
+
+echo "── Campo: P0 §30 (fechado, recusa, retorno com hora, contato) ──"
+V3=$(uuid)
+VISITA_3=$(checkin "$V3" "$LAT" "lead_id=$LEAD_CAMPO" /tmp/praca-smoke-fachada.jpg)
+check "telefone do contato inválido = VALIDATION_ERROR, sem repetir o número" "VALIDATION_ERROR|false" \
+  "$(curl -s -X PATCH $API/v1/campo/visits/$V3/answers -H "$J" -H "$HC" -d '{"contact_phone":"12345"}' | jq -r '"\(.error.code)|\(.error.message | contains("12345"))"')"
+check "resultado fora da lista = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s -X PATCH $API/v1/campo/visits/$V3/answers -H "$J" -H "$HC" -d '{"outcome":"aberto"}' | jq -r .error.code)"
+check "motivo de recusa fora do catálogo = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s -X PATCH $API/v1/campo/visits/$V3/answers -H "$J" -H "$HC" -d '{"refusal_reason":"nao-existe"}' | jq -r .error.code)"
+check "hora fora do formato = VALIDATION_ERROR" "VALIDATION_ERROR" \
+  "$(curl -s -X PATCH $API/v1/campo/visits/$V3/answers -H "$J" -H "$HC" -d '{"followup_time":"25:99"}' | jq -r .error.code)"
+check "visita 'fechado' sem questionário: nada falta" "0" \
+  "$(curl -s -X PATCH $API/v1/campo/visits/$V3/answers -H "$J" -H "$HC" \
+    -d "{\"outcome\":\"fechado\",\"needs_followup\":true,\"followup_what\":\"Voltar com a loja aberta\",\"followup_date\":\"$HOJE\",\"followup_time\":\"15:30\",\"contact_phone\":\"(31) 98765-4321\"}" | jq '.missing | length')"
+check "resposta traz resultado, hora e telefone só com dígitos" "fechado|15:30|31987654321" \
+  "$(curl -s -X PATCH $API/v1/campo/visits/$V3/answers -H "$J" -H "$HC" -d '{}' | jq -r '"\(.answers.outcome)|\(.answers.followup_time)|\(.answers.contact_phone)"')"
+check "motivo de recusa é limpo quando o resultado é 'fechado'" "null" \
+  "$(curl -s -X PATCH $API/v1/campo/visits/$V3/answers -H "$J" -H "$HC" -d '{"interest":"nenhum","refusal_reason":"preco"}' | jq -r .answers.refusal_reason)"
+check "checkout do 'fechado' funciona" "true" \
+  "$(curl -s -X POST $API/v1/campo/visits/$V3/checkout -H "$J" -H "$HC" -d "{$POS_CAMPO}" | jq '.checkout_at != null')"
+LEAD_P0=$(curl -s $API/v1/leads/$LEAD_CAMPO -H "$HD")
+check "CRM: 'fechado' não mexe no estágio nem no decisor (segue o da conversa anterior)" "3|Maria" \
+  "$(echo "$LEAD_P0" | jq -r '"\(.stage)|\(.decisor)"')"
+check "CRM: o 'fechado' vira nota (não conta como contato)" "1|0" \
+  "$(echo "$LEAD_P0" | jq -r '"\([.events[] | select(.kind=="note" and (.text | contains("estabelecimento fechado")))] | length)|\([.events[] | select(.kind=="visit" and (.text | contains("fechado")))] | length)"')"
+FU_C=$(curl -s $API/v1/campo/followups -H "$HC" | jq -c --arg l "$LEAD_CAMPO" '[.items[] | select(.lead_id==$l)][0]')
+check "retorno do consultor: hora e telefone (completo e mascarado)" "15:30|31987654321|(31) 9****-4321|hoje" \
+  "$(echo "$FU_C" | jq -r '"\(.followup_time)|\(.contact_phone)|\(.contact_phone_masked)|\(.due)"')"
+FU_E=$(curl -s "$API/v1/consultores/followups" -H "$HN" | jq -c --arg l "$LEAD_CAMPO" '[.items[] | select(.lead_id==$l)][0]')
+check "retorno da equipe: hora e telefone SÓ mascarado" "15:30|(31) 9****-4321|false" \
+  "$(echo "$FU_E" | jq -r '"\(.followup_time)|\(.contact_phone_masked)|\(has("contact_phone"))"')"
+check "hoje do consultor: 3 check-ins, 1 fechado" "3|1" \
+  "$(curl -s $API/v1/campo/today -H "$HC" | jq -r '"\(.counters.visits)|\(.counters.closed)"')"
 FIM=$(curl -s -X POST $API/v1/campo/journeys/current/end -H "$J" -H "$HC" -d "{$POS_CAMPO}")
 check "jornada encerrada" "true" "$(echo "$FIM" | jq '.ended_at != null')"
 check "reenvio do encerrar devolve a mesma jornada (200)" "200|$JORNADA_ID" \
   "$(curl -s -o /tmp/praca-smoke-campo.json -w '%{http_code}' -X POST $API/v1/campo/journeys/current/end -H "$J" -H "$HC" -d "{$POS_CAMPO}")|$(jq -r .id /tmp/praca-smoke-campo.json)"
-check "hoje: 2 visitas, 1 'cadastrou agora', jornada fechada" "2|1|null" \
+check "hoje: 3 check-ins (1 fechado), 1 'cadastrou agora', jornada fechada" "3|1|null" \
   "$(curl -s $API/v1/campo/today -H "$HC" | jq -r '"\(.counters.visits)|\(.counters.cadastrou_qr)|\(.journey)"')"
 
 echo "── Campo: telas da equipe ──"
 DIA_CAMPO=$(curl -s $API/v1/consultores/$CONS_ID/days/$HOJE -H "$HN")
-check "dia: pontos de início, trilha, check-ins, checkouts e fim" "checkin:2,checkout:2,end:1,start:1,track:2" \
+check "dia: pontos de início, trilha, check-ins, checkouts e fim" "checkin:3,checkout:3,end:1,start:1,track:2" \
   "$(echo "$DIA_CAMPO" | jq -r '[.journeys[0].points[].kind] | group_by(.) | map("\(.[0]):\(length)") | join(",")')"
 check "dia: o ponto do futuro ficou com a hora ajustada" "1" \
   "$(echo "$DIA_CAMPO" | jq '[.journeys[0].points[] | select(.clock_adjusted)] | length')"
 # As duas visitas têm o mesmo `checkin_at` ($AGORA): ordena antes de comparar.
-check "dia: 2 visitas, uma longe do local" "2|false,true" \
+check "dia: 3 visitas, uma longe do local" "3|false,false,true" \
   "$(echo "$DIA_CAMPO" | jq -r '"\(.visits | length)|\([.visits[].far_from_place] | sort | map(tostring) | join(","))"')"
 check "dia inexistente no calendário = VALIDATION_ERROR" "VALIDATION_ERROR" \
   "$(curl -s $API/v1/consultores/$CONS_ID/days/2026-02-31 -H "$HN" | jq -r .error.code)"
-check "lista: encerrou, 2 visitas, 1 cadastro declarado" "encerrou|2|1" \
-  "$(curl -s $API/v1/consultores -H "$HN" | jq -r --arg i "$CONS_ID" '.[] | select(.id==$i) | "\(.today.status)|\(.today.visits)|\(.today.cadastros)"')"
+check "lista: encerrou, 3 check-ins (1 fechado), 1 cadastro declarado" "encerrou|3|1|1" \
+  "$(curl -s $API/v1/consultores -H "$HN" | jq -r --arg i "$CONS_ID" '.[] | select(.id==$i) | "\(.today.status)|\(.today.visits)|\(.today.closed)|\(.today.cadastros)"')"
 CANAIS_ORIGINAIS='{"channels":["Nenhum","Grupos de WhatsApp","Indicação de conhecidos","Agência de mão de obra"]}'
 check "canais: a lista inicial" "4" "$(curl -s $API/v1/consultores/settings/channels -H "$HN" | jq '.channels | length')"
 check "canais: rebeca não muda = FORBIDDEN" "FORBIDDEN" \

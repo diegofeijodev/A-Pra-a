@@ -31,7 +31,7 @@ Situação: igual / só chefe / só nossa / diferente.
 | Segmentos de busca | Tabela `segmentos` (tipos Google + palavras-chave), editável em Configurações | `TIPOS_LUGAR` fixo no código (bar, restaurante, lanchonete, padaria, café) | diferente | Editável no chefe, fechado na nossa |
 | Estimativa de custo | US$ 0,035 por chamada x cotação 5,5 fixa (`G/src/lib/format.ts` l.~70) | `estimarCustoApifyUsd` e teto mensal 3.000 lugares (`places-rules.ts` l.294-300) | diferente | Constantes do chefe são fixas no código, sem fonte do preço do Google (não confirmado) |
 | Rotas: geração por proximidade | `gerarRotas`: ordena por ângulo ao redor do centroide, corta grupos de até N paradas e até 10 h, ordena por vizinho mais próximo (`G/src/lib/rotas.ts`) | NN + 2-opt, relógio com janela/almoço, reserva, determinístico (`N/api/src/domain/rota-rules.ts`) | diferente | A nossa é por consultor/dia; a do chefe divide uma praça em várias rotas |
-| Modos de rota | `carro` 25 km/h, `pe` 5 km/h | Só caminhada 4,5 km/h x fator 1,3 | só chefe (modo) | Fácil: já existe `velocidade_kmh` configurável |
+| Modos de rota | `carro` 25 km/h, `pe` 5 km/h | Só caminhada 4,5 km/h x fator 1,3 | **FEITO (P0 3, §30.4)** | `travel_mode` `a_pe`\|`carro` por roteiro; carro = env `ROTA_VELOCIDADE_CARRO_KMH` (padrão 25) × fator de desvio 1,3 |
 | Lotes de geração | `lote_id` + `gerado_em`; cada "Gerar" cria lote novo sem apagar (`0011`) | `field_routes.version`, uma rota ativa por dia | diferente | |
 | Atribuição de rota | Staff atribui `rotas.representante_id` e `data` | Rota gerada ao iniciar a jornada ou por equipe (`/v1/routes`, §23.4) | diferente | |
 | Rotas de shopping | Aba "shopping": mapeia shoppings (`shopping_mall`), exige `total_avaliacoes >= 2500` como sinal de "grande", cria rota dos shoppings e rota interna por shopping; `clientes.shopping_id` (`G/src/routes/_authenticated/rotas.tsx` l.16-19,130-181) | Não existe | só chefe | Depende de dado do Google (avaliações) |
@@ -39,8 +39,8 @@ Situação: igual / só chefe / só nossa / diferente.
 | Chegada com foto e distância | Foto obrigatória no bucket privado `fachadas/<uid>/`; distância Haversine; >raio exige justificativa por texto (`Chegada` em `roteiro.$rotaId.tsx`, `precisaJustificativa`) | Foto obrigatória (`photo_key`), distância e marca `far_from_place` (>200 m), só marca, não bloqueia; foto passa pela API (`PhotoStorage`) | igual no limiar, diferente na ação | Ver §3.3 |
 | Cronômetro | Relógio por segundo na visita aberta; `duracao_seg` = checkout − checkin | Tempos por `checkin_at`/`checkout_at`; cronômetro na tela: não confirmado | igual (provável) | |
 | Checklist | Lista em `configuracoes.checklist_visita` (7 etapas), cada etapa `feito`+`obs` guardada em `visitas.checklist` | Questionário fixo de 9 perguntas (`faltando()` em `campo-rules.ts`); sem checklist de abordagem | só chefe | |
-| Status final da visita | 6 valores; exige motivo, data de retorno e contato conforme o caso (`pendenciasFinalizar`) | `freela_status` (3), `interest` (4), `needs_followup`+data+o quê; sem "fechado" nem motivo por visita | diferente | Ver §3.2 |
-| Contato | `contato_nome`, `contato_telefone` (≥10 dígitos), `contato_cargo`, `contato_email` | `interlocutor_name`, `interlocutor_role` (dono/gerente/outro) | diferente | Nossa não coleta telefone/e-mail na visita |
+| Status final da visita | 6 valores; exige motivo, data de retorno e contato conforme o caso (`pendenciasFinalizar`) | `freela_status` (3), `interest` (4), `needs_followup`+data+o quê; **+ `outcome` conversa\|fechado e `refusal_reason` (P0 1, §30.1–30.2)** | diferente (P0 1 **FEITO**) | Ver §3.2 |
+| Contato | `contato_nome`, `contato_telefone` (≥10 dígitos), `contato_cargo`, `contato_email` | `interlocutor_name`, `interlocutor_role` (dono/gerente/outro) **+ `contact_phone` opcional e `followup_time` (P0 2, §30.3)** | diferente (P0 2 **FEITO**; e-mail do contato ficou de fora) | Telefone: só dígitos, mascarado nas listas da equipe |
 | Offline | Não implementado (roadmap 6b aberto) | Fila offline com carimbo de hora saneado (±2 min futuro, 24 h passado), `fila-motor.ts` (§23.7) | só nossa | |
 | Mapa: pins por status | Google Maps JS; pins por status, filtro por praça, legenda clicável com contagem (`G/src/routes/_authenticated/mapa.tsx`) | Mapa de calor/cobertura em Leaflet (`/consultores/calor`); mapa de pins por status do lead: não confirmado | só chefe (pins) | |
 | Mapa de calor | Roadmap: pendente | `GET /v1/consultores/heatmap`, grade 100/250/500/1000 m (`heat-grid.ts`) | só nossa | |
@@ -190,15 +190,15 @@ Princípio: a nossa já é superior em arquitetura. Portar **ideias de produto**
 
 ### P0 (fazer primeiro; baixo risco, valor claro)
 
-1. **Resultado "estabelecimento fechado" e motivo de recusa na visita.**
+1. **[FEITO 2026-10-20, contrato §30.1–30.2] Resultado "estabelecimento fechado" e motivo de recusa na visita.**
    - O que: acrescentar à visita um resultado `fechado` e `motivo` estruturado (Sem interesse, Já usa concorrente, Preço, Sem demanda, Outro) com lista em `field_config` ou no catálogo.
    - Por que: dá dado para analisar recusa e evita voltar a lugar fechado; hoje a nossa só mantém `lost_reason` no lead.
    - Esforço: S–M. Dependências: migração aditiva em `field_visits`; contrato §20.3 primeiro. Risco: baixo. Conflito com decisões: não conflita (campos opcionais, sem flag nova obrigatória; seguir "flags desligadas por padrão" se quiser esconder a UI). Decisão do dono: confirmar a lista de motivos.
-2. **Retorno com data e hora (e telefone/e-mail do contato opcionais).**
+2. **[FEITO 2026-10-20, contrato §30.3] Retorno com data e hora (e telefone/e-mail do contato opcionais).**
    - O que: `followup_date` passa a aceitar hora; contato com telefone opcional.
    - Por que: o chefe pede "data e hora do retorno" e telefone de quem atendeu; ajuda o follow-up.
    - Esforço: S. Dependências: §25 (follow-ups). Risco: baixo. Privacidade: dado pessoal de terceiros; pode exigir o mesmo cuidado de §20.8. Decisão do dono: sim/não para coletar telefone do contato.
-3. **Modo de deslocamento (a pé x carro/moto) por rota.**
+3. **[FEITO 2026-10-20, contrato §30.4] Modo de deslocamento (a pé x carro/moto) por rota.**
    - O que: parâmetro `velocidade_kmh` por modo (a pé 4,5; carro 25 do chefe seria só ponto de partida a validar).
    - Por que: o consultor de bairro com carro hoje é calculado como pedestre.
    - Esforço: S. Dependências: `field_config`. Risco: baixo. Sem conflito.
