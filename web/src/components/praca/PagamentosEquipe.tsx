@@ -330,7 +330,7 @@ export function PagamentosEquipe() {
       </div>
 
       <section className="card-surface space-y-2 p-4" aria-label="Total a pagar">
-        <p className="tag text-muted-foreground">Total a pagar</p>
+        <p className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Total a pagar</p>
         <p className="text-3xl font-black">{brl(d.summary.to_pay_cents)}</p>
         <ul className="list-disc space-y-1 pl-5 text-sm">
           {d.summary.conta.map((l) => (

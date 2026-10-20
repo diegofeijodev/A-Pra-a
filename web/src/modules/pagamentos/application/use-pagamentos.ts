@@ -76,8 +76,10 @@ export const useChavePix = () => useMutation({ mutationFn: getChavePix, onError:
 /** Baixa pelo cliente autenticado (o link direto não levaria o token) e entrega o arquivo ao navegador. */
 export function entregarArquivo(blob: Blob, nome: string | null, abrir: boolean) {
   const url = URL.createObjectURL(blob);
-  if (abrir) {
-    window.open(url, '_blank', 'noopener');
+  // Sem `noopener`: o blob é do mesmo domínio e é o arquivo da própria pessoa; com `noopener` o retorno é sempre nulo
+  // e o Safari (iPhone) bloqueia o popup em silêncio. Bloqueado → baixa pelo link.
+  if (abrir && window.open(url, '_blank')) {
+    // aberto em outra aba
   } else {
     const a = document.createElement('a');
     a.href = url;
