@@ -223,6 +223,7 @@ model leads {
   field_visits field_visits[]
   route_stops  field_route_stops[]
   company_signups field_company_signups[]
+  signups_freela  field_signups[]
 
   @@index([praca_id, lat, lng])
   @@unique([source, source_ref])
@@ -602,6 +603,8 @@ model field_consultants {
   visits   field_visits[]
   routes   field_routes[]
   company_signups field_company_signups[]
+  signups         field_signups[]
+  signup_sync     field_signup_sync_state?
 }
 
 model field_journeys {
@@ -894,8 +897,56 @@ model field_company_signups {
   consultant           field_consultants @relation(fields: [consultant_id], references: [id], onDelete: Cascade)
   visit                field_visits?     @relation(fields: [visit_id], references: [id], onDelete: SetNull)
   lead                 leads?            @relation(fields: [lead_id], references: [id], onDelete: SetNull)
+  confirmados          field_signups[]
 
   @@index([consultant_id, created_at])
   @@index([visit_id])
   @@index([lead_id])
+}
+
+// ── cadastros confirmados pelo Freela (F7 da prospecção, contrato §27) ──
+// Fatos imutáveis: as datas de evento são escritas uma vez (só preenchem nulo). Sem
+// telefone/e-mail/CNPJ do Freela. O CHECK de `match_status` vive só no SQL da migração.
+model field_signups {
+  id                     String                 @id @default(uuid()) @db.Uuid
+  consultant_id          String                 @db.Uuid
+  freela_user_id         String
+  freela_contractor_id   String?
+  company_name           String
+  source                 String?
+  freela_created_at      DateTime
+  activated_at           DateTime?
+  first_vacancy_at       DateTime?
+  first_job_completed_at DateTime?
+  created_day            String
+  activated_day          String?
+  first_vacancy_day      String?
+  first_job_day          String?
+  signup_id              String?                @db.Uuid
+  lead_id                String?                @db.Uuid
+  match_status           String                 @default("none")
+  first_seen_at          DateTime               @default(now())
+  synced_at              DateTime
+  updated_at             DateTime               @updatedAt
+  consultant             field_consultants      @relation(fields: [consultant_id], references: [id], onDelete: Cascade)
+  signup                 field_company_signups? @relation(fields: [signup_id], references: [id], onDelete: SetNull)
+  lead                   leads?                 @relation(fields: [lead_id], references: [id], onDelete: SetNull)
+
+  @@unique([consultant_id, freela_user_id])
+  @@index([consultant_id, activated_day])
+  @@index([consultant_id, first_vacancy_day])
+  @@index([consultant_id, first_job_day])
+  @@index([signup_id])
+  @@index([lead_id])
+}
+
+model field_signup_sync_state {
+  consultant_id   String            @id @db.Uuid
+  watermark       DateTime?
+  last_run_at     DateTime?
+  last_ok_at      DateTime?
+  last_error_code String?
+  last_error      String?
+  last_count      Int               @default(0)
+  consultant      field_consultants @relation(fields: [consultant_id], references: [id], onDelete: Cascade)
 }
