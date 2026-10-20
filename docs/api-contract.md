@@ -4104,3 +4104,110 @@ A velocidade fotografada não muda se o env mudar depois; ao trocar o modo (ou r
 ### 30.5 Ordem de subida (obrigatória)
 
 `migrate deploy` → **API** → **web**. Nunca o web antes da API: o web novo manda `outcome`, `refusal_*`, `followup_time`, `contact_phone` nos rascunhos e `travel_mode` ao montar o roteiro, e a API antiga (`whitelist + forbidNonWhitelisted`) responde `400` a campo que não conhece, quebrando todo salvamento de rascunho e todo "Montar roteiro". API nova com web antigo é seguro (todos os campos são opcionais).
+
+## 31. Modo do chefe, S0 e S1 — fluxo da visita `simples` x `completo`
+
+Origem: `docs/superpowers/specs/2026-10-20-modo-chefe-arquitetura.md` (eixo A, §0, §4.3), `…-fluxo-simples-ux.md` e a versão Lovable do chefe
+(`src/lib/visita.ts`: `STATUS_FINAL`, `MOTIVOS_NAO`, `pendenciasFinalizar`, `precisaJustificativa`; `roteiro.$rotaId.tsx`, raio de 200 m).
+**Tudo é configurável** pela tela de equipe (Configurações do campo); o padrão do modo `simples` é o da spec (que já decidiu por segurança) e o botão
+"Perfil do chefe" preenche o formulário com os valores exatos da Lovable. O servidor não conhece "perfil": só as chaves. O modo `completo` (o fluxo atual) fica intacto.
+Migração aditiva `20261026100000_modo_chefe_s1`; erros no formato plano `{ error: { code, message } }`; wire `snake_case`.
+S0/S1 não tocam em dinheiro: remuneração, ganho declarado e regra versionada ficam para S2/S3 (§4.4 da arquitetura).
+
+### 31.1 Trava de lançamento: `FIELD_VISIT_FLOW_SELECT_ENABLED` (padrão `false`)
+
+| Estado | Efeito |
+|---|---|
+| Desligada | `fluxo_visita` (global e por consultor) é **ignorado**: toda visita nova nasce `completo`; `result`/`distance_note` no corpo → `422 FLOW_MODE_MISMATCH`; `DELETE /v1/campo/visits/:ref` → `404 FLOW_SELECT_DISABLED`; `features.visit_flow = false`. **Prod fica idêntica à de hoje** (provado por testes de caracterização). |
+| Ligada | Fluxo = consultor (`field_consultants.visit_flow`) → global (`field_config.fluxo_visita`) → **`simples`** (chave ausente). Reverter sem reiniciar: `PUT fluxo_visita = "completo"`. |
+
+Passos do dono: (1) deploy com a flag desligada; (2) ligar a flag e reiniciar: o `simples` vale para visitas abertas dali em diante; (3) voltar = `PUT fluxo_visita: "completo"` ou desligar a flag.
+
+### 31.2 O fluxo é da visita (`field_visits.flow`)
+
+`flow` (`simples` \| `completo`, `NOT NULL DEFAULT 'completo'`) é gravado **na abertura** (check-in). Checkout, rascunho e fila offline são validados contra ele, nunca contra a configuração de agora.
+
+- O check-in (multipart) aceita o campo opcional `flow` — a dica do aparelho (o fluxo da tela que o consultor viu, vindo do `/me` guardado, mesmo sem sinal). **Com a flag ligada** o servidor a respeita (`simples`\|`completo`); sem a dica, ou com a flag desligada, vale o resolvido no servidor (§31.1). Motivo: a fila offline pode enviar o check-in depois de a equipe trocar a chave; sem a dica, a tela `simples` abriria uma visita `completo` e o rascunho seria recusado. **Risco aceito e registrado:** o consultor poderia forjar o valor chamando a API na mão; o efeito é só em dados dele (menos perguntas), sem dinheiro.
+- Corpo do outro fluxo → `422 FLOW_MODE_MISMATCH` (`result` num rascunho `completo`). Os campos do questionário antigo são aceitos nos dois fluxos (no `simples` viram "Mais detalhes", opcionais, **todos preservados**).
+- `VisitView` ganha `flow`. Visitas antigas = `completo`.
+
+### 31.3 Configuração — `GET/PUT /v1/consultores/settings/config` (leitura: equipe; escrita: só admin)
+
+Chaves novas (todas opcionais no PUT; chave desconhecida ou fora da faixa → `400 VALIDATION_ERROR`; valores em `field_config`):
+
+| Chave | Valores | Padrão (chave ausente) | "Perfil do chefe" (Lovable) |
+|---|---|---|---|
+| `fluxo_visita` | `simples` \| `completo` \| `null` (= sem escolha) | `null` → com a flag ligada, `simples` | `simples` |
+| `justificativa_distancia` | `nao` \| `opcional` \| `obrigatoria` | `opcional` | `obrigatoria` (Lovable: `precisaJustificativa`, raio 200 m) |
+| `contato_obrigatorio_em` | subconjunto de `cadastrou`,`ja_usa`,`retorno`,`sem_interesse` | `["retorno","cadastrou"]` (decisão do designer) | os quatro (Lovable: contato em todo status menos "fechado") |
+| `contato_campos` | subconjunto de `nome`,`cargo`,`telefone` | `["nome","cargo","telefone"]` | os três (Lovable: nome, telefone ≥ 10 dígitos, cargo) |
+| `fechado_conta_na_meta` | boolean | `true` (só visitas `simples`; ver §31.6) | `true` |
+| `desfazer_segundos` | inteiro 0–30 | `8` | `8` |
+
+"Perfil completo" (preset) = `fluxo_visita: "completo"` e os demais nos padrões. Os presets **só preenchem o formulário**; o admin revisa e salva.
+`GET` devolve as chaves já normalizadas (padrão onde faltar) e `presets: { completo: {…}, chefe: {…} }` para o formulário. `fluxo_visita` volta como `null` quando não há escolha.
+
+**Exceção por consultor:** `PATCH /v1/consultores/:id` (admin) aceita `visit_flow` (`simples` \| `completo` \| `null` = seguir o padrão); `ConsultorView` devolve `visit_flow` (a exceção) e `visit_flow_effective` (o que vale agora). O consultor vale mais que o global. O consultor **não** troca o próprio fluxo.
+
+### 31.4 `GET /v1/campo/me`
+
+`features.visit_flow` (boolean: a flag), `visit_flow` (`simples`\|`completo` resolvido agora) e, com a flag ligada, `visit_config: { justificativa_distancia, contato_obrigatorio_em, contato_campos, fechado_conta_na_meta, desfazer_segundos }` para a tela conferir o que falta **sem sinal** (o servidor continua a decidir: `422`). Flag desligada: `features.visit_flow = false`, `visit_flow = "completo"` e sem `visit_config`.
+
+### 31.5 Resultado da visita `simples`
+
+Campos novos do rascunho (`PATCH /v1/campo/visits/:ref/answers`) e de `VisitView.answers` (`null` limpa; sem inicializador no DTO):
+
+| Campo | Valores |
+|---|---|
+| `result` | `cadastrou` (Cadastrou agora) \| `ja_usa` (Já usa o Freela) \| `retorno` (Quer retorno) \| `sem_interesse` (Sem interesse) \| `fechado` (Estabelecimento fechado) |
+| `distance_note` | texto ≤ 200: por que a visita foi feita longe do local (só tem efeito com `far_from_place`) |
+
+O servidor **deriva** os campos antigos do resultado a cada gravação (o consultor não precisa enviá-los):
+
+| `result` | `outcome` | `freela_status` | `interest` | `needs_followup` | `followup_what` |
+|---|---|---|---|---|---|
+| `cadastrou` | `conversa` | `declarou` | `alto` (se vazio) | `false` | — |
+| `ja_usa` | `conversa` | `ja_usa` | — | `false` | — |
+| `retorno` | `conversa` | `null` | `medio` (se vazio) | `true` | `Retornar` (se vazio) |
+| `sem_interesse` | `conversa` | `nao_cadastrou` | `nenhum` (se vazio) | `false` | — |
+| `fechado` | `fechado` | `null` | — | `false` | — |
+
+`outcome`, `freela_status` e `needs_followup` são sempre sobrescritos pela derivação; `interest` e `followup_what` só quando vazios (o que o consultor preencheu em "Mais detalhes" vale). `freela_status = 'declarou'` é valor novo (conjunto fechado no código, sem enum de banco): **não** reaproveita `cadastrou_qr`, para não poluir os indicadores de QR (arquitetura §1.1). Divergência anotada: a arquitetura mapeia "não cadastrado" para `interest: baixo`; aqui `sem_interesse` deriva `nenhum`, porque a normalização do motivo de recusa (§30.2) descartaria o motivo com outro interesse. A normalização passa a aceitar `result = sem_interesse` como equivalente a `interest = nenhum`.
+
+**Motivos de recusa** (`refusal_reason`, §30.2): ganha o slug `sem_demanda` ("Sem demanda"), que a Lovable tem (`MOTIVOS_NAO`) e o catálogo não tinha (só se acrescenta; nada é renomeado).
+
+**O que o checkout `simples` exige** (`faltandoSimples`; `422 ANSWERS_INCOMPLETE`, mensagem `Falta responder: …`):
+
+| Condição | Exigência |
+|---|---|
+| sempre | `result` ("resultado da visita") |
+| `sem_interesse` | `refusal_reason` ("motivo") |
+| `retorno` | `followup_date` ("quando voltar"), ≥ hoje (dia do carimbo); hora (`followup_time`) opcional |
+| `result ∈ contato_obrigatorio_em` | cada item de `contato_campos`: `nome` (= `interlocutor_name`), `cargo` (= `interlocutor_role`), `telefone` (= `contact_phone`, 10–11 dígitos) |
+| visita `far_from_place` e `justificativa_distancia = obrigatoria` | `distance_note` ("motivo de a visita ter sido longe do local") |
+
+As 8 perguntas antigas **não** são exigidas. Divergência anotada com a UX (A2: "Quer retorno" com 0 digitação): o padrão exigido pelo pedido do dono é contato em `retorno` e `cadastrou`; para o fluxo sem digitação, esvaziar `contato_obrigatorio_em`.
+
+**Efeitos do checkout `simples`:** evento do CRM com `resumoVisitaSimples` ("Visita de campo — resultado: Sem interesse (Preço)…", nunca o telefone); `fechado` → evento `note`, não grava atendente nem estágio (§30.1); `cadastrou` → **não** muda o número do estágio (arquitetura §1, linha 2; sair das rotas como estágio alto é S3); `ja_usa`, `retorno`, `sem_interesse` → `estagioDepoisDaVisita` (1,2 → 3) como hoje; atendente/cargo só se informados; `retorno` grava `next_step_what`/`next_step_date` no lead e entra na fila de retornos (§25.4).
+
+### 31.6 Meta
+
+`fechado` hoje fica fora da meta (§30.1) e **continua assim no `completo`**. No `simples`, `fechado_conta_na_meta = true` (padrão) faz o "fechado" fotografado **contar** na meta/ritmo (`goal`, `atencao.feitas`, `progress.done` do roteiro); "Pular > Fechado" (sem check-in) nunca conta. Quem decide é `contaNaMeta({ outcome, flow }, cfg)`: `outcome !== 'fechado' || (flow === 'simples' && fechado_conta_na_meta)`. `counters.closed` continua sendo o total de "fechado". `counters` ganha `cadastrou_agora` (visitas com `result = cadastrou`; `cadastrou_qr` continua só QR). Remuneração não muda.
+
+### 31.7 Cancelar visita aberta por engano — `DELETE /v1/campo/visits/:ref` (`@CampoRoute()`)
+
+Versão mínima: só **visita aberta, do próprio consultor, de fluxo `simples`, com a flag ligada**. É **exclusão** (não "cancelada"): apaga a visita, a foto do storage e o ponto de check-in da trilha, e devolve a parada do roteiro (se houver) para `pendente`. O estabelecimento criado por `new_place` **fica** (pode ter outro vínculo; a equipe vê como "visita de campo"). Respostas: `200 { cancelled: true }`; `404 NOT_FOUND` (inexistente, de outro consultor ou já cancelada: o aparelho trata como sucesso); `409 VISIT_CLOSED` (já fez checkout); `422 FLOW_MODE_MISMATCH` (visita `completo`); `404 FLOW_SELECT_DISABLED` (flag desligada). Nada de lead/estágio foi mexido antes do checkout, então não há o que reverter ali.
+**Desfazer 8 s** é do aparelho: o checkout `simples` espera `desfazer_segundos` na fila local (`proxima_em`) e o toast "Desfazer" o remove antes do envio; o servidor não conhece o desfazer.
+
+### 31.8 Banco (migração aditiva `20261026100000_modo_chefe_s1`)
+
+`field_visits`: `flow TEXT NOT NULL DEFAULT 'completo'` (CHECK `simples`\|`completo`), `result TEXT NULL` (CHECK nos 5 valores), `distance_note TEXT NULL`. `field_consultants`: `visit_flow TEXT NULL` (CHECK). Sem `DROP INDEX`, sem migração de dado em `field_config`.
+`field_visits.checklist` (arquitetura §4.1) fica para a fase do checklist (S5, `FIELD_CHECKLIST_ENABLED`): nada usa a coluna agora.
+
+### 31.9 Variáveis
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `FIELD_VISIT_FLOW_SELECT_ENABLED` | `false` | liga a escolha do fluxo (§31.1) |
+
+**Ordem de subida:** `migrate deploy` → **API** → **web**. O web novo manda `flow` no check-in (multipart) e `result`/`distance_note` nos rascunhos; a API antiga (`whitelist + forbidNonWhitelisted`) responderia `400`. Com a flag desligada o web mantém a tela atual e não manda nada novo.
