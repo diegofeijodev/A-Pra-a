@@ -129,3 +129,26 @@
 /* Mapa base OSM (só existe claro): no tema escuro, inverte as cores da camada de mapa
    — não dos marcadores nem da linha do trajeto. Ver `lib/map-tiles.ts`. */
 .tiles-escuros { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9) saturate(0.5); }
+
+/* Fluxo simples do consultor (contrato §31): chips grandes e modo "Sol" (borda de 2 px em --foreground,
+   para o contraste de componente sob luz forte; a borda comum do tema claro fica abaixo de 3:1). */
+.simples-chip {
+  min-height: 3.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 0 1rem;
+  font-size: 1rem;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.2;
+}
+.simples-chip[aria-checked='true'] {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+  border: 3px solid var(--foreground);
+}
+[data-sol='true'] .simples-chip,
+[data-sol='true'] .card-surface {
+  border-width: 2px;
+  border-color: var(--foreground);
+}

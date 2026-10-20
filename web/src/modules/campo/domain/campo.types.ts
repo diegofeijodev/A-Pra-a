@@ -3,6 +3,7 @@ import type { GoalView } from '@/modules/consultores/domain/atencao';
 import type { CadastrosConfirmados } from './cadastros-confirmados';
 import type { SignupPayload } from './cadastro-empresa';
 import type { MotivoPulo } from '@/modules/rotas/domain/rota.schema';
+import type { ConfigVisita, FluxoVisita } from './fluxo';
 
 
 export interface CampoConsultantMe {
@@ -32,7 +33,11 @@ export interface CampoMeResponse {
   consultant: CampoConsultantMe;
   channels: string[];
   /** Chaves do servidor que ligam telas (contrato §26.3). Ausente em respostas antigas guardadas no aparelho. */
-  features?: { company_signup: boolean; earnings?: boolean; payouts?: boolean };
+  features?: { company_signup: boolean; earnings?: boolean; payouts?: boolean; visit_flow?: boolean };
+  /** Modo do chefe §31.4: o fluxo que vale agora para ele. Ausente em respostas antigas guardadas no aparelho = `completo`. */
+  visit_flow?: FluxoVisita;
+  /** Só com a flag ligada: o que a tela confere sem sinal (o servidor decide). */
+  visit_config?: ConfigVisita;
 }
 
 /** Posição + hora real do aparelho. */
@@ -95,6 +100,9 @@ export interface VisitAnswers {
   followup_time?: string | null;
   /** Só dígitos (10–11). */
   contact_phone?: string | null;
+  /** Modo do chefe §31.5 — só o fluxo `simples` usa. */
+  result?: string | null;
+  distance_note?: string | null;
 }
 
 export interface VisitView {
@@ -116,6 +124,8 @@ export interface VisitView {
   checkout_lng: number | null;
   auto_closed: boolean;
   clock_adjusted: boolean;
+  /** Contrato §31.2. Respostas antigas guardadas no aparelho não têm: valem `completo`. */
+  flow?: FluxoVisita;
   answers: VisitAnswers;
   missing: string[];
 }
@@ -126,7 +136,7 @@ export interface TodayView {
   journeys: JourneyView[];
   open_visit: VisitView | null;
   visits: VisitView[];
-  counters: { visits: number; cadastrou_qr: number; closed?: number };
+  counters: { visits: number; cadastrou_qr: number; closed?: number; cadastrou_agora?: number };
   /** Meta e ritmo do próprio consultor com a conta (contrato §25.5); ausente em respostas antigas guardadas no aparelho. */
   goal?: (GoalView & { params: GoalParams }) | null;
   /** Cadastros confirmados pelo Freela hoje/na semana (contrato §27.8); ausente em respostas antigas. */
@@ -158,6 +168,8 @@ export interface CheckinPayload extends Posicao {
   lead_id?: string;
   new_place?: { name: string; address?: string };
   confirm_new?: boolean;
+  /** Contrato §31.2: o fluxo da tela em que o consultor abriu a visita (só quando a flag está ligada). */
+  flow?: FluxoVisita;
   place_name: string;
 }
 
@@ -186,6 +198,8 @@ export type ItemFila = AcaoFila & {
   /** Epoch ms antes do qual não tenta de novo (espera crescente). */
   proxima_em: number;
   criado_em: number;
+  /** Desfazer (contrato §31.7): epoch ms antes do qual o item NÃO sai, mesmo com sinal (o `online` não zera). */
+  segurar_ate?: number;
   /** Checkout recusado com 422 (questionário incompleto): mensagem da API; a fila para aqui até o consultor corrigir. */
   bloqueio?: string;
 };

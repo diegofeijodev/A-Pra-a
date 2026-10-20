@@ -17,9 +17,9 @@ import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
  * Roteiro dentro da tela Hoje (UX §4.2): "12 de 30", ritmo com a conta, próxima parada com
  * Maps/Waze e Pular / Deixar para depois. Desabilitado pela equipe = não renderiza nada.
  */
-export function RoteiroCard() {
+export function RoteiroCard({ fechadoContaNaMeta = false }: { fechadoContaNaMeta?: boolean } = {}) {
   const rot = useRoteiro();
-  const { dia } = useDia();
+  const { dia } = useDia(fechadoContaNaMeta);
   const qc = useQueryClient();
   const [gerando, setGerando] = useState(false);
 

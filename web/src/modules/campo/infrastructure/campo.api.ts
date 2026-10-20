@@ -80,6 +80,8 @@ export async function campoCheckin(p: CheckinPayload, foto: Blob): Promise<Visit
   if (p.lead_id) form.append('lead_id', p.lead_id);
   if (p.new_place) form.append('new_place', JSON.stringify(p.new_place));
   if (p.confirm_new !== undefined) form.append('confirm_new', String(p.confirm_new));
+  // Contrato §31.2: o fluxo da tela em que a visita foi aberta (só existe quando a flag está ligada).
+  if (p.flow) form.append('flow', p.flow);
   form.append('photo', foto, 'fachada.jpg');
   const { data } = await campoApi.post('/v1/campo/visits', form, { timeout: 120_000 });
   return data as VisitView;
@@ -88,6 +90,11 @@ export async function campoCheckin(p: CheckinPayload, foto: Blob): Promise<Visit
 export async function campoSalvarRespostas(ref: string, respostas: VisitAnswers): Promise<VisitView> {
   const { data } = await campoApi.patch(`/v1/campo/visits/${ref}/answers`, respostas);
   return data as VisitView;
+}
+
+/** `DELETE /v1/campo/visits/:ref` — cancelar a visita aberta por engano (contrato §31.7). 404 = já não existe. */
+export async function campoCancelarVisita(ref: string): Promise<void> {
+  await campoApi.delete(`/v1/campo/visits/${encodeURIComponent(ref)}`);
 }
 
 export async function campoCheckout(ref: string, p: Posicao): Promise<VisitView> {

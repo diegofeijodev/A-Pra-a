@@ -44,6 +44,8 @@ export async function drenarCom(d: DepsMotor): Promise<ResultadoDrenagem> {
     // Checkout com questionário incompleto: a fila espera o consultor corrigir.
     if (cabeca.kind === 'checkout' && cabeca.bloqueio) return 'bloqueada';
     if (cabeca.proxima_em > d.agora()) return 'esperando';
+    // "Desfazer" (contrato §31.7): o checkout do fluxo simples espera alguns segundos NA CABEÇA da fila — nada passa na frente.
+    if ((cabeca.segurar_ate ?? 0) > d.agora()) return 'esperando';
 
     let falha: unknown = null;
     try {

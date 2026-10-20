@@ -10,8 +10,8 @@ import { minutosSp, ritmoLocal, ritmoTexto } from '@/modules/rotas/domain/rota-l
  * roteiro já mostra a mesma conta (mesmas visitas, mesma meta) e este não aparece.
  * O ritmo é recalculado com o relógio do aparelho — funciona sem sinal.
  */
-export function MetaCard() {
-  const { dia, hoje } = useDia();
+export function MetaCard({ fechadoContaNaMeta = false }: { fechadoContaNaMeta?: boolean } = {}) {
+  const { dia, hoje } = useDia(fechadoContaNaMeta);
   const goal = hoje?.goal ?? null;
   const [agora, setAgora] = useState(() => Date.now());
   useEffect(() => {

@@ -81,17 +81,42 @@ export function drenar(): Promise<void> {
 }
 
 /** Toda ação do consultor passa por aqui — com sinal, sai na hora; sem sinal, espera. */
-export async function enfileirar(acao: AcaoFila, consultantId: string): Promise<void> {
+export async function enfileirar(
+  acao: AcaoFila,
+  consultantId: string,
+  /**
+   * `completo`: o rascunho está completo? (o fluxo simples decide por `faltandoSimples`; sem isso vale o `faltando` do
+   * completo). `segurarMs`: o item espera na cabeça da fila (desfazer do checkout simples, contrato §31.7).
+   */
+  opcoes: { completo?: boolean; segurarMs?: number } = {},
+): Promise<void> {
   const info = { consultant_id: consultantId, tentativas: 0, proxima_em: 0, criado_em: Date.now() };
   if (acao.kind === 'answers') {
+    const completo = opcoes.completo ?? faltando(acao.payload, todaySp()).length === 0;
     // Atômico: troca do rascunho + checkout (e o que vinha atrás dele) numa transação só.
-    await reposicionar(consultantId, (fila) => planejarRascunho(fila, acao, info, faltando(acao.payload, todaySp()).length === 0));
+    await reposicionar(consultantId, (fila) => planejarRascunho(fila, acao, info, completo));
   } else {
-    await adicionarNaFila({ ...acao, ...info });
+    await adicionarNaFila({ ...acao, ...info, ...(opcoes.segurarMs ? { segurar_ate: Date.now() + opcoes.segurarMs } : {}) });
   }
   await recarregar();
   // Duas voltas: se uma drenagem já estava terminando, a segunda pega o item novo.
   void drenar().then(() => drenar());
+  // O item seguro sai logo depois de liberado (sem esperar o relógio de 15 s).
+  if (opcoes.segurarMs) window.setTimeout(() => void drenar(), opcoes.segurarMs + 300);
+}
+
+/**
+ * "Desfazer" (contrato §31.7): tira da fila o checkout desta visita que ainda está seguro. Devolve `false` se ele
+ * já saiu (ou não existe) — aí não há o que desfazer.
+ */
+export async function desfazerCheckout(ref: string, consultantId: string): Promise<boolean> {
+  const alvo = (await listarFila()).find(
+    (i) => i.consultant_id === consultantId && i.kind === 'checkout' && i.visit_ref === ref && (i.segurar_ate ?? 0) > Date.now(),
+  );
+  if (!alvo) return false;
+  await removerDaFila(alvo.seq as number);
+  await recarregar();
+  return true;
 }
 
 async function zerarEspera(consultantId: string): Promise<void> {

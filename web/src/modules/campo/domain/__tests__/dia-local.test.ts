@@ -61,7 +61,7 @@ describe('montarDia — o dia como o consultor vê, com a fila por cima', () => 
     const dia = montarDia(hoje({ journey: JORNADA, visits: [visita({})] }), fila);
     expect(dia.visitaAberta).toBeNull();
     expect(dia.visitas[0]).toMatchObject({ ref: 'v1', checkout_at: POS.at, pendente: true, cadastrou_qr: true });
-    expect(dia.contadores).toEqual({ visitas: 1, feitas: 1, fechadas: 0, cadastrou_qr: 1 });
+    expect(dia.contadores).toEqual({ visitas: 1, feitas: 1, fechadas: 0, cadastrou_qr: 1, cadastrou_agora: 0 });
   });
 
   it('visita fechada à meia-noite não é "aberta"', () => {

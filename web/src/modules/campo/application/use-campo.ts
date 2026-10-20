@@ -55,11 +55,11 @@ export function useHojeServidor() {
  * O dia na tela: servidor + fila por cima. Sem sinal e sem retrato de hoje, não
  * fica "Carregando…" para sempre: a tela anda só com a fila.
  */
-export function useDia(): { dia: DiaLocal; carregando: boolean; hoje: TodayView | undefined } {
+export function useDia(fechadoContaNaMeta = false): { dia: DiaLocal; carregando: boolean; hoje: TodayView | undefined } {
   const hoje = useHojeServidor();
   const itens = useFilaStore((s) => s.itens);
   const online = useOnline();
-  const dia = useMemo(() => montarDia(hoje.data ?? null, itens), [hoje.data, itens]);
+  const dia = useMemo(() => montarDia(hoje.data ?? null, itens, { fechadoContaNaMeta }), [hoje.data, itens, fechadoContaNaMeta]);
   return { dia, carregando: online && hoje.isPending && !hoje.data, hoje: hoje.data };
 }
 

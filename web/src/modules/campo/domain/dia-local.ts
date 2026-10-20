@@ -10,6 +10,10 @@ export interface VisitaLocal {
   cadastrou_qr: boolean;
   /** Estabelecimento fechado (§30.1): visita sem conversa, fora da meta. */
   fechado: boolean;
+  /** Contrato §31.2: fluxo da visita; sem a informação vale `completo`. */
+  flow: 'simples' | 'completo';
+  /** Fluxo simples: resultado escolhido (`cadastrou`…`fechado`). */
+  result: string | null;
   /** Ainda tem envio na fila. */
   pendente: boolean;
 }
@@ -19,14 +23,14 @@ export interface DiaLocal {
   visitas: VisitaLocal[];
   visitaAberta: VisitaLocal | null;
   /** `visitas` = total de check-ins do dia; `feitas` = só as com conversa (a conta da meta); `fechadas` = fora da meta. */
-  contadores: { visitas: number; feitas: number; fechadas: number; cadastrou_qr: number };
+  contadores: { visitas: number; feitas: number; fechadas: number; cadastrou_qr: number; cadastrou_agora: number };
 }
 
 /**
  * O dia como o consultor vê: o último retrato do servidor (`/today`) com as
  * ações ainda na fila por cima — sem sinal, a tela anda igual.
  */
-export function montarDia(today: TodayView | null, fila: ItemFila[]): DiaLocal {
+export function montarDia(today: TodayView | null, fila: ItemFila[], opcoes: { fechadoContaNaMeta?: boolean } = {}): DiaLocal {
   let jornada: DiaLocal['jornada'] = today?.journey
     ? { client_id: today.journey.client_id, started_at: today.journey.started_at, pendente: false }
     : null;
@@ -38,6 +42,8 @@ export function montarDia(today: TodayView | null, fila: ItemFila[]): DiaLocal {
     auto_closed: v.auto_closed,
     cadastrou_qr: v.answers.freela_status === 'cadastrou_qr',
     fechado: v.answers.outcome === 'fechado',
+    flow: v.flow ?? 'completo',
+    result: v.answers.result ?? null,
     pendente: false,
   }));
   const achar = (ref: string) => visitas.find((v) => v.ref === ref);
@@ -62,6 +68,8 @@ export function montarDia(today: TodayView | null, fila: ItemFila[]): DiaLocal {
             auto_closed: false,
             cadastrou_qr: false,
             fechado: false,
+            flow: item.payload.flow ?? 'completo',
+            result: null,
             pendente: true,
           });
         }
@@ -73,7 +81,9 @@ export function montarDia(today: TodayView | null, fila: ItemFila[]): DiaLocal {
         const v = achar(item.visit_ref);
         if (v) {
           v.cadastrou_qr = item.payload.freela_status === 'cadastrou_qr';
-          v.fechado = item.payload.outcome === 'fechado';
+          // No fluxo simples o rascunho não leva `outcome` (o servidor deriva): vale o resultado escolhido.
+          v.fechado = item.payload.outcome === 'fechado' || item.payload.result === 'fechado';
+          if (item.payload.result !== undefined) v.result = item.payload.result;
         }
         break;
       }
@@ -105,9 +115,11 @@ export function montarDia(today: TodayView | null, fila: ItemFila[]): DiaLocal {
     visitaAberta,
     contadores: {
       visitas: visitas.length,
-      feitas: visitas.filter((v) => !v.fechado).length,
+      // §31.6: no fluxo simples o "fechado" fotografado conta, se configurado (`fechado_conta_na_meta`).
+      feitas: visitas.filter((v) => !v.fechado || (v.flow === 'simples' && opcoes.fechadoContaNaMeta === true)).length,
       fechadas: visitas.filter((v) => v.fechado).length,
       cadastrou_qr: visitas.filter((v) => v.cadastrou_qr).length,
+      cadastrou_agora: visitas.filter((v) => v.result === 'cadastrou').length,
     },
   };
 }
