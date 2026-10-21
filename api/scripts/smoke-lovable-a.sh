@@ -101,24 +101,31 @@ check "período acima de 92 dias = 400" "400" "$(curl -s -o /dev/null -w '%{http
 check "praça inexistente = 404" "404" "$(curl -s -o /dev/null -w '%{http_code}' "$API/v1/consultores/dashboard?praca_id=$(uuid)" -H "$HD")"
 
 echo "── pinos (§34) ──"
+# Mais um estabelecimento visitado por ele e um que ele NUNCA visitou (só no banco de teste), para o isolamento e o cursor.
+V4=$(uuid)
+curl -s -o /dev/null -X POST $API/v1/campo/visits -H "$HC" -F "client_id=$V4" -F "at=$AGORA" -F "lat=$LAT" -F "lng=$LNG" -F "accuracy=12" -F "confirm_new=true" --form-string "new_place={\"name\":\"LovA $SUF café\",\"address\":\"Rua de Teste, 20\"}" -F "photo=@/tmp/praca-smoke-fachada.jpg;type=image/jpeg"
+concluir "$V4" > /dev/null
+$PSQL "insert into leads (id, praca_id, name, entered_at, stage_since, lat, lng) values (gen_random_uuid(), '$PRACA_SEED', 'LovA $SUF outro', '$HOJE', '$HOJE', -19.93, -43.94)" > /dev/null
+OUTRO=$($PSQL "select id from leads where name = 'LovA $SUF outro'" | tr -d '[:space:]')
 P1=$(curl -s "$API/v1/consultores/map/pins?praca_id=$PRACA_SEED" -H "$HD")
 TOTAL=$(echo "$P1" | jq .total)
 check "legenda: 7 situações, soma = total" "7|true" "$(echo "$P1" | jq -r '"\(.legend | length)|\(([.legend[].n] | add) == .total)"')"
 check "o estabelecimento visitado aparece como 'Já usa o Freela'" "ja_usa" "$(echo "$P1" | jq -r --arg l "$LEAD1" '.pins[] | select(.[0]==$l) | .[3]')"
-POR=$(( TOTAL / 4 + 1 )); SOMA=0; CUR=""; VOLTAS=0
+check "o que ninguém visitou aparece como 'A visitar'" "a_visitar" "$(echo "$P1" | jq -r --arg l "$OUTRO" '.pins[] | select(.[0]==$l) | .[3]')"
+POR=$(( TOTAL > 8 ? TOTAL / 4 + 1 : 1 )); SOMA=0; CUR=""; VOLTAS=0
 while :; do
   PG=$(curl -s "$API/v1/consultores/map/pins?praca_id=$PRACA_SEED&limit=$POR${CUR:+&cursor=$CUR}" -H "$HD")
   SOMA=$(( SOMA + $(echo "$PG" | jq '.pins | length') )); CUR=$(echo "$PG" | jq -r '.next_cursor // empty'); VOLTAS=$((VOLTAS+1))
   [ -z "$CUR" ] || [ "$VOLTAS" -gt 20 ] && break
 done
-check "soma das páginas (cursor) = total" "$TOTAL" "$SOMA"
+check "soma das páginas (cursor) = total, em mais de uma página" "$TOTAL|true" "$SOMA|$([ "$VOLTAS" -gt 1 ] && echo true || echo false)"
 check "modo etapa: 8 etapas do funil" "8|true" "$(curl -s "$API/v1/consultores/map/pins?praca_id=$PRACA_SEED&mode=estagio" -H "$HD" | jq -r '"\(.legend | length)|\(([.legend[].n] | add) == .total)"')"
 DET=$(curl -s $API/v1/consultores/map/pins/$LEAD1 -H "$HD")
 check "balão: situação, última visita e sem telefone inteiro" "ja_usa|LovA $SUF|0" "$(echo "$DET" | jq -r '"\(.category.code)|\(.last_visit.consultant_name)"')|$(echo "$DET" | grep -c '99999-0000')"
 check "detalhe de id malformado = 404" "404" "$(curl -s -o /dev/null -w '%{http_code}' $API/v1/consultores/map/pins/nao-e-uuid -H "$HD")"
 check "bbox inválido = 400" "400" "$(curl -s -o /dev/null -w '%{http_code}' "$API/v1/consultores/map/pins?bbox=1,2" -H "$HD")"
 PC=$(curl -s $API/v1/campo/map/pins -H "$HC")
-check "consultor vê só o que passou por ele (1 estabelecimento)" "1|$LEAD1" "$(echo "$PC" | jq -r '"\(.total)|\(.pins[0][0])"')"
+check "consultor vê só o que passou por ele (2 estabelecimentos, sem o 'outro')" "2|0" "$(echo "$PC" | jq -r --arg o "$OUTRO" '"\(.total)|\([.pins[] | select(.[0]==$o)] | length)"')"
 
 echo "── versão inicial da regra (§28.5, L0) ──"
 EC=$(curl -s $API/v1/consultores/earnings/config -H "$HD")

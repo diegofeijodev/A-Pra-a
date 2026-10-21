@@ -955,6 +955,28 @@ console.log('-- Campo: GPS negado --');
       check('Declarados: relatório com resumo e filtros', (await corpo(page)).includes('resumo do período') && (await corpo(page)).includes('sem correspondência'));
     }
   }
+
+  // ── Restante da Lovable, lote A (contrato §33/§34): links e telas só com as flags; desligadas, nada é sondado (sem 404) ──
+  console.log('-- Equipe: lote A da Lovable (painel, resumo do dia, mapa por situação) --');
+  const lov = (await api('GET', '/v1/consultores/settings/config')).features ?? {};
+  await page.goto(`${BASE}/consultores`, { waitUntil: 'networkidle' });
+  check('Consultores: link "Painel" só com o painel ligado', ((await page.getByRole('link', { name: 'Painel', exact: true }).count()) === 1) === !!lov.dashboard);
+  check('Consultores: link "Mapa por situação" só com o mapa ligado', ((await page.getByRole('link', { name: 'Mapa por situação', exact: true }).count()) === 1) === !!lov.map_pins);
+  await page.goto(`${BASE}/consultores/painel`, { waitUntil: 'networkidle' });
+  if (lov.dashboard) {
+    await page.getByText('Painel ao vivo da operação').first().waitFor({ timeout: 20000 });
+    await page.getByText('Visitas concluídas').first().waitFor({ timeout: 20000 });
+    check('Painel: os 8 cartões, cada um com "De onde vem"', (await page.getByText('ⓘ De onde vem').count()) === 8);
+  } else {
+    check('Painel desligado: avisa, sem chamar a rota', (await corpo(page)).includes('ainda não está ligado neste servidor'));
+  }
+  await page.goto(`${BASE}/consultores/mapa`, { waitUntil: 'networkidle' });
+  if (lov.map_pins) {
+    await page.getByText('Situação (toque para esconder ou mostrar)').waitFor({ timeout: 20000 });
+    check('Mapa por situação: legenda com as 7 situações', (await corpo(page)).includes('a visitar') && (await corpo(page)).includes('estabelecimento fechado'));
+  } else {
+    check('Mapa por situação desligado: avisa, sem chamar a rota', (await corpo(page)).includes('ainda não está ligado neste servidor'));
+  }
 } catch (e) {
   ko('roteiro do campo interrompido', String(e).slice(0, 300));
 } finally {
