@@ -153,6 +153,8 @@ export function useFilaRunner(consultantId: string | null): void {
       await Promise.all([
         queryClient.refetchQueries({ queryKey: ['campo', 'today'] }),
         queryClient.refetchQueries({ queryKey: ['campo', 'route'] }),
+        // Resultado do dia (contrato §33.5): o encerrar que estava na fila muda a conta ("até agora" → dia fechado).
+        queryClient.invalidateQueries({ queryKey: ['campo', 'resumo'] }),
       ]);
     };
     void recarregar();
