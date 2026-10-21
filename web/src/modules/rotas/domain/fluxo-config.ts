@@ -29,6 +29,8 @@ export type ConfigModo = z.infer<typeof configModoSchema>;
 export const configModoViewSchema = configModoSchema.extend({
   presets: z.object({ completo: configModoSchema, chefe: configModoSchema }),
   atualizado_em: z.string().nullable().optional(),
+  /** Raio do check-in (contrato §23.1, L0): só leitura aqui (o rótulo "mais de N m"); servidor antigo não manda = 200. */
+  raio_checkin_m: z.number().optional(),
 });
 export type ConfigModoView = z.infer<typeof configModoViewSchema>;
 

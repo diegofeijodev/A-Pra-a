@@ -250,7 +250,7 @@ function FluxoVisitaConfig({ admin }: { admin: boolean }) {
             </select>
           </div>
           <div className="space-y-1">
-            <Label htmlFor="fv-just">Visita longe do local (mais de 200 m)</Label>
+            <Label htmlFor="fv-just">Visita longe do local (mais de {data.raio_checkin_m ?? 200} m)</Label>
             <select id="fv-just" disabled={!admin} className={sel} value={form.justificativa_distancia} onChange={(e) => set({ justificativa_distancia: e.target.value as ConfigModo['justificativa_distancia'] })}>
               <option value="nao">Só marcar</option>
               <option value="opcional">Pedir o motivo, sem obrigar</option>

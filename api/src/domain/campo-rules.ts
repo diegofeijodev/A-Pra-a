@@ -8,8 +8,10 @@
 import { randomInt } from 'node:crypto';
 import { isUuid } from '../common/ids/uuid';
 import { MOTIVO_RECUSA_COM_TEXTO, CHAVES_MOTIVO_RECUSA, rotuloMotivoRecusa } from './catalog/refusal';
+import { grupoConfig, inteiroEntre } from './config-grupo';
 import { norm } from './dedup';
 
+/** Raio "longe do local" de hoje. Fase L0: vira `field_config.raio_checkin_m` com este MESMO padrão (contrato §23.1). */
 export const RAIO_LONGE_M = 200;
 export const RAIO_DUPLICADO_M = 100;
 export const RAIO_PERTO_M = 500;
@@ -56,15 +58,25 @@ export function distanciaM(a: Coordenada, b: Coordenada): number {
   return Math.round(2 * RAIO_TERRA_M * Math.asin(Math.sqrt(h)));
 }
 
-/** Marca "longe do local": só marca, não bloqueia; sem localização no estabelecimento, sem marca. */
+/**
+ * Marca "longe do local": só marca, não bloqueia; sem localização no estabelecimento, sem marca. Comparação ESTRITA
+ * (`>`): exatamente no raio não é longe. Sem `raioM`, o de sempre (200 m).
+ */
 export function marcaLonge(
   checkin: Coordenada,
   lugar: { lat: number | null; lng: number | null },
+  raioM: number = RAIO_LONGE_M,
 ): { distance_m: number | null; far_from_place: boolean } {
   if (lugar.lat == null || lugar.lng == null) return { distance_m: null, far_from_place: false };
   const d = distanciaM(checkin, { lat: lugar.lat, lng: lugar.lng });
-  return { distance_m: d, far_from_place: d > RAIO_LONGE_M };
+  return { distance_m: d, far_from_place: d > raioM };
 }
+
+/** `field_config.raio_checkin_m` (contrato §23.1, Lovable `configuracoes.raio_checkin_m`): 50–1000 m, padrão 200. Sem flag. */
+export interface ConfigCheckin {
+  raio_checkin_m: number;
+}
+export const CONFIG_CHECKIN = grupoConfig<ConfigCheckin>({ raio_checkin_m: RAIO_LONGE_M }, { raio_checkin_m: inteiroEntre(50, 1000) });
 
 /** Retângulo que contém o círculo — filtro barato no banco antes do haversine. */
 export function caixaEnvolvente(c: Coordenada, raioM: number) {

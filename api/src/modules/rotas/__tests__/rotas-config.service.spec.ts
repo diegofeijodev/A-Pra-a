@@ -12,7 +12,8 @@ const falha = async (f: () => Promise<unknown>) => f().then(() => null, (e: unkn
 describe('RotasConfigService', () => {
   it('sem linha no banco: devolve os padrões e nenhum autor', async () => {
     const s = new RotasConfigService(fakePrisma() as unknown as PrismaService);
-    expect(await s.view()).toEqual({ ...CONFIG_ROTA_PADRAO, ...CONFIG_ALERTAS_PADRAO, ...CONFIG_MODO_PADRAO, presets: PRESETS_MODO, confirmation_rule: 'activated', atualizado_por: null, atualizado_em: null });
+    // Lote A da Lovable: + raio_checkin_m (aditivo, contrato §23.1).
+    expect(await s.view()).toEqual({ ...CONFIG_ROTA_PADRAO, ...CONFIG_ALERTAS_PADRAO, ...CONFIG_MODO_PADRAO, raio_checkin_m: 200, presets: PRESETS_MODO, confirmation_rule: 'activated', atualizado_por: null, atualizado_em: null });
   });
 
   it('PUT parcial: mescla, grava quem/quando e preserva chaves de outras fases', async () => {
@@ -106,6 +107,32 @@ describe('RotasConfigService', () => {
     it('modo() lê o padrão da spec quando não há nada salvo', async () => {
       const s = new RotasConfigService(fakePrisma() as unknown as PrismaService);
       expect(await s.modo()).toEqual(CONFIG_MODO_PADRAO);
+    });
+  });
+
+  describe('Restante da Lovable — raio do check-in (§23.1, L0)', () => {
+    it('padrão 200 sem nada gravado; PUT grava SÓ a chave enviada; null vale como ausente', async () => {
+      expect((await new RotasConfigService(fakePrisma() as unknown as PrismaService).checkin()).raio_checkin_m).toBe(200);
+      const p = fakePrisma();
+      p.app_settings.findUnique.mockResolvedValue({ field_config: { meta_diaria: 25, raio_checkin_m: 300 } });
+      const s = new RotasConfigService(p as unknown as PrismaService);
+      await s.atualizar({ raio_checkin_m: null, minutos_por_visita: 9 } as never, ADMIN, AGORA);
+      expect(p.app_settings.upsert.mock.calls[0][0].update.field_config).toMatchObject({ raio_checkin_m: 300, minutos_por_visita: 9 });
+      const p2 = fakePrisma();
+      await new RotasConfigService(p2 as unknown as PrismaService).atualizar({ fluxo_visita: 'simples' }, ADMIN, AGORA);
+      expect(p2.app_settings.upsert.mock.calls[0][0].update.field_config).not.toHaveProperty('raio_checkin_m');
+      const p3 = fakePrisma();
+      await new RotasConfigService(p3 as unknown as PrismaService).atualizar({ raio_checkin_m: 150 } as never, ADMIN, AGORA);
+      expect(p3.app_settings.upsert.mock.calls[0][0].update.field_config).toMatchObject({ raio_checkin_m: 150 });
+    });
+    it('fora de 50–1000 → 400 e nada gravado', async () => {
+      const p = fakePrisma();
+      const s = new RotasConfigService(p as unknown as PrismaService);
+      for (const dto of [{ raio_checkin_m: 49 }, { raio_checkin_m: 1001 }, { raio_checkin_m: 10.5 }]) {
+        const e = await falha(() => s.atualizar(dto as never, ADMIN, AGORA));
+        expect((e as { getStatus: () => number }).getStatus()).toBe(400);
+      }
+      expect(p.app_settings.upsert).not.toHaveBeenCalled();
     });
   });
 });

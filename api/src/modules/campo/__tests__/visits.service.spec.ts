@@ -181,6 +181,31 @@ describe('VisitsService.checkin', () => {
     expect(p.leads.create).not.toHaveBeenCalled();
   });
 
+  it('raio do check-in configurável (§23.1, L0): 222 m com raio 250 não é longe; com o padrão (200) é', async () => {
+    const p = fakePrisma();
+    p.leads.findFirst.mockResolvedValue({ id: LEAD, lat: -19.9225, lng: -43.9352 });
+    const { journeys, places, fotos } = montar(p);
+    const configs = { checkin: jest.fn().mockResolvedValue({ raio_checkin_m: 250 }) };
+    const s = new VisitsService(
+      p as unknown as PrismaService,
+      journeys as unknown as JourneysService,
+      places as unknown as PlacesService,
+      fotos as unknown as PhotoStorage,
+      false,
+      undefined,
+      undefined,
+      configs as never,
+    );
+    await s.checkin(C, checkinDto({ lead_id: LEAD }), JPEG, AGORA);
+    expect(dataDo(p.field_visits.create)).toMatchObject({ distance_m: 222, far_from_place: false });
+    const p2 = fakePrisma();
+    p2.leads.findFirst.mockResolvedValue({ id: LEAD, lat: -19.9225, lng: -43.9352 });
+    const padrao = { checkin: jest.fn().mockResolvedValue({ raio_checkin_m: 200 }) };
+    const m2 = montar(p2);
+    await new VisitsService(p2 as unknown as PrismaService, m2.journeys as unknown as JourneysService, m2.places as unknown as PlacesService, m2.fotos as unknown as PhotoStorage, false, undefined, undefined, padrao as never).checkin(C, checkinDto({ lead_id: LEAD }), JPEG, AGORA);
+    expect(dataDo(p2.field_visits.create)).toMatchObject({ distance_m: 222, far_from_place: true });
+  });
+
   it('estabelecimento de outra praça = 404', async () => {
     await expect(montar(fakePrisma()).s.checkin(C, checkinDto({ lead_id: LEAD }), JPEG, AGORA)).rejects.toMatchObject({
       response: { code: 'NOT_FOUND' },

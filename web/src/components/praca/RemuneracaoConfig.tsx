@@ -17,6 +17,7 @@ import {
   formParaRegra,
   regraParaForm,
   resumoRegra,
+  rotuloVersao,
   sugerirInicio,
   tituloSimulacao,
   type FormRegra,
@@ -40,10 +41,11 @@ function Campo({ id, titulo, ajuda, children }: { id: string; titulo: string; aj
 }
 
 function Versao({ v, atual }: { v: VersaoRegra; atual?: boolean }) {
+  const r = rotuloVersao(v);
   return (
     <div className="space-y-1">
       <p className="text-sm font-bold">
-        Versão {v.version} · vale desde {diaMes(v.valid_from)}/{v.valid_from.slice(0, 4)}
+        {r.titulo}
         {atual ? ' (vigente hoje)' : ''}
       </p>
       <ul className="list-disc space-y-0.5 pl-5 text-sm text-muted-foreground">
@@ -51,10 +53,7 @@ function Versao({ v, atual }: { v: VersaoRegra; atual?: boolean }) {
           <li key={l}>{l}</li>
         ))}
       </ul>
-      <p className="text-sm text-muted-foreground">
-        {v.created_by ? `Por ${v.created_by}` : 'Padrão inicial'}
-        {v.reason ? ` · ${v.reason}` : ''}
-      </p>
+      {r.autoria && <p className="text-sm text-muted-foreground">{r.autoria}</p>}
     </div>
   );
 }

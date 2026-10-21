@@ -22,9 +22,18 @@ import {
   PRESETS_MODO,
   type ConfigModo,
 } from '../../domain/modo-campo-rules';
+import { CONFIG_CHECKIN, type ConfigCheckin } from '../../domain/campo-rules';
+import type { GrupoConfig } from '../../domain/config-grupo';
 import type { ConfigRotaDto } from './dto/rotas.dto';
 
-export interface ConfigView extends ConfigRota, ConfigAlertas, ConfigCadastro, ConfigModo {
+/**
+ * Grupos de chaves do restante da Lovable (contrato §23.1 e §33.2). Política comum: `null` no PUT vale como ausente (o web
+ * reenvia o que recebeu, lição da S1) e só as chaves ENVIADAS são gravadas (ausente continua = padrão).
+ */
+const GRUPOS_NOVOS: GrupoConfig<object>[] = [CONFIG_CHECKIN as unknown as GrupoConfig<object>];
+const ehChaveNova = (k: string) => GRUPOS_NOVOS.some((g) => g.tem(k));
+
+export interface ConfigView extends ConfigRota, ConfigAlertas, ConfigCadastro, ConfigModo, ConfigCheckin {
   /** Os dois botões de preset da tela (contrato §31.3): só preenchem o formulário. */
   presets: { completo: ConfigModo; chefe: ConfigModo };
   atualizado_por: string | null;
@@ -65,13 +74,20 @@ export class RotasConfigService {
     return lerConfigModo(await this.bruto());
   }
 
+  /** Raio do check-in (contrato §23.1, L0). Sem flag: vale sempre (padrão 200 m = o de hoje). */
+  async checkin(): Promise<ConfigCheckin> {
+    return CONFIG_CHECKIN.ler(await this.bruto());
+  }
+
   async view(): Promise<ConfigView> {
     const raw = await this.bruto();
+    const novos = Object.assign({}, ...GRUPOS_NOVOS.map((g) => g.ler(raw))) as ConfigCheckin;
     return {
       ...lerConfigRota(raw),
       ...lerConfigAlertas(raw),
       ...lerConfigCadastro(raw),
       ...lerConfigModo(raw),
+      ...novos,
       presets: PRESETS_MODO,
       atualizado_por: typeof raw.atualizado_por === 'string' ? raw.atualizado_por : null,
       atualizado_em: typeof raw.atualizado_em === 'string' ? raw.atualizado_em : null,
@@ -92,8 +108,16 @@ export class RotasConfigService {
       Object.entries(parcial).filter(([k, v]) => chavesModo.has(k) && !(v === null && nuloVaiComoAusente.has(k))),
     );
     const daRota = Object.fromEntries(
-      Object.entries(parcial).filter(([k]) => !chavesAlerta.has(k) && !chavesCadastro.has(k) && !chavesModo.has(k)),
+      Object.entries(parcial).filter(([k]) => !chavesAlerta.has(k) && !chavesCadastro.has(k) && !chavesModo.has(k) && !ehChaveNova(k)),
     );
+    const gravarNovos: Record<string, unknown> = {};
+    for (const g of GRUPOS_NOVOS) {
+      const doGrupo = Object.fromEntries(Object.entries(parcial).filter(([k, v]) => g.tem(k) && v !== null));
+      if (Object.keys(doGrupo).length === 0) continue;
+      const n = g.aplicar(g.ler(raw), doGrupo);
+      if (!n.ok) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: n.erro });
+      Object.assign(gravarNovos, pick(n.config, doGrupo));
+    }
     const r = aplicarConfigRota(lerConfigRota(raw), daRota);
     if (!r.ok) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: r.erro });
     const a = aplicarConfigAlertas(lerConfigAlertas(raw), doAlerta);
@@ -104,7 +128,7 @@ export class RotasConfigService {
     if (!m.ok) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: m.erro });
     // Preserva as chaves de outras fases que já estejam no JSON. As do modo só entram quando o PUT as traz:
     // gravar o padrão em toda chave faria "chave ausente" (fluxo_visita) virar escolha da equipe sem querer.
-    const novo = { ...raw, ...r.config, ...a.config, ...c.config, ...pick(m.config, doModo), atualizado_por: user.id, atualizado_em: agora.toISOString() };
+    const novo = { ...raw, ...r.config, ...a.config, ...c.config, ...pick(m.config, doModo), ...gravarNovos, atualizado_por: user.id, atualizado_em: agora.toISOString() };
     await this.prisma.app_settings.upsert({
       where: { id: 1 },
       update: { field_config: novo as Prisma.InputJsonValue },

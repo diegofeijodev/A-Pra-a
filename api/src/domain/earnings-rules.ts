@@ -73,6 +73,12 @@ export interface VersaoRegra {
 }
 
 /** Padrão INICIAL (versão 1). Editável: nunca é lido como constante de negócio fora daqui. */
+/**
+ * Vigência da versão 1, gravada pela migração `20261023100000_field_earnings`: sentinela "vale desde sempre" (é o que faz
+ * `versaoVigente` cobrir qualquer dia). NUNCA muda no banco (o trigger barra UPDATE); a tela traduz (contrato §28.5, item 15).
+ */
+export const VIGENCIA_INICIAL = '1970-01-01';
+
 export const REGRA_PADRAO: RegraRemuneracao = {
   unit_cents: 1000,
   tiers_period: 'day',

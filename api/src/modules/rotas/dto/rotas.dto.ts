@@ -62,6 +62,8 @@ export class ConfigRotaDto {
   // S3 (contrato §32.7): alerta de divergência do ganho declarado.
   @IsOptional() @IsInt() @Min(1) @Max(1000) divergencia_alerta_min?: number;
   @IsOptional() @IsInt() @Min(1) @Max(100) divergencia_alerta_pct?: number;
+  // Restante da Lovable (contrato §23.1 e §33.2): sem inicializador; `null` vale como ausente; a faixa é conferida no domínio.
+  @IsOptional() @IsInt() @Min(50) @Max(1000) raio_checkin_m?: number | null;
 }
 
 export class PosicaoRotaDto {

@@ -48,6 +48,7 @@ import {
   type PhotoStorage,
 } from './photo-storage';
 import { ModoCampoService } from '../rotas/modo-campo.service';
+import { RotasConfigService } from '../rotas/rotas-config.service';
 import { ROTAS_LIGADAS } from '../rotas/rotas.tokens';
 import { PlacesService } from './places.service';
 import { violouUnico } from './prisma-errors';
@@ -80,6 +81,7 @@ export class VisitsService {
     @Optional() @Inject(ROTAS_LIGADAS) private readonly rotas: boolean = false,
     @Optional() private readonly modo?: ModoCampoService,
     @Optional() private readonly declared?: DeclaredSignupsService,
+    @Optional() private readonly configs?: RotasConfigService,
   ) {}
 
   /** Parâmetros do modo do chefe (§31.3); flag desligada = nenhuma visita é `simples`, o padrão basta. */
@@ -134,7 +136,8 @@ export class VisitsService {
           message: 'Estabelecimento não encontrado na sua praça.',
         });
       leadId = lead.id;
-      marca = marcaLonge(ponto, lead);
+      // Raio configurável (contrato §23.1, L0): sem configuração, o de sempre (200 m, `RAIO_LONGE_M`).
+      marca = marcaLonge(ponto, lead, this.configs ? (await this.configs.checkin()).raio_checkin_m : undefined);
     } else {
       const lugar = dto.new_place!;
       // Sem "é outro" confirmado (check-in feito sem sinal, sem como perguntar),

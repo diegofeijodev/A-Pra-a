@@ -39,6 +39,7 @@ import {
   validarRegra,
   validarVigencia,
   versaoVigente,
+  VIGENCIA_INICIAL,
   type DeltaLancamento,
   type EntradaDia,
   type JaLancado,
@@ -137,6 +138,9 @@ export const versaoView = (v: VersaoRegistrada) => ({
   reason: v.reason,
   created_by: v.created_by_name,
   created_at: v.created_at.toISOString(),
+  /** Item 15 (contrato §28.5): a versão 1 da migração ("vale desde o começo"); `valid_from` continua a sentinela. */
+  is_initial: v.valid_from === VIGENCIA_INICIAL,
+  installed_at: v.created_at.toISOString(),
   /** Como foi gravada (13 chaves + as novas que existirem). */
   config: v.config,
   /** A regra completa (chaves ausentes preenchidas com o padrão = comportamento atual). */
@@ -667,7 +671,7 @@ export class EarningsService {
       from,
       to: addDays(from, 6),
       hoje: addDays(from, dto.days.length - 1),
-      versoes: [{ version: version ?? 0, valid_from: '1970-01-01', config: regra }],
+      versoes: [{ version: version ?? 0, valid_from: VIGENCIA_INICIAL, config: regra }],
       entradas,
     });
     return {

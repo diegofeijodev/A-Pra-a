@@ -66,8 +66,39 @@ export const versaoSchema = z.object({
   config: regraSchema,
   /** A regra com todas as chaves (ausentes preenchidas); servidor novo. */
   config_effective: regraSchema.optional(),
+  /** Item 15 (contrato §28.5): a versão 1 da instalação ("vale desde o começo"). Servidor antigo não manda. */
+  is_initial: z.boolean().optional(),
+  installed_at: z.string().optional(),
 });
 export type VersaoRegra = z.infer<typeof versaoSchema>;
+
+/** Sentinela "vale desde sempre" gravada na versão 1 (nunca muda no banco; a tela traduz). */
+export const VIGENCIA_INICIAL = '1970-01-01';
+
+const dataBrasilia = (iso: string): string =>
+  new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' });
+
+/**
+ * Título e autoria de uma versão da regra. A versão inicial não mostra "vale desde 01/01/1970" nem "Por sistema"
+ * (bug do item 15): diz que vale desde o começo e quando foi instalada, no dia de Brasília.
+ */
+export function rotuloVersao(v: Pick<VersaoRegra, 'version' | 'valid_from' | 'created_by' | 'reason' | 'created_at' | 'is_initial' | 'installed_at'>): {
+  titulo: string;
+  autoria: string;
+} {
+  const inicial = v.is_initial ?? v.valid_from === VIGENCIA_INICIAL;
+  if (inicial) {
+    return {
+      titulo: `Versão ${v.version} · padrão inicial (vale desde o começo; instalada em ${dataBrasilia(v.installed_at ?? v.created_at)})`,
+      autoria: v.reason ?? '',
+    };
+  }
+  const autor = v.created_by ? `Por ${v.created_by}` : 'Padrão inicial';
+  return {
+    titulo: `Versão ${v.version} · vale desde ${diaMes(v.valid_from)}/${v.valid_from.slice(0, 4)}`,
+    autoria: `${autor}${v.reason ? ` · ${v.reason}` : ''}`,
+  };
+}
 
 export const configRespostaSchema = z.object({
   current: versaoSchema,
