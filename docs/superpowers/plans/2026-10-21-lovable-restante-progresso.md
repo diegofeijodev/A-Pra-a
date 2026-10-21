@@ -24,6 +24,6 @@ Desenho: `docs/superpowers/specs/2026-10-21-lovable-restante-arquitetura.md` (ar
 - [ ] B: L3 (checklist + cronômetro), L4 (intervalo)
 - [ ] C: L5 (segmentos), L6a (vouchers), L6b (cupom no Freela)
 - [ ] D: L7 (planos/N rotas + "Minhas rotas"), L8 (shoppings; dry-run Overpass em BH antes)
-- [ ] E: L9 (senha + cadastro + e-mail do contato), L10 (gestor)
+- [ ] E: L9 (senha + cadastro + e-mail do contato), L10 (gestor) + pendências de navegação do lote A (menu agrupado da equipe, "Início" como página inicial da equipe, aba Clientes/Lista, mapa do consultor no celular)
 - [ ] F: L11 (bônus mensal), L12 (várias praças), L13 (regra por consultor)
 - [ ] Verificação final (suíte completa, lint, typecheck, smoke, browser-check) e subida única
