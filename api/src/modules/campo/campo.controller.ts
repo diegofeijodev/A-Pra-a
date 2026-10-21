@@ -20,6 +20,7 @@ import { CampoConsultant } from '../../common/auth/campo-consultant';
 import { AllowPendingPassword, CampoRoute } from '../../common/decorators/campo-route.decorator';
 import { CurrentConsultant } from '../../common/decorators/current-consultant.decorator';
 import { ModoCampoService } from '../rotas/modo-campo.service';
+import { LOVABLE_A_FLAGS, type FlagsLovableA } from '../rotas/rotas.tokens';
 import { CampoAuthService } from './campo-auth.service';
 import { COMPANY_SIGNUP_LIGADO } from './company-signup.tokens';
 import { AnswersDto, PlacesQueryDto, PontosDto, PosicaoDto, SimilarQueryDto, StartJourneyDto } from './dto/campo.dto';
@@ -47,6 +48,7 @@ export class CampoController {
     @Optional() @Inject(EARNINGS_OPCOES) private readonly earnings?: OpcoesEarnings,
     @Optional() @Inject(PAYOUTS_OPCOES) private readonly payouts?: OpcoesPayouts,
     @Optional() private readonly modo?: ModoCampoService,
+    @Optional() @Inject(LOVABLE_A_FLAGS) private readonly lovable?: FlagsLovableA,
   ) {}
 
   @AllowPendingPassword()
@@ -72,7 +74,16 @@ export class CampoController {
             },
           }
         : {}),
-      features: { company_signup: this.signupLigado, earnings: this.earnings?.ligado ?? false, payouts: this.payouts?.ligado ?? false, visit_flow: ligado, declared_signups: this.earnings?.declaradasLigado ?? false },
+      features: {
+        company_signup: this.signupLigado,
+        earnings: this.earnings?.ligado ?? false,
+        payouts: this.payouts?.ligado ?? false,
+        visit_flow: ligado,
+        declared_signups: this.earnings?.declaradasLigado ?? false,
+        // Restante da Lovable, lote A (contrato §33.1): resumo do dia e mapa de pinos.
+        day_summary: this.lovable?.day_summary ?? false,
+        map_pins: this.lovable?.map_pins ?? false,
+      },
     };
   }
 

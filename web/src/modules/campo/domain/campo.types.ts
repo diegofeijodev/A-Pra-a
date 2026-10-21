@@ -33,7 +33,7 @@ export interface CampoMeResponse {
   consultant: CampoConsultantMe;
   channels: string[];
   /** Chaves do servidor que ligam telas (contrato §26.3). Ausente em respostas antigas guardadas no aparelho. */
-  features?: { company_signup: boolean; earnings?: boolean; payouts?: boolean; visit_flow?: boolean };
+  features?: { company_signup: boolean; earnings?: boolean; payouts?: boolean; visit_flow?: boolean; declared_signups?: boolean; day_summary?: boolean; map_pins?: boolean };
   /** Modo do chefe §31.4: o fluxo que vale agora para ele. Ausente em respostas antigas guardadas no aparelho = `completo`. */
   visit_flow?: FluxoVisita;
   /** Só com a flag ligada: o que a tela confere sem sinal (o servidor decide). */

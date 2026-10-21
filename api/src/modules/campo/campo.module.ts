@@ -29,6 +29,11 @@ import { PAYOUTS_REPOSITORY, PrismaPayoutsRepository } from './payouts/payouts.r
 import { PayoutsService } from './payouts/payouts.service';
 import { payoutsOpcoesProvider } from './payouts/payouts.tokens';
 import { FollowupsService } from './followups.service';
+import { CadastrosDoDiaService } from './painel/cadastros-do-dia.service';
+import { DashboardLigadoGuard, DaySummaryLigadoGuard, MapPinsLigadoGuard } from './painel/lovable.guards';
+import { PainelEquipeController, ResumoDiaCampoController, ResumoDiaEquipeController } from './painel/painel.controller';
+import { PainelService } from './painel/painel.service';
+import { ResumoDiaService } from './painel/resumo-dia.service';
 import { HeatmapService } from './heatmap.service';
 import { JourneysService } from './journeys.service';
 import { criarPhotoStorage, PHOTO_STORAGE } from './photo-storage';
@@ -54,6 +59,10 @@ import { VisitsService } from './visits.service';
     EarningsEquipeController,
     DeclaredSignupsEquipeController,
     PayoutsEquipeController,
+    // Restante da Lovable, lote A (contrato §33): antes do `:id` de ConsultoresController.
+    PainelEquipeController,
+    ResumoDiaEquipeController,
+    ResumoDiaCampoController,
     PayoutsCampoController,
     EarningsCampoController,
     SignupsCampoController,
@@ -89,6 +98,12 @@ import { VisitsService } from './visits.service';
     PayoutsService,
     PayoutsLigadoGuard,
     payoutsOpcoesProvider,
+    CadastrosDoDiaService,
+    PainelService,
+    ResumoDiaService,
+    DashboardLigadoGuard,
+    DaySummaryLigadoGuard,
+    MapPinsLigadoGuard,
     { provide: PAYOUTS_REPOSITORY, useClass: PrismaPayoutsRepository },
     { provide: EARNINGS_REPOSITORY, useClass: PrismaEarningsRepository },
     { provide: EARNINGS_INPUTS, useClass: PrismaEarningsInputs },

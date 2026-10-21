@@ -64,6 +64,13 @@ export class ConfigRotaDto {
   @IsOptional() @IsInt() @Min(1) @Max(100) divergencia_alerta_pct?: number;
   // Restante da Lovable (contrato §23.1 e §33.2): sem inicializador; `null` vale como ausente; a faixa é conferida no domínio.
   @IsOptional() @IsInt() @Min(50) @Max(1000) raio_checkin_m?: number | null;
+  @IsOptional() @IsIn(['nota', 'numeros', 'desligado']) ui_resumo_dia?: string | null;
+  @IsOptional() @IsInt() @Min(0) @Max(10) nota_peso_rota?: number | null;
+  @IsOptional() @IsInt() @Min(0) @Max(10) nota_peso_conversao?: number | null;
+  @IsOptional() @IsInt() @Min(1) @Max(100) nota_meta_conversao_pct?: number | null;
+  @IsOptional() @IsInt() @Min(15) @Max(480) nota_intervalo_alerta_min?: number | null;
+  @IsOptional() @IsIn(['intervalo', 'duracao']) painel_tempo_medio?: string | null;
+  @IsOptional() @IsInt() @Min(10) @Max(480) painel_gap_max_min?: number | null;
 }
 
 export class PosicaoRotaDto {

@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAreas } from '@/modules/areas/application/use-areas';
 import { useAuth } from '@/modules/auth/application/use-auth';
+import { ConfigLovable } from '@/components/praca/ConfigLovable';
 import { useConfigModo, useSalvarConfigModo } from '@/modules/rotas/application/use-rotas-equipe';
 import { alternar, CAMPOS_CONTATO, RESULTADOS_COM_CONTATO, type ConfigModo } from '@/modules/rotas/domain/fluxo-config';
 import { useConsultores } from '@/modules/consultores/application/use-consultores';
@@ -357,6 +358,7 @@ export function RoteirosEquipe({ praca }: { praca: PracaView }) {
     <div className="mt-4 space-y-5">
       <Configuracao admin={admin} />
       <FluxoVisitaConfig admin={admin} />
+      <ConfigLovable admin={admin} />
 
       {desligado ? (
         <p className="card-surface p-4 text-sm">O roteiro do dia está desligado neste servidor. Peça para ligar `FIELD_ROUTES_ENABLED`.</p>

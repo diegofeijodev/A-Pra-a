@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Optional, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthUser } from '../../common/auth/auth-user';
 import { AdminOnly } from '../../common/decorators/admin-only.decorator';
@@ -6,6 +6,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CandidatosQueryDto, ConfigRotaDto, MontarRotaDto, OrdenarRotaDto, ReotimizarEquipeDto, RotasQueryDto } from './dto/rotas.dto';
 import { RotasConfigService } from './rotas-config.service';
 import { RotasEquipeService } from './rotas-equipe.service';
+import { LOVABLE_A_FLAGS, type FlagsLovableA } from './rotas.tokens';
 
 /**
  * Roteiros vistos e montados pela equipe (§23.4). Leitura: equipe. Escrita: só admin.
@@ -57,11 +58,18 @@ export class RotasEquipeController {
 @ApiBearerAuth()
 @Controller('v1/consultores/settings')
 export class RotasConfigController {
-  constructor(private readonly config: RotasConfigService) {}
+  constructor(
+    private readonly config: RotasConfigService,
+    @Optional() @Inject(LOVABLE_A_FLAGS) private readonly flags?: FlagsLovableA,
+  ) {}
 
+  /** `features` (contrato §33.1): o web mostra os links novos sem sondar rota desligada. Só no GET. */
   @Get('config')
-  get() {
-    return this.config.view();
+  async get() {
+    return {
+      ...(await this.config.view()),
+      features: { dashboard: this.flags?.dashboard ?? false, day_summary: this.flags?.day_summary ?? false, map_pins: this.flags?.map_pins ?? false },
+    };
   }
 
   @AdminOnly()

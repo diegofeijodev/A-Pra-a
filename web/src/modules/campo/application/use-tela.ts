@@ -16,7 +16,9 @@ export type Tela =
   /** Cadastro assistido da empresa da visita `ref` (contrato §26). */
   | { v: 'cadastro'; ref: string }
   | { v: 'roteiro' }
-  | { v: 'parada'; id: string };
+  | { v: 'parada'; id: string }
+  /** "Resultado do seu dia" (contrato §33.5); sem `dia` = hoje. */
+  | { v: 'resumo'; dia?: string };
 
 export function telaDaUrl(params: URLSearchParams): Tela {
   const v = params.get('v');
@@ -30,6 +32,10 @@ export function telaDaUrl(params: URLSearchParams): Tela {
     if (ref) return { v: 'cadastro', ref };
   }
   if (v === 'roteiro') return { v: 'roteiro' };
+  if (v === 'resumo') {
+    const dia = params.get('dia');
+    return dia && /^\d{4}-\d{2}-\d{2}$/.test(dia) ? { v: 'resumo', dia } : { v: 'resumo' };
+  }
   if (v === 'parada') {
     const id = params.get('id');
     if (id) return { v: 'parada', id };
@@ -47,6 +53,8 @@ export function urlDaTela(t: Tela): string {
       return t.parada ? `/campo?v=nova&parada=${encodeURIComponent(t.parada)}` : '/campo?v=nova';
     case 'roteiro':
       return '/campo?v=roteiro';
+    case 'resumo':
+      return t.dia ? `/campo?v=resumo&dia=${encodeURIComponent(t.dia)}` : '/campo?v=resumo';
     case 'parada':
       return `/campo?v=parada&id=${encodeURIComponent(t.id)}`;
     case 'qr':

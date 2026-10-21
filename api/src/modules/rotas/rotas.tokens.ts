@@ -29,3 +29,23 @@ export const fluxoSelectLigadoProvider: Provider = {
   provide: FLUXO_SELECT_LIGADO,
   useFactory: (): boolean => validateEnv(process.env).FIELD_VISIT_FLOW_SELECT_ENABLED === 'true',
 };
+
+/** Restante da Lovable, lote A (contrato §33.1, §34): painel, resumo do dia e mapa de pinos. */
+export interface FlagsLovableA {
+  dashboard: boolean;
+  day_summary: boolean;
+  map_pins: boolean;
+}
+export const LOVABLE_A_FLAGS = Symbol('LOVABLE_A_FLAGS');
+
+export const lovableAFlagsProvider: Provider = {
+  provide: LOVABLE_A_FLAGS,
+  useFactory: (): FlagsLovableA => {
+    const e = validateEnv(process.env);
+    return {
+      dashboard: e.FIELD_DASHBOARD_ENABLED === 'true',
+      day_summary: e.FIELD_DAY_SUMMARY_ENABLED === 'true',
+      map_pins: e.FIELD_MAP_PINS_ENABLED === 'true',
+    };
+  },
+};

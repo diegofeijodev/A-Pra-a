@@ -11,6 +11,7 @@ import { textoCadastrosConfirmados } from '@/modules/campo/domain/cadastros-conf
 import { hora, plural } from '@/modules/campo/domain/formatos';
 import { usePagamentos } from '@/modules/pagamentos/application/use-pagamentos';
 import { useAtencao, useConsultores } from '@/modules/consultores/application/use-consultores';
+import { useFeaturesLovable } from '@/modules/painel/application/use-painel';
 
 const SITUACAO = { em_jornada: 'em jornada agora', encerrou: 'encerrou', nao_iniciou: 'não começou' } as const;
 export default function ConsultoresPage() {
@@ -23,6 +24,8 @@ export default function ConsultoresPage() {
   // O link só aparece com FIELD_DECLARED_SIGNUPS_ENABLED ligada: o "Atenção agora" só traz `declared_alerts` nesse caso
   // (sem sondar a rota: um 404 a mais na página).
   const declaradosLigados = atencao?.declared_alerts !== undefined;
+  // Lote A da Lovable (contrato §33.1): os links só aparecem com o módulo ligado, lido da configuração (200), sem sondar rota desligada.
+  const lovable = useFeaturesLovable();
   const [novo, setNovo] = useState(false);
   const metaDe = new Map((atencao?.consultants ?? []).map((c) => [c.consultant_id, c]));
 
@@ -30,7 +33,17 @@ export default function ConsultoresPage() {
     <>
       <div className="flex items-center justify-between gap-3">
         <h1 className="font-display text-xl font-extrabold">Consultores de campo</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {lovable.dashboard && (
+            <Link href="/consultores/painel" className="text-sm text-primary hover:underline">
+              Painel
+            </Link>
+          )}
+          {lovable.map_pins && (
+            <Link href="/consultores/mapa" className="text-sm text-primary hover:underline">
+              Mapa por situação
+            </Link>
+          )}
           <Link href="/consultores/calor" className="text-sm text-primary hover:underline">
             Mapa de calor
           </Link>

@@ -24,16 +24,18 @@ import {
 } from '../../domain/modo-campo-rules';
 import { CONFIG_CHECKIN, type ConfigCheckin } from '../../domain/campo-rules';
 import type { GrupoConfig } from '../../domain/config-grupo';
+import { CONFIG_PAINEL, type ConfigPainel } from '../../domain/painel-rules';
+import { CONFIG_RESUMO_DIA, type ConfigResumoDia } from '../../domain/resumo-dia-rules';
 import type { ConfigRotaDto } from './dto/rotas.dto';
 
 /**
  * Grupos de chaves do restante da Lovable (contrato §23.1 e §33.2). Política comum: `null` no PUT vale como ausente (o web
  * reenvia o que recebeu, lição da S1) e só as chaves ENVIADAS são gravadas (ausente continua = padrão).
  */
-const GRUPOS_NOVOS: GrupoConfig<object>[] = [CONFIG_CHECKIN as unknown as GrupoConfig<object>];
+const GRUPOS_NOVOS = [CONFIG_CHECKIN, CONFIG_RESUMO_DIA, CONFIG_PAINEL] as unknown as GrupoConfig<object>[];
 const ehChaveNova = (k: string) => GRUPOS_NOVOS.some((g) => g.tem(k));
 
-export interface ConfigView extends ConfigRota, ConfigAlertas, ConfigCadastro, ConfigModo, ConfigCheckin {
+export interface ConfigView extends ConfigRota, ConfigAlertas, ConfigCadastro, ConfigModo, ConfigCheckin, ConfigResumoDia, ConfigPainel {
   /** Os dois botões de preset da tela (contrato §31.3): só preenchem o formulário. */
   presets: { completo: ConfigModo; chefe: ConfigModo };
   atualizado_por: string | null;
@@ -79,9 +81,19 @@ export class RotasConfigService {
     return CONFIG_CHECKIN.ler(await this.bruto());
   }
 
+  /** Resumo/nota do dia (contrato §33.2). */
+  async resumoDia(): Promise<ConfigResumoDia> {
+    return CONFIG_RESUMO_DIA.ler(await this.bruto());
+  }
+
+  /** Painel do gestor (contrato §33.2). */
+  async painel(): Promise<ConfigPainel> {
+    return CONFIG_PAINEL.ler(await this.bruto());
+  }
+
   async view(): Promise<ConfigView> {
     const raw = await this.bruto();
-    const novos = Object.assign({}, ...GRUPOS_NOVOS.map((g) => g.ler(raw))) as ConfigCheckin;
+    const novos = Object.assign({}, ...GRUPOS_NOVOS.map((g) => g.ler(raw))) as ConfigCheckin & ConfigResumoDia & ConfigPainel;
     return {
       ...lerConfigRota(raw),
       ...lerConfigAlertas(raw),

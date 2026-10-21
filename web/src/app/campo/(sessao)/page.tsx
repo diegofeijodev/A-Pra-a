@@ -6,6 +6,7 @@ import { HojeTela } from '@/components/campo/HojeTela';
 import { NovaVisitaTela } from '@/components/campo/NovaVisitaTela';
 import { ParadaTela } from '@/components/campo/ParadaTela';
 import { QrTela } from '@/components/campo/QrTela';
+import { ResumoDiaTela } from '@/components/campo/ResumoDiaTela';
 import { RoteiroTela } from '@/components/campo/RoteiroTela';
 import { VisitaTela } from '@/components/campo/VisitaTela';
 import { OndeVoceEstaTela } from '@/components/campo/simples/OndeVoceEstaTela';
@@ -42,6 +43,8 @@ function Visao() {
       return simples ? <SimplesListaTela /> : <RoteiroTela />;
     case 'parada':
       return <ParadaTela key={tela.id} id={tela.id} />;
+    case 'resumo':
+      return <ResumoDiaTela key={tela.dia ?? 'hoje'} dia={tela.dia} />;
     default:
       return simples ? <SimplesHojeTela /> : <HojeTela />;
   }

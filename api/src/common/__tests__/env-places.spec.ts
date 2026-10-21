@@ -78,3 +78,12 @@ describe('env — ganho por cadastro declarado (modo do chefe S3, §32.5)', () =
     expect(validateEnv({ ...BASE, FIELD_DECLARED_SIGNUPS_ENABLED: 'true' }).FIELD_DECLARED_SIGNUPS_ENABLED).toBe('true');
   });
 });
+
+describe('env — restante da Lovable, lote A (§33/§34)', () => {
+  it('painel, resumo do dia e mapa de pinos: desligados por padrão e aceitam true', () => {
+    for (const k of ['FIELD_DASHBOARD_ENABLED', 'FIELD_DAY_SUMMARY_ENABLED', 'FIELD_MAP_PINS_ENABLED'] as const) {
+      expect(validateEnv(BASE)[k]).toBe('false');
+      expect(validateEnv({ ...BASE, [k]: 'true' })[k]).toBe('true');
+    }
+  });
+});

@@ -7,6 +7,7 @@ import { QrDoFreela } from '@/components/campo/QrDoFreela';
 import { ConsultorDialog } from '@/components/praca/ConsultorDialog';
 import { GanhosConsultor } from '@/components/praca/GanhosConsultor';
 import { ConsultorLinhaDoTempo } from '@/components/praca/ConsultorLinhaDoTempo';
+import { ResumoDiaEquipe } from '@/components/praca/ResumoDiaEquipe';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -121,6 +122,7 @@ export default function ConsultorDetalhePage() {
             {(trilhas.some((t) => t.length > 0) || diaDados.visits.length > 0) && <ConsultorMapa trilhas={trilhas} visitas={diaDados.visits} dark={dark} />}
           </div>
         )}
+        <ResumoDiaEquipe consultantId={id} dia={dia} />
       </section>
 
       <GanhosConsultor consultantId={id} />

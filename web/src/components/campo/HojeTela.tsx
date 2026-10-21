@@ -10,10 +10,11 @@ import { GanhosCard } from '@/components/campo/GanhosCard';
 import { PixCard } from '@/components/campo/PixCard';
 import { MetaCard } from '@/components/campo/MetaCard';
 import { RetornosCampo } from '@/components/campo/RetornosCampo';
+import { ResumoDiaAtalhos } from '@/components/campo/ResumoDiaTela';
 import { RoteiroCard } from '@/components/campo/RoteiroCard';
 import { Button } from '@/components/ui/button';
 import { useCampoSession } from '@/modules/campo/application/campo-session.store';
-import { useDia } from '@/modules/campo/application/use-campo';
+import { useCampoMe, useDia } from '@/modules/campo/application/use-campo';
 import { enfileirar, useFilaStore } from '@/modules/campo/application/use-fila';
 import { AVISO_ENVIOS_GUARDADOS } from '@/modules/campo/domain/fila-politica';
 import type { Posicao } from '@/modules/campo/domain/campo.types';
@@ -30,6 +31,8 @@ export function HojeTela() {
   const { dia, carregando } = useDia();
   const temFila = useFilaStore((s) => s.itens.length > 0);
   const [gps, setGps] = useState<MotivoGps | null>(null);
+  const me = useCampoMe();
+  const resumoLigado = me.data?.features?.day_summary === true;
   const [ocupado, setOcupado] = useState(false);
 
   async function comPosicao(acao: (p: Posicao) => Promise<void>) {
@@ -51,7 +54,11 @@ export function HojeTela() {
   const encerrar = () => {
     const texto = 'Encerrar a jornada de hoje? A localização para de ser registrada.';
     if (!window.confirm(temFila ? `${texto}\n\n${AVISO_ENVIOS_GUARDADOS}` : texto)) return;
-    void comPosicao((p) => enfileirar({ kind: 'end', payload: p }, consultantId));
+    void comPosicao(async (p) => {
+      await enfileirar({ kind: 'end', payload: p }, consultantId);
+      // Resultado do dia (contrato §33.5): só com o módulo ligado.
+      if (resumoLigado) irPara({ v: 'resumo' });
+    });
   };
 
   const aberta = dia.visitaAberta;
@@ -68,6 +75,7 @@ export function HojeTela() {
       {!carregando && <CadastrosConfirmadosCard />}
       {!carregando && <GanhosCard />}
       {!carregando && <PixCard />}
+      {!carregando && <ResumoDiaAtalhos />}
 
       {carregando ? (
         <p className="text-sm text-muted-foreground">Carregando…</p>

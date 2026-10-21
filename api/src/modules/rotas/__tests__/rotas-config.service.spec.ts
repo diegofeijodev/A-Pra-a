@@ -12,8 +12,8 @@ const falha = async (f: () => Promise<unknown>) => f().then(() => null, (e: unkn
 describe('RotasConfigService', () => {
   it('sem linha no banco: devolve os padrões e nenhum autor', async () => {
     const s = new RotasConfigService(fakePrisma() as unknown as PrismaService);
-    // Lote A da Lovable: + raio_checkin_m (aditivo, contrato §23.1).
-    expect(await s.view()).toEqual({ ...CONFIG_ROTA_PADRAO, ...CONFIG_ALERTAS_PADRAO, ...CONFIG_MODO_PADRAO, raio_checkin_m: 200, presets: PRESETS_MODO, confirmation_rule: 'activated', atualizado_por: null, atualizado_em: null });
+    // Lote A da Lovable: + raio_checkin_m (§23.1) e as chaves do resumo do dia e do painel (§33.2), aditivas.
+    expect(await s.view()).toEqual({ ...CONFIG_ROTA_PADRAO, ...CONFIG_ALERTAS_PADRAO, ...CONFIG_MODO_PADRAO, raio_checkin_m: 200, ui_resumo_dia: 'nota', nota_peso_rota: 7, nota_peso_conversao: 3, nota_meta_conversao_pct: 30, nota_intervalo_alerta_min: 75, painel_tempo_medio: 'intervalo', painel_gap_max_min: 120, presets: PRESETS_MODO, confirmation_rule: 'activated', atualizado_por: null, atualizado_em: null });
   });
 
   it('PUT parcial: mescla, grava quem/quando e preserva chaves de outras fases', async () => {
@@ -133,6 +133,24 @@ describe('RotasConfigService', () => {
         expect((e as { getStatus: () => number }).getStatus()).toBe(400);
       }
       expect(p.app_settings.upsert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Restante da Lovable — resumo do dia e painel (§33.2, L1)', () => {
+    it('PUT parcial grava só as chaves enviadas; pesos que não somam 10 → 400; null = ausente', async () => {
+      const p = fakePrisma();
+      p.app_settings.findUnique.mockResolvedValue({ field_config: { nota_peso_rota: 6, nota_peso_conversao: 4 } });
+      const s = new RotasConfigService(p as unknown as PrismaService);
+      expect(await s.resumoDia()).toMatchObject({ ui_resumo_dia: 'nota', nota_peso_rota: 6, nota_peso_conversao: 4 });
+      await s.atualizar({ ui_resumo_dia: 'numeros', nota_peso_rota: null, painel_gap_max_min: 90 } as never, ADMIN, AGORA);
+      const gravado = p.app_settings.upsert.mock.calls[0][0].update.field_config;
+      expect(gravado).toMatchObject({ ui_resumo_dia: 'numeros', nota_peso_rota: 6, nota_peso_conversao: 4, painel_gap_max_min: 90 });
+      expect(gravado).not.toHaveProperty('painel_tempo_medio');
+      const p2 = fakePrisma();
+      const e = await falha(() => new RotasConfigService(p2 as unknown as PrismaService).atualizar({ nota_peso_rota: 8 } as never, ADMIN, AGORA));
+      expect((e as { getStatus: () => number }).getStatus()).toBe(400);
+      expect(p2.app_settings.upsert).not.toHaveBeenCalled();
+      expect(await new RotasConfigService(fakePrisma() as unknown as PrismaService).painel()).toEqual({ painel_tempo_medio: 'intervalo', painel_gap_max_min: 120 });
     });
   });
 });

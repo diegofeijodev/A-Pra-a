@@ -35,8 +35,9 @@ describe('CampoController.me — features', () => {
   it('company_signup segue a flag (padrão desligada)', async () => {
     const off = new CampoController(auth as never, {} as never, {} as never, {} as never, {} as never);
     const on = new CampoController(auth as never, {} as never, {} as never, {} as never, {} as never, true);
-    expect((await off.me(C)).features).toEqual({ company_signup: false, earnings: false, payouts: false, visit_flow: false, declared_signups: false });
-    expect((await on.me(C)).features).toEqual({ company_signup: true, earnings: false, payouts: false, visit_flow: false, declared_signups: false });
+    // Lote A da Lovable (§33.1): + day_summary e map_pins (aditivos, desligados por padrão).
+    expect((await off.me(C)).features).toEqual({ company_signup: false, earnings: false, payouts: false, visit_flow: false, declared_signups: false, day_summary: false, map_pins: false });
+    expect((await on.me(C)).features).toEqual({ company_signup: true, earnings: false, payouts: false, visit_flow: false, declared_signups: false, day_summary: false, map_pins: false });
   });
 
   it('earnings segue FIELD_EARNINGS_ENABLED (padrão desligada)', async () => {
@@ -52,5 +53,12 @@ describe('CampoController.me — features', () => {
     const mk = (ligado: boolean) => new CampoController(auth as never, {} as never, {} as never, {} as never, {} as never, false, earn, { ligado });
     expect((await mk(false).me(C)).features?.payouts).toBe(false);
     expect((await mk(true).me(C)).features?.payouts).toBe(true);
+  });
+
+  it('day_summary e map_pins seguem as flags do lote A da Lovable', async () => {
+    const mk = (f: { dashboard: boolean; day_summary: boolean; map_pins: boolean }) =>
+      new CampoController(auth as never, {} as never, {} as never, {} as never, {} as never, false, undefined, undefined, undefined, f);
+    expect((await mk({ dashboard: true, day_summary: true, map_pins: false }).me(C)).features).toMatchObject({ day_summary: true, map_pins: false });
+    expect((await mk({ dashboard: false, day_summary: false, map_pins: true }).me(C)).features).toMatchObject({ day_summary: false, map_pins: true });
   });
 });

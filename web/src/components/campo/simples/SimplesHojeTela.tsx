@@ -10,11 +10,12 @@ import { GanhosCard } from '@/components/campo/GanhosCard';
 import { MetaCard } from '@/components/campo/MetaCard';
 import { PixCard } from '@/components/campo/PixCard';
 import { RetornosCampo } from '@/components/campo/RetornosCampo';
+import { ResumoDiaAtalhos } from '@/components/campo/ResumoDiaTela';
 import { RoteiroCard } from '@/components/campo/RoteiroCard';
 import { ChegueiBotao } from '@/components/campo/simples/ChegueiBotao';
 import { Button } from '@/components/ui/button';
 import { useCampoSession } from '@/modules/campo/application/campo-session.store';
-import { useDia } from '@/modules/campo/application/use-campo';
+import { useCampoMe, useDia } from '@/modules/campo/application/use-campo';
 import { useFluxo } from '@/modules/campo/application/use-fluxo';
 import { enfileirar, useFilaStore } from '@/modules/campo/application/use-fila';
 import { useSol } from '@/modules/campo/application/use-sol';
@@ -41,6 +42,8 @@ export function SimplesHojeTela() {
   const temFila = useFilaStore((s) => s.itens.length > 0);
   const { sol, alternar } = useSol();
   const rot = useRoteiro();
+  const me = useCampoMe();
+  const resumoLigado = me.data?.features?.day_summary === true;
   const [aba, setAba] = useState<Aba>('hoje');
   const [gps, setGps] = useState<MotivoGps | null>(null);
   const [ocupado, setOcupado] = useState(false);
@@ -63,7 +66,11 @@ export function SimplesHojeTela() {
     const meta = rot.route?.params.meta_diaria;
     const texto = `Encerrar o dia?\n\nVocê fez ${meta ? `${feitas} de ${meta}` : feitas} ${meta ? 'visitas' : plural(feitas, 'visita', 'visitas')}. A localização para de ser registrada.`;
     if (!window.confirm(temFila ? `${texto}\n\n${AVISO_ENVIOS_GUARDADOS}` : texto)) return;
-    void comPosicao((p) => enfileirar({ kind: 'end', payload: p }, consultantId));
+    void comPosicao(async (p) => {
+      await enfileirar({ kind: 'end', payload: p }, consultantId);
+      // Resultado do dia (contrato §33.5): só com o módulo ligado; a conta é "até agora" se o encerrar ainda estiver na fila.
+      if (resumoLigado) irPara({ v: 'resumo' });
+    });
   };
 
   const aberta = dia.visitaAberta;
@@ -136,6 +143,7 @@ export function SimplesHojeTela() {
       {aba === 'retornos' && <RetornosCampo />}
       {aba === 'ganhos' && (
         <div className="space-y-4">
+          <ResumoDiaAtalhos />
           <CadastrosConfirmadosCard />
           <GanhosCard />
           <PixCard />

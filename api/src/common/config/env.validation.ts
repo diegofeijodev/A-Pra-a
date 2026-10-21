@@ -82,6 +82,10 @@ const envBase = z.object({
   FIELD_VISIT_FLOW_SELECT_ENABLED: z.string().default('false'),
   // Modo do chefe S3 (contrato §32.5). Efetiva só com FIELD_EARNINGS_ENABLED. Desligada: ninguém declara cadastro.
   FIELD_DECLARED_SIGNUPS_ENABLED: z.string().default('false'),
+  // Restante da Lovable, lote A (contrato §33/§34). Desligadas = rotas 404 e telas ocultas; só leitura, sem migração.
+  FIELD_DASHBOARD_ENABLED: z.string().default('false'),
+  FIELD_DAY_SUMMARY_ENABLED: z.string().default('false'),
+  FIELD_MAP_PINS_ENABLED: z.string().default('false'),
 
   SWAGGER_ENABLED: z.string().optional(),
 

@@ -79,6 +79,10 @@ services:
       FIELD_VISIT_FLOW_SELECT_ENABLED: ${FIELD_VISIT_FLOW_SELECT_ENABLED:-false}
       # Modo do chefe S3 (contrato §32.5): ganho por cadastro declarado. Exige FIELD_EARNINGS_ENABLED.
       FIELD_DECLARED_SIGNUPS_ENABLED: ${FIELD_DECLARED_SIGNUPS_ENABLED:-false}
+      # Restante da Lovable, lote A (contrato §33/§34): painel do gestor, resumo/nota do dia e mapa de pinos. Só leitura.
+      FIELD_DASHBOARD_ENABLED: ${FIELD_DASHBOARD_ENABLED:-false}
+      FIELD_DAY_SUMMARY_ENABLED: ${FIELD_DAY_SUMMARY_ENABLED:-false}
+      FIELD_MAP_PINS_ENABLED: ${FIELD_MAP_PINS_ENABLED:-false}
     ports:
       - '3014:3014'
 
