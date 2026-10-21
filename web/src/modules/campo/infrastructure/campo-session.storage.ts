@@ -87,3 +87,14 @@ export function registrarConsultor(id: string): boolean {
   }
   return false;
 }
+
+/** Preferência do aparelho: modo "Sol" (borda de 2 px para ler ao sol). Sem armazenamento, vale desligado. */
+const SOL = 'campoSol';
+
+export function getPreferenciaSol(): boolean {
+  return ler<boolean>(SOL) === true;
+}
+
+export function setPreferenciaSol(ligado: boolean): void {
+  gravar(SOL, ligado);
+}
