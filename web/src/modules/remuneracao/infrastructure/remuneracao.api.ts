@@ -3,6 +3,7 @@ import { campoApi } from '@/modules/campo/infrastructure/campo-http';
 import { api } from '@/modules/shared/infrastructure/http';
 import {
   configRespostaSchema,
+  type CorpoSimulacao,
   extratoSchema,
   fechamentoSchema,
   ganhosCampoSchema,
@@ -36,7 +37,7 @@ export async function putConfigRemuneracao(body: { valid_from: string; reason?: 
   return versaoSchema.parse(data);
 }
 
-export async function simularRemuneracao(body: { config?: RegraRemuneracao; signups_confirmed: number; visits: number; journey_open: boolean }): Promise<Simulacao> {
+export async function simularRemuneracao(body: CorpoSimulacao): Promise<Simulacao> {
   const { data } = await api.post(`${BASE}/simulate`, body);
   return simulacaoSchema.parse(data);
 }

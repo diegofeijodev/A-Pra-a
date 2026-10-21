@@ -177,3 +177,66 @@ describe('contrato do fio (zod)', () => {
     expect(r.success).toBe(true);
   });
 });
+
+describe('modo do chefe (S2/S3, contrato §32)', () => {
+  const CHEFE: RegraRemuneracao = {
+    ...PADRAO,
+    unit_cents: 1000,
+    tiers_period: 'week',
+    tiers: [{ min_signups: 5, amount_cents: 20000 }],
+    combine: 'sum',
+    signup_source: 'declared',
+    daily_base_cents: 10000,
+    daily_base_condition: 'route_assigned',
+    daily_base_min_visits: 0,
+    daily_base_requires_journey: false,
+    tiers_mode: 'cumulative',
+    declared_daily_cap: 30,
+    declared_confirm_days: null,
+  };
+
+  it('a regra antiga sai com as MESMAS 13 chaves (nenhuma chave nova no corpo do PUT)', () => {
+    const r = formParaRegra(regraParaForm(PADRAO));
+    expect(r.ok && Object.keys(r.regra).sort()).toEqual(Object.keys(PADRAO).sort());
+  });
+  it('a resposta do servidor com as chaves novas nulas ou ausentes continua gerando o mesmo corpo', () => {
+    const comNulas = { ...PADRAO, signup_source: null, daily_base_cents: null, tiers_mode: null, declared_daily_cap: null };
+    expect(formParaRegra(regraParaForm(comNulas))).toEqual({ ok: true, regra: PADRAO });
+  });
+  it('o perfil do chefe faz ida e volta e manda só as chaves que mudam', () => {
+    const f = regraParaForm(CHEFE);
+    expect(f).toMatchObject({ signup_source: 'declared', declared_cap: '30', daily: '100,00', daily_condition: 'route_assigned', daily_requires_journey: false, tiers_mode: 'cumulative' });
+    expect(formParaRegra(f)).toEqual({
+      ok: true,
+      regra: { ...PADRAO, unit_cents: 1000, tiers_period: 'week', tiers: [{ min_signups: 5, amount_cents: 20000 }], combine: 'sum', signup_source: 'declared', declared_daily_cap: 30, daily_base_cents: 10000, daily_base_condition: 'route_assigned', daily_base_requires_journey: false, tiers_mode: 'cumulative' },
+    });
+  });
+  it('diária zerada não manda a condição (rotas desligadas não derrubam o PUT)', () => {
+    const f = { ...regraParaForm(CHEFE), daily: '0' };
+    const r = formParaRegra(f);
+    expect(r.ok && r.regra).not.toHaveProperty('daily_base_condition');
+  });
+  it('erros dizem o campo', () => {
+    const base = regraParaForm(CHEFE);
+    expect(formParaRegra({ ...base, daily: 'x' })).toMatchObject({ ok: false, campo: 'daily' });
+    expect(formParaRegra({ ...base, declared_cap: 'x' })).toMatchObject({ ok: false, campo: 'declared_cap' });
+  });
+  it('a regra em palavras diz declarado, diária e metas que somam', () => {
+    const t = resumoRegra(CHEFE).join(' ');
+    expect(t).toContain('declarado pelo consultor na visita vale R$ 10,00 (até 30 por dia)');
+    expect(t).toContain('Todas as metas atingidas somam');
+    expect(t).toContain('Diária de R$ 100,00, nos dias com rota da equipe atribuída');
+  });
+  it('a regra antiga continua com as mesmas frases', () => {
+    const t = resumoRegra(PADRAO).join(' ');
+    expect(t).toContain('Cada cadastro confirmado pelo Freela vale R$ 10,00.');
+    expect(t).not.toMatch(/Diária|declarado|somam/);
+  });
+  it('o corpo do simulador da semana (vetor R$ 350) leva os dias e a rota', () => {
+    const f = regraParaForm(CHEFE);
+    const c = corpoSimulacao(f, { signups: '0', visits: '0', journey_open: false, days: [{ signups: '5', route_assigned: true }] });
+    expect(c?.days).toEqual([{ signups: 5, route_assigned: true, journey_open: false }]);
+    expect(corpoSimulacao(f, { signups: '0', visits: '0', journey_open: false, days: [{ signups: 'x', route_assigned: true }] })).toBeNull();
+    expect(corpoSimulacao(regraParaForm(PADRAO), { signups: '12', visits: '0', journey_open: true })).not.toHaveProperty('days');
+  });
+});

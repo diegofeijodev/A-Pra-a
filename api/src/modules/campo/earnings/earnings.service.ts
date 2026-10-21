@@ -62,6 +62,11 @@ import {
 import { EARNINGS_OPCOES, type OpcoesEarnings } from './earnings.tokens';
 
 export const FONTE_EARNINGS = 'Cadastros confirmados pelo Freela (sincronizado) × regra de remuneração';
+/** Quando a regra do dia paga o cadastro DECLARADO (contrato §32.5) a fonte é outra, e a tela precisa dizer. */
+export const FONTE_EARNINGS_DECLARADO = 'Cadastros declarados no checkout da visita × regra de remuneração';
+const fonteDe = (r: RegraBruta): string => (r.signup_source === 'declared' ? FONTE_EARNINGS_DECLARADO : FONTE_EARNINGS);
+const fonteDeclarada = (r: RegraBruta): { signup_source: 'declared' } | Record<string, never> =>
+  r.signup_source === 'declared' ? { signup_source: 'declared' } : {};
 const MAX_SEMANAS_AUTOCLOSE = 8;
 const LIMITE_LANCAMENTOS = 200;
 const SEMANAS_ANTERIORES = 4;
@@ -464,7 +469,8 @@ export class EarningsService {
       : undefined;
     return {
       week: { from: semana, to: addDays(semana, 6) },
-      source: `${FONTE_EARNINGS} (versão ${ctx.vigente.version} vigente hoje)`,
+      source: `${fonteDe(ctx.vigente.config)} (versão ${ctx.vigente.version} vigente hoje)`,
+      ...fonteDeclarada(ctx.vigente.config),
       rule_version: ctx.vigente.version,
       confirmation_rule: ctx.regraConfirmacao,
       total_cents: lista.reduce((a, v) => a + v.total_cents, 0),
@@ -517,7 +523,8 @@ export class EarningsService {
     return {
       rule_version: ctx.vigente.version,
       confirmation_rule: ctx.regraConfirmacao,
-      source: `${FONTE_EARNINGS} (versão ${ctx.vigente.version})`,
+      source: `${fonteDe(ctx.vigente.config)} (versão ${ctx.vigente.version})`,
+      ...fonteDeclarada(ctx.vigente.config),
       as_of: agora.toISOString(),
       today: {
         day: ctx.hoje,
@@ -581,7 +588,7 @@ export class EarningsService {
   async salvarConfig(dto: ConfigRemuneracaoDto, user: AuthUser, agora = new Date()) {
     const r = validarRegra(dto.config);
     if (!r.ok) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: r.erro });
-    if (r.regra.daily_base_condition === 'route_assigned' && !this.opcoes.rotasLigadas)
+    if (r.regra.daily_base_condition === 'route_assigned' && (r.regra.daily_base_cents ?? 0) > 0 && !this.opcoes.rotasLigadas)
       throw new ConflictException({
         code: 'ROUTES_DISABLED',
         message:

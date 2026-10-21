@@ -12,6 +12,22 @@ export type ContagemVisita = 'checkin' | 'checkout';
 
 export const faixaSchema = z.object({ min_signups: z.number().int(), amount_cents: z.number().int() });
 
+export type FonteCadastro = 'freela_confirmed' | 'declared';
+export type CondicaoDiaria = 'none' | 'journey_open' | 'min_visits' | 'route_assigned';
+export type ModoFaixa = 'highest' | 'cumulative';
+
+/** As 8 chaves novas (S2/S3, contrato §32.1): opcionais no fio; ausente/nulo = comportamento da regra antiga. */
+const chavesNovasSchema = z.object({
+  signup_source: z.enum(['freela_confirmed', 'declared']).nullish(),
+  daily_base_cents: z.number().int().nullish(),
+  daily_base_condition: z.enum(['none', 'journey_open', 'min_visits', 'route_assigned']).nullish(),
+  daily_base_min_visits: z.number().int().nullish(),
+  daily_base_requires_journey: z.boolean().nullish(),
+  tiers_mode: z.enum(['highest', 'cumulative']).nullish(),
+  declared_daily_cap: z.number().int().nullish(),
+  declared_confirm_days: z.number().int().nullish(),
+});
+
 export const regraSchema = z.object({
   unit_cents: z.number().int(),
   tiers_period: z.enum(['day', 'week']),
@@ -26,8 +42,20 @@ export const regraSchema = z.object({
   payout_weekday: z.number().int(),
   autoclose_hour: z.number().int(),
   late_grace_days: z.number().int(),
-});
+}).extend(chavesNovasSchema.shape);
 export type RegraRemuneracao = z.infer<typeof regraSchema>;
+
+/** Padrão das chaves novas = a regra antiga (contrato §32.1). Espelha o servidor; só para preencher o formulário. */
+export const NOVAS_PADRAO = {
+  signup_source: 'freela_confirmed' as FonteCadastro,
+  daily_base_cents: 0,
+  daily_base_condition: 'none' as CondicaoDiaria,
+  daily_base_min_visits: 0,
+  daily_base_requires_journey: true,
+  tiers_mode: 'highest' as ModoFaixa,
+  declared_daily_cap: null as number | null,
+  declared_confirm_days: null as number | null,
+};
 
 export const versaoSchema = z.object({
   version: z.number().int(),
@@ -36,6 +64,8 @@ export const versaoSchema = z.object({
   created_by: z.string().nullable(),
   created_at: z.string(),
   config: regraSchema,
+  /** A regra com todas as chaves (ausentes preenchidas); servidor novo. */
+  config_effective: regraSchema.optional(),
 });
 export type VersaoRegra = z.infer<typeof versaoSchema>;
 
@@ -44,11 +74,23 @@ export const configRespostaSchema = z.object({
   upcoming: z.array(versaoSchema),
   history: z.array(versaoSchema),
   default_config: regraSchema,
+  /** Presets que só preenchem o formulário (contrato §32.2); servidor antigo não manda. */
+  presets: z.object({ completo: regraSchema, chefe: regraSchema }).optional(),
+  features: z.object({ routes_enabled: z.boolean(), declared_signups_enabled: z.boolean() }).optional(),
 });
 export type ConfigResposta = z.infer<typeof configRespostaSchema>;
 
 export const simulacaoSchema = z.object({
   day: z.object({ total_cents: z.number().int(), conta: z.array(z.string()), rule_version: z.number().int().nullable() }),
+  week: z
+    .object({
+      total_cents: z.number().int(),
+      days_cents: z.number().int(),
+      week_part_cents: z.number().int(),
+      days: z.array(z.object({ day: z.string(), total_cents: z.number().int(), conta: z.array(z.string()) })),
+      conta: z.array(z.string()),
+    })
+    .optional(),
 });
 export type Simulacao = z.infer<typeof simulacaoSchema>;
 
@@ -78,6 +120,8 @@ export type Lancamento = z.infer<typeof lancamentoSchema>;
 export const extratoSchema = z.object({
   week: z.object({ from: z.string(), to: z.string() }),
   source: z.string(),
+  /** Só quando a regra vigente paga o cadastro declarado. */
+  signup_source: z.literal('declared').optional(),
   rule_version: z.number().int(),
   confirmation_rule: z.string(),
   total_cents: z.number().int(),
@@ -115,6 +159,7 @@ export const ganhosCampoSchema = z.object({
   rule_version: z.number().int(),
   confirmation_rule: z.string(),
   source: z.string(),
+  signup_source: z.literal('declared').optional(),
   as_of: z.string(),
   today: z.object({ day: z.string(), total_cents: z.number().int(), confirmed_signups: z.number().int(), visits: z.number().int(), journey_open: z.boolean(), conta: z.array(z.string()) }),
   week: z.object({ from: z.string(), to: z.string(), total_cents: z.number().int(), extras_cents: z.number().int(), days: z.array(diaGanhoSchema), conta: z.array(z.string()) }),
@@ -193,10 +238,34 @@ export interface FormRegra {
   payout_weekday: string;
   autoclose_hour: string;
   late_grace_days: string;
+  // Modo do chefe (S2/S3, contrato §32.1)
+  signup_source: FonteCadastro;
+  declared_cap: string;
+  daily: string;
+  daily_condition: CondicaoDiaria;
+  daily_min_visits: string;
+  daily_requires_journey: boolean;
+  tiers_mode: ModoFaixa;
 }
 
 export function regraParaForm(r: RegraRemuneracao): FormRegra {
+  const n = {
+    signup_source: r.signup_source ?? NOVAS_PADRAO.signup_source,
+    daily: r.daily_base_cents ?? NOVAS_PADRAO.daily_base_cents,
+    cond: r.daily_base_condition ?? NOVAS_PADRAO.daily_base_condition,
+    minv: r.daily_base_min_visits ?? NOVAS_PADRAO.daily_base_min_visits,
+    jor: r.daily_base_requires_journey ?? NOVAS_PADRAO.daily_base_requires_journey,
+    modo: r.tiers_mode ?? NOVAS_PADRAO.tiers_mode,
+    cap: r.declared_daily_cap ?? null,
+  };
   return {
+    signup_source: n.signup_source,
+    declared_cap: n.cap === null ? '' : String(n.cap),
+    daily: textoDeCentavos(n.daily),
+    daily_condition: n.cond,
+    daily_min_visits: String(n.minv),
+    daily_requires_journey: n.jor,
+    tiers_mode: n.modo,
     unit: textoDeCentavos(r.unit_cents),
     tiers_period: r.tiers_period,
     tiers: r.tiers.map((t) => ({ min: String(t.min_signups), valor: textoDeCentavos(t.amount_cents) })),
@@ -243,6 +312,26 @@ export function formParaRegra(f: FormRegra): ResultadoForm {
   const pw = inteiro(f.payout_weekday);
   const hora = inteiro(f.autoclose_hour);
   const grace = inteiro(f.late_grace_days);
+  const diaria = f.daily.trim() === '' ? 0 : centavosDeTexto(f.daily);
+  if (diaria === null) return falha('daily', 'Diária: digite em reais, por exemplo 100,00, ou 0 para não ter diária.');
+  const minDiaria = inteiro(f.daily_min_visits || '0');
+  if (minDiaria === null) return falha('daily_min_visits', 'Mínimo de visitas da diária: número inteiro.');
+  let capDecl: number | null = null;
+  if (f.declared_cap.trim() !== '') {
+    capDecl = inteiro(f.declared_cap);
+    if (capDecl === null) return falha('declared_cap', 'Limite diário de declarações: número inteiro ou em branco para não ter limite.');
+  }
+  // Só manda a chave nova quando ela muda alguma coisa: uma regra "antiga" sai idêntica à de antes (13 chaves).
+  const novas: Partial<RegraRemuneracao> = {};
+  if (f.signup_source !== NOVAS_PADRAO.signup_source) novas.signup_source = f.signup_source;
+  if (f.signup_source === 'declared' && capDecl !== null) novas.declared_daily_cap = capDecl;
+  if (diaria > 0) {
+    novas.daily_base_cents = diaria;
+    novas.daily_base_condition = f.daily_condition;
+    novas.daily_base_requires_journey = f.daily_requires_journey;
+    if (f.daily_condition === 'min_visits') novas.daily_base_min_visits = minDiaria;
+  }
+  if (f.tiers_mode !== NOVAS_PADRAO.tiers_mode) novas.tiers_mode = f.tiers_mode;
   if (ws === null || pw === null) return falha('week_start_weekday', 'Escolha o dia da semana.');
   if (hora === null) return falha('autoclose_hour', 'Hora do fechamento: número de 0 a 23.');
   if (grace === null) return falha('late_grace_days', 'Prazo das confirmações tardias: número de dias.');
@@ -262,6 +351,7 @@ export function formParaRegra(f: FormRegra): ResultadoForm {
       payout_weekday: pw,
       autoclose_hour: hora,
       late_grace_days: grace,
+      ...novas,
     },
   };
 }
@@ -272,12 +362,20 @@ const cadastros = (n: number) => `${n} ${n === 1 ? 'cadastro' : 'cadastros'}`;
 export function resumoRegra(r: RegraRemuneracao): string[] {
   const linhas: string[] = [];
   const periodo = r.tiers_period === 'day' ? 'no dia' : 'na semana';
+  const declarado = r.signup_source === 'declared';
+  const cumulativo = r.tiers_mode === 'cumulative';
   if (r.combine === 'tier_only') linhas.push('O valor por cadastro não é usado: só vale a faixa atingida.');
-  else linhas.push(`Cada cadastro confirmado pelo Freela vale ${brl(r.unit_cents)}.`);
+  else
+    linhas.push(
+      declarado
+        ? `Cada cadastro declarado pelo consultor na visita vale ${brl(r.unit_cents)}${r.declared_daily_cap ? ` (até ${r.declared_daily_cap} por dia)` : ''}.`
+        : `Cada cadastro confirmado pelo Freela vale ${brl(r.unit_cents)}.`,
+    );
   if (r.tiers.length) {
-    linhas.push(`Faixas ${periodo}: ${r.tiers.map((t) => `${cadastros(t.min_signups)} = ${brl(t.amount_cents)}`).join('; ')}.`);
-    if (r.combine === 'max') linhas.push('Vale o maior entre o valor por cadastro e a faixa atingida.');
-    if (r.combine === 'sum') linhas.push('O valor por cadastro soma com a faixa atingida.');
+    linhas.push(`${cumulativo ? 'Metas' : 'Faixas'} ${periodo}: ${r.tiers.map((t) => `${cadastros(t.min_signups)} = ${brl(t.amount_cents)}`).join('; ')}.`);
+    if (cumulativo) linhas.push('Todas as metas atingidas somam (a meta de 10 não substitui a de 5).');
+    if (r.combine === 'max') linhas.push(`Vale o maior entre o valor por cadastro e ${cumulativo ? 'a soma das metas atingidas' : 'a faixa atingida'}.`);
+    if (r.combine === 'sum') linhas.push(`O valor por cadastro soma com ${cumulativo ? 'a soma das metas atingidas' : 'a faixa atingida'}.`);
   } else {
     linhas.push('Não há faixas.');
   }
@@ -293,6 +391,17 @@ export function resumoRegra(r: RegraRemuneracao): string[] {
   } else {
     linhas.push('Sem piso por diária.');
   }
+  if ((r.daily_base_cents ?? 0) > 0) {
+    const cond: Record<string, string> = {
+      none: 'todo dia de consultor ativo',
+      journey_open: 'nos dias com jornada iniciada',
+      min_visits: `nos dias com ao menos ${r.daily_base_min_visits ?? 0} visita(s)`,
+      route_assigned: 'nos dias com rota da equipe atribuída',
+    };
+    linhas.push(
+      `Diária de ${brl(r.daily_base_cents as number)}, ${cond[r.daily_base_condition ?? 'none']}${(r.daily_base_requires_journey ?? true) && r.daily_base_condition !== 'journey_open' ? ' e com jornada iniciada' : ''}; soma ao resto, fora do piso e do teto.`,
+    );
+  }
   linhas.push(`Semana de ${DIAS_SEMANA[r.week_start_weekday]} a ${DIAS_SEMANA[(r.week_start_weekday + 6) % 7]} (Brasília); Pix toda ${DIAS_SEMANA[r.payout_weekday]}, fechamento automático a partir das ${r.autoclose_hour}h.`);
   linhas.push(`Confirmação que chega depois do fechamento ainda vale por ${r.late_grace_days} dias, como ajuste na semana corrente.`);
   return linhas;
@@ -302,15 +411,38 @@ export interface ParamsSimulacao {
   signups: string;
   visits: string;
   journey_open: boolean;
+  route_assigned?: boolean;
+  /** Simulação da SEMANA (contrato §32.3): um item por dia, a partir do 1º dia da semana. */
+  days?: Array<{ signups: string; route_assigned: boolean }>;
+}
+
+export interface CorpoSimulacao {
+  config: RegraRemuneracao;
+  signups_confirmed: number;
+  visits: number;
+  journey_open: boolean;
+  route_assigned?: boolean;
+  days?: Array<{ signups: number; route_assigned: boolean; journey_open: boolean }>;
 }
 
 /** Corpo do `POST …/simulate`; `null` enquanto o formulário ou os números não forem válidos. */
-export function corpoSimulacao(f: FormRegra, p: ParamsSimulacao): { config: RegraRemuneracao; signups_confirmed: number; visits: number; journey_open: boolean } | null {
+export function corpoSimulacao(f: FormRegra, p: ParamsSimulacao): CorpoSimulacao | null {
   const regra = formParaRegra(f);
   const n = inteiro(p.signups);
   const v = inteiro(p.visits || '0');
   if (!regra.ok || n === null || v === null || n > 1000 || v > 1000) return null;
-  return { config: regra.regra, signups_confirmed: n, visits: v, journey_open: p.journey_open };
+  const corpo: CorpoSimulacao = { config: regra.regra, signups_confirmed: n, visits: v, journey_open: p.journey_open };
+  if (p.route_assigned) corpo.route_assigned = true;
+  if (p.days?.length) {
+    const dias: NonNullable<CorpoSimulacao['days']> = [];
+    for (const d of p.days.slice(0, 7)) {
+      const x = inteiro(d.signups || '0');
+      if (x === null || x > 1000) return null;
+      dias.push({ signups: x, route_assigned: d.route_assigned, journey_open: p.journey_open });
+    }
+    corpo.days = dias;
+  }
+  return corpo;
 }
 
 /** "Com 12 cadastros num dia, o consultor ganha R$ 120,00." */
