@@ -58,6 +58,7 @@ Lovable "PRAÇA" para a stack do Freela.
   `20261008221516_consultores_de_campo`.)
 - **Modo do chefe (contrato §31):** a flag `FIELD_VISIT_FLOW_SELECT_ENABLED` (padrão `false`) liga a escolha do fluxo da visita (`simples` | `completo`). Desligada, toda visita é `completo` e nada muda. O fluxo é gravado em `field_visits.flow` na abertura e o checkout o obedece; no web, `/campo` roteia pelas telas de `components/campo/simples/` só com a flag ligada e o fluxo resolvido `simples`. Os testes `*caracterizacao*` congelam o fluxo completo: não editar para "fazer passar". `scripts/smoke-modo-chefe.sh` roda com a flag LIGADA (não junto do `smoke.sh`).
 - **Modo do chefe S2/S3 (contrato §32):** regra de pagamento ganhou 8 chaves OPCIONAIS (`normalizarRegra` preenche com o comportamento da v1; `REGRA_PADRAO` não muda e a config gravada fica crua) e a flag `FIELD_DECLARED_SIGNUPS_ENABLED` (padrão `false`, exige `FIELD_EARNINGS_ENABLED`) liga o ganho por cadastro declarado: declaração e anulação são fatos imutáveis (`field_declared_signups`/`_voids`, trigger como o razão). `*caracterizacao*` e `earnings-rules-chefe.spec.ts` congelam a v1: não editar para "fazer passar". Não mexa em `payouts.service.ts` ~238 (semana ≤ 0 não gera Pix e o negativo não é carregado) sem a S4. `scripts/smoke-modo-chefe-s3.sh` roda com as flags LIGADAS.
+- **Restante da Lovable, lote A (contrato §23.1, §28.5, §33, §34):** `raio_checkin_m` (padrão 200 m, estrito, sem flag) e a versão 1 da regra com `is_initial`/`installed_at` (o `1970-01-01` gravado nunca muda). Painel do gestor, resumo/nota do dia e mapa de pinos atrás de `FIELD_DASHBOARD_ENABLED`, `FIELD_DAY_SUMMARY_ENABLED` e `FIELD_MAP_PINS_ENABLED` (padrão `false`; só leitura, sem migração). As chaves novas de `field_config` são grupos de `domain/config-grupo.ts`: `null` no PUT = ausente e só a chave enviada é gravada. O web descobre as flags pelo `features` do `GET settings/config` (equipe) e do `/campo/me` — **nunca** sondando rota desligada (404 derruba o `browser-check`). `scripts/smoke-lovable-a.sh` roda com as três ligadas (mais `FIELD_ROUTES_ENABLED` e `FIELD_EARNINGS_ENABLED`).
 - Fotos do campo passam pela API (`PhotoStorage`): nunca link público do bucket.
 - Ao rodar verificações nesta máquina: **um build/typecheck por vez** (a
   máquina do usuário trava com builds paralelos). Prefira `tsc --noEmit`, o
@@ -95,15 +96,15 @@ verificações em `api/`:
 # api/
 npm run start:dev | build | typecheck | lint | test | seed
 npm run start:smoke                # sobe sem watcher (ts-node --transpile-only), pra smoke
-npm run smoke                      # scripts/smoke.sh contra a API viva — 882 checagens, repetível sem resíduo
+npm run smoke                      # scripts/smoke.sh contra a API viva — 890 checagens, repetível sem resíduo
                                    # (menos sem o container `praca-postgres`: a limpeza final é por psql)
-npm test                           # jest maxWorkers 1 — 87 suítes, 1466 testes
+npm test                           # jest maxWorkers 1 — 96 suítes, 1545 testes
 npm run prisma:migrate:dev | prisma:generate | prisma:studio
 
 # web/
 yarn dev | typecheck | lint        # `build` só se o dono pedir (ver abaixo)
-yarn test                          # vitest run (fork único) — 22 arquivos, 281 testes
-yarn browser-check                 # scripts/browser-check.mjs — 155 checagens (154 sem as flags do ganho declarado)
+yarn test                          # vitest run (fork único) — 25 arquivos, 299 testes
+yarn browser-check                 # scripts/browser-check.mjs — 159 checagens (158 sem as flags do ganho declarado)
                                    # precisa da API na 3014 (start:smoke) e do web na 3024 (yarn dev)
                                    # conta: PRACA_CHECK_EMAIL/PASSWORD (padrão = seed), login pelo formulário
 ```
