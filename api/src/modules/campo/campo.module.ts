@@ -33,6 +33,8 @@ import { CadastrosDoDiaService } from './painel/cadastros-do-dia.service';
 import { DashboardLigadoGuard, DaySummaryLigadoGuard, MapPinsLigadoGuard } from './painel/lovable.guards';
 import { PainelEquipeController, ResumoDiaCampoController, ResumoDiaEquipeController } from './painel/painel.controller';
 import { PainelService } from './painel/painel.service';
+import { PinosCampoController, PinosEquipeController } from './pinos/pinos.controller';
+import { PinosService } from './pinos/pinos.service';
 import { ResumoDiaService } from './painel/resumo-dia.service';
 import { HeatmapService } from './heatmap.service';
 import { JourneysService } from './journeys.service';
@@ -63,6 +65,8 @@ import { VisitsService } from './visits.service';
     PainelEquipeController,
     ResumoDiaEquipeController,
     ResumoDiaCampoController,
+    PinosEquipeController,
+    PinosCampoController,
     PayoutsCampoController,
     EarningsCampoController,
     SignupsCampoController,
@@ -101,6 +105,7 @@ import { VisitsService } from './visits.service';
     CadastrosDoDiaService,
     PainelService,
     ResumoDiaService,
+    PinosService,
     DashboardLigadoGuard,
     DaySummaryLigadoGuard,
     MapPinsLigadoGuard,

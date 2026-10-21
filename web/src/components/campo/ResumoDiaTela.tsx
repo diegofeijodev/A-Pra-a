@@ -9,10 +9,9 @@ import { useCampoMe } from '@/modules/campo/application/use-campo';
 import { useOnline } from '@/modules/campo/application/use-online';
 import { irPara } from '@/modules/campo/application/use-tela';
 import { useResumoDiaCampo } from '@/modules/painel/application/use-painel';
+import { rotuloDia } from '@/modules/remuneracao/domain/remuneracao';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 
-const rotuloDia = (dia: string) =>
-  new Date(`${dia}T12:00:00Z`).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', timeZone: 'UTC' });
 
 /**
  * "Resultado do seu dia" (contrato §33.5, UX §3.6). Abre ao encerrar o dia e em Ganhos. A conta é do servidor; sem sinal,
