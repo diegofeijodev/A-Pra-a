@@ -4282,10 +4282,19 @@ Tipo `declared_divergence` (flag ligada): consultor com, nos últimos 7 dias (Br
 `field_declared_signup_voids` (só INSERT; mesmo trigger): `declared_id` UNIQUE FK Restrict, `reason` CHECK, `note`, `voided_at`, `voided_by` uuid? (FK users), `client_id` UNIQUE. Nenhuma coluna nova em tabela existente; sem `DROP INDEX`.
 Apagar consultor/lead com declaração: `409 HAS_EARNINGS` / `409 HAS_DECLARED_SIGNUP`.
 
+### 32.8b Acréscimos aditivos de resposta (nada existente muda)
+
+- `GET /v1/campo/me`: `features.declared_signups` (boolean).
+- `GET /v1/consultores/attention`: `declared_alerts: [{ type: 'declared_divergence', consultant_id, name, praca_id, declared, unmatched, divergence_pct, message }]`, **só** com a flag ligada (ausente com ela desligada, e sem consulta).
+- `GET /v1/consultores/earnings` e `GET /v1/campo/earnings`: `signup_source: 'declared'` **só** quando a regra vigente paga o cadastro declarado (ausente na regra antiga); o texto de `source` passa a dizer "Cadastros declarados no checkout da visita × regra de remuneração".
+- `GET/PUT /v1/consultores/settings/config`: `divergencia_alerta_min` (1–1000, padrão 5) e `divergencia_alerta_pct` (1–100, padrão 40), opcionais, `null` aceito como ausente.
+- `DELETE /v1/consultores/:id`: `409 HAS_EARNINGS` também com declarações; `DELETE /v1/leads/:id`: `409 HAS_DECLARED_SIGNUP`.
+
 ### 32.9 Variáveis
 
 | Variável | Padrão | Efeito |
 |---|---|---|
 | `FIELD_DECLARED_SIGNUPS_ENABLED` | `false` | habilita declaração no checkout, relatório, anulação e alerta (exige `FIELD_EARNINGS_ENABLED`) |
 
+Smokes: `scripts/smoke.sh` (flags desligadas, bloco novo) e `scripts/smoke-modo-chefe-s3.sh` (API subida com `FIELD_EARNINGS_ENABLED`, `FIELD_ROUTES_ENABLED`, `FIELD_VISIT_FLOW_SELECT_ENABLED` e `FIELD_DECLARED_SIGNUPS_ENABLED` ligadas; limpa com `session_replication_role=replica` porque o razão de declarações é imutável).
 Recomendação de produção: S2/S3 em sombra por uma semana (comparar a tela de ganhos com o cálculo à mão) antes de publicar uma regra `declared`.

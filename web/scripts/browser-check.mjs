@@ -923,6 +923,38 @@ console.log('-- Campo: GPS negado --');
 
   await page.goto(`${BASE}/configuracoes`, { waitUntil: 'networkidle' });
   check('Configurações: seção "Apps e canais (campo)" com a lista', (await corpo(page)).includes('apps e canais (campo)') && (await corpo(page)).includes('grupos de whatsapp'));
+
+  // ── Modo do chefe S2/S3 (contrato §32): só quando a remuneração está ligada no servidor ──
+  if ((await corpo(page)).includes('remuneração do consultor')) {
+    console.log('-- Equipe: Remuneração, modo do chefe (S2) --');
+    const versoesAntes = (await api('GET', '/v1/consultores/earnings/config')).history.length;
+    check('Remuneração: escolha de onde vem o cadastro que paga', (await corpo(page)).includes('de onde vem o cadastro que paga'));
+    check('Remuneração: diária e "somar todas as atingidas"', (await corpo(page)).includes('diária (r$)') && (await corpo(page)).includes('quando vários valores de faixa são atingidos'));
+    check('Remuneração: botões de perfil do chefe e completo', (await page.getByRole('button', { name: 'Perfil do chefe' }).count()) === 1 && (await page.getByRole('button', { name: 'Perfil completo' }).count()) === 1);
+    await page.getByRole('button', { name: 'Perfil do chefe' }).click();
+    await page.getByText('A Lovable não tem valores prontos').first().waitFor({ timeout: 10000 });
+    check('Perfil do chefe: preenche o formulário e explica que a Lovable não traz valores', (await corpo(page)).includes('metas que somam') && (await corpo(page)).includes('preencha a diária'));
+    check('Perfil do chefe: o formulário ganha o limite diário de declarações', (await corpo(page)).includes('limite de declarações por dia'));
+    await page.getByRole('button', { name: 'Perfil completo' }).click();
+    await page.getByText('Perfil completo: a regra de hoje').first().waitFor({ timeout: 10000 });
+    check('Perfil completo: volta à regra de hoje', (await corpo(page)).includes('cadastro confirmado pelo freela, maior faixa, sem diária'));
+    check('os perfis só preenchem: nenhuma versão nova foi criada', (await api('GET', '/v1/consultores/earnings/config')).history.length === versoesAntes);
+    await page.getByLabel('Simular a semana').check();
+    await page.getByText('o consultor ganha').filter({ hasText: 'na semana' }).first().waitFor({ timeout: 15000 });
+    check('Simulador: calcula a semana pela mesma função do servidor', (await corpo(page)).includes('dias, o consultor ganha') || (await corpo(page)).includes('dia, o consultor ganha'));
+    await page.getByLabel('Simular a semana').uncheck();
+
+    // O link e a tela dos declarados só existem com FIELD_DECLARED_SIGNUPS_ENABLED (sem sondar rota que dá 404).
+    const declaradosLigados = (await api('GET', '/v1/consultores/attention')).declared_alerts !== undefined;
+    await page.goto(`${BASE}/consultores`, { waitUntil: 'networkidle' });
+    check('Consultores: link "Declarados" só com a flag ligada', ((await page.getByRole('link', { name: 'Declarados', exact: true }).count()) === 1) === declaradosLigados);
+    if (declaradosLigados) {
+      await page.getByRole('link', { name: 'Declarados', exact: true }).click();
+      await page.waitForURL('**/consultores/declarados', { timeout: 20000 });
+      await page.getByText('Resumo do período').waitFor({ timeout: 20000 });
+      check('Declarados: relatório com resumo e filtros', (await corpo(page)).includes('resumo do período') && (await corpo(page)).includes('sem correspondência'));
+    }
+  }
 } catch (e) {
   ko('roteiro do campo interrompido', String(e).slice(0, 300));
 } finally {

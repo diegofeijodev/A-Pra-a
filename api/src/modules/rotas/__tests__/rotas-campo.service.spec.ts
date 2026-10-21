@@ -275,6 +275,10 @@ describe('RotasCampoService.generate / gerarAoIniciar', () => {
         where: expect.objectContaining({ praca_id: PRACA, archived: false, location_precision: { in: ['point', 'address'] } }),
       }),
     );
+    // Modo do chefe S3 (§32.5): lead com cadastro declarado (não anulado) não entra na seleção automática.
+    expect(p.leads.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ declared_signups: { none: { void: null } } }) }),
+    );
     expect(p.field_areas.findMany).toHaveBeenCalledWith({ where: { praca_id: PRACA, active: true } });
     const criadas = p.field_route_stops.createMany.mock.calls[0][0].data.map((d: any) => d.lead_id);
     expect(criadas).toEqual([LEAD(1)]); // 2 bloqueado, 3 visitado, 4 ocupado, 5 fora da área

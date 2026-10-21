@@ -2086,6 +2086,20 @@ check "cancelar visita com a flag desligada = FLOW_SELECT_DISABLED" "FLOW_SELECT
 check "config: fluxo_visita sem escolha e presets presentes" "null|true" \
   "$(curl -s $API/v1/consultores/settings/config -H "$HD" | jq -r '"\(.fluxo_visita)|\(.presets.chefe.justificativa_distancia == "obrigatoria")"')"
 
+echo "── Modo do chefe S2/S3 (§32), flags desligadas: nada muda ──"
+# Com FIELD_DECLARED_SIGNUPS_ENABLED=false (padrão) ninguém declara cadastro. A flag ligada é provada por
+# `scripts/smoke-modo-chefe-s3.sh` (que não roda junto: precisa do fluxo simples e da remuneração ligados).
+check "/me: declared_signups desligado" "false" "$(echo "$ME_FLAG" | jq '.features.declared_signups')"
+check "relatório de declarados = DECLARED_DISABLED" "404|DECLARED_DISABLED" \
+  "$(curl -s -o /tmp/praca-smoke-d.json -w '%{http_code}' $API/v1/consultores/declared-signups -H "$HD")|$(jq -r .error.code /tmp/praca-smoke-d.json)"
+check "anular declaração = DECLARED_DISABLED" "DECLARED_DISABLED" \
+  "$(curl -s -X POST $API/v1/consultores/declared-signups/$(uuid)/void -H "$J" -H "$HD" -d '{}' | jq -r .error.code)"
+check "Atenção agora: sem declared_alerts" "false" "$(curl -s $API/v1/consultores/attention -H "$HD" | jq 'has("declared_alerts")')"
+check "config do campo: alerta de divergência com os padrões 5 e 40" "5|40" \
+  "$(curl -s $API/v1/consultores/settings/config -H "$HD" | jq -r '"\(.divergencia_alerta_min)|\(.divergencia_alerta_pct)"')"
+check "config do campo: PUT sem as chaves novas continua valendo" "true" \
+  "$(curl -s -X PUT $API/v1/consultores/settings/config -H "$J" -H "$HD" -d '{"desfazer_segundos":8}' | jq '.desfazer_segundos == 8')"
+
 check "CRM: UM evento de visita do consultor, com a etapa nova" "1|3" \
   "$(echo "$LEAD_DEPOIS" | jq -r --arg a "Consultor: Consultor $SUF" '[.events[] | select(.kind=="visit" and .author_label==$a)] | "\(length)|\(.[0].stage_to)"')"
 check "foto da visita para o consultor" "image/jpeg" \

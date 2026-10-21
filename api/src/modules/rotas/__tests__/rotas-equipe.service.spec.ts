@@ -176,6 +176,10 @@ describe('RotasEquipeService.candidates', () => {
     );
     expect(r.map((c) => c.id)).toEqual([LEAD(1)]); // 2 ocupado, 3 fora da área
     expect(r[0]).toMatchObject({ category: 'bar', source: 'osm', in_area: true });
+    // Modo do chefe S3 (§32.5): lead com cadastro declarado (não anulado) sai da lista de candidatos.
+    expect(p.leads.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ declared_signups: { none: { void: null } } }) }),
+    );
   });
 
   it('área de outra praça → 404; praça inexistente → 404', async () => {
