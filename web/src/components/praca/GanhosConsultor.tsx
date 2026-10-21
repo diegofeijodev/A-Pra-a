@@ -127,7 +127,7 @@ export function GanhosConsultor({ consultantId }: { consultantId: string }) {
             </p>
           </div>
           <p className="text-sm text-muted-foreground">
-            Conta: {c.confirmed_signups} cadastros confirmados pelo Freela na semana. Fonte: {q.data.source}.
+            Conta: {c.confirmed_signups} {q.data.signup_source === 'declared' ? 'cadastros declarados pelo consultor na visita' : 'cadastros confirmados pelo Freela'} na semana. Fonte: {q.data.source}.
           </p>
           <ul className="list-disc space-y-0.5 pl-5 text-sm">
             {c.conta.map((l) => (

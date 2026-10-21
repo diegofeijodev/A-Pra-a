@@ -20,6 +20,9 @@ export default function ConsultoresPage() {
   // O link some quando FIELD_PAYOUTS_ENABLED está desligada no servidor (404 PAYOUTS_DISABLED).
   const pagamentos = usePagamentos();
   const pagamentosLigados = pagamentos.isSuccess;
+  // O link só aparece com FIELD_DECLARED_SIGNUPS_ENABLED ligada: o "Atenção agora" só traz `declared_alerts` nesse caso
+  // (sem sondar a rota: um 404 a mais na página).
+  const declaradosLigados = atencao?.declared_alerts !== undefined;
   const [novo, setNovo] = useState(false);
   const metaDe = new Map((atencao?.consultants ?? []).map((c) => [c.consultant_id, c]));
 
@@ -34,6 +37,11 @@ export default function ConsultoresPage() {
           {pagamentosLigados && (
             <Link href="/consultores/pagamentos" className="text-sm text-primary hover:underline">
               Pagamentos
+            </Link>
+          )}
+          {declaradosLigados && (
+            <Link href="/consultores/declarados" className="text-sm text-primary hover:underline">
+              Declarados
             </Link>
           )}
           <Link href="/consultores/roteiros" className="text-sm text-primary hover:underline">

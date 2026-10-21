@@ -28,7 +28,7 @@ export function AtencaoAgora() {
     <section className="card-surface p-4" aria-labelledby="atencao-titulo">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 id="atencao-titulo" className="font-display text-lg font-extrabold">
-          Atenção agora{data ? ` (${data.alerts.length + (data.payout_alerts?.length ?? 0)})` : ''}
+          Atenção agora{data ? ` (${data.alerts.length + (data.payout_alerts?.length ?? 0) + (data.declared_alerts?.length ?? 0)})` : ''}
         </h2>
         {data && <span className="text-sm text-muted-foreground">Atualizado às {data.now}, a cada minuto</span>}
       </div>
@@ -41,7 +41,7 @@ export function AtencaoAgora() {
             Tentar de novo
           </Button>
         </div>
-      ) : data.alerts.length === 0 && !(data.payout_alerts?.length) ? (
+      ) : data.alerts.length === 0 && !(data.payout_alerts?.length) && !(data.declared_alerts?.length) ? (
         <p className="mt-2 text-sm">
           {data.dia_de_trabalho ? '✓ Nenhum alerta agora: quem está em campo está dentro dos limites.' : 'Hoje não é dia de trabalho: sem alertas nem cobrança de ritmo.'}
         </p>
@@ -56,6 +56,18 @@ export function AtencaoAgora() {
               </p>
               <Link href="/consultores/pagamentos" className="inline-flex h-12 items-center text-sm font-bold text-primary hover:underline">
                 Abrir pagamentos
+              </Link>
+            </li>
+          ))}
+          {data.declared_alerts?.map((a) => (
+            <li key={`decl-${a.consultant_id}`} className="rounded-md border border-warning/40 bg-warning/10 p-3">
+              <p className="text-sm font-bold">
+                <span aria-hidden>⚠ </span>
+                <span className="sr-only">Divergência nos cadastros declarados: </span>
+                {a.message}
+              </p>
+              <Link href="/consultores/declarados" className="inline-flex h-12 items-center text-sm font-bold text-primary hover:underline">
+                Abrir cadastros declarados
               </Link>
             </li>
           ))}

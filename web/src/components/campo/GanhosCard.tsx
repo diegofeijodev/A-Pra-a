@@ -23,13 +23,20 @@ export function GanhosCard() {
     );
   }
   const { today, week, unconfirmed, pix, previous_weeks: anteriores } = g.data;
+  const declarado = g.data.signup_source === 'declared';
   return (
     <section className="card-surface space-y-3 p-4" aria-label="Seus ganhos">
       <div>
-        <p className="tag text-muted-foreground">Confirmado pelo Freela · hoje, {rotuloDia(today.day)}</p>
+        <p className="tag text-muted-foreground">{declarado ? 'Cadastro declarado' : 'Confirmado pelo Freela'} · hoje, {rotuloDia(today.day)}</p>
         <p className="text-3xl font-black">{brl(today.total_cents)}</p>
         <p className="text-sm text-muted-foreground">
-          {today.confirmed_signups === 0 ? 'Nenhum cadastro confirmado hoje ainda.' : `${today.confirmed_signups} ${today.confirmed_signups === 1 ? 'cadastro confirmado' : 'cadastros confirmados'} hoje.`}
+          {declarado
+            ? today.confirmed_signups === 0
+              ? 'Nenhum cadastro declarado hoje ainda.'
+              : `${today.confirmed_signups} ${today.confirmed_signups === 1 ? 'cadastro declarado' : 'cadastros declarados'} hoje.`
+            : today.confirmed_signups === 0
+              ? 'Nenhum cadastro confirmado hoje ainda.'
+              : `${today.confirmed_signups} ${today.confirmed_signups === 1 ? 'cadastro confirmado' : 'cadastros confirmados'} hoje.`}
         </p>
       </div>
 
@@ -44,8 +51,12 @@ export function GanhosCard() {
       </details>
 
       <div className="rounded-md border border-border p-3">
-        <p className="tag text-muted-foreground">Ainda não confirmado</p>
-        <p className="text-sm">{unconfirmed.text}</p>
+        <p className="tag text-muted-foreground">{declarado ? 'Conferência com o Freela' : 'Ainda não confirmado'}</p>
+        <p className="text-sm">
+          {declarado
+            ? 'Os cadastros que você declara entram na conta na hora. A equipe confere com o Freela e anula o que não existir, com o motivo registrado.'
+            : unconfirmed.text}
+        </p>
       </div>
 
       <div>

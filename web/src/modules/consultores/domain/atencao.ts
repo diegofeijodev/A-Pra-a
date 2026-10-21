@@ -62,6 +62,8 @@ export const atencaoSchema = z.object({
   ),
   /** F9 (§29.8): Pix bloqueado/falho. Ausente com `FIELD_PAYOUTS_ENABLED` desligada. */
   payout_alerts: z.array(alertaPixSchema).optional(),
+  /** S3 (§32.7): divergência declaração × Freela. Ausente com `FIELD_DECLARED_SIGNUPS_ENABLED` desligada. */
+  declared_alerts: z.array(z.object({ type: z.literal('declared_divergence'), consultant_id: z.string(), name: z.string(), praca_id: z.string(), declared: z.number().int(), unmatched: z.number().int(), divergence_pct: z.number().int(), message: z.string() })).optional(),
 });
 export type AtencaoView = z.infer<typeof atencaoSchema>;
 
