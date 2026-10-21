@@ -3281,6 +3281,7 @@ enviadas mudam), e grava `atualizado_por` (id) e `atualizado_em`. Ausente ou inv
 | `estagio_maximo_rota` | 4 | inteiro 1–6 | automático: lead em estágio maior (cadastrado) fica fora |
 | `gerar_ao_iniciar` | `false` | boolean | ao iniciar a jornada, a API monta o roteiro sozinha (se não houver) |
 | `consultor_pode_gerar` | `false` | boolean | libera o botão "Montar meu dia" no celular |
+| `raio_checkin_m` | 200 | inteiro 50–1000 | (L0, sem flag) distância do check-in até o estabelecimento **acima** da qual a visita nasce marcada "longe do local" (`far_from_place`, comparação estrita `>`, como `RAIO_LONGE_M`). Vale só para visitas abertas depois de salvar (a marca é gravada no check-in). `null` no PUT = ausente. Origem: Lovable `configuracoes.raio_checkin_m` |
 
 Chave desconhecida ou valor fora da faixa → `400 VALIDATION_ERROR`. Resposta: o objeto completo com os padrões aplicados.
 
@@ -3924,6 +3925,8 @@ Leitura: equipe. Escrita: `@AdminOnly()`. Token de consultor de campo → `401`.
 
 `Lançamento`: `{ id, kind, amount_cents, work_scope, work_day, work_week, payout_week, rule_version, source, reason, reverses_id, created_by, created_at }`. Consultor inexistente → `404 NOT_FOUND`.
 
+`Versão` (acréscimo aditivo da fase L0, nada existente muda): `is_initial` (boolean: `valid_from = '1970-01-01'`, a sentinela "vale desde sempre" que a migração grava na versão 1 e que `versaoVigente` precisa para cobrir qualquer dia — o valor gravado **nunca** muda, o trigger barra `UPDATE`) e `installed_at` (= `created_at`, quando a versão foi instalada). A tela mostra "Versão 1 · padrão inicial (vale desde o começo; instalada em dd/mm/aaaa)" e não mostra "Por sistema". O simulador usa a mesma constante (`VIGENCIA_INICIAL`).
+
 ### 28.6 Consultor — `GET /v1/campo/earnings` (`@CampoRoute()`)
 
 Só os ganhos **dele** (id vem do token). Resposta:
@@ -4298,3 +4301,181 @@ Apagar consultor/lead com declaração: `409 HAS_EARNINGS` / `409 HAS_DECLARED_S
 
 Smokes: `scripts/smoke.sh` (flags desligadas, bloco novo) e `scripts/smoke-modo-chefe-s3.sh` (API subida com `FIELD_EARNINGS_ENABLED`, `FIELD_ROUTES_ENABLED`, `FIELD_VISIT_FLOW_SELECT_ENABLED` e `FIELD_DECLARED_SIGNUPS_ENABLED` ligadas; limpa com `session_replication_role=replica` porque o razão de declarações é imutável).
 Recomendação de produção: S2/S3 em sombra por uma semana (comparar a tela de ganhos com o cálculo à mão) antes de publicar uma regra `declared`.
+
+## 33. Painel do gestor e resumo/nota do dia (restante da Lovable, fase L1)
+
+Origem: `docs/superpowers/specs/2026-10-21-lovable-restante-arquitetura.md` (itens 2 e 3) e `…-ux.md` (§3.1 e §3.6); Lovable `src/lib/indicadores.ts`
+(`calcularIndicadores`), `src/lib/visita.ts` (`resumoRota`) e `inicio.tsx`. **Só leitura**: sem migração, sem `@Cron`, sem gravação. Tudo é calculado na
+leitura, no dia de **Brasília** (`field_journeys.day`), com a conta e a fonte de cada número. Erros planos `{ error: { code, message } }`; wire `snake_case`.
+
+### 33.1 Travas: `FIELD_DASHBOARD_ENABLED` e `FIELD_DAY_SUMMARY_ENABLED` (padrão `false`)
+
+Desligadas: as rotas abaixo respondem `404 DASHBOARD_DISABLED` / `404 DAY_SUMMARY_DISABLED` e nada mais muda. Acréscimos aditivos de resposta (valem para L1 e L2):
+
+- `GET /v1/consultores/settings/config` (só o **GET**) ganha `features: { dashboard, day_summary, map_pins }` (booleans, as flags). É o que o web usa para mostrar
+  os links novos **sem sondar** rota desligada (um `404` derrubaria o `browser-check`).
+- `GET /v1/campo/me`: `features.day_summary` e `features.map_pins` (booleans).
+
+### 33.2 Configuração — `GET/PUT /v1/consultores/settings/config` (chaves novas; `null` no PUT = ausente)
+
+| Chave | Valores | Padrão | Significado |
+|---|---|---|---|
+| `ui_resumo_dia` | `nota` \| `numeros` \| `desligado` | `nota` (Lovable) | o que o consultor vê no resumo: a nota com a conta; só os números (nossa versão); ou nada |
+| `nota_peso_rota` / `nota_peso_conversao` | inteiros 0–10 que **somam 10** | `7` / `3` | pesos da nota (Lovable `resumoRota`: 70% rota + 30% cadastros). PUT que deixa a soma ≠ 10 (já mesclado com o gravado) → `400 VALIDATION_ERROR`; gravado incoerente volta aos dois padrões na leitura |
+| `nota_meta_conversao_pct` | inteiro 1–100 | `30` | positivação que já vale a parte cheia dos cadastros (Lovable: 30%) |
+| `nota_intervalo_alerta_min` | inteiro 15–480 | `75` | frase "o intervalo passou de 1 hora" (só tem efeito quando houver registro de intervalo, fase L4) |
+| `painel_tempo_medio` | `intervalo` \| `duracao` | `intervalo` (Lovable) | qual tempo é o número grande do cartão "Tempo entre visitas"; os dois voltam na resposta |
+| `painel_gap_max_min` | inteiro 10–480 | `120` (Lovable `MAX_GAP_MIN`) | intervalo entre chegadas acima disso fica fora da média (deslocamento/almoço) |
+
+As chaves só são gravadas quando enviadas (ausente continua ausente = padrão). Chave desconhecida ou fora da faixa → `400 VALIDATION_ERROR`.
+
+### 33.3 `cadastrosDoDia` — a contagem comum do painel e do resumo
+
+Por consultor e dia, segue a `signup_source` da **versão da regra de remuneração vigente no dia** (`field_pay_rule_versions`, mesma vigência do §28.2; as versões
+existem com ou sem `FIELD_EARNINGS_ENABLED`):
+
+| `signup_source` do dia | Cadastros do dia |
+|---|---|
+| `freela_confirmed` (padrão; produção hoje) | linhas de `field_signups` do consultor cujo dia do evento da `confirmation_rule` (§27.4) é o dia |
+| `declared` | declarações **não anuladas** do consultor com `declared_day` = o dia (todas, sem o limite diário da regra) |
+
+Sem versão nenhuma = `freela_confirmed`. Período com dias de fontes diferentes → `signups_source: "misto"` e a conta diz quais. Não exclui o pareamento do §32.5
+(isso é do dinheiro, não do indicador). **Com `freela_confirmed` e `FIELD_SIGNUP_SYNC_ENABLED` desligada (produção hoje) a contagem é 0** e as contas dizem isso.
+
+### 33.4 Painel — `GET /v1/consultores/dashboard?from=&to=&praca_id=` (equipe; token de consultor → `401`)
+
+`from`/`to` = dias `YYYY-MM-DD` de Brasília (padrão: hoje; `from ≤ to`; até 92 dias). `praca_id` opcional (uuid de praça existente, senão `404 NOT_FOUND`):
+filtra pelos consultores da praça (`field_consultants.praca_id`) e pelos estabelecimentos da praça (`leads.praca_id`). Atualização: o web pede de 60 em 60 s.
+
+```json
+{
+  "from": "2026-10-15", "to": "2026-10-21", "praca_id": null, "today": "2026-10-21", "generated_at": "…",
+  "kpis": {
+    "planned_stops": 280, "done_stops": 224, "pct_done": 80,
+    "visits": 300, "visits_off_route": 76,
+    "signups": 54, "signups_source": "declared", "declared_now": 54, "positivation_pct": 18,
+    "avg_gap_min": 16, "avg_duration_min": 7, "time_headline": "intervalo",
+    "vouchers": null,
+    "pracas_open": 3, "consultants_active": 12,
+    "leads_mapped": 3406, "leads_without_exact_location": 312
+  },
+  "ranking": [ { "consultant_id": "uuid", "name": "Ana", "praca_id": "uuid", "visits": 80, "signups": 20, "positivation_pct": 25 } ],
+  "by_result": [ { "code": "nao_cadastrado", "label": "Sem interesse", "color": "#dc2626", "n": 140 } ],
+  "conta": { "pct_done": "…", "visits": "…", "positivation": "…", "time": "…", "signups": "…", "vouchers": "…", "pracas_open": "…", "leads_mapped": "…" },
+  "fonte": { "pct_done": "…", "visits": "…", "positivation": "…", "time": "…", "signups": "…", "vouchers": "…", "pracas_open": "…", "leads_mapped": "…" },
+  "signup_sync_enabled": false
+}
+```
+
+- **Visitas concluídas** (`pct_done`): paradas `visitada` ÷ paradas `planejada` não `descartada` dos roteiros ativos dos consultores no período (inteiro arredondado). Sem parada planejada no
+  período → `pct_done: null` (a tela diz "Sem rota planejada no período", nunca "0%").
+- **Visitas realizadas** (`visits`): visitas com conclusão (`checkout_at`) no período, com ou sem roteiro (o "fechado" também conta: é um resultado). `visits_off_route` = as que não estão
+  ligadas a nenhuma parada de roteiro.
+- **Cadastros** (`signups`): soma de `cadastrosDoDia` (§33.3). `declared_now` = visitas do período com "Cadastrou agora" (`result = cadastrou`) ou QR (`freela_status = cadastrou_qr`):
+  é a segunda linha do cartão. **Positivação** = `signups ÷ visits` (`null` sem visita).
+- **Tempo entre visitas** (`avg_gap_min`): média dos intervalos entre chegadas (`checkin_at`) seguidas do **mesmo consultor no mesmo dia** (Brasília), entre visitas realizadas; intervalos
+  de 0 ou acima de `painel_gap_max_min` ficam de fora (Lovable `MAX_GAP_MIN`, que usava o dia UTC). `avg_duration_min` = média de chegada → conclusão. `time_headline` = `painel_tempo_medio`.
+- **Ranking**: consultores do filtro com alguma visita ou cadastro no período, ordenados por cadastros, depois positivação (razão exata), depois nome (Lovable `indicadores.ts:41-42`).
+- **Resultado das visitas** (`by_result`): cada visita realizada classificada por `categoriaDaVisita` (§34.3); a soma de `n` = `visits`. Ordem fixa da legenda; categorias com 0 também voltam.
+- **Praças abertas** = praças com `start_date ≤ hoje` (sem coluna nova); `consultants_active` = consultores ativos do filtro.
+- **Estabelecimentos mapeados** = leads `archived = false`, `is_test = false`, com `lat/lng` e `location_precision ∈ (point, address)`; `leads_without_exact_location` = os demais leads da mesma base.
+- `vouchers` = `null` enquanto o módulo de cupons (§38) não existir (a tela diz "Não ligado neste servidor").
+- Leitura sem N+1: número fixo de consultas (consultores, visitas, paradas, versões da regra, cadastros, praças e contagens de leads).
+
+### 33.5 Resumo do dia — `GET /v1/campo/day-summary?day=` (`@CampoRoute()`) e `GET /v1/consultores/:id/days/:day/summary` (equipe)
+
+Consultor: só o **próprio** (id do token); `day` padrão = hoje; no máximo 35 dias para trás e nunca no futuro (`400 VALIDATION_ERROR`). Equipe: `:id` uuid de consultor
+existente (senão `404 NOT_FOUND`), `day` válido e não futuro. O dia ainda aberto é calculado **"até agora"** (`day_open: true`): o encerrar vai pela fila do aparelho e a tela do resumo
+pode abrir antes de o servidor fechar a jornada.
+
+```json
+{
+  "day": "2026-10-22", "consultant_id": "uuid", "consultant_name": "Ana", "display": "nota", "calculated_at": "…", "day_open": false,
+  "planned": 30, "planned_source": "roteiro", "route_visited": 24, "visits_done": 24,
+  "signups": 6, "signups_source": "declared", "signup_sync_enabled": false,
+  "cumprimento_pct": 80, "positivacao_pct": 25,
+  "nota": 8.1, "partes": { "rota": 5.6, "conversao": 2.5 },
+  "total_min": 520, "first_start": "09:02", "last_end": "17:42", "intervalo_min": null, "avg_visit_min": 7,
+  "avaliacao": ["Você visitou 80% da rota. …"], "conta": ["…"]
+}
+```
+
+- `planned` = paradas `planejada` não `descartada` do roteiro **ativo** do dia (`planned_source: "roteiro"`); sem roteiro (ou flag do roteiro desligada) = `meta_diaria` (`"meta"`).
+- `route_visited` = paradas `visitada` do roteiro cuja visita foi concluída e conta na meta (`contaNaMeta`, §31.6); `null` sem roteiro. `visits_done` = visitas do dia concluídas que contam na meta (com ou sem roteiro).
+- **Cumprimento** = `min(1, (route_visited ?? visits_done) ÷ planned)`. **Positivação** = `signups ÷ visits_done` (cadastros de `cadastrosDoDia`, §33.3).
+- **Nota** (Lovable `resumoRota`, pesos configuráveis): `nota = arred1(cumprimento × nota_peso_rota + min(1, positivação ÷ nota_meta_conversao_pct) × nota_peso_conversao)`,
+  calculada em inteiros (meio para cima). `partes` são as duas parcelas com 2 casas, escritas de modo que **a soma das parcelas arredondada dá a nota**. Vetores: 20 de 20 com 6 cadastros = 10; meia rota sem cadastro = 3,5.
+- `display` = `ui_resumo_dia`. Com `numeros` ou `desligado`, `nota` e `partes` são `null` e a conta não traz a fórmula; com `desligado` a tela do consultor não abre o resumo (a equipe continua vendo os números).
+- `total_min` = soma das jornadas do dia (fim − início; jornada aberta conta até agora). `intervalo_min = null` até existir o registro de intervalo (fase L4). `avg_visit_min` = média de chegada → conclusão.
+- `avaliacao`: as frases da Lovable, com "voucher" trocado por "cupom" (catálogo `domain/catalog/resumo-dia.ts`); sem o módulo de cupons, a frase de cadastros diz só "reforce os benefícios".
+- `conta` sempre escreve: a fonte dos cadastros; com `freela_confirmed` e a sincronização desligada, "a positivação fica 0 e a nota máxima é 7"; com `freela_confirmed`, que os confirmados do dia podem vir de visitas de outros dias; e "calculado às HH:MM" (uma confirmação tardia muda a nota).
+
+### 33.6 Variáveis
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `FIELD_DASHBOARD_ENABLED` | `false` | liga `GET /v1/consultores/dashboard` e a tela "Painel" |
+| `FIELD_DAY_SUMMARY_ENABLED` | `false` | liga as duas rotas do resumo e a tela "Resultado do seu dia" |
+
+## 34. Mapa de pinos por situação (restante da Lovable, fase L2) — `/v1/consultores/map/pins`, `/v1/campo/map/pins`
+
+Origem: arquitetura item 4 e UX §3.3; Lovable `mapa.tsx`, `src/lib/status.ts` (cores) e `src/lib/format.ts` (`classifyPhone`). **Só leitura**, sem migração (os índices existem).
+Flag `FIELD_MAP_PINS_ENABLED` (padrão `false`): desligada, as três rotas respondem `404 MAP_PINS_DISABLED`. O mapa de calor (§24) continua igual, na sua aba.
+
+### 34.1 `GET /v1/consultores/map/pins?praca_id=&mode=&bbox=&cursor=&limit=` (equipe; token de consultor → `401`)
+
+| Parâmetro | Regra |
+|---|---|
+| `praca_id` | opcional; uuid de praça existente (`404 NOT_FOUND`). Ausente = **as praças abertas** (`start_date ≤ hoje`), como a Lovable |
+| `mode` | `resultado` (padrão) \| `estagio` (cores das etapas do funil) |
+| `bbox` | opcional, `sul,oeste,norte,leste` (mesma regra do §24.1): recorta só os **pinos**; a legenda continua sendo do filtro inteiro |
+| `cursor` | opcional, o `next_cursor` da página anterior (uuid) |
+| `limit` | 1–2000, padrão 2000 |
+
+```json
+{
+  "mode": "resultado", "pracas": [ { "id": "uuid", "name": "Moema" } ],
+  "legend": [ { "code": "a_visitar", "label": "A visitar", "color": "#2563eb", "shape": "circulo", "n": 2870 } ],
+  "pins": [ ["uuid", -23.6, -46.66, "a_visitar"] ],
+  "next_cursor": "uuid" , "total": 3406, "without_location": 312,
+  "conta": "…"
+}
+```
+
+- Base: leads `archived = false`, `is_test = false`, das praças do filtro. **Pino** = lead com `lat` e `lng` (qualquer `location_precision`: o lugar cadastrado na hora pelo consultor não tem precisão
+  e precisa aparecer). `without_location` = leads da base sem `lat`/`lng`. `total` = leads com localização do filtro inteiro (= soma da legenda).
+- **Legenda** = contagem do filtro inteiro (não da página nem do `bbox`), em ordem fixa, categorias com 0 incluídas. A soma das páginas (sem `bbox`) = `total`.
+- **Paginação estável**: `ORDER BY id`, `id > cursor`; `next_cursor = null` na última página. O web pede as páginas em sequência e para em 10.000 pinos ("Mostrando 10.000 de N").
+- Pino = `[id, lat, lng, code]` (sem nome nem telefone). O balão do clique busca o detalhe.
+
+### 34.2 `GET /v1/consultores/map/pins/:lead_id` (equipe)
+
+`{ id, name, address, city, praca_id, stage, stage_label, category: { code, label, color }, last_visit: { day, label, consultant_name } | null, phone: { masked, kind: "whatsapp" | "fixo" } | null }`.
+O telefone vem **só mascarado** (`(11) 9****-4321`) com o tipo (Lovable `classifyPhone`: 11 dígitos com 9 depois do DDD = celular/WhatsApp; senão fixo). Lead inexistente, arquivado ou de teste → `404 NOT_FOUND`.
+
+### 34.3 Situação do estabelecimento (`domain/pin-rules.ts`)
+
+`categoriaDaVisita(v)` (uma visita concluída), na ordem:
+
+| `code` | Rótulo | Cor | Forma (legenda) | Quando |
+|---|---|---|---|---|
+| `fechado` | Estabelecimento fechado | `#9A9A92` | `traco` | `outcome = fechado` ou `result = fechado` |
+| `cadastrado` | Cadastrou | `#16a34a` | `quadrado` | `result = cadastrou` ou `freela_status ∈ (cadastrou_qr, declarou)` |
+| `ja_usa` | Já usa o Freela | `#f97316` | `losango` | `result = ja_usa` ou `freela_status = ja_usa` |
+| `nao_contrata` | Não contrata freelas | `#ca8a04` | `hexagono` | `refusal_reason = nao_contrata_freelancers` |
+| `retornar` | Quer retorno | `#9333ea` | `triangulo` | `result = retorno` ou `needs_followup = true` (Lovable "retornar outro dia" e "ligar depois" unidos) |
+| `nao_cadastrado` | Sem interesse | `#dc2626` | `xis` | os demais (sem interesse, não cadastrou) |
+
+`categoriaDoLead(lead, última visita concluída, declaração)`: declaração **não anulada** ou etapa do funil 5–7 → `cadastrado`; sem visita concluída → `a_visitar` (`#2563eb`, `circulo`);
+senão `categoriaDaVisita` da última visita concluída (maior `checkout_at`). A etapa 8 (Perdido) não conta como cadastrado. `mode=estagio`: `code` = número da etapa, rótulo e cor do catálogo do funil.
+
+### 34.4 Consultor — `GET /v1/campo/map/pins?mode=&cursor=&limit=` (`@CampoRoute()`)
+
+Mesma resposta do §34.1, só com os leads **da praça do consultor** que estão num roteiro dele (qualquer dia) ou que ele visitou (como a RLS do representante na Lovable). Lead de
+outro consultor que não passou por ele **não aparece**.
+
+### 34.5 Variáveis
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `FIELD_MAP_PINS_ENABLED` | `false` | liga as três rotas e a tela "Mapa por situação" |
