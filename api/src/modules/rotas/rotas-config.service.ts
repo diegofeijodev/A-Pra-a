@@ -86,7 +86,11 @@ export class RotasConfigService {
     const chavesCadastro = new Set<string>(CHAVES_CONFIG_CADASTRO);
     const doCadastro = Object.fromEntries(Object.entries(parcial).filter(([k]) => chavesCadastro.has(k)));
     const chavesModo = new Set<string>(CHAVES_CONFIG_MODO);
-    const doModo = Object.fromEntries(Object.entries(parcial).filter(([k]) => chavesModo.has(k)));
+    // `null` nas chaves de alerta de divergência (S3) vale como ausente: o web reenvia o que recebeu (lição da S1).
+    const nuloVaiComoAusente = new Set(['divergencia_alerta_min', 'divergencia_alerta_pct']);
+    const doModo = Object.fromEntries(
+      Object.entries(parcial).filter(([k, v]) => chavesModo.has(k) && !(v === null && nuloVaiComoAusente.has(k))),
+    );
     const daRota = Object.fromEntries(
       Object.entries(parcial).filter(([k]) => !chavesAlerta.has(k) && !chavesCadastro.has(k) && !chavesModo.has(k)),
     );

@@ -14,6 +14,8 @@ const ADMIN: AuthUser = { id: 'dddddddd-0000-4000-8000-000000000001', email: 'a@
 const C1 = 'aaaaaaaa-0000-4000-8000-000000000001';
 const C2 = 'bbbbbbbb-0000-4000-8000-000000000002';
 const PRACA = 'cccccccc-0000-4000-8000-0000000000c1';
+const PRACA_B = 'cccccccc-0000-4000-8000-0000000000c2';
+const PRACA_DE: Record<string, string> = { [C1]: PRACA, [C2]: PRACA_B };
 const AGORA = new Date('2026-10-27T13:00:00.000Z'); // terça, 10h em Brasília
 const CID = (n: number) => `eeeeeeee-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
@@ -41,7 +43,7 @@ function montar(opts: { ligado?: boolean; regra?: object; confirmacao?: 'activat
       createMany: jest.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
         const d = data[0] as Record<string, unknown>;
         if (decls.some((x) => x.visit_id === d.visit_id || x.lead_id === d.lead_id || x.client_id === d.client_id)) return { count: 0 };
-        decls.push({ id: CID(100 + decls.length), void: null, consultant: { name: nomes[d.consultant_id as string] as string, praca_id: PRACA }, ...(d as object) } as Decl);
+        decls.push({ id: CID(100 + decls.length), void: null, consultant: { name: nomes[d.consultant_id as string] as string, praca_id: PRACA_DE[d.consultant_id as string] as string }, ...(d as object) } as Decl);
         return { count: 1 };
       }),
       findMany: jest.fn(async ({ where }: { where: Record<string, any> }) =>
@@ -163,6 +165,29 @@ describe('relatório de divergência', () => {
     const m = montar();
     await expect(m.s.relatorio({ from: '2026-10-27', to: '2026-10-26' }, AGORA)).rejects.toMatchObject({ response: { code: 'VALIDATION_ERROR' } });
     await expect(m.s.relatorio({ from: '2026-01-01', to: '2026-10-26' }, AGORA)).rejects.toMatchObject({ response: { code: 'VALIDATION_ERROR' } });
+  });
+});
+
+describe('isolamento por praça e por consultor (§4.5.6)', () => {
+  it('a praça A não vê declaração da praça B no relatório (nem pelo filtro de consultor da outra)', async () => {
+    const m = montar();
+    await m.declarar(1, { c: C1 });
+    await m.declarar(2, { c: C2 });
+    const a = await m.s.relatorio({ from: '2026-10-26', to: '2026-10-26', praca_id: PRACA }, AGORA);
+    expect(a.rows.map((r) => r.consultant_id)).toEqual([C1]);
+    expect(a.by_consultant.map((c) => c.consultant_id)).toEqual([C1]);
+    const b = await m.s.relatorio({ from: '2026-10-26', to: '2026-10-26', praca_id: PRACA_B }, AGORA);
+    expect(b.rows.map((r) => r.consultant_id)).toEqual([C2]);
+    const cruzado = await m.s.relatorio({ from: '2026-10-26', to: '2026-10-26', praca_id: PRACA, consultant_id: C2 }, AGORA);
+    expect(cruzado.rows).toEqual([]);
+  });
+  it('o alerta da praça B só fala de consultor da praça B', async () => {
+    const m = montar();
+    for (let i = 1; i <= 6; i++) await m.declarar(i, { c: C1 });
+    for (let i = 11; i <= 16; i++) await m.declarar(i, { c: C2 });
+    const b = await m.s.alertas(PRACA_B, AGORA);
+    expect(b.map((x) => x.consultant_id)).toEqual([C2]);
+    expect((await m.s.alertas(undefined, AGORA)).map((x) => x.consultant_id).sort()).toEqual([C1, C2]);
   });
 });
 

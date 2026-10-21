@@ -95,15 +95,15 @@ verificações em `api/`:
 # api/
 npm run start:dev | build | typecheck | lint | test | seed
 npm run start:smoke                # sobe sem watcher (ts-node --transpile-only), pra smoke
-npm run smoke                      # scripts/smoke.sh contra a API viva — 871 checagens, repetível sem resíduo
+npm run smoke                      # scripts/smoke.sh contra a API viva — 882 checagens, repetível sem resíduo
                                    # (menos sem o container `praca-postgres`: a limpeza final é por psql)
-npm test                           # jest maxWorkers 1 — 77 suítes, 1297 testes
+npm test                           # jest maxWorkers 1 — 87 suítes, 1466 testes
 npm run prisma:migrate:dev | prisma:generate | prisma:studio
 
 # web/
 yarn dev | typecheck | lint        # `build` só se o dono pedir (ver abaixo)
-yarn test                          # vitest run (fork único) — 19 arquivos, 253 testes
-yarn browser-check                 # scripts/browser-check.mjs — 145 checagens
+yarn test                          # vitest run (fork único) — 22 arquivos, 281 testes
+yarn browser-check                 # scripts/browser-check.mjs — 155 checagens (154 sem as flags do ganho declarado)
                                    # precisa da API na 3014 (start:smoke) e do web na 3024 (yarn dev)
                                    # conta: PRACA_CHECK_EMAIL/PASSWORD (padrão = seed), login pelo formulário
 ```

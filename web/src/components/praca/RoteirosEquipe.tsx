@@ -216,7 +216,7 @@ function FluxoVisitaConfig({ admin }: { admin: boolean }) {
   const salvar = useSalvarConfigModo();
   const [form, setForm] = useState<ConfigModo | null>(null);
   useEffect(() => {
-    if (data) setForm({ fluxo_visita: data.fluxo_visita, justificativa_distancia: data.justificativa_distancia, contato_obrigatorio_em: data.contato_obrigatorio_em, contato_campos: data.contato_campos, fechado_conta_na_meta: data.fechado_conta_na_meta, desfazer_segundos: data.desfazer_segundos });
+    if (data) setForm({ fluxo_visita: data.fluxo_visita, justificativa_distancia: data.justificativa_distancia, contato_obrigatorio_em: data.contato_obrigatorio_em, contato_campos: data.contato_campos, fechado_conta_na_meta: data.fechado_conta_na_meta, desfazer_segundos: data.desfazer_segundos, divergencia_alerta_min: data.divergencia_alerta_min, divergencia_alerta_pct: data.divergencia_alerta_pct });
   }, [data]);
   if (isPending) return <p className="text-sm text-muted-foreground">Carregando o modo da visita…</p>;
   if (isError || !data || !form) return <p className="text-sm text-destructive">Não foi possível carregar o modo da visita.</p>;
@@ -288,6 +288,25 @@ function FluxoVisitaConfig({ admin }: { admin: boolean }) {
           <Label htmlFor="fv-desfazer">Segundos para desfazer a conclusão</Label>
           <Input id="fv-desfazer" type="number" min={0} max={30} disabled={!admin} value={form.desfazer_segundos} onChange={(e) => set({ desfazer_segundos: Number(e.target.value) })} />
         </div>
+        {form.divergencia_alerta_min !== undefined && form.divergencia_alerta_pct !== undefined && (
+          <div className="space-y-1">
+            <p className="text-sm font-bold">Alerta de divergência dos cadastros declarados</p>
+            <p className="text-sm text-muted-foreground">
+              Aparece em “Atenção agora” quando, nos últimos 7 dias (até ontem), um consultor tem pelo menos este número de declarações sem correspondência no Freela E pelo menos esta porcentagem das declaradas. Só vale com o ganho
+              declarado ligado no servidor.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label htmlFor="fv-div-min">Mínimo de declarações sem correspondência</Label>
+                <Input id="fv-div-min" type="number" min={1} max={1000} disabled={!admin} value={form.divergencia_alerta_min} onChange={(e) => set({ divergencia_alerta_min: Number(e.target.value) })} />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="fv-div-pct">Mínimo de porcentagem (%)</Label>
+                <Input id="fv-div-pct" type="number" min={1} max={100} disabled={!admin} value={form.divergencia_alerta_pct} onChange={(e) => set({ divergencia_alerta_pct: Number(e.target.value) })} />
+              </div>
+            </div>
+          </div>
+        )}
         {admin && (
           <Button disabled={salvar.isPending} onClick={() => salvar.mutate(form)} className="h-10">
             {salvar.isPending ? 'Salvando…' : 'Salvar modo da visita'}

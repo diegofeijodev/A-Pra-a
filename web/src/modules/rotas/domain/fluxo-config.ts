@@ -20,6 +20,9 @@ export const configModoSchema = z.object({
   contato_campos: z.array(z.string()),
   fechado_conta_na_meta: z.boolean(),
   desfazer_segundos: z.number(),
+  /** S3 (contrato §32.7): alerta de divergência do ganho declarado. Opcional: servidor antigo não manda. */
+  divergencia_alerta_min: z.number().optional(),
+  divergencia_alerta_pct: z.number().optional(),
 });
 export type ConfigModo = z.infer<typeof configModoSchema>;
 

@@ -90,6 +90,19 @@ describe('RotasConfigService', () => {
       }
       expect(p.app_settings.upsert).not.toHaveBeenCalled();
     });
+    it('alerta de divergência (§32.7): valores gravados, null vale como ausente (o web reenvia o que recebeu), fora da faixa = 400', async () => {
+      const p = fakePrisma();
+      p.app_settings.findUnique.mockResolvedValue({ field_config: { divergencia_alerta_min: 7 } });
+      const s = new RotasConfigService(p as unknown as PrismaService);
+      await s.atualizar({ divergencia_alerta_min: null, divergencia_alerta_pct: 50 } as never, ADMIN, AGORA);
+      const gravado = p.app_settings.upsert.mock.calls[0][0].update.field_config;
+      expect(gravado).toMatchObject({ divergencia_alerta_min: 7, divergencia_alerta_pct: 50 }); // o null não apagou o 7
+      for (const dto of [{ divergencia_alerta_min: 0 }, { divergencia_alerta_pct: 101 }]) {
+        const e = await falha(() => s.atualizar(dto as never, ADMIN, AGORA));
+        expect((e as { getStatus: () => number }).getStatus()).toBe(400);
+      }
+      expect((await new RotasConfigService(fakePrisma() as unknown as PrismaService).modo()).divergencia_alerta_min).toBe(5);
+    });
     it('modo() lê o padrão da spec quando não há nada salvo', async () => {
       const s = new RotasConfigService(fakePrisma() as unknown as PrismaService);
       expect(await s.modo()).toEqual(CONFIG_MODO_PADRAO);
