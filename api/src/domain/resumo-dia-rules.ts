@@ -23,7 +23,13 @@ export interface ConfigResumoDia {
 }
 
 export const CONFIG_RESUMO_DIA = grupoConfig<ConfigResumoDia>(
-  { ui_resumo_dia: 'nota', nota_peso_rota: 7, nota_peso_conversao: 3, nota_meta_conversao_pct: 30, nota_intervalo_alerta_min: 75 },
+  {
+    ui_resumo_dia: 'nota',
+    nota_peso_rota: 7,
+    nota_peso_conversao: 3,
+    nota_meta_conversao_pct: 30,
+    nota_intervalo_alerta_min: 75,
+  },
   {
     ui_resumo_dia: umDe(UI_RESUMO_DIA),
     nota_peso_rota: inteiroEntre(0, 10),
@@ -75,9 +81,13 @@ export interface Nota {
 }
 
 export function calcularNota(e: EntradaNota): Nota {
-  const rota: Fracao = e.planejadas > 0 ? { n: e.peso_rota * Math.min(e.feitas, e.planejadas), d: e.planejadas } : { n: 0, d: 1 };
+  const rota: Fracao =
+    e.planejadas > 0
+      ? { n: e.peso_rota * Math.min(e.feitas, e.planejadas), d: e.planejadas }
+      : { n: 0, d: 1 };
   const alvo = e.visitas * e.meta_pct;
-  const conversao: Fracao = e.visitas > 0 ? { n: e.peso_conversao * Math.min(100 * e.cadastros, alvo), d: alvo } : { n: 0, d: 1 };
+  const conversao: Fracao =
+    e.visitas > 0 ? { n: e.peso_conversao * Math.min(100 * e.cadastros, alvo), d: alvo } : { n: 0, d: 1 };
   const total = soma(rota, conversao);
   // A soma escrita é TRUNCADA em 2 casas: o arredondamento de 1 casa (meio para cima) do truncado é o mesmo do exato.
   const soma100 = pisoVezes(total, 100);
@@ -93,7 +103,8 @@ export const centesimos = (h: number): string => `${Math.floor(h / 100)},${Strin
 export const decimos = (d: number): string => `${Math.floor(d / 10)},${d % 10}`;
 const pct = (num: number, den: number): number => (den > 0 ? Math.round((100 * num) / den) : 0);
 /** 520 → "8h40" */
-export const duracaoTexto = (min: number): string => (min >= 60 ? `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}` : `${min} min`);
+export const duracaoTexto = (min: number): string =>
+  min >= 60 ? `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}` : `${min} min`;
 const plural = (n: number, um: string, varios: string): string => `${n} ${n === 1 ? um : varios}`;
 
 // ── o resumo ───────────────────────────────────────────────
@@ -148,21 +159,35 @@ export function resumoDia(e: EntradaResumoDia): ResumoDia {
   const V = e.visitasConcluidas;
   const C = e.cadastros;
   const cfg = e.cfg;
-  const n = calcularNota({ planejadas, feitas, visitas: V, cadastros: C, peso_rota: cfg.nota_peso_rota, peso_conversao: cfg.nota_peso_conversao, meta_pct: cfg.nota_meta_conversao_pct });
+  const n = calcularNota({
+    planejadas,
+    feitas,
+    visitas: V,
+    cadastros: C,
+    peso_rota: cfg.nota_peso_rota,
+    peso_conversao: cfg.nota_peso_conversao,
+    meta_pct: cfg.nota_meta_conversao_pct,
+  });
   const comNota = cfg.ui_resumo_dia === 'nota';
   const cumprimento = pct(Math.min(feitas, planejadas), planejadas);
   const positivacao = V > 0 ? pct(C, V) : null;
   const semMedida = e.fonte === 'freela_confirmed' && !e.syncLigado;
 
   // tempos
-  const fim = (j: { started_at: Date; ended_at: Date | null }) => (j.ended_at ?? (e.diaAberto ? e.agora : j.started_at)).getTime();
-  const total = e.jornadas.reduce((a, j) => a + Math.max(0, Math.round((fim(j) - j.started_at.getTime()) / 60_000)), 0);
+  const fim = (j: { started_at: Date; ended_at: Date | null }) =>
+    (j.ended_at ?? (e.diaAberto ? e.agora : j.started_at)).getTime();
+  const total = e.jornadas.reduce(
+    (a, j) => a + Math.max(0, Math.round((fim(j) - j.started_at.getTime()) / 60_000)),
+    0,
+  );
   const inicios = e.jornadas.map((j) => j.started_at.getTime());
   const abertas = e.jornadas.some((j) => j.ended_at === null);
   const fins = e.jornadas.filter((j) => j.ended_at).map((j) => j.ended_at!.getTime());
   const primeiro = inicios.length ? minParaHhmm(minutesSp(new Date(Math.min(...inicios)))) : null;
   const ultimo = !abertas && fins.length ? minParaHhmm(minutesSp(new Date(Math.max(...fins)))) : null;
-  const media = e.duracoesMin.length ? Math.round(e.duracoesMin.reduce((a, x) => a + x, 0) / e.duracoesMin.length) : null;
+  const media = e.duracoesMin.length
+    ? Math.round(e.duracoesMin.reduce((a, x) => a + x, 0) / e.duracoesMin.length)
+    : null;
 
   // avaliação (Lovable, mesma ordem)
   const fracCumprimento = planejadas > 0 ? Math.min(feitas, planejadas) / planejadas : 0;
@@ -173,9 +198,13 @@ export function resumoDia(e: EntradaResumoDia): ResumoDia {
   // Sem medida dos cadastros (confirmados com a sincronização desligada) a frase de conversão enganaria: fica de fora.
   if (!semMedida) {
     if (V > 0 && 100 * C >= V * cfg.nota_meta_conversao_pct) avaliacao.push(FRASES_RESUMO_DIA.conversaoOtima);
-    else if (V > 0) avaliacao.push(e.cuponsLigados ? FRASES_RESUMO_DIA.conversaoComCupom : FRASES_RESUMO_DIA.conversaoSemCupom);
+    else if (V > 0)
+      avaliacao.push(
+        e.cuponsLigados ? FRASES_RESUMO_DIA.conversaoComCupom : FRASES_RESUMO_DIA.conversaoSemCupom,
+      );
   }
-  if (e.intervaloMin != null && e.intervaloMin > cfg.nota_intervalo_alerta_min) avaliacao.push(FRASES_RESUMO_DIA.intervaloLongo(cfg.nota_intervalo_alerta_min));
+  if (e.intervaloMin != null && e.intervaloMin > cfg.nota_intervalo_alerta_min)
+    avaliacao.push(FRASES_RESUMO_DIA.intervaloLongo(cfg.nota_intervalo_alerta_min));
   avaliacao.push(n.nota10 >= 80 ? FRASES_RESUMO_DIA.diaProdutivo : FRASES_RESUMO_DIA.obrigado);
 
   // a conta, por escrito
@@ -184,16 +213,23 @@ export function resumoDia(e: EntradaResumoDia): ResumoDia {
     ? `${feitas} de ${plural(planejadas, 'parada planejada', 'paradas planejadas')} do roteiro (${cumprimento}%)`
     : `${feitas} de ${plural(planejadas, 'visita', 'visitas')} da meta do dia, sem roteiro hoje (${cumprimento}%)`;
   const teto = feitas > planejadas ? '; o que passou da rota não conta (teto de 100%)' : '';
-  const baseConv = V > 0 ? `${C} de ${plural(V, 'visita concluída', 'visitas concluídas')} (${positivacao}%)` : 'nenhuma visita concluída';
+  const baseConv =
+    V > 0
+      ? `${C} de ${plural(V, 'visita concluída', 'visitas concluídas')} (${positivacao}%)`
+      : 'nenhuma visita concluída';
   if (comNota) {
-    conta.push(`Nota de 0 a 10 = rota × ${cfg.nota_peso_rota} + cadastros × ${cfg.nota_peso_conversao} (pesos da configuração).`);
+    conta.push(
+      `Nota de 0 a 10 = rota × ${cfg.nota_peso_rota} + cadastros × ${cfg.nota_peso_conversao} (pesos da configuração).`,
+    );
     conta.push(`Rota: ${baseRota}${teto} × ${cfg.nota_peso_rota} = ${centesimos(n.rota100)}.`);
     conta.push(
       V > 0
         ? `Cadastros: ${baseConv}; ${cfg.nota_meta_conversao_pct}% já vale a parte cheia → mín(1; ${positivacao}% ÷ ${cfg.nota_meta_conversao_pct}%) × ${cfg.nota_peso_conversao} = ${centesimos(n.conversao100)}.`
         : `Cadastros: nenhuma visita concluída → ${centesimos(n.conversao100)}.`,
     );
-    conta.push(`Soma: ${centesimos(n.rota100)} + ${centesimos(n.conversao100)} = ${centesimos(n.soma100)} → nota ${decimos(n.nota10)} (arredondada para 1 casa).`);
+    conta.push(
+      `Soma: ${centesimos(n.rota100)} + ${centesimos(n.conversao100)} = ${centesimos(n.soma100)} → nota ${decimos(n.nota10)} (arredondada para 1 casa).`,
+    );
   } else {
     conta.push(`Rota: ${baseRota}${teto}.`);
     conta.push(`Cadastros: ${baseConv}.`);
@@ -211,9 +247,13 @@ export function resumoDia(e: EntradaResumoDia): ResumoDia {
     );
   }
   conta.push(`Visitas concluídas = as visitas do dia com a conclusão feita que contam na meta.`);
-  conta.push(`Tempo do dia = soma das jornadas, do início ao fim${abertas ? ' (a aberta conta até agora)' : ''}${e.intervaloMin == null ? '; intervalo ainda não é registrado neste servidor' : ''}.`);
+  conta.push(
+    `Tempo do dia = soma das jornadas, do início ao fim${abertas ? ' (a aberta conta até agora)' : ''}${e.intervaloMin == null ? '; intervalo ainda não é registrado neste servidor' : ''}.`,
+  );
   if (e.diaAberto) conta.push('Dia ainda aberto: a conta é até agora.');
-  conta.push(`Calculado às ${minParaHhmm(minutesSp(e.agora))}. Uma confirmação que chegar depois muda a conta.`);
+  conta.push(
+    `Calculado às ${minParaHhmm(minutesSp(e.agora))}. Uma confirmação que chegar depois muda a conta.`,
+  );
 
   return {
     display: cfg.ui_resumo_dia,

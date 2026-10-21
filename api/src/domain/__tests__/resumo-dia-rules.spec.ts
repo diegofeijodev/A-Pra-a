@@ -1,10 +1,23 @@
 import { contarCadastros, fonteDoDia, fonteDoPeriodo } from '../cadastros-dia-rules';
 import { PRESET_CHEFE, REGRA_PADRAO } from '../earnings-rules';
-import { calcularNota, centesimos, CONFIG_RESUMO_DIA, decimos, duracaoTexto, resumoDia, type EntradaResumoDia } from '../resumo-dia-rules';
+import {
+  calcularNota,
+  centesimos,
+  CONFIG_RESUMO_DIA,
+  decimos,
+  duracaoTexto,
+  resumoDia,
+  type EntradaResumoDia,
+} from '../resumo-dia-rules';
 
 const PESOS = { peso_rota: 7, peso_conversao: 3, meta_pct: 30 };
-const nota = (planejadas: number, feitas: number, visitas: number, cadastros: number, o: Partial<typeof PESOS> = {}) =>
-  calcularNota({ planejadas, feitas, visitas, cadastros, ...PESOS, ...o });
+const nota = (
+  planejadas: number,
+  feitas: number,
+  visitas: number,
+  cadastros: number,
+  o: Partial<typeof PESOS> = {},
+) => calcularNota({ planejadas, feitas, visitas, cadastros, ...PESOS, ...o });
 
 describe('calcularNota (Lovable resumoRota, em inteiros)', () => {
   it('vetores da Lovable: 20 de 20 com 6 cadastros = 10; meia rota sem cadastro = 3,5', () => {
@@ -53,13 +66,27 @@ describe('calcularNota (Lovable resumoRota, em inteiros)', () => {
 
 describe('CONFIG_RESUMO_DIA (§33.2)', () => {
   it('padrão = Lovable (nota, 7/3, 30%, 75 min)', () => {
-    expect(CONFIG_RESUMO_DIA.ler({})).toEqual({ ui_resumo_dia: 'nota', nota_peso_rota: 7, nota_peso_conversao: 3, nota_meta_conversao_pct: 30, nota_intervalo_alerta_min: 75 });
+    expect(CONFIG_RESUMO_DIA.ler({})).toEqual({
+      ui_resumo_dia: 'nota',
+      nota_peso_rota: 7,
+      nota_peso_conversao: 3,
+      nota_meta_conversao_pct: 30,
+      nota_intervalo_alerta_min: 75,
+    });
   });
   it('pesos precisam somar 10 (PUT sobre o estado mesclado); gravado incoerente volta aos padrões', () => {
     const atual = CONFIG_RESUMO_DIA.padrao;
-    expect(CONFIG_RESUMO_DIA.aplicar(atual, { nota_peso_rota: 6 })).toEqual({ ok: false, erro: 'nota_peso_rota: os pesos da nota precisam somar 10 (6 + 3 = 9).' });
-    expect(CONFIG_RESUMO_DIA.aplicar(atual, { nota_peso_rota: 6, nota_peso_conversao: 4 })).toMatchObject({ ok: true });
-    expect(CONFIG_RESUMO_DIA.ler({ nota_peso_rota: 9, nota_peso_conversao: 3 })).toMatchObject({ nota_peso_rota: 7, nota_peso_conversao: 3 });
+    expect(CONFIG_RESUMO_DIA.aplicar(atual, { nota_peso_rota: 6 })).toEqual({
+      ok: false,
+      erro: 'nota_peso_rota: os pesos da nota precisam somar 10 (6 + 3 = 9).',
+    });
+    expect(CONFIG_RESUMO_DIA.aplicar(atual, { nota_peso_rota: 6, nota_peso_conversao: 4 })).toMatchObject({
+      ok: true,
+    });
+    expect(CONFIG_RESUMO_DIA.ler({ nota_peso_rota: 9, nota_peso_conversao: 3 })).toMatchObject({
+      nota_peso_rota: 7,
+      nota_peso_conversao: 3,
+    });
     expect(CONFIG_RESUMO_DIA.aplicar(atual, { ui_resumo_dia: 'grafico' })).toMatchObject({ ok: false });
     expect(CONFIG_RESUMO_DIA.aplicar(atual, { nota_meta_conversao_pct: 0 })).toMatchObject({ ok: false });
   });
@@ -89,7 +116,9 @@ describe('resumoDia', () => {
   const base: EntradaResumoDia = {
     agora: new Date('2026-10-22T20:43:00.000Z'),
     diaAberto: false,
-    jornadas: [{ started_at: new Date('2026-10-22T12:02:00.000Z'), ended_at: new Date('2026-10-22T20:42:00.000Z') }],
+    jornadas: [
+      { started_at: new Date('2026-10-22T12:02:00.000Z'), ended_at: new Date('2026-10-22T20:42:00.000Z') },
+    ],
     intervaloMin: null,
     rota: { planejadas: 30, visitadas: 24 },
     meta: 30,
@@ -104,7 +133,18 @@ describe('resumoDia', () => {
 
   it('o exemplo da UX: 24 de 30, 6 de 24 → 5,60 + 2,50 = 8,1, tempos em Brasília', () => {
     const r = resumoDia(base);
-    expect(r).toMatchObject({ nota: 8.1, partes: { rota: 5.6, conversao: 2.5 }, cumprimento_pct: 80, positivacao_pct: 25, planned_source: 'roteiro', total_min: 520, first_start: '09:02', last_end: '17:42', avg_visit_min: 7, intervalo_min: null });
+    expect(r).toMatchObject({
+      nota: 8.1,
+      partes: { rota: 5.6, conversao: 2.5 },
+      cumprimento_pct: 80,
+      positivacao_pct: 25,
+      planned_source: 'roteiro',
+      total_min: 520,
+      first_start: '09:02',
+      last_end: '17:42',
+      avg_visit_min: 7,
+      intervalo_min: null,
+    });
     expect(r.conta).toContain('Soma: 5,60 + 2,50 = 8,10 → nota 8,1 (arredondada para 1 casa).');
     expect(r.avaliacao).toEqual([
       'Você visitou 80% da rota. Planejar o tempo em cada estabelecimento pode ajudar a fechar o roteiro completo.',
@@ -116,14 +156,26 @@ describe('resumoDia', () => {
 
   it('sem roteiro: a meta do dia é o denominador e a conta diz isso', () => {
     const r = resumoDia({ ...base, rota: null, visitasConcluidas: 15 });
-    expect(r).toMatchObject({ planned: 30, planned_source: 'meta', route_visited: null, cumprimento_pct: 50 });
+    expect(r).toMatchObject({
+      planned: 30,
+      planned_source: 'meta',
+      route_visited: null,
+      cumprimento_pct: 50,
+    });
     expect(r.conta.some((l) => l.includes('da meta do dia, sem roteiro hoje'))).toBe(true);
   });
 
   it('confirmados com a sincronização desligada (produção hoje): positivação 0, nota máxima 7, sem a frase de conversão', () => {
-    const r = resumoDia({ ...base, fonte: 'freela_confirmed', cadastros: 0, rota: { planejadas: 30, visitadas: 30 } });
+    const r = resumoDia({
+      ...base,
+      fonte: 'freela_confirmed',
+      cadastros: 0,
+      rota: { planejadas: 30, visitadas: 30 },
+    });
     expect(r.nota).toBe(7);
-    expect(r.conta).toContain('A sincronização com o Freela está desligada neste servidor: os cadastros confirmados ficam em 0, a positivação é 0 e a nota máxima é 7.');
+    expect(r.conta).toContain(
+      'A sincronização com o Freela está desligada neste servidor: os cadastros confirmados ficam em 0, a positivação é 0 e a nota máxima é 7.',
+    );
     expect(r.conta.some((l) => l.includes('pode ser de visita de outro dia'))).toBe(true);
     expect(r.avaliacao.some((l) => l.includes('aumentar os cadastros'))).toBe(false);
   });
@@ -137,7 +189,11 @@ describe('resumoDia', () => {
   });
 
   it('dia aberto: jornada sem fim conta até agora e a conta avisa', () => {
-    const r = resumoDia({ ...base, diaAberto: true, jornadas: [{ started_at: new Date('2026-10-22T12:02:00.000Z'), ended_at: null }] });
+    const r = resumoDia({
+      ...base,
+      diaAberto: true,
+      jornadas: [{ started_at: new Date('2026-10-22T12:02:00.000Z'), ended_at: null }],
+    });
     expect(r.total_min).toBe(521);
     expect(r.last_end).toBeNull();
     expect(r.conta).toContain('Dia ainda aberto: a conta é até agora.');
@@ -145,7 +201,15 @@ describe('resumoDia', () => {
 
   it('frase do cupom só com o módulo de cupons; ótima conversão acima do alvo; rota excelente', () => {
     expect(resumoDia({ ...base, cuponsLigados: true }).avaliacao[1]).toContain('cupom da 1ª contratação');
-    const r = resumoDia({ ...base, rota: { planejadas: 30, visitadas: 29 }, visitasConcluidas: 29, cadastros: 9 });
-    expect(r.avaliacao.slice(0, 2)).toEqual(['Excelente cumprimento da rota. Parabéns pela disciplina no roteiro!', 'Ótima conversão em cadastros. Continue nesse ritmo!']);
+    const r = resumoDia({
+      ...base,
+      rota: { planejadas: 30, visitadas: 29 },
+      visitasConcluidas: 29,
+      cadastros: 9,
+    });
+    expect(r.avaliacao.slice(0, 2)).toEqual([
+      'Excelente cumprimento da rota. Parabéns pela disciplina no roteiro!',
+      'Ótima conversão em cadastros. Continue nesse ritmo!',
+    ]);
   });
 });

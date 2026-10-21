@@ -32,7 +32,10 @@ export interface VisitaPainel extends VisitaParaCategoria {
 }
 
 /** Intervalos (min) entre chegadas seguidas do MESMO consultor no MESMO dia; 0 e acima de `gapMax` ficam de fora. */
-export function intervalosEntreChegadas(visitas: readonly Pick<VisitaPainel, 'consultant_id' | 'day' | 'checkin_at'>[], gapMax: number): number[] {
+export function intervalosEntreChegadas(
+  visitas: readonly Pick<VisitaPainel, 'consultant_id' | 'day' | 'checkin_at'>[],
+  gapMax: number,
+): number[] {
   const grupos = new Map<string, number[]>();
   for (const v of visitas) {
     const k = `${v.consultant_id}|${v.day}`;
@@ -51,9 +54,11 @@ export function intervalosEntreChegadas(visitas: readonly Pick<VisitaPainel, 'co
   return gaps;
 }
 
-const media = (xs: number[]): number | null => (xs.length ? Math.round(xs.reduce((a, x) => a + x, 0) / xs.length) : null);
+const media = (xs: number[]): number | null =>
+  xs.length ? Math.round(xs.reduce((a, x) => a + x, 0) / xs.length) : null;
 const pct = (num: number, den: number): number | null => (den > 0 ? Math.round((100 * num) / den) : null);
-const plural = (n: number, um: string, varios: string): string => `${n.toLocaleString('pt-BR')} ${n === 1 ? um : varios}`;
+const plural = (n: number, um: string, varios: string): string =>
+  `${n.toLocaleString('pt-BR')} ${n === 1 ? um : varios}`;
 
 export interface EntradaPainel {
   consultores: { id: string; name: string; praca_id: string; active: boolean }[];
@@ -89,19 +94,36 @@ export interface PainelCalculado {
     leads_mapped: number;
     leads_without_exact_location: number;
   };
-  ranking: { consultant_id: string; name: string; praca_id: string; visits: number; signups: number; positivation_pct: number | null }[];
+  ranking: {
+    consultant_id: string;
+    name: string;
+    praca_id: string;
+    visits: number;
+    signups: number;
+    positivation_pct: number | null;
+  }[];
   by_result: { code: string; label: string; color: string; n: number }[];
-  conta: Record<'pct_done' | 'visits' | 'positivation' | 'time' | 'signups' | 'vouchers' | 'pracas_open' | 'leads_mapped', string>;
-  fonte: Record<'pct_done' | 'visits' | 'positivation' | 'time' | 'signups' | 'vouchers' | 'pracas_open' | 'leads_mapped', string>;
+  conta: Record<
+    'pct_done' | 'visits' | 'positivation' | 'time' | 'signups' | 'vouchers' | 'pracas_open' | 'leads_mapped',
+    string
+  >;
+  fonte: Record<
+    'pct_done' | 'visits' | 'positivation' | 'time' | 'signups' | 'vouchers' | 'pracas_open' | 'leads_mapped',
+    string
+  >;
 }
 
 export function montarPainel(e: EntradaPainel): PainelCalculado {
   const V = e.visitas.length;
   const foraDaRota = e.visitas.filter((v) => !v.na_rota).length;
   const S = [...e.consultores].reduce((a, c) => a + (e.cadastros.get(c.id) ?? 0), 0);
-  const declaradasAgora = e.visitas.filter((v) => v.result === 'cadastrou' || v.freela_status === 'cadastrou_qr').length;
+  const declaradasAgora = e.visitas.filter(
+    (v) => v.result === 'cadastrou' || v.freela_status === 'cadastrou_qr',
+  ).length;
   const gaps = intervalosEntreChegadas(e.visitas, e.cfg.painel_gap_max_min);
-  const duracoes = e.visitas.map((v) => (v.checkout_at.getTime() - v.checkin_at.getTime()) / 60_000).filter((m) => m >= 0);
+  const duracoes = e.visitas
+    .map((v) => (v.checkout_at.getTime() - v.checkin_at.getTime()) / 60_000)
+    .filter((m) => m >= 0);
   const gap = media(gaps);
   const duracao = media(duracoes);
   const pctDone = pct(e.paradas.visitadas, e.paradas.planejadas);
@@ -113,7 +135,15 @@ export function montarPainel(e: EntradaPainel): PainelCalculado {
     .map((c) => {
       const visits = porConsultor.get(c.id) ?? 0;
       const signups = e.cadastros.get(c.id) ?? 0;
-      return { consultant_id: c.id, name: c.name, praca_id: c.praca_id, visits, signups, positivation_pct: pct(signups, visits), razao: visits > 0 ? signups / visits : 0 };
+      return {
+        consultant_id: c.id,
+        name: c.name,
+        praca_id: c.praca_id,
+        visits,
+        signups,
+        positivation_pct: pct(signups, visits),
+        razao: visits > 0 ? signups / visits : 0,
+      };
     })
     .filter((r) => r.visits > 0 || r.signups > 0)
     .sort((a, b) => b.signups - a.signups || b.razao - a.razao || a.name.localeCompare(b.name, 'pt-BR'))
@@ -124,7 +154,12 @@ export function montarPainel(e: EntradaPainel): PainelCalculado {
     const c = categoriaDaVisita(v);
     porResultado.set(c, (porResultado.get(c) ?? 0) + 1);
   }
-  const by_result = CATEGORIAS_VISITA.map((c) => ({ code: c, label: META_CATEGORIA[c].label, color: META_CATEGORIA[c].color, n: porResultado.get(c) ?? 0 }));
+  const by_result = CATEGORIAS_VISITA.map((c) => ({
+    code: c,
+    label: META_CATEGORIA[c].label,
+    color: META_CATEGORIA[c].color,
+    n: porResultado.get(c) ?? 0,
+  }));
   const ativos = e.consultores.filter((c) => c.active).length;
   const tempoGrande = e.cfg.painel_tempo_medio;
 

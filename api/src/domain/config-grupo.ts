@@ -13,7 +13,8 @@ export interface GrupoConfig<T extends object> {
 
 export const inteiroEntre = (min: number, max: number) => (v: unknown) =>
   Number.isInteger(v) && (v as number) >= min && (v as number) <= max;
-export const umDe = (valores: readonly string[]) => (v: unknown) => typeof v === 'string' && valores.includes(v);
+export const umDe = (valores: readonly string[]) => (v: unknown) =>
+  typeof v === 'string' && valores.includes(v);
 
 export function grupoConfig<T extends object>(
   padrao: T,
@@ -28,7 +29,10 @@ export function grupoConfig<T extends object>(
     chaves,
     tem,
     ler(raw) {
-      const base = (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
+      const base = (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}) as Record<
+        string,
+        unknown
+      >;
       const c = { ...padrao } as Record<string, unknown>;
       for (const k of chaves) if (k in base && validadores[k](base[k])) c[k] = base[k];
       const cfg = c as unknown as T;

@@ -1,12 +1,36 @@
-import { CATEGORIAS_PINO, categoriaDaVisita, categoriaDoLead, classificarTelefone, legenda, META_CATEGORIA, rotuloEtapa } from '../pin-rules';
+import {
+  CATEGORIAS_PINO,
+  categoriaDaVisita,
+  categoriaDoLead,
+  classificarTelefone,
+  legenda,
+  META_CATEGORIA,
+  rotuloEtapa,
+} from '../pin-rules';
 
 describe('categoriaDaVisita (contrato §34.3) — fluxo simples', () => {
   it.each([
     [{ result: 'cadastrou', outcome: 'conversa', freela_status: 'declarou' }, 'cadastrado'],
     [{ result: 'ja_usa', outcome: 'conversa', freela_status: 'ja_usa' }, 'ja_usa'],
     [{ result: 'retorno', outcome: 'conversa', needs_followup: true }, 'retornar'],
-    [{ result: 'sem_interesse', outcome: 'conversa', freela_status: 'nao_cadastrou', refusal_reason: 'preco' }, 'nao_cadastrado'],
-    [{ result: 'sem_interesse', outcome: 'conversa', freela_status: 'nao_cadastrou', refusal_reason: 'nao_contrata_freelancers' }, 'nao_contrata'],
+    [
+      {
+        result: 'sem_interesse',
+        outcome: 'conversa',
+        freela_status: 'nao_cadastrou',
+        refusal_reason: 'preco',
+      },
+      'nao_cadastrado',
+    ],
+    [
+      {
+        result: 'sem_interesse',
+        outcome: 'conversa',
+        freela_status: 'nao_cadastrou',
+        refusal_reason: 'nao_contrata_freelancers',
+      },
+      'nao_contrata',
+    ],
     [{ result: 'fechado', outcome: 'fechado' }, 'fechado'],
   ])('%j → %s', (v, esperado) => expect(categoriaDaVisita(v)).toBe(esperado));
 });
@@ -16,16 +40,32 @@ describe('categoriaDaVisita — fluxo completo (campos antigos)', () => {
     [{ outcome: 'conversa', freela_status: 'cadastrou_qr', needs_followup: true }, 'cadastrado'],
     [{ outcome: 'conversa', freela_status: 'ja_usa', needs_followup: true }, 'ja_usa'],
     [{ outcome: 'conversa', freela_status: 'nao_cadastrou', needs_followup: true }, 'retornar'],
-    [{ outcome: 'conversa', freela_status: 'nao_cadastrou', needs_followup: false, refusal_reason: 'nao_contrata_freelancers' }, 'nao_contrata'],
+    [
+      {
+        outcome: 'conversa',
+        freela_status: 'nao_cadastrou',
+        needs_followup: false,
+        refusal_reason: 'nao_contrata_freelancers',
+      },
+      'nao_contrata',
+    ],
     [{ outcome: 'conversa', freela_status: 'nao_cadastrou', needs_followup: false }, 'nao_cadastrado'],
     [{ outcome: 'fechado', needs_followup: true }, 'fechado'],
   ])('%j → %s', (v, esperado) => expect(categoriaDaVisita(v)).toBe(esperado));
 
   it('precedência: fechado > cadastrou > já usa > não contrata > retorno > sem interesse', () => {
     expect(categoriaDaVisita({ outcome: 'fechado', freela_status: 'cadastrou_qr' })).toBe('fechado');
-    expect(categoriaDaVisita({ freela_status: 'cadastrou_qr', refusal_reason: 'nao_contrata_freelancers', needs_followup: true })).toBe('cadastrado');
+    expect(
+      categoriaDaVisita({
+        freela_status: 'cadastrou_qr',
+        refusal_reason: 'nao_contrata_freelancers',
+        needs_followup: true,
+      }),
+    ).toBe('cadastrado');
     expect(categoriaDaVisita({ freela_status: 'ja_usa', needs_followup: true })).toBe('ja_usa');
-    expect(categoriaDaVisita({ refusal_reason: 'nao_contrata_freelancers', needs_followup: true })).toBe('nao_contrata');
+    expect(categoriaDaVisita({ refusal_reason: 'nao_contrata_freelancers', needs_followup: true })).toBe(
+      'nao_contrata',
+    );
   });
 });
 
@@ -45,7 +85,13 @@ describe('categoriaDoLead', () => {
 
 describe('legenda', () => {
   it('ordem fixa, todas as categorias (as de 0 também), soma = total', () => {
-    const l = legenda(new Map([['a_visitar', 3], ['fechado', 1]]), 'resultado');
+    const l = legenda(
+      new Map([
+        ['a_visitar', 3],
+        ['fechado', 1],
+      ]),
+      'resultado',
+    );
     expect(l.map((x) => x.code)).toEqual([...CATEGORIAS_PINO]);
     expect(l.reduce((a, x) => a + x.n, 0)).toBe(4);
     expect(l[0]).toEqual({ code: 'a_visitar', label: 'A visitar', color: '#2563eb', shape: 'circulo', n: 3 });

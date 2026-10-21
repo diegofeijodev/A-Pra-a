@@ -18,16 +18,32 @@ describe('raio do check-in', () => {
     expect(marcaLonge(CENTRO, aNorte(300), 300)).toEqual({ distance_m: 300, far_from_place: false });
     expect(marcaLonge(CENTRO, aNorte(301), 300)).toEqual({ distance_m: 301, far_from_place: true });
     expect(marcaLonge(CENTRO, aNorte(60), 50).far_from_place).toBe(true);
-    expect(marcaLonge(CENTRO, { lat: null, lng: null }, 50)).toEqual({ distance_m: null, far_from_place: false });
+    expect(marcaLonge(CENTRO, { lat: null, lng: null }, 50)).toEqual({
+      distance_m: null,
+      far_from_place: false,
+    });
   });
 
   it('configuração: 50–1000 inteiro; ausente ou inválido no banco = 200; PUT fora da faixa = erro', () => {
     expect(CONFIG_CHECKIN.ler({})).toEqual({ raio_checkin_m: 200 });
     expect(CONFIG_CHECKIN.ler({ raio_checkin_m: 350 })).toEqual({ raio_checkin_m: 350 });
-    for (const ruim of [49, 1001, 120.5, '300', null]) expect(CONFIG_CHECKIN.ler({ raio_checkin_m: ruim })).toEqual({ raio_checkin_m: 200 });
-    expect(CONFIG_CHECKIN.aplicar(CONFIG_CHECKIN.padrao, { raio_checkin_m: 50 })).toEqual({ ok: true, config: { raio_checkin_m: 50 } });
-    expect(CONFIG_CHECKIN.aplicar(CONFIG_CHECKIN.padrao, { raio_checkin_m: 1000 })).toEqual({ ok: true, config: { raio_checkin_m: 1000 } });
-    expect(CONFIG_CHECKIN.aplicar(CONFIG_CHECKIN.padrao, { raio_checkin_m: 40 })).toEqual({ ok: false, erro: 'raio_checkin_m: valor fora do permitido.' });
-    expect(CONFIG_CHECKIN.aplicar(CONFIG_CHECKIN.padrao, { outra: 1 })).toEqual({ ok: false, erro: 'outra: campo desconhecido.' });
+    for (const ruim of [49, 1001, 120.5, '300', null])
+      expect(CONFIG_CHECKIN.ler({ raio_checkin_m: ruim })).toEqual({ raio_checkin_m: 200 });
+    expect(CONFIG_CHECKIN.aplicar(CONFIG_CHECKIN.padrao, { raio_checkin_m: 50 })).toEqual({
+      ok: true,
+      config: { raio_checkin_m: 50 },
+    });
+    expect(CONFIG_CHECKIN.aplicar(CONFIG_CHECKIN.padrao, { raio_checkin_m: 1000 })).toEqual({
+      ok: true,
+      config: { raio_checkin_m: 1000 },
+    });
+    expect(CONFIG_CHECKIN.aplicar(CONFIG_CHECKIN.padrao, { raio_checkin_m: 40 })).toEqual({
+      ok: false,
+      erro: 'raio_checkin_m: valor fora do permitido.',
+    });
+    expect(CONFIG_CHECKIN.aplicar(CONFIG_CHECKIN.padrao, { outra: 1 })).toEqual({
+      ok: false,
+      erro: 'outra: campo desconhecido.',
+    });
   });
 });

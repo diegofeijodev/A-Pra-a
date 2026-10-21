@@ -7,10 +7,21 @@
  */
 import { FUNNEL_STAGES } from './catalog/funnel';
 
-export const CATEGORIAS_PINO = ['a_visitar', 'cadastrado', 'ja_usa', 'retornar', 'nao_contrata', 'nao_cadastrado', 'fechado'] as const;
+export const CATEGORIAS_PINO = [
+  'a_visitar',
+  'cadastrado',
+  'ja_usa',
+  'retornar',
+  'nao_contrata',
+  'nao_cadastrado',
+  'fechado',
+] as const;
 export type CategoriaPino = (typeof CATEGORIAS_PINO)[number];
 /** As de uma VISITA (o painel soma visitas; "A visitar" é só de estabelecimento). */
-export const CATEGORIAS_VISITA = CATEGORIAS_PINO.filter((c) => c !== 'a_visitar') as Exclude<CategoriaPino, 'a_visitar'>[];
+export const CATEGORIAS_VISITA = CATEGORIAS_PINO.filter((c) => c !== 'a_visitar') as Exclude<
+  CategoriaPino,
+  'a_visitar'
+>[];
 
 export interface MetaCategoria {
   label: string;
@@ -43,7 +54,8 @@ export interface VisitaParaCategoria {
 /** Uma visita CONCLUÍDA → situação. A ordem é a do contrato §34.3 (a primeira regra que vale ganha). */
 export function categoriaDaVisita(v: VisitaParaCategoria): Exclude<CategoriaPino, 'a_visitar'> {
   if (v.outcome === 'fechado' || v.result === 'fechado') return 'fechado';
-  if (v.result === 'cadastrou' || v.freela_status === 'cadastrou_qr' || v.freela_status === 'declarou') return 'cadastrado';
+  if (v.result === 'cadastrou' || v.freela_status === 'cadastrou_qr' || v.freela_status === 'declarou')
+    return 'cadastrado';
   if (v.result === 'ja_usa' || v.freela_status === 'ja_usa') return 'ja_usa';
   if (v.refusal_reason === MOTIVO_NAO_CONTRATA) return 'nao_contrata';
   if (v.result === 'retorno' || v.needs_followup === true) return 'retornar';
@@ -80,7 +92,13 @@ export type ModoPinos = 'resultado' | 'estagio';
 /** Legenda em ordem fixa, com as categorias de contagem 0 (a soma dá o total do filtro). */
 export function legenda(contagem: Map<string, number>, modo: ModoPinos): ItemLegenda[] {
   if (modo === 'estagio') {
-    return FUNNEL_STAGES.map((s) => ({ code: String(s.n), label: `${s.n}. ${s.name}`, color: s.color, shape: 'circulo' as const, n: contagem.get(String(s.n)) ?? 0 }));
+    return FUNNEL_STAGES.map((s) => ({
+      code: String(s.n),
+      label: `${s.n}. ${s.name}`,
+      color: s.color,
+      shape: 'circulo' as const,
+      n: contagem.get(String(s.n)) ?? 0,
+    }));
   }
   return CATEGORIAS_PINO.map((c) => ({ code: c, ...META_CATEGORIA[c], n: contagem.get(c) ?? 0 }));
 }
@@ -95,13 +113,18 @@ export const rotuloEtapa = (stage: number): string => {
  * Telefone do estabelecimento (Lovable `classifyPhone`, `format.ts:49-56`): celular BR (11 dígitos com 9 depois do DDD) =
  * provável WhatsApp; senão fixo. Devolve SÓ a máscara (dado de terceiro: nunca o número inteiro para a equipe no mapa).
  */
-export function classificarTelefone(bruto: string | null | undefined): { masked: string; kind: 'whatsapp' | 'fixo' } | null {
+export function classificarTelefone(
+  bruto: string | null | undefined,
+): { masked: string; kind: 'whatsapp' | 'fixo' } | null {
   if (!bruto) return null;
   let d = bruto.replace(/\D/g, '');
   if (d.startsWith('55') && d.length > 11) d = d.slice(2);
   if (d.startsWith('0')) d = d.slice(1);
   if (d.length !== 10 && d.length !== 11) return null;
   const kind = d.length === 11 && d[2] === '9' ? 'whatsapp' : 'fixo';
-  const masked = d.length === 11 ? `(${d.slice(0, 2)}) ${d[2]}****-${d.slice(7)}` : `(${d.slice(0, 2)}) ****-${d.slice(6)}`;
+  const masked =
+    d.length === 11
+      ? `(${d.slice(0, 2)}) ${d[2]}****-${d.slice(7)}`
+      : `(${d.slice(0, 2)}) ****-${d.slice(6)}`;
   return { masked, kind };
 }
