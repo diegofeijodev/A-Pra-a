@@ -73,7 +73,7 @@ describe('configuração do lote A', () => {
   it('erros com a conta', () => {
     const c = { ...configLovableSchema.parse({}), nota_peso_rota: 6 };
     expect(errosConfigLovable(c, { dashboard: false, day_summary: true, map_pins: false })).toEqual(['Os pesos da nota precisam somar 10 (6 + 3 = 9).']);
-    expect(errosConfigLovable({ ...c, raio_checkin_m: 20 }, SEM_FEATURES)).toEqual(['Raio do check-in: de 50 a 1000 m.']);
+    expect(errosConfigLovable({ ...c, raio_checkin_m: 20 }, SEM_FEATURES)).toEqual(['Raio da chegada: de 50 a 1000 m.']);
   });
 });
 

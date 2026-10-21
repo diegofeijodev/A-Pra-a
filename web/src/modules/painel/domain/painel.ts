@@ -54,7 +54,7 @@ export function corpoConfigLovable(f: ConfigLovableCampos, features: FeaturesLov
 export function errosConfigLovable(f: ConfigLovableCampos, features: FeaturesLovable): string[] {
   const e: string[] = [];
   const inteiro = (v: number, a: number, b: number) => Number.isInteger(v) && v >= a && v <= b;
-  if (!inteiro(f.raio_checkin_m, 50, 1000)) e.push('Raio do check-in: de 50 a 1000 m.');
+  if (!inteiro(f.raio_checkin_m, 50, 1000)) e.push('Raio da chegada: de 50 a 1000 m.');
   if (features.day_summary) {
     if (f.nota_peso_rota + f.nota_peso_conversao !== 10)
       e.push(`Os pesos da nota precisam somar 10 (${f.nota_peso_rota} + ${f.nota_peso_conversao} = ${f.nota_peso_rota + f.nota_peso_conversao}).`);
