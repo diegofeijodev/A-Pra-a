@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useConfigLovable, useSalvarConfigLovable } from '@/modules/painel/application/use-painel';
-import { corpoConfigLovable, errosConfigLovable, SEM_FEATURES, type ConfigLovableCampos } from '@/modules/painel/domain/painel';
+import { camposConfigLovable, corpoConfigLovable, errosConfigLovable, SEM_FEATURES, type ConfigLovableCampos } from '@/modules/painel/domain/painel';
 
 const sel = 'h-10 w-full rounded-md border border-border bg-background px-3 text-sm';
 
@@ -18,10 +18,7 @@ export function ConfigLovable({ admin }: { admin: boolean }) {
   const salvar = useSalvarConfigLovable();
   const [form, setForm] = useState<ConfigLovableCampos | null>(null);
   useEffect(() => {
-    if (data) {
-      const { features: _f, ...campos } = data;
-      setForm(campos);
-    }
+    if (data) setForm(camposConfigLovable(data));
   }, [data]);
   if (isPending) return <p className="text-sm text-muted-foreground">Carregando…</p>;
   if (isError || !data || !form) return <p className="text-sm text-destructive">Não foi possível carregar esta configuração.</p>;

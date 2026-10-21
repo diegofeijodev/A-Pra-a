@@ -21,6 +21,18 @@ export const configLovableSchema = z.object({
 export type ConfigLovable = z.infer<typeof configLovableSchema>;
 export type ConfigLovableCampos = Omit<ConfigLovable, 'features'>;
 
+/** Só as chaves editáveis (sem `features`, que é do servidor). */
+export const camposConfigLovable = (c: ConfigLovable): ConfigLovableCampos => ({
+  raio_checkin_m: c.raio_checkin_m,
+  ui_resumo_dia: c.ui_resumo_dia,
+  nota_peso_rota: c.nota_peso_rota,
+  nota_peso_conversao: c.nota_peso_conversao,
+  nota_meta_conversao_pct: c.nota_meta_conversao_pct,
+  nota_intervalo_alerta_min: c.nota_intervalo_alerta_min,
+  painel_tempo_medio: c.painel_tempo_medio,
+  painel_gap_max_min: c.painel_gap_max_min,
+});
+
 /** O que o formulário pode mandar: só chaves do servidor que existem com a flag (as outras ficam de fora do PUT). */
 export function corpoConfigLovable(f: ConfigLovableCampos, features: FeaturesLovable): Partial<ConfigLovableCampos> {
   return {

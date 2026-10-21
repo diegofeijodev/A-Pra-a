@@ -38,6 +38,7 @@ export default function PinosMapa({ pins, cores, dark, chaveEnquadre, onPino, ba
 
   useEffect(() => {
     let alive = true;
+    const marcados = marcadores.current;
     void (async () => {
       const L = await import('leaflet');
       if (!alive || !el.current) return;
@@ -55,7 +56,7 @@ export default function PinosMapa({ pins, cores, dark, chaveEnquadre, onPino, ba
       mapRef.current?.remove();
       mapRef.current = null;
       grupoRef.current = null;
-      marcadores.current.clear();
+      marcados.clear();
     };
   }, [dark]);
 
