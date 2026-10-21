@@ -2100,6 +2100,23 @@ check "config do campo: alerta de divergência com os padrões 5 e 40" "5|40" \
 check "config do campo: PUT sem as chaves novas continua valendo" "true" \
   "$(curl -s -X PUT $API/v1/consultores/settings/config -H "$J" -H "$HD" -d '{"desfazer_segundos":8}' | jq '.desfazer_segundos == 8')"
 
+echo "── Restante da Lovable, lote A (§33/§34), flags desligadas: nada muda ──"
+# Com FIELD_DASHBOARD_ENABLED, FIELD_DAY_SUMMARY_ENABLED e FIELD_MAP_PINS_ENABLED desligadas (padrão) as rotas novas
+# respondem 404 e a tela não as chama. As flags ligadas são provadas por `scripts/smoke-lovable-a.sh` (não roda junto).
+check "/me: day_summary e map_pins desligados" "false|false" "$(echo "$ME_FLAG" | jq -r '"\(.features.day_summary)|\(.features.map_pins)"')"
+check "config: features do lote A desligadas e raio do check-in no padrão (200 m)" "false|false|false|200" \
+  "$(curl -s $API/v1/consultores/settings/config -H "$HD" | jq -r '"\(.features.dashboard)|\(.features.day_summary)|\(.features.map_pins)|\(.raio_checkin_m)"')"
+check "painel = DASHBOARD_DISABLED" "404|DASHBOARD_DISABLED" \
+  "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' $API/v1/consultores/dashboard -H "$HD")|$(jq -r .error.code /tmp/praca-smoke-l.json)"
+check "resumo do dia (consultor) = DAY_SUMMARY_DISABLED" "404|DAY_SUMMARY_DISABLED" \
+  "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' $API/v1/campo/day-summary -H "$HC")|$(jq -r .error.code /tmp/praca-smoke-l.json)"
+check "resumo do dia (equipe) = DAY_SUMMARY_DISABLED" "DAY_SUMMARY_DISABLED" \
+  "$(curl -s $API/v1/consultores/$(uuid)/days/$HOJE/summary -H "$HD" | jq -r .error.code)"
+check "pinos (equipe e consultor) = MAP_PINS_DISABLED" "MAP_PINS_DISABLED|MAP_PINS_DISABLED" \
+  "$(curl -s $API/v1/consultores/map/pins -H "$HD" | jq -r .error.code)|$(curl -s $API/v1/campo/map/pins -H "$HC" | jq -r .error.code)"
+check "token de consultor no painel continua 401 (sessão antes da flag)" "401" "$(curl -s -o /dev/null -w '%{http_code}' $API/v1/consultores/dashboard -H "$HC")"
+check "dia do consultor (rota antiga) continua 200" "200" "$(curl -s -o /dev/null -w '%{http_code}' $API/v1/consultores/$(curl -s $API/v1/consultores -H "$HD" | jq -r '.[0].id')/days/$HOJE -H "$HD")"
+
 check "CRM: UM evento de visita do consultor, com a etapa nova" "1|3" \
   "$(echo "$LEAD_DEPOIS" | jq -r --arg a "Consultor: Consultor $SUF" '[.events[] | select(.kind=="visit" and .author_label==$a)] | "\(length)|\(.[0].stage_to)"')"
 check "foto da visita para o consultor" "image/jpeg" \
