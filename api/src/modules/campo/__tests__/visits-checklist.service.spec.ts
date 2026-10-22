@@ -16,13 +16,24 @@ import type { PhotoStorage } from '../photo-storage';
 import type { PlacesService } from '../places.service';
 import { VisitsService } from '../visits.service';
 
-const pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true, transformOptions: { enableImplicitConversion: true } });
+const pipe = new ValidationPipe({
+  whitelist: true,
+  forbidNonWhitelisted: true,
+  transform: true,
+  transformOptions: { enableImplicitConversion: true },
+});
 
 const CONS = '44444444-4444-4444-8444-444444444444';
 const PRACA = '00000000-0000-4000-8000-0000000000aa';
 const LEAD = '99999999-9999-4999-8999-999999999999';
 const CLIENT = '77777777-7777-4777-8777-777777777777';
-const C: CampoConsultant = { id: CONS, name: 'Ana Souza', email: 'ana@exemplo.com', praca_id: PRACA, must_change_password: false };
+const C: CampoConsultant = {
+  id: CONS,
+  name: 'Ana Souza',
+  email: 'ana@exemplo.com',
+  praca_id: PRACA,
+  must_change_password: false,
+};
 const AGORA = new Date('2026-10-20T15:00:00.000Z');
 const POS = { at: '2026-10-20T14:59:00.000Z', lat: -19.9245, lng: -43.9352, accuracy: 12 };
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10]);
@@ -99,18 +110,34 @@ function fakePrisma(linha: Record<string, unknown>) {
     },
     lead_events: { create: jest.fn().mockResolvedValue({}) },
   };
-  p.$transaction.mockImplementation(async (arg: unknown) => (Array.isArray(arg) ? Promise.all(arg) : (arg as (tx: unknown) => Promise<unknown>)(p)));
+  p.$transaction.mockImplementation(async (arg: unknown) =>
+    Array.isArray(arg) ? Promise.all(arg) : (arg as (tx: unknown) => Promise<unknown>)(p),
+  );
   return p;
 }
 
-function servico(p: ReturnType<typeof fakePrisma>, o: { checklist: boolean; cfg?: ConfigChecklist; fluxo?: 'simples' | 'completo' }) {
-  const modo = { ligado: true, config: jest.fn().mockResolvedValue(CONFIG_MODO_PADRAO), fluxoDoConsultor: jest.fn().mockResolvedValue(o.fluxo ?? 'simples') };
-  const configs = { checklist: jest.fn().mockResolvedValue(o.cfg ?? CONFIG_CHECKLIST.padrao), checkin: jest.fn().mockResolvedValue({ raio_checkin_m: 200 }) };
+function servico(
+  p: ReturnType<typeof fakePrisma>,
+  o: { checklist: boolean; cfg?: ConfigChecklist; fluxo?: 'simples' | 'completo' },
+) {
+  const modo = {
+    ligado: true,
+    config: jest.fn().mockResolvedValue(CONFIG_MODO_PADRAO),
+    fluxoDoConsultor: jest.fn().mockResolvedValue(o.fluxo ?? 'simples'),
+  };
+  const configs = {
+    checklist: jest.fn().mockResolvedValue(o.cfg ?? CONFIG_CHECKLIST.padrao),
+    checkin: jest.fn().mockResolvedValue({ raio_checkin_m: 200 }),
+  };
   return new VisitsService(
     p as unknown as PrismaService,
     { abertaOuFalha: jest.fn().mockResolvedValue(JORNADA) } as unknown as JourneysService,
     { similar: jest.fn().mockResolvedValue([]) } as unknown as PlacesService,
-    { put: jest.fn().mockResolvedValue(undefined), get: jest.fn(), remove: jest.fn().mockResolvedValue(undefined) } as unknown as PhotoStorage,
+    {
+      put: jest.fn().mockResolvedValue(undefined),
+      get: jest.fn(),
+      remove: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PhotoStorage,
     false,
     modo as unknown as ModoCampoService,
     undefined,
@@ -118,9 +145,11 @@ function servico(p: ReturnType<typeof fakePrisma>, o: { checklist: boolean; cfg?
     { checklist: o.checklist, breaks: false },
   );
 }
-const dto = (body: unknown) => pipe.transform(body, { type: 'body', metatype: AnswersDto }) as Promise<AnswersDto>;
+const dto = (body: unknown) =>
+  pipe.transform(body, { type: 'body', metatype: AnswersDto }) as Promise<AnswersDto>;
 const dataDo = (m: jest.Mock, n = 0) => (m.mock.calls[n]![0] as { data: Record<string, unknown> }).data;
-const checkinDto = (over: Partial<CheckinDto> = {}): CheckinDto => ({ client_id: CLIENT, lead_id: LEAD, ...POS, ...over }) as CheckinDto;
+const checkinDto = (over: Partial<CheckinDto> = {}): CheckinDto =>
+  ({ client_id: CLIENT, lead_id: LEAD, ...POS, ...over }) as CheckinDto;
 
 describe('flag desligada (produção hoje)', () => {
   it('check-in não grava foto; rascunho com checklist não nulo = 422 CHECKLIST_DISABLED sem gravar; null passa', async () => {
@@ -129,7 +158,14 @@ describe('flag desligada (produção hoje)', () => {
     p.field_visits.findFirst.mockResolvedValueOnce(null);
     await s.checkin(C, checkinDto(), JPEG, AGORA);
     expect(dataDo(p.field_visits.create)).not.toHaveProperty('checklist');
-    await expect(s.saveAnswers(C, CLIENT, await dto({ result: 'ja_usa', checklist: [{ id: 'apresentacao', done: true }] }), AGORA)).rejects.toMatchObject({
+    await expect(
+      s.saveAnswers(
+        C,
+        CLIENT,
+        await dto({ result: 'ja_usa', checklist: [{ id: 'apresentacao', done: true }] }),
+        AGORA,
+      ),
+    ).rejects.toMatchObject({
       status: 422,
       response: { code: 'CHECKLIST_DISABLED' },
     });
@@ -139,7 +175,13 @@ describe('flag desligada (produção hoje)', () => {
     expect(v).not.toHaveProperty('checklist');
   });
   it('foto gravada quando a flag estava ligada NÃO cobra nem aparece depois de desligar', async () => {
-    const p = fakePrisma({ ...LINHA, result: 'ja_usa', freela_status: 'ja_usa', needs_followup: false, checklist: foto('todas') });
+    const p = fakePrisma({
+      ...LINHA,
+      result: 'ja_usa',
+      freela_status: 'ja_usa',
+      needs_followup: false,
+      checklist: foto('todas'),
+    });
     const v = await servico(p, { checklist: false }).checkout(C, CLIENT, POS, AGORA);
     expect(v).not.toHaveProperty('checklist');
     expect(p.field_visits.updateMany).toHaveBeenCalled();
@@ -152,31 +194,60 @@ describe('flag ligada', () => {
     const p = fakePrisma({ ...LINHA });
     p.field_visits.findFirst.mockResolvedValue(null);
     await servico(p, { checklist: true }).checkin(C, checkinDto(), JPEG, AGORA);
-    expect(dataDo(p.field_visits.create).checklist).toEqual({ required: 'nao', items: ETAPAS_PADRAO.map((e) => ({ ...e, done: false, note: null })) });
+    expect(dataDo(p.field_visits.create).checklist).toEqual({
+      required: 'nao',
+      items: ETAPAS_PADRAO.map((e) => ({ ...e, done: false, note: null })),
+    });
 
     const p2 = fakePrisma({ ...LINHA });
     p2.field_visits.findFirst.mockResolvedValue(null);
-    await servico(p2, { checklist: true, cfg: { ...CONFIG_CHECKLIST.padrao, checklist_fluxos: ['completo'] } }).checkin(C, checkinDto(), JPEG, AGORA);
+    await servico(p2, {
+      checklist: true,
+      cfg: { ...CONFIG_CHECKLIST.padrao, checklist_fluxos: ['completo'] },
+    }).checkin(C, checkinDto(), JPEG, AGORA);
     expect(dataDo(p2.field_visits.create)).not.toHaveProperty('checklist');
   });
 
   it('rascunho mescla as marcas na foto; id desconhecido ignorado; sem foto o campo é ignorado', async () => {
     const p = fakePrisma({ ...LINHA, checklist: foto('nao') });
     const s = servico(p, { checklist: true });
-    await s.saveAnswers(C, CLIENT, await dto({ checklist: [{ id: 'apresentacao', done: true, note: ' ok ' }, { id: 'velha', done: true }] }), AGORA);
-    const ck = dataDo(p.field_visits.update).checklist as { items: { id: string; done: boolean; note: string | null }[] };
+    await s.saveAnswers(
+      C,
+      CLIENT,
+      await dto({
+        checklist: [
+          { id: 'apresentacao', done: true, note: ' ok ' },
+          { id: 'velha', done: true },
+        ],
+      }),
+      AGORA,
+    );
+    const ck = dataDo(p.field_visits.update).checklist as {
+      items: { id: string; done: boolean; note: string | null }[];
+    };
     expect(ck.items.map((i) => [i.id, i.done, i.note])).toEqual([
       ['apresentacao', true, 'ok'],
       ['entender_negocio', false, null],
       ['identificar_necessidade', false, null],
     ]);
     const p2 = fakePrisma({ ...LINHA, checklist: null });
-    await servico(p2, { checklist: true }).saveAnswers(C, CLIENT, await dto({ result: 'ja_usa', checklist: [{ id: 'apresentacao', done: true }] }), AGORA);
+    await servico(p2, { checklist: true }).saveAnswers(
+      C,
+      CLIENT,
+      await dto({ result: 'ja_usa', checklist: [{ id: 'apresentacao', done: true }] }),
+      AGORA,
+    );
     expect(dataDo(p2.field_visits.update)).not.toHaveProperty('checklist');
   });
 
   it('não obrigatório (padrão Lovable): o "1 toque" do simples conclui igual; o CRM leva só a contagem', async () => {
-    const p = fakePrisma({ ...LINHA, result: 'ja_usa', freela_status: 'ja_usa', needs_followup: false, checklist: foto('nao') });
+    const p = fakePrisma({
+      ...LINHA,
+      result: 'ja_usa',
+      freela_status: 'ja_usa',
+      needs_followup: false,
+      checklist: foto('nao'),
+    });
     const v = await servico(p, { checklist: true }).checkout(C, CLIENT, POS, AGORA);
     expect(p.field_visits.updateMany).toHaveBeenCalled();
     expect(String(dataDo(p.lead_events.create).text)).toMatch(/\. Roteiro da conversa: 0 de 3 etapas\.$/);
@@ -184,18 +255,32 @@ describe('flag ligada', () => {
   });
 
   it('obrigatório na FOTO: falta entra no fim do 422 e no missing; marcado tudo, conclui', async () => {
-    const linha = { ...LINHA, result: 'ja_usa', freela_status: 'ja_usa', needs_followup: false, checklist: foto('todas') };
+    const linha = {
+      ...LINHA,
+      result: 'ja_usa',
+      freela_status: 'ja_usa',
+      needs_followup: false,
+      checklist: foto('todas'),
+    };
     const p = fakePrisma(linha);
     await expect(servico(p, { checklist: true }).checkout(C, CLIENT, POS, AGORA)).rejects.toMatchObject({
       status: 422,
-      response: { code: 'ANSWERS_INCOMPLETE', message: 'Falta responder: roteiro da visita (etapas 1, 2, 3).' },
+      response: {
+        code: 'ANSWERS_INCOMPLETE',
+        message: 'Falta responder: roteiro da visita (etapas 1, 2, 3).',
+      },
     });
     expect(p.field_visits.updateMany).not.toHaveBeenCalled();
     const semResultado = fakePrisma({ ...LINHA, checklist: foto('todas', 2) });
-    await expect(servico(semResultado, { checklist: true }).checkout(C, CLIENT, POS, AGORA)).rejects.toMatchObject({
+    await expect(
+      servico(semResultado, { checklist: true }).checkout(C, CLIENT, POS, AGORA),
+    ).rejects.toMatchObject({
       response: { message: 'Falta responder: resultado da visita, roteiro da visita (etapas 1, 2).' },
     });
-    const marcado = { ...linha, checklist: { required: 'todas', items: foto('todas').items.map((i) => ({ ...i, done: true })) } };
+    const marcado = {
+      ...linha,
+      checklist: { required: 'todas', items: foto('todas').items.map((i) => ({ ...i, done: true })) },
+    };
     const p3 = fakePrisma(marcado);
     await servico(p3, { checklist: true }).checkout(C, CLIENT, POS, AGORA);
     expect(p3.field_visits.updateMany).toHaveBeenCalled();
@@ -204,7 +289,13 @@ describe('flag ligada', () => {
   it('obrigatoriedade lida da foto: config virou "todas" depois do check-in (foto "nao") não trava; visita sem foto (fila de antes da flag) passa', async () => {
     const cfgTodas = { ...CONFIG_CHECKLIST.padrao, checklist_obrigatorio: 'todas' as const };
     for (const ck of [foto('nao'), null]) {
-      const p = fakePrisma({ ...LINHA, result: 'ja_usa', freela_status: 'ja_usa', needs_followup: false, checklist: ck });
+      const p = fakePrisma({
+        ...LINHA,
+        result: 'ja_usa',
+        freela_status: 'ja_usa',
+        needs_followup: false,
+        checklist: ck,
+      });
       await servico(p, { checklist: true, cfg: cfgTodas }).checkout(C, CLIENT, POS, AGORA);
       expect(p.field_visits.updateMany).toHaveBeenCalled();
     }
@@ -213,10 +304,27 @@ describe('flag ligada', () => {
   it('fluxo completo: o eco inteiro de answers (com result: null) e checklist: null não dão 422; marcas valem nos dois fluxos', async () => {
     const p = fakePrisma({ ...LINHA, flow: 'completo', checklist: foto('nao') });
     const s = servico(p, { checklist: true, fluxo: 'completo' });
-    await s.saveAnswers(C, CLIENT, await dto({ ...VAZIA, interlocutor_name: 'Maria', checklist: null }), AGORA);
+    await s.saveAnswers(
+      C,
+      CLIENT,
+      await dto({ ...VAZIA, interlocutor_name: 'Maria', checklist: null }),
+      AGORA,
+    );
     expect(dataDo(p.field_visits.update)).toMatchObject({ interlocutor_name: 'Maria' });
     expect(dataDo(p.field_visits.update)).not.toHaveProperty('checklist');
-    await s.saveAnswers(C, CLIENT, await dto({ ...VAZIA, interlocutor_name: 'Maria', checklist: [{ id: 'fechamento', done: true }, { id: 'entender_negocio', done: true }] }), AGORA);
+    await s.saveAnswers(
+      C,
+      CLIENT,
+      await dto({
+        ...VAZIA,
+        interlocutor_name: 'Maria',
+        checklist: [
+          { id: 'fechamento', done: true },
+          { id: 'entender_negocio', done: true },
+        ],
+      }),
+      AGORA,
+    );
     const ck = dataDo(p.field_visits.update, 1).checklist as { items: { done: boolean }[] };
     expect(ck.items.map((i) => i.done)).toEqual([false, true, false]);
   });

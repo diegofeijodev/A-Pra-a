@@ -93,9 +93,11 @@ export function prepararItensChecklist(
   for (const [i, x] of raw.entries()) {
     if (!x || typeof x !== 'object' || Array.isArray(x)) return falha(`etapa ${i + 1}: use { id, text }.`);
     const o = x as Record<string, unknown>;
-    if (Object.keys(o).some((k) => k !== 'id' && k !== 'text')) return falha(`etapa ${i + 1}: use só id e text.`);
+    if (Object.keys(o).some((k) => k !== 'id' && k !== 'text'))
+      return falha(`etapa ${i + 1}: use só id e text.`);
     const text = typeof o.text === 'string' ? o.text.trim() : '';
-    if (text.length < 1 || text.length > MAX_TEXTO_ETAPA) return falha(`etapa ${i + 1}: texto de 1 a ${MAX_TEXTO_ETAPA} caracteres.`);
+    if (text.length < 1 || text.length > MAX_TEXTO_ETAPA)
+      return falha(`etapa ${i + 1}: texto de 1 a ${MAX_TEXTO_ETAPA} caracteres.`);
     const id = o.id == null ? gerarId() : o.id;
     if (typeof id !== 'string' || !ID_ETAPA_RE.test(id)) return falha(`etapa ${i + 1}: id inválido.`);
     if (itens.some((it) => it.id === id)) return falha(`etapa ${i + 1}: id repetido.`);
@@ -133,7 +135,8 @@ export function fotografarChecklist(cfg: ConfigChecklist, fluxo: FluxoVisita): F
 export function lerFotoChecklist(raw: unknown): FotoChecklist | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const o = raw as Record<string, unknown>;
-  if (!(OBRIGATORIEDADES_CHECKLIST as readonly unknown[]).includes(o.required) || !Array.isArray(o.items)) return null;
+  if (!(OBRIGATORIEDADES_CHECKLIST as readonly unknown[]).includes(o.required) || !Array.isArray(o.items))
+    return null;
   const items: EtapaFoto[] = [];
   for (const x of o.items) {
     const e = (x ?? {}) as Record<string, unknown>;
@@ -152,7 +155,12 @@ export function mesclarMarcas(foto: FotoChecklist, marcas: readonly MarcaCheckli
     items: foto.items.map((e) => {
       const m = porId.get(e.id);
       if (!m) return { ...e };
-      const nota = m.note === undefined ? e.note : m.note === null ? null : m.note.trim().slice(0, MAX_NOTA_ETAPA) || null;
+      const nota =
+        m.note === undefined
+          ? e.note
+          : m.note === null
+            ? null
+            : m.note.trim().slice(0, MAX_NOTA_ETAPA) || null;
       return { ...e, done: typeof m.done === 'boolean' ? m.done : e.done, note: nota };
     }),
   };

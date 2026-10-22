@@ -17,14 +17,26 @@ import type { PhotoStorage } from '../photo-storage';
 import type { PlacesService } from '../places.service';
 import { VisitsService } from '../visits.service';
 
-const pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true, transformOptions: { enableImplicitConversion: true } });
-const corpo = <T extends object>(metatype: new () => T, body: unknown) => pipe.transform(body, { type: 'body', metatype }) as Promise<T>;
+const pipe = new ValidationPipe({
+  whitelist: true,
+  forbidNonWhitelisted: true,
+  transform: true,
+  transformOptions: { enableImplicitConversion: true },
+});
+const corpo = <T extends object>(metatype: new () => T, body: unknown) =>
+  pipe.transform(body, { type: 'body', metatype }) as Promise<T>;
 
 const CONS = '44444444-4444-4444-8444-444444444444';
 const PRACA = '00000000-0000-4000-8000-0000000000aa';
 const LEAD = '99999999-9999-4999-8999-999999999999';
 const CLIENT = '77777777-7777-4777-8777-777777777777';
-const C: CampoConsultant = { id: CONS, name: 'Ana Souza', email: 'ana@exemplo.com', praca_id: PRACA, must_change_password: false };
+const C: CampoConsultant = {
+  id: CONS,
+  name: 'Ana Souza',
+  email: 'ana@exemplo.com',
+  praca_id: PRACA,
+  must_change_password: false,
+};
 const AGORA = new Date('2026-10-20T15:00:00.000Z');
 /** O corpo do checkout que o web manda (`lerPosicao()`): igual nos dois fluxos. */
 const POS = { at: '2026-10-20T14:59:00.000Z', lat: -19.9245, lng: -43.9352, accuracy: 12 };
@@ -94,13 +106,19 @@ function fakePrisma(linha: Record<string, unknown>) {
     },
     lead_events: { create: jest.fn().mockResolvedValue({}) },
   };
-  p.$transaction.mockImplementation(async (arg: unknown) => (Array.isArray(arg) ? Promise.all(arg) : (arg as (tx: unknown) => Promise<unknown>)(p)));
+  p.$transaction.mockImplementation(async (arg: unknown) =>
+    Array.isArray(arg) ? Promise.all(arg) : (arg as (tx: unknown) => Promise<unknown>)(p),
+  );
   return p;
 }
 
 /** Construtor de HOJE (sem nenhum parâmetro do lote B): é o que vale com as flags novas desligadas. */
 function servico(p: ReturnType<typeof fakePrisma>, modoLigado: boolean) {
-  const modo = { ligado: modoLigado, config: jest.fn().mockResolvedValue(CONFIG_MODO_PADRAO), fluxoDoConsultor: jest.fn().mockResolvedValue('simples') };
+  const modo = {
+    ligado: modoLigado,
+    config: jest.fn().mockResolvedValue(CONFIG_MODO_PADRAO),
+    fluxoDoConsultor: jest.fn().mockResolvedValue('simples'),
+  };
   return new VisitsService(
     p as unknown as PrismaService,
     { abertaOuFalha: jest.fn() } as unknown as JourneysService,
@@ -117,7 +135,10 @@ const gravado = (p: ReturnType<typeof fakePrisma>) => ({
   // O `client_id` do ponto da trilha é um `randomUUID()` novo a cada chamada: fica marcado, não congelado.
   ponto: p.field_points.create.mock.calls.map((c) => {
     const a = c[0] as { data: Record<string, unknown> };
-    return { ...a, data: { ...a.data, client_id: typeof a.data.client_id === 'string' ? '<uuid>' : a.data.client_id } };
+    return {
+      ...a,
+      data: { ...a.data, client_id: typeof a.data.client_id === 'string' ? '<uuid>' : a.data.client_id },
+    };
   }),
   lead: p.leads.update.mock.calls.map((c) => c[0]),
   evento: p.lead_events.create.mock.calls.map((c) => c[0]),
@@ -172,7 +193,9 @@ describe('caracterização — rascunho do fluxo COMPLETO com o corpo real do we
   ])('%s', async (_n, modoLigado) => {
     const linha = { ...LINHA, flow: 'completo' };
     expect(await rascunho(linha, VAZIAS_WEB, modoLigado)).toMatchSnapshot('vazio do aparelho (sem result)');
-    expect(await rascunho(linha, ANSWERS_SERVIDOR, modoLigado)).toMatchSnapshot('eco do servidor (result: null)');
+    expect(await rascunho(linha, ANSWERS_SERVIDOR, modoLigado)).toMatchSnapshot(
+      'eco do servidor (result: null)',
+    );
     expect(await rascunho(linha, COMPLETO_PREENCHIDO, modoLigado)).toMatchSnapshot('questionário preenchido');
   });
 });
@@ -182,9 +205,15 @@ describe('caracterização — checkout do fluxo COMPLETO', () => {
     ['flag do modo desligada', false],
     ['flag do modo ligada', true],
   ])('%s', async (_n, modoLigado) => {
-    expect(await checkout({ ...LINHA, flow: 'completo' }, modoLigado)).toMatchSnapshot('questionário vazio → 422');
-    expect(await checkout({ ...LINHA, flow: 'completo', ...COMPLETO_PREENCHIDO }, modoLigado)).toMatchSnapshot('preenchido → conclui');
-    expect(await checkout({ ...LINHA, flow: 'completo', outcome: 'fechado' }, modoLigado)).toMatchSnapshot('fechado → note');
+    expect(await checkout({ ...LINHA, flow: 'completo' }, modoLigado)).toMatchSnapshot(
+      'questionário vazio → 422',
+    );
+    expect(
+      await checkout({ ...LINHA, flow: 'completo', ...COMPLETO_PREENCHIDO }, modoLigado),
+    ).toMatchSnapshot('preenchido → conclui');
+    expect(await checkout({ ...LINHA, flow: 'completo', outcome: 'fechado' }, modoLigado)).toMatchSnapshot(
+      'fechado → note',
+    );
   });
 });
 
@@ -202,22 +231,61 @@ const rascunhoSimples = (a: Record<string, unknown>) => {
 describe('caracterização — rascunho do fluxo SIMPLES com o corpo real do web (produção hoje: flag do modo ligada)', () => {
   const linha = { ...LINHA, flow: 'simples' };
   it('1 toque: só o resultado (a partir do vazio do aparelho e do eco do servidor)', async () => {
-    expect(await rascunho(linha, rascunhoSimples({ ...VAZIAS_WEB, result: 'ja_usa' }), true)).toMatchSnapshot('já usa, do vazio');
-    expect(await rascunho(linha, rascunhoSimples({ ...ANSWERS_SERVIDOR, result: 'fechado' }), true)).toMatchSnapshot('fechado, do eco');
+    expect(await rascunho(linha, rascunhoSimples({ ...VAZIAS_WEB, result: 'ja_usa' }), true)).toMatchSnapshot(
+      'já usa, do vazio',
+    );
+    expect(
+      await rascunho(linha, rascunhoSimples({ ...ANSWERS_SERVIDOR, result: 'fechado' }), true),
+    ).toMatchSnapshot('fechado, do eco');
   });
   it('sem interesse com motivo; quer retorno com dia, hora e contato', async () => {
-    expect(await rascunho(linha, rascunhoSimples({ ...ANSWERS_SERVIDOR, result: 'sem_interesse', refusal_reason: 'preco' }), true)).toMatchSnapshot('sem interesse');
     expect(
       await rascunho(
         linha,
-        rascunhoSimples({ ...ANSWERS_SERVIDOR, result: 'retorno', followup_date: '2026-10-21', followup_time: '09:00', interlocutor_name: 'Rui', interlocutor_role: 'gerente', contact_phone: '(31) 98888-7777' }),
+        rascunhoSimples({ ...ANSWERS_SERVIDOR, result: 'sem_interesse', refusal_reason: 'preco' }),
+        true,
+      ),
+    ).toMatchSnapshot('sem interesse');
+    expect(
+      await rascunho(
+        linha,
+        rascunhoSimples({
+          ...ANSWERS_SERVIDOR,
+          result: 'retorno',
+          followup_date: '2026-10-21',
+          followup_time: '09:00',
+          interlocutor_name: 'Rui',
+          interlocutor_role: 'gerente',
+          contact_phone: '(31) 98888-7777',
+        }),
         true,
       ),
     ).toMatchSnapshot('quer retorno');
   });
   it('eco do servidor depois da derivação (interest/followup_what derivados voltam no corpo)', async () => {
-    const derivada = { ...linha, result: 'retorno', outcome: 'conversa', needs_followup: true, interest: 'medio', followup_what: 'Retornar', followup_date: '2026-10-21' };
-    expect(await rascunho(derivada, rascunhoSimples({ ...ANSWERS_SERVIDOR, result: 'retorno', interest: 'medio', followup_what: 'Retornar', followup_date: '2026-10-21', notes: 'Volta amanhã' }), true)).toMatchSnapshot();
+    const derivada = {
+      ...linha,
+      result: 'retorno',
+      outcome: 'conversa',
+      needs_followup: true,
+      interest: 'medio',
+      followup_what: 'Retornar',
+      followup_date: '2026-10-21',
+    };
+    expect(
+      await rascunho(
+        derivada,
+        rascunhoSimples({
+          ...ANSWERS_SERVIDOR,
+          result: 'retorno',
+          interest: 'medio',
+          followup_what: 'Retornar',
+          followup_date: '2026-10-21',
+          notes: 'Volta amanhã',
+        }),
+        true,
+      ),
+    ).toMatchSnapshot();
   });
 });
 
@@ -225,16 +293,54 @@ describe('caracterização — checkout do fluxo SIMPLES', () => {
   const linha = { ...LINHA, flow: 'simples' };
   it('sem resultado → 422; já usa → conclui; fechado → note; sem interesse sem motivo → 422; com motivo → conclui', async () => {
     expect(await checkout(linha, true)).toMatchSnapshot('sem resultado');
-    expect(await checkout({ ...linha, result: 'ja_usa', freela_status: 'ja_usa', needs_followup: false }, true)).toMatchSnapshot('já usa');
-    expect(await checkout({ ...linha, result: 'fechado', outcome: 'fechado', needs_followup: false }, true)).toMatchSnapshot('fechado');
-    expect(await checkout({ ...linha, result: 'sem_interesse', freela_status: 'nao_cadastrou', interest: 'nenhum', needs_followup: false }, true)).toMatchSnapshot('sem motivo');
     expect(
-      await checkout({ ...linha, result: 'sem_interesse', freela_status: 'nao_cadastrou', interest: 'nenhum', needs_followup: false, refusal_reason: 'preco' }, true),
+      await checkout({ ...linha, result: 'ja_usa', freela_status: 'ja_usa', needs_followup: false }, true),
+    ).toMatchSnapshot('já usa');
+    expect(
+      await checkout({ ...linha, result: 'fechado', outcome: 'fechado', needs_followup: false }, true),
+    ).toMatchSnapshot('fechado');
+    expect(
+      await checkout(
+        {
+          ...linha,
+          result: 'sem_interesse',
+          freela_status: 'nao_cadastrou',
+          interest: 'nenhum',
+          needs_followup: false,
+        },
+        true,
+      ),
+    ).toMatchSnapshot('sem motivo');
+    expect(
+      await checkout(
+        {
+          ...linha,
+          result: 'sem_interesse',
+          freela_status: 'nao_cadastrou',
+          interest: 'nenhum',
+          needs_followup: false,
+          refusal_reason: 'preco',
+        },
+        true,
+      ),
     ).toMatchSnapshot('com motivo');
   });
   it('quer retorno: sem contato → 422 (padrão); com contato → próximo passo no lead', async () => {
-    const retorno = { ...linha, result: 'retorno', needs_followup: true, interest: 'medio', followup_what: 'Retornar', followup_date: '2026-10-21', followup_time: '09:00' };
+    const retorno = {
+      ...linha,
+      result: 'retorno',
+      needs_followup: true,
+      interest: 'medio',
+      followup_what: 'Retornar',
+      followup_date: '2026-10-21',
+      followup_time: '09:00',
+    };
     expect(await checkout(retorno, true)).toMatchSnapshot('sem contato');
-    expect(await checkout({ ...retorno, interlocutor_name: 'Rui', interlocutor_role: 'gerente', contact_phone: '31988887777' }, true)).toMatchSnapshot('com contato');
+    expect(
+      await checkout(
+        { ...retorno, interlocutor_name: 'Rui', interlocutor_role: 'gerente', contact_phone: '31988887777' },
+        true,
+      ),
+    ).toMatchSnapshot('com contato');
   });
 });
