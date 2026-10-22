@@ -84,3 +84,19 @@ export function moverEtapa(itens: EtapaForm[], i: number, delta: -1 | 1): EtapaF
   [c[i], c[j]] = [c[j]!, c[i]!];
   return c;
 }
+
+// ── intervalo (§37.2) ─────────────────────────────────────
+export interface FormIntervalo {
+  ativo: boolean;
+  lembrete: number;
+  alerta: number;
+}
+export const formIntervalo = (c: ConfigLoteB): FormIntervalo => ({ ativo: c.intervalo_ativo, lembrete: c.intervalo_lembrete_min, alerta: c.alerta_intervalo_min });
+export function errosIntervalo(f: FormIntervalo): string[] {
+  const e: string[] = [];
+  const ok = (n: number) => Number.isInteger(n) && n >= 15 && n <= 480;
+  if (!ok(f.lembrete)) e.push('Lembrete: minutos inteiros de 15 a 480.');
+  if (!ok(f.alerta)) e.push('Alerta da equipe: minutos inteiros de 15 a 480.');
+  return e;
+}
+export const corpoIntervalo = (f: FormIntervalo) => ({ intervalo_ativo: f.ativo, intervalo_lembrete_min: f.lembrete, alerta_intervalo_min: f.alerta });

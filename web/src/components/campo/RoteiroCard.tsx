@@ -10,7 +10,7 @@ import { campoGerarRota } from '@/modules/campo/infrastructure/campo.api';
 import { hora } from '@/modules/campo/domain/formatos';
 import { ErroGps, lerPosicao } from '@/modules/campo/infrastructure/gps';
 import { useRoteiro } from '@/modules/rotas/application/use-roteiro';
-import { etaTexto, faltam, minutosSp, proximaParada, ritmoLocal, ritmoTexto, trechoTexto, velocidadeDoRoteiro } from '@/modules/rotas/domain/rota-local';
+import { etaTexto, faltam, minutosSp, pausasEmMinutos, proximaParada, ritmoLocal, ritmoTexto, trechoTexto, velocidadeDoRoteiro } from '@/modules/rotas/domain/rota-local';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 
 /**
@@ -66,7 +66,7 @@ export function RoteiroCard({ fechadoContaNaMeta = false }: { fechadoContaNaMeta
   const agoraMin = minutosSp(Date.now());
   const feitas = dia.contadores.feitas; // sem os "fechados" (§30.1)
   const meta = route.params.meta_diaria;
-  const ritmo = ritmoTexto(ritmoLocal(route.params, feitas, agoraMin), route.params, agoraMin);
+  const ritmo = ritmoTexto(ritmoLocal(route.params, feitas, agoraMin, pausasEmMinutos(dia.intervalos, Date.now())), route.params, agoraMin);
   const proxima = proximaParada(route.stops);
   const restantes = faltam(route.stops).length;
   const pct = Math.min(100, Math.round((feitas / Math.max(meta, 1)) * 100));

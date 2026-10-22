@@ -93,10 +93,16 @@ export function AtencaoAgora() {
 }
 
 /** Meta de hoje + ritmo de um consultor na lista, com a conta escondida num toque. */
-export function MetaLinha({ goal, status }: { goal: GoalView; status: 'em_jornada' | 'encerrou' | 'nao_iniciou' }) {
+export function MetaLinha({ goal, status, emIntervaloDesde }: { goal: GoalView; status: 'em_jornada' | 'encerrou' | 'nao_iniciou'; emIntervaloDesde?: string | null }) {
   const ritmo = ritmoDaLinha(goal, status);
   return (
     <div className="mt-2 space-y-1">
+      {emIntervaloDesde && (
+        // Lote B §37.6 (UX §3.6): a equipe vê que o consultor está em intervalo (o "sem registro" não sai nesse tempo).
+        <p className="text-sm font-bold">
+          <span aria-hidden>☕ </span>Em intervalo desde {new Date(emIntervaloDesde).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}
+        </p>
+      )}
       <p className="text-sm">
         <span className="font-bold">Meta de hoje: {goal.feitas} de {goal.meta}</span>{' '}
         <span className={ritmo.ok ? 'text-success' : 'text-warning'}>· {ritmo.texto}</span>

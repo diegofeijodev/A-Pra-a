@@ -12,7 +12,8 @@ function CampoMotor({ consultantId }: { consultantId: string }) {
   useFilaRunner(consultantId);
   useCampoMe();
   const { dia } = useDia();
-  useRastreio(!!dia.jornada, consultantId);
+  // Lote B §37: a localização pausa durante o intervalo (privacidade no almoço, UX §3.6).
+  useRastreio(!!dia.jornada && !dia.intervaloAberto, consultantId);
   return null;
 }
 

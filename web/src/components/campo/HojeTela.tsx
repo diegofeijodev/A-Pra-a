@@ -7,6 +7,8 @@ import { CampoTopo } from '@/components/campo/CampoTopo';
 import { FaixaFila } from '@/components/campo/FaixaFila';
 import { CadastrosConfirmadosCard } from '@/components/campo/CadastrosConfirmadosCard';
 import { GanhosCard } from '@/components/campo/GanhosCard';
+import { IntervaloFaixa } from '@/components/campo/IntervaloCampo';
+import { useIntervalo } from '@/modules/campo/application/use-intervalo';
 import { PixCard } from '@/components/campo/PixCard';
 import { MetaCard } from '@/components/campo/MetaCard';
 import { RetornosCampo } from '@/components/campo/RetornosCampo';
@@ -34,6 +36,7 @@ export function HojeTela() {
   const me = useCampoMe();
   const resumoLigado = me.data?.features?.day_summary === true;
   const [ocupado, setOcupado] = useState(false);
+  const intervalo = useIntervalo();
 
   async function comPosicao(acao: (p: Posicao) => Promise<void>) {
     setGps(null);
@@ -62,6 +65,7 @@ export function HojeTela() {
   };
 
   const aberta = dia.visitaAberta;
+  const emIntervalo = intervalo.ligado ? dia.intervaloAberto : null;
   const rot = useRoteiro();
   const proxima = rot.habilitado && rot.route ? proximaParada(rot.route.stops) : null;
 
@@ -90,6 +94,7 @@ export function HojeTela() {
         </section>
       ) : (
         <>
+          {emIntervalo && <IntervaloFaixa aberto={emIntervalo} lembreteMin={intervalo.lembreteMin} />}
           {rot.habilitado && <RoteiroCard />}
 
           <section className="grid grid-cols-2 gap-3">
@@ -108,7 +113,11 @@ export function HojeTela() {
             </div>
           </section>
 
-          {aberta ? (
+          {emIntervalo ? (
+            <Button onClick={() => void intervalo.voltar(emIntervalo)} className="h-14 text-base">
+              Voltar do intervalo
+            </Button>
+          ) : aberta ? (
             <button
               type="button"
               onClick={() => irPara({ v: 'visita', ref: aberta.ref })}
@@ -141,6 +150,13 @@ export function HojeTela() {
             >
               Nova visita
             </button>
+          )}
+
+          {!aberta && intervalo.ligado && !emIntervalo && (
+            // Lote B §37 (UX §3.6): 1 toque para começar, com "Desfazer"; só sem visita aberta (Lovable).
+            <Button variant="outline" onClick={() => void intervalo.iniciar()} className="h-12 text-sm">
+              <span aria-hidden>☕ </span>Intervalo
+            </Button>
           )}
 
           <section>

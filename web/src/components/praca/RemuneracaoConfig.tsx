@@ -130,6 +130,8 @@ export function RemuneracaoConfig() {
   };
   const declaradoOff = cfg.data.features?.declared_signups_enabled === false;
   const rotasOff = cfg.data.features?.routes_enabled === false;
+  // Lote B §37.6: o tempo trabalhado mínimo só existe com o intervalo ligado no servidor (a chave vem só assim).
+  const intervaloOn = cfg.data.features?.breaks_enabled === true;
   const declarado = form.signup_source === 'declared';
   const palavra = declarado ? 'declarado' : 'confirmado';
 
@@ -276,6 +278,15 @@ export function RemuneracaoConfig() {
                   <input type="checkbox" className="size-5" checked={form.daily_requires_journey} onChange={(e) => set('daily_requires_journey', e.target.checked)} />
                   Só paga a diária se o consultor tiver iniciado a jornada no dia (evita pagar dia sem trabalho)
                 </label>
+                {(intervaloOn || form.daily_min_worked.trim() !== '') && (
+                  <Campo
+                    id="rem-dwork"
+                    titulo="Tempo mínimo trabalhado para a diária (minutos)"
+                    ajuda="Tempo trabalhado = jornadas do dia menos os intervalos registrados. Em branco = não exige (como hoje). Ex.: 360 = 6h."
+                  >
+                    <Input id="rem-dwork" inputMode="numeric" className="h-11" value={form.daily_min_worked} onChange={(e) => set('daily_min_worked', e.target.value)} />
+                  </Campo>
+                )}
               </>
             )}
             <Campo id="rem-floor" titulo="Piso por diária (R$)" ajuda="0 = sem piso. Garante esse valor no dia quando a condição abaixo vale.">

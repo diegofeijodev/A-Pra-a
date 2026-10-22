@@ -194,6 +194,8 @@ export const resumoDiaSchema = z.object({
   first_start: z.string().nullable(),
   last_end: z.string().nullable(),
   intervalo_min: z.number().nullable(),
+  /** Lote B §37.6: só com o intervalo registrado (flag ligada). */
+  trabalhado_min: z.number().optional(),
   avg_visit_min: z.number().nullable(),
   avaliacao: z.array(z.string()),
   conta: z.array(z.string()),
@@ -216,6 +218,8 @@ export function linhasDoResumo(r: ResumoDiaView): [string, string][] {
     [r.signups_source === 'declared' ? 'Cadastros declarados' : 'Cadastros confirmados', `${r.signups}${r.positivacao_pct == null ? '' : ` (${r.positivacao_pct}%)`}`],
     ['Tempo do dia', tempo],
     ['Intervalo', r.intervalo_min == null ? 'não registrado' : duracao(r.intervalo_min)],
+    // Lote B §37.6: tempo trabalhado = tempo do dia − intervalo (a conta vem no "Como contamos").
+    ...(r.trabalhado_min !== undefined ? [['Tempo trabalhado (dia − intervalo)', duracao(r.trabalhado_min)] as [string, string]] : []),
     ['Tempo médio na visita', r.avg_visit_min == null ? '—' : `${r.avg_visit_min} min`],
   ];
 }

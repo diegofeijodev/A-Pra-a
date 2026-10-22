@@ -98,7 +98,7 @@ export default function ConsultoresPage() {
                   <span className="text-muted-foreground">(confirmados pelo Freela)</span>
                 </p>
               )}
-              {metaDe.get(c.id) && <MetaLinha goal={metaDe.get(c.id)!.goal} status={metaDe.get(c.id)!.status} />}
+              {metaDe.get(c.id) && <MetaLinha goal={metaDe.get(c.id)!.goal} status={metaDe.get(c.id)!.status} emIntervaloDesde={metaDe.get(c.id)!.on_break_since} />}
               <p className="mt-1 text-xs">
                 {c.freela_code ? `Código Freela: ${c.freela_code}` : `Código pendente${c.freela_sync_error ? ` — ${c.freela_sync_error}` : ''}`}
               </p>

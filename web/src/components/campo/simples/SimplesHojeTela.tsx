@@ -7,6 +7,7 @@ import { CadastrosConfirmadosCard } from '@/components/campo/CadastrosConfirmado
 import { CampoTopo } from '@/components/campo/CampoTopo';
 import { FaixaFila } from '@/components/campo/FaixaFila';
 import { GanhosCard } from '@/components/campo/GanhosCard';
+import { IntervaloFaixa } from '@/components/campo/IntervaloCampo';
 import { MetaCard } from '@/components/campo/MetaCard';
 import { PixCard } from '@/components/campo/PixCard';
 import { RetornosCampo } from '@/components/campo/RetornosCampo';
@@ -17,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { useCampoSession } from '@/modules/campo/application/campo-session.store';
 import { useCampoMe, useDia } from '@/modules/campo/application/use-campo';
 import { useFluxo } from '@/modules/campo/application/use-fluxo';
+import { useIntervalo } from '@/modules/campo/application/use-intervalo';
 import { enfileirar, useFilaStore } from '@/modules/campo/application/use-fila';
 import { useSol } from '@/modules/campo/application/use-sol';
 import { irPara } from '@/modules/campo/application/use-tela';
@@ -47,6 +49,7 @@ export function SimplesHojeTela() {
   const [aba, setAba] = useState<Aba>('hoje');
   const [gps, setGps] = useState<MotivoGps | null>(null);
   const [ocupado, setOcupado] = useState(false);
+  const intervalo = useIntervalo();
 
   async function comPosicao(acao: (p: Posicao) => Promise<void>) {
     setGps(null);
@@ -74,6 +77,7 @@ export function SimplesHojeTela() {
   };
 
   const aberta = dia.visitaAberta;
+  const emIntervalo = intervalo.ligado ? dia.intervaloAberto : null;
   const proxima = rot.habilitado && rot.route ? proximaParada(rot.route.stops) : null;
   const dataHoje = new Date().toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' });
 
@@ -111,6 +115,7 @@ export function SimplesHojeTela() {
             </section>
           ) : (
             <>
+              {emIntervalo && <IntervaloFaixa aberto={emIntervalo} lembreteMin={intervalo.lembreteMin} />}
               {!rot.carregando && !(rot.habilitado && rot.route) && <MetaCard fechadoContaNaMeta={config.fechado_conta_na_meta} />}
               {rot.habilitado && <RoteiroCard fechadoContaNaMeta={config.fechado_conta_na_meta} />}
               <p className="text-sm text-muted-foreground">
@@ -121,6 +126,12 @@ export function SimplesHojeTela() {
                   ? `${plural(dia.contadores.fechadas, 'estabelecimento fechado', 'estabelecimentos fechados')} (fora da meta).`
                   : ''}
               </p>
+              {!aberta && intervalo.ligado && !emIntervalo && (
+                // Lote B §37 (UX §3.6): 1 toque para começar, com "Desfazer"; só sem visita aberta (Lovable).
+                <Button variant="outline" onClick={() => void intervalo.iniciar()} className="h-12 w-full text-sm">
+                  <span aria-hidden>☕ </span>Intervalo
+                </Button>
+              )}
               {!aberta && (
                 <div className="flex gap-2">
                   <button
@@ -159,6 +170,10 @@ export function SimplesHojeTela() {
             {carregando ? null : !dia.jornada ? (
               <Button onClick={() => void iniciar()} disabled={ocupado} className="h-14 flex-1 text-base">
                 {ocupado ? 'Pegando a localização…' : 'Iniciar o dia'}
+              </Button>
+            ) : emIntervalo ? (
+              <Button onClick={() => void intervalo.voltar(emIntervalo)} className="h-14 flex-1 text-base">
+                Voltar do intervalo
               </Button>
             ) : aberta ? (
               <button

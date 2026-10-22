@@ -119,6 +119,17 @@ export async function desfazerCheckout(ref: string, consultantId: string): Promi
   return true;
 }
 
+/** Desfazer o início do intervalo (lote B §37, mesmo mecanismo do checkout): tira da fila o `break_start` ainda seguro. */
+export async function desfazerInicioDoIntervalo(clientId: string, consultantId: string): Promise<boolean> {
+  const alvo = (await listarFila()).find(
+    (i) => i.consultant_id === consultantId && i.kind === 'break_start' && i.payload.client_id === clientId && (i.segurar_ate ?? 0) > Date.now(),
+  );
+  if (!alvo) return false;
+  await removerDaFila(alvo.seq as number);
+  await recarregar();
+  return true;
+}
+
 async function zerarEspera(consultantId: string): Promise<void> {
   try {
     for (const i of await listarFila()) {

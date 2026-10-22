@@ -3,7 +3,9 @@ import {
   campoCheckin,
   campoCheckout,
   campoCriarCadastro,
+  campoEncerrarIntervalo,
   campoEncerrarJornada,
+  campoIniciarIntervalo,
   campoEnviarPontos,
   campoAdiarParada,
   campoDesfazerParada,
@@ -49,6 +51,12 @@ export async function enviarItem(item: ItemFila): Promise<void> {
       return;
     case 'route_reoptimize':
       await campoRefazerRota(item.payload);
+      return;
+    case 'break_start':
+      await campoIniciarIntervalo(item.payload);
+      return;
+    case 'break_end':
+      await campoEncerrarIntervalo(item.payload);
       return;
   }
 }

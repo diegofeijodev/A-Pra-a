@@ -19,7 +19,8 @@ export const goalSchema = z.object({
 });
 export type GoalView = z.infer<typeof goalSchema>;
 
-export const CODIGOS_ALERTA = ['nao_iniciou', 'sem_registro', 'visita_aberta', 'ritmo_atrasado', 'parada_vencida'] as const;
+/** `intervalo_longo` (lote B §37.6) só chega com `FIELD_BREAKS_ENABLED`. */
+export const CODIGOS_ALERTA = ['nao_iniciou', 'sem_registro', 'visita_aberta', 'ritmo_atrasado', 'parada_vencida', 'intervalo_longo'] as const;
 
 export const alertaSchema = z.object({
   code: z.enum(CODIGOS_ALERTA),
@@ -58,6 +59,8 @@ export const atencaoSchema = z.object({
       status: z.enum(['em_jornada', 'encerrou', 'nao_iniciou']),
       goal: goalSchema,
       alerts: z.array(alertaSchema),
+      /** Lote B §37.6: início do intervalo aberto; ausente com `FIELD_BREAKS_ENABLED` desligada. */
+      on_break_since: z.string().nullable().optional(),
     }),
   ),
   /** F9 (§29.8): Pix bloqueado/falho. Ausente com `FIELD_PAYOUTS_ENABLED` desligada. */
@@ -142,6 +145,7 @@ export const ROTULO_ALERTA: Record<(typeof CODIGOS_ALERTA)[number], string> = {
   visita_aberta: 'Visita aberta',
   ritmo_atrasado: 'Ritmo atrasado',
   parada_vencida: 'Parada vencida',
+  intervalo_longo: 'Intervalo longo',
 };
 
 /** Linha de ritmo da tabela da equipe: ícone + texto, nunca só cor. */

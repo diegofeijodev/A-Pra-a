@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useDia } from '@/modules/campo/application/use-campo';
 import { porcentagem } from '@/modules/consultores/domain/atencao';
-import { minutosSp, ritmoLocal, ritmoTexto } from '@/modules/rotas/domain/rota-local';
+import { minutosSp, pausasEmMinutos, ritmoLocal, ritmoTexto } from '@/modules/rotas/domain/rota-local';
 
 /**
  * Meta do dia e ritmo com a conta (UX §4.2), independentes do roteiro: quando há roteiro o card do
@@ -23,7 +23,8 @@ export function MetaCard({ fechadoContaNaMeta = false }: { fechadoContaNaMeta?: 
   const feitas = dia.contadores.feitas; // sem os "fechados" (§30.1)
   const meta = goal.params.meta_diaria;
   const emJornada = !!dia.jornada;
-  const ritmo = ritmoTexto(ritmoLocal(goal.params, feitas, minutosSp(agora)), goal.params, minutosSp(agora));
+  // Lote B §37.6: com intervalo registrado (servidor + fila), o real no lugar do almoço — mesma conta do servidor.
+  const ritmo = ritmoTexto(ritmoLocal(goal.params, feitas, minutosSp(agora), pausasEmMinutos(dia.intervalos, agora)), goal.params, minutosSp(agora));
 
   return (
     <section className="card-surface space-y-2 p-4" aria-label="Meta do dia">

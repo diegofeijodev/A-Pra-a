@@ -1,4 +1,6 @@
 import type {
+  BreakView,
+  IntervaloPayload,
   CampoLoginResponse,
   CampoMeResponse,
   CheckinPayload,
@@ -52,6 +54,17 @@ export async function campoEnviarPontos(
 export async function campoEncerrarJornada(p: Posicao): Promise<JourneyView> {
   const { data } = await campoApi.post('/v1/campo/journeys/current/end', p);
   return data as JourneyView;
+}
+
+/** Lote B §37.4: início/fim do intervalo (só com `FIELD_BREAKS_ENABLED`; a tela só mostra o botão com a flag). */
+export async function campoIniciarIntervalo(p: IntervaloPayload): Promise<BreakView> {
+  const { data } = await campoApi.post('/v1/campo/journeys/current/breaks/start', p);
+  return data as BreakView;
+}
+
+export async function campoEncerrarIntervalo(p: IntervaloPayload): Promise<BreakView> {
+  const { data } = await campoApi.post('/v1/campo/journeys/current/breaks/end', p);
+  return data as BreakView;
 }
 
 export async function campoLugaresPerto(lat: number, lng: number): Promise<PlaceView[]> {

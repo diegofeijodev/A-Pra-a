@@ -4,7 +4,10 @@ import { useRef, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { AvisoGps } from '@/components/campo/AvisoGps';
 import { useCampoSession } from '@/modules/campo/application/campo-session.store';
+import { useDia } from '@/modules/campo/application/use-campo';
 import { enfileirar } from '@/modules/campo/application/use-fila';
+import { useIntervalo } from '@/modules/campo/application/use-intervalo';
+import { duracaoMin, hora } from '@/modules/campo/domain/formatos';
 import { irPara } from '@/modules/campo/application/use-tela';
 import type { Posicao } from '@/modules/campo/domain/campo.types';
 import type { MotivoGps } from '@/modules/campo/domain/gps-mensagens';
@@ -41,6 +44,10 @@ export function ChegueiBotao({
   const [gps, setGps] = useState<MotivoGps | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const guardada = useRef<Blob | null>(null);
+  // Lote B §37.5: chegar durante o intervalo o encerra (o servidor faz o mesmo no check-in).
+  const { dia } = useDia();
+  const intervalo = useIntervalo();
+  const emIntervalo = intervalo.ligado ? dia.intervaloAberto : null;
 
   function pedirPosicao() {
     const p = lerPosicao();
@@ -80,6 +87,7 @@ export function ChegueiBotao({
         consultantId,
       );
       guardada.current = null;
+      if (emIntervalo) toast.success(`Intervalo encerrado às ${hora(p.at)} (${duracaoMin(emIntervalo.started_at, p.at) ?? 0} min).`);
       irPara({ v: 'visita', ref: client_id }, 'replace');
     } catch (e) {
       if (e instanceof ErroGps) setGps(e.motivo);

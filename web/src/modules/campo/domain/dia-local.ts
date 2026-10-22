@@ -18,8 +18,19 @@ export interface VisitaLocal {
   pendente: boolean;
 }
 
+/** Intervalo da jornada como a tela vê (lote B §37): servidor + fila por cima. */
+export interface IntervaloLocal {
+  client_id: string;
+  started_at: string;
+  ended_at: string | null;
+  pendente: boolean;
+}
+
 export interface DiaLocal {
   jornada: { client_id: string; started_at: string; pendente: boolean } | null;
+  /** Intervalos do dia (só existe algo com o intervalo ligado no servidor). */
+  intervalos: IntervaloLocal[];
+  intervaloAberto: IntervaloLocal | null;
   visitas: VisitaLocal[];
   visitaAberta: VisitaLocal | null;
   /** `visitas` = total de check-ins do dia; `feitas` = só as com conversa (a conta da meta); `fechadas` = fora da meta. */
@@ -47,6 +58,15 @@ export function montarDia(today: TodayView | null, fila: ItemFila[], opcoes: { f
     pendente: false,
   }));
   const achar = (ref: string) => visitas.find((v) => v.ref === ref);
+  const intervalos: IntervaloLocal[] = (today?.breaks ?? []).map((b) => ({ client_id: b.client_id, started_at: b.started_at, ended_at: b.ended_at, pendente: false }));
+  /** Check-in, fim do intervalo e fim da jornada encerram o intervalo aberto (o servidor faz o mesmo, §37.5). */
+  const fecharIntervalo = (at: string) => {
+    const aberto = intervalos.find((i) => !i.ended_at);
+    if (aberto) {
+      aberto.ended_at = at < aberto.started_at ? aberto.started_at : at;
+      aberto.pendente = true;
+    }
+  };
 
   for (const item of [...fila].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))) {
     switch (item.kind) {
@@ -56,9 +76,19 @@ export function montarDia(today: TodayView | null, fila: ItemFila[], opcoes: { f
         }
         break;
       case 'end':
+        fecharIntervalo(item.payload.at);
         jornada = null;
         break;
+      case 'break_start':
+        if (!intervalos.some((i) => i.client_id === item.payload.client_id)) {
+          intervalos.push({ client_id: item.payload.client_id, started_at: item.payload.at, ended_at: null, pendente: true });
+        }
+        break;
+      case 'break_end':
+        fecharIntervalo(item.payload.at);
+        break;
       case 'checkin':
+        fecharIntervalo(item.payload.at);
         if (!achar(item.payload.client_id)) {
           visitas.push({
             ref: item.payload.client_id,
@@ -111,6 +141,8 @@ export function montarDia(today: TodayView | null, fila: ItemFila[], opcoes: { f
   const visitaAberta = [...visitas].reverse().find((v) => !v.checkout_at && !v.auto_closed) ?? null;
   return {
     jornada,
+    intervalos,
+    intervaloAberto: jornada ? (intervalos.find((i) => !i.ended_at) ?? null) : null,
     visitas,
     visitaAberta,
     contadores: {

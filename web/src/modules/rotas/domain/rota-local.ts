@@ -106,6 +106,8 @@ export function minutosSp(instante: Date | string | number): number {
 export type ParamsRitmo = Pick<ConfigRota, 'meta_diaria' | 'janela_inicio' | 'janela_fim' | 'almoco_inicio' | 'almoco_fim'>;
 
 export interface RitmoLocal {
+  /** Lote B §37.6: minutos de intervalo REAL descontados (no lugar do almoço); ausente = a conta de hoje. */
+  intervaloDescontado?: number;
   meta: number;
   feitas: number;
   esperadas: number;
@@ -117,17 +119,23 @@ export interface RitmoLocal {
 }
 
 /** Mesma conta da API: minutos úteis (janela menos almoço) ÷ (minutos úteis do dia ÷ meta). */
-export function ritmoLocal(params: ParamsRitmo, feitas: number, agoraMin: number): RitmoLocal {
+/**
+ * `pausas` (lote B §37.6, espelho da API): intervalos REAIS do dia em minutos; com algum, os minutos úteis descontam o real NO LUGAR
+ * do almoço configurado (nunca os dois). O ritmo por visita continua o do plano.
+ */
+export function ritmoLocal(params: ParamsRitmo, feitas: number, agoraMin: number, pausas: readonly { ini: number; fim: number }[] = []): RitmoLocal {
   const ini = hhmm(params.janela_inicio);
   const fim = hhmm(params.janela_fim);
   const aIni = hhmm(params.almoco_inicio);
   const aFim = hhmm(params.almoco_fim);
   const t = Math.min(Math.max(agoraMin, ini), fim);
-  const minutosUteis = t - ini - Math.max(0, Math.min(t, aFim) - aIni);
+  const real = pausas.reduce((a, x) => a + Math.max(0, Math.min(x.fim, t) - Math.max(x.ini, ini)), 0);
+  const minutosUteis = pausas.length > 0 ? Math.max(0, t - ini - real) : t - ini - Math.max(0, Math.min(t, aFim) - aIni);
   const totalUtil = fim - ini - Math.max(aFim - aIni, 0);
   const porVisita = params.meta_diaria > 0 ? totalUtil / params.meta_diaria : totalUtil;
   const esperadas = Math.min(params.meta_diaria, Math.floor(minutosUteis / porVisita));
   return {
+    ...(pausas.length > 0 ? { intervaloDescontado: real } : {}),
     meta: params.meta_diaria,
     feitas,
     esperadas,
@@ -149,7 +157,8 @@ export interface RitmoTexto {
 const horaCurta = (min: number) => `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}`.replace(/h00$/, 'h');
 
 export function ritmoTexto(r: RitmoLocal, params: Pick<ConfigRota, 'janela_fim'>, agoraMin: number): RitmoTexto {
-  const conta = `Às ${horaCurta(agoraMin)} o esperado é ${r.esperadas}: ${r.minutosUteis} min úteis ÷ ${String(r.minutosPorVisita).replace('.', ',')} min por visita`;
+  const uteis = r.intervaloDescontado !== undefined ? `${r.minutosUteis} min úteis (o intervalo de ${r.intervaloDescontado} min não conta)` : `${r.minutosUteis} min úteis`;
+  const conta = `Às ${horaCurta(agoraMin)} o esperado é ${r.esperadas}: ${uteis} ÷ ${String(r.minutosPorVisita).replace('.', ',')} min por visita`;
   if (r.delta > 0) return { titulo: `✓ Ritmo: ${r.delta} à frente`, ok: true, conta };
   if (r.delta === 0) return { titulo: '✓ Ritmo: no ponto', ok: true, conta };
   const fim = horaCurta(hhmm(params.janela_fim));
@@ -272,4 +281,12 @@ export function aplicarAcoesPendentes(route: RouteView, acoes: AcaoRotaPendente[
 export function periodoDaParada(s: StopView, params: ConfigRota): 'manha' | 'tarde' {
   if (s.eta_min == null) return s.deferred_to === 'tarde' ? 'tarde' : 'manha';
   return s.eta_min >= hhmm(params.almoco_fim) ? 'tarde' : 'manha';
+}
+
+/** Os intervalos do dia em minutos de Brasília (o aberto até agora), para o ritmo do aparelho (lote B §37.6). */
+export function pausasEmMinutos(intervalos: readonly { started_at: string; ended_at: string | null }[], agoraMs: number): { ini: number; fim: number }[] {
+  return intervalos.map((i) => {
+    const ini = minutosSp(i.started_at);
+    return { ini, fim: Math.max(ini, minutosSp(i.ended_at ?? agoraMs)) };
+  });
 }

@@ -161,6 +161,28 @@ export interface TodayView {
   goal?: (GoalView & { params: GoalParams }) | null;
   /** Cadastros confirmados pelo Freela hoje/na semana (contrato §27.8); ausente em respostas antigas. */
   signups_confirmed?: CadastrosConfirmados | null;
+  /** Lote B §37.6 (só com `FIELD_BREAKS_ENABLED`): os intervalos do dia e o aberto. */
+  breaks?: BreakView[];
+  breaks_open?: BreakView | null;
+}
+
+/** Intervalo da jornada (contrato §37.4). */
+export interface BreakView {
+  id: string;
+  client_id: string;
+  journey_id: string;
+  started_at: string;
+  ended_at: string | null;
+  minutes: number;
+  end_reason: string | null;
+  auto_closed: boolean;
+  clock_adjusted: boolean;
+}
+
+/** Corpo do início/fim do intervalo: `client_id` + hora real (a posição fica de fora: a localização pausa no intervalo). */
+export interface IntervaloPayload {
+  client_id: string;
+  at: string;
 }
 
 /** Horários da configuração: o aparelho recalcula o ritmo com o relógio dele. */
@@ -207,7 +229,10 @@ export type AcaoFila =
   | { kind: 'stop_skip'; stop_id: string; payload: { client_id: string; reason: MotivoPulo; note?: string; at: string } }
   | { kind: 'stop_defer'; stop_id: string; payload: { client_id: string; at: string } }
   | { kind: 'stop_undo'; stop_id: string; payload: { client_id: string; at: string } }
-  | { kind: 'route_reoptimize'; payload: { client_id: string } & Posicao };
+  | { kind: 'route_reoptimize'; payload: { client_id: string } & Posicao }
+  // Intervalo (lote B, contrato §37.4): idempotentes por `client_id`.
+  | { kind: 'break_start'; payload: IntervaloPayload }
+  | { kind: 'break_end'; payload: IntervaloPayload };
 
 export type ItemFila = AcaoFila & {
   /** Chave do IndexedDB (autoincremento) — é a ordem de envio. */

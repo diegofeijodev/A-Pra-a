@@ -26,6 +26,8 @@ const chavesNovasSchema = z.object({
   tiers_mode: z.enum(['highest', 'cumulative']).nullish(),
   declared_daily_cap: z.number().int().nullish(),
   declared_confirm_days: z.number().int().nullish(),
+  /** Lote B §37.6: tempo trabalhado mínimo (min) para a diária; só existe com o intervalo ligado no servidor. */
+  daily_base_min_worked_minutes: z.number().int().nullish(),
 });
 
 export const regraSchema = z.object({
@@ -55,6 +57,7 @@ export const NOVAS_PADRAO = {
   tiers_mode: 'highest' as ModoFaixa,
   declared_daily_cap: null as number | null,
   declared_confirm_days: null as number | null,
+  daily_base_min_worked_minutes: null as number | null,
 };
 
 export const versaoSchema = z.object({
@@ -107,7 +110,7 @@ export const configRespostaSchema = z.object({
   default_config: regraSchema,
   /** Presets que só preenchem o formulário (contrato §32.2); servidor antigo não manda. */
   presets: z.object({ completo: regraSchema, chefe: regraSchema }).optional(),
-  features: z.object({ routes_enabled: z.boolean(), declared_signups_enabled: z.boolean() }).optional(),
+  features: z.object({ routes_enabled: z.boolean(), declared_signups_enabled: z.boolean(), breaks_enabled: z.boolean().optional() }).optional(),
 });
 export type ConfigResposta = z.infer<typeof configRespostaSchema>;
 
@@ -276,6 +279,8 @@ export interface FormRegra {
   daily_condition: CondicaoDiaria;
   daily_min_visits: string;
   daily_requires_journey: boolean;
+  /** Lote B §37.6: minutos; vazio = sem exigência. */
+  daily_min_worked: string;
   tiers_mode: ModoFaixa;
 }
 
@@ -296,6 +301,7 @@ export function regraParaForm(r: RegraRemuneracao): FormRegra {
     daily_condition: n.cond,
     daily_min_visits: String(n.minv),
     daily_requires_journey: n.jor,
+    daily_min_worked: r.daily_base_min_worked_minutes == null ? '' : String(r.daily_base_min_worked_minutes),
     tiers_mode: n.modo,
     unit: textoDeCentavos(r.unit_cents),
     tiers_period: r.tiers_period,
@@ -361,6 +367,12 @@ export function formParaRegra(f: FormRegra): ResultadoForm {
     novas.daily_base_condition = f.daily_condition;
     novas.daily_base_requires_journey = f.daily_requires_journey;
     if (f.daily_condition === 'min_visits') novas.daily_base_min_visits = minDiaria;
+    // Lote B §37.6: só vai quando preenchido (a tela só mostra o campo com o intervalo ligado no servidor).
+    if ((f.daily_min_worked ?? '').trim() !== '') {
+      const mw = inteiro(f.daily_min_worked);
+      if (mw === null || mw > 1440) return falha('daily_min_worked', 'Tempo mínimo trabalhado: minutos de 0 a 1440, ou em branco para não exigir.');
+      novas.daily_base_min_worked_minutes = mw;
+    }
   }
   if (f.tiers_mode !== NOVAS_PADRAO.tiers_mode) novas.tiers_mode = f.tiers_mode;
   if (ws === null || pw === null) return falha('week_start_weekday', 'Escolha o dia da semana.');
@@ -430,7 +442,7 @@ export function resumoRegra(r: RegraRemuneracao): string[] {
       route_assigned: 'nos dias com rota da equipe atribuída',
     };
     linhas.push(
-      `Diária de ${brl(r.daily_base_cents as number)}, ${cond[r.daily_base_condition ?? 'none']}${(r.daily_base_requires_journey ?? true) && r.daily_base_condition !== 'journey_open' ? ' e com jornada iniciada' : ''}; soma ao resto, fora do piso e do teto.`,
+      `Diária de ${brl(r.daily_base_cents as number)}, ${cond[r.daily_base_condition ?? 'none']}${(r.daily_base_requires_journey ?? true) && r.daily_base_condition !== 'journey_open' ? ' e com jornada iniciada' : ''}${r.daily_base_min_worked_minutes != null ? ` e com ao menos ${r.daily_base_min_worked_minutes} min trabalhados (jornada menos intervalo)` : ''}; soma ao resto, fora do piso e do teto.`,
     );
   }
   linhas.push(`Semana de ${DIAS_SEMANA[r.week_start_weekday]} a ${DIAS_SEMANA[(r.week_start_weekday + 6) % 7]} (Brasília); Pix toda ${DIAS_SEMANA[r.payout_weekday]}, fechamento automático a partir das ${r.autoclose_hour}h.`);
