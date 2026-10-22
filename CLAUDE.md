@@ -50,15 +50,17 @@ Lovable "PRAÇA" para a stack do Freela.
   para ele (e aberta só para a equipe) — é o comportamento seguro por padrão.
   No web, a sessão do consultor é `campoSession` (separada de `authUser`).
 - **Índices únicos parciais (`field_journeys`, `field_visits`, `field_routes`,
-  `field_route_stops`, `field_payouts`) não existem para o Prisma** (`field_journeys_one_open_per_consultant`,
+  `field_route_stops`, `field_payouts`, `field_journey_breaks`) não existem para o Prisma** (`field_journeys_one_open_per_consultant`,
   `field_visits_one_open_per_consultant`, `field_routes_one_active_per_day`,
-  `field_route_stops_lead_day_unique`, `field_payouts_one_active_per_week`). Toda `prisma migrate dev` futura vai propor `DROP INDEX` deles:
+  `field_route_stops_lead_day_unique`, `field_payouts_one_active_per_week`,
+  `field_journey_breaks_one_open_per_journey`). Toda `prisma migrate dev` futura vai propor `DROP INDEX` deles:
   gere com `--create-only`, **apague essas linhas do SQL** e aplique com
   `migrate deploy`. (Aviso espelhado em comentário na migração
   `20261008221516_consultores_de_campo`.)
 - **Modo do chefe (contrato §31):** a flag `FIELD_VISIT_FLOW_SELECT_ENABLED` (padrão `false`) liga a escolha do fluxo da visita (`simples` | `completo`). Desligada, toda visita é `completo` e nada muda. O fluxo é gravado em `field_visits.flow` na abertura e o checkout o obedece; no web, `/campo` roteia pelas telas de `components/campo/simples/` só com a flag ligada e o fluxo resolvido `simples`. Os testes `*caracterizacao*` congelam o fluxo completo: não editar para "fazer passar". `scripts/smoke-modo-chefe.sh` roda com a flag LIGADA (não junto do `smoke.sh`).
 - **Modo do chefe S2/S3 (contrato §32):** regra de pagamento ganhou 8 chaves OPCIONAIS (`normalizarRegra` preenche com o comportamento da v1; `REGRA_PADRAO` não muda e a config gravada fica crua) e a flag `FIELD_DECLARED_SIGNUPS_ENABLED` (padrão `false`, exige `FIELD_EARNINGS_ENABLED`) liga o ganho por cadastro declarado: declaração e anulação são fatos imutáveis (`field_declared_signups`/`_voids`, trigger como o razão). `*caracterizacao*` e `earnings-rules-chefe.spec.ts` congelam a v1: não editar para "fazer passar". Não mexa em `payouts.service.ts` ~238 (semana ≤ 0 não gera Pix e o negativo não é carregado) sem a S4. `scripts/smoke-modo-chefe-s3.sh` roda com as flags LIGADAS.
 - **Restante da Lovable, lote A (contrato §23.1, §28.5, §33, §34):** `raio_checkin_m` (padrão 200 m, estrito, sem flag) e a versão 1 da regra com `is_initial`/`installed_at` (o `1970-01-01` gravado nunca muda). Painel do gestor, resumo/nota do dia e mapa de pinos atrás de `FIELD_DASHBOARD_ENABLED`, `FIELD_DAY_SUMMARY_ENABLED` e `FIELD_MAP_PINS_ENABLED` (padrão `false`; só leitura, sem migração). As chaves novas de `field_config` são grupos de `domain/config-grupo.ts`: `null` no PUT = ausente e só a chave enviada é gravada. O web descobre as flags pelo `features` do `GET settings/config` (equipe) e do `/campo/me` — **nunca** sondando rota desligada (404 derruba o `browser-check`). `scripts/smoke-lovable-a.sh` roda com as três ligadas (mais `FIELD_ROUTES_ENABLED` e `FIELD_EARNINGS_ENABLED`).
+- **Restante da Lovable, lote B (contrato §35, §37):** checklist da visita + cronômetro atrás de `FIELD_CHECKLIST_ENABLED` e intervalo da jornada atrás de `FIELD_BREAKS_ENABLED` (padrão `false`; migrações aditivas `20261028100000_lovable_l3_checklist` e `20261029100000_lovable_l4_intervalo`). A foto do checklist fica em `VisitView.checklist`, **fora** de `answers` (o web reenvia `answers` no rascunho); `checklist` não nulo com a flag desligada = `422 CHECKLIST_DISABLED`, nulo = ignorado; a obrigatoriedade é lida da foto do check-in e só cobra com a flag ligada. O intervalo real entra no lugar do almoço configurado na conta do ritmo (nunca os dois); check-in, fim da jornada e meia-noite o encerram. `visits-checkout-caracterizacao.spec.ts` congela rascunho e checkout dos dois fluxos com os corpos reais do web: não editar para "fazer passar". `scripts/smoke-lovable-b.sh` roda com as flags ligadas; o `browser-check` cobre o fluxo **simples** de ponta a ponta (consultor próprio) além do completo (que ganha a exceção `visit_flow: completo` quando o simples é o padrão).
 - Fotos do campo passam pela API (`PhotoStorage`): nunca link público do bucket.
 - Ao rodar verificações nesta máquina: **um build/typecheck por vez** (a
   máquina do usuário trava com builds paralelos). Prefira `tsc --noEmit`, o
@@ -96,15 +98,15 @@ verificações em `api/`:
 # api/
 npm run start:dev | build | typecheck | lint | test | seed
 npm run start:smoke                # sobe sem watcher (ts-node --transpile-only), pra smoke
-npm run smoke                      # scripts/smoke.sh contra a API viva — 890 checagens, repetível sem resíduo
+npm run smoke                      # scripts/smoke.sh contra a API viva — 895 checagens, repetível sem resíduo
                                    # (menos sem o container `praca-postgres`: a limpeza final é por psql)
-npm test                           # jest maxWorkers 1 — 96 suítes, 1545 testes
+npm test                           # jest maxWorkers 1 — 102 suítes, 1612 testes
 npm run prisma:migrate:dev | prisma:generate | prisma:studio
 
 # web/
 yarn dev | typecheck | lint        # `build` só se o dono pedir (ver abaixo)
-yarn test                          # vitest run (fork único) — 25 arquivos, 299 testes
-yarn browser-check                 # scripts/browser-check.mjs — 159 checagens (158 sem as flags do ganho declarado)
+yarn test                          # vitest run (fork único) — 28 arquivos, 316 testes
+yarn browser-check                 # scripts/browser-check.mjs — 178 checagens na configuração de produção (fluxo simples e completo; 184 com as flags dos lotes A e B ligadas)
                                    # precisa da API na 3014 (start:smoke) e do web na 3024 (yarn dev)
                                    # conta: PRACA_CHECK_EMAIL/PASSWORD (padrão = seed), login pelo formulário
 ```
