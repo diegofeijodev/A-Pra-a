@@ -2117,6 +2117,19 @@ check "pinos (equipe e consultor) = MAP_PINS_DISABLED" "MAP_PINS_DISABLED|MAP_PI
 check "token de consultor no painel continua 401 (sessão antes da flag)" "401" "$(curl -s -o /dev/null -w '%{http_code}' $API/v1/consultores/dashboard -H "$HC")"
 check "dia do consultor (rota antiga) continua 200" "200" "$(curl -s -o /dev/null -w '%{http_code}' $API/v1/consultores/$(curl -s $API/v1/consultores -H "$HD" | jq -r '.[0].id')/days/$HOJE -H "$HD")"
 
+echo "── Restante da Lovable, lote B (§35/§37), flags desligadas: nada muda ──"
+# Com FIELD_CHECKLIST_ENABLED e FIELD_BREAKS_ENABLED desligadas (padrão) nada novo vai no wire e as rotas do intervalo
+# respondem 404. As flags ligadas são provadas por `scripts/smoke-lovable-b.sh` (não roda junto).
+check "/me: checklist e breaks desligados, sem checklist_config nem breaks_config" "false|false|false|false" \
+  "$(echo "$ME_FLAG" | jq -r '"\(.features.checklist)|\(.features.breaks)|\(has("checklist_config"))|\(has("breaks_config"))"')"
+check "config: features do lote B desligadas; padrões do checklist (7 etapas, não obrigatório) e do intervalo (60/75)" "false|false|7|nao|60|75" \
+  "$(curl -s $API/v1/consultores/settings/config -H "$HD" | jq -r '"\(.features.checklist)|\(.features.breaks)|\(.checklist_items | length)|\(.checklist_obrigatorio)|\(.intervalo_lembrete_min)|\(.alerta_intervalo_min)"')"
+check "intervalo (início e fim) = BREAKS_DISABLED" "404|BREAKS_DISABLED|BREAKS_DISABLED" \
+  "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' -X POST $API/v1/campo/journeys/current/breaks/start -H "$J" -H "$HC" -d "{\"client_id\":\"$(uuid)\",\"at\":\"$AGORA\"}")|$(jq -r .error.code /tmp/praca-smoke-l.json)|$(curl -s -X POST $API/v1/campo/journeys/current/breaks/end -H "$J" -H "$HC" -d "{\"client_id\":\"$(uuid)\",\"at\":\"$AGORA\"}" | jq -r .error.code)"
+check "Hoje sem breaks/breaks_open e visitas sem a chave checklist" "false|false|0" \
+  "$(curl -s $API/v1/campo/today -H "$HC" | jq -r '"\(has("breaks"))|\(has("breaks_open"))|\([.visits[] | select(has("checklist"))] | length)"')"
+check "Atenção agora: sem on_break_since" "false" "$(curl -s $API/v1/consultores/attention -H "$HD" | jq '[.consultants[] | has("on_break_since")] | any')"
+
 check "CRM: UM evento de visita do consultor, com a etapa nova" "1|3" \
   "$(echo "$LEAD_DEPOIS" | jq -r --arg a "Consultor: Consultor $SUF" '[.events[] | select(.kind=="visit" and .author_label==$a)] | "\(length)|\(.[0].stage_to)"')"
 check "foto da visita para o consultor" "image/jpeg" \

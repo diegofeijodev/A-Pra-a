@@ -979,6 +979,11 @@ console.log('-- Campo: GPS negado --');
   } else {
     check('Painel desligado: avisa, sem chamar a rota', (await corpo(page)).includes('ainda não está ligado neste servidor'));
   }
+  // Lote B (contrato §35.2/§37.2): as seções de configuração só existem com as flags (a leitura é a mesma, 200 sempre).
+  await page.goto(`${BASE}/consultores/roteiros`, { waitUntil: 'networkidle' });
+  await page.getByText('Chegada ao local').first().waitFor({ timeout: 20000 });
+  check('Roteiros: "Roteiro da conversa" só com o checklist ligado', ((await page.getByText('Roteiro da conversa (checklist da visita)').count()) === 1) === !!lov.checklist);
+  check('Roteiros: "Intervalo e almoço do consultor" só com o intervalo ligado', ((await page.getByText('Intervalo e almoço do consultor').count()) === 1) === !!lov.breaks);
   await page.goto(`${BASE}/consultores/mapa`, { waitUntil: 'networkidle' });
   if (lov.map_pins) {
     await page.getByText('Situação (toque para esconder ou mostrar)').waitFor({ timeout: 20000 });
@@ -1030,6 +1035,12 @@ try {
     console.log('  (FIELD_VISIT_FLOW_SELECT_ENABLED desligada: sem fluxo simples neste servidor — seção pulada)');
   } else {
     const diaS = async () => api('GET', `/v1/consultores/${consultorSimplesId}/days/${HOJE}`);
+    /** O Hoje como o próprio consultor vê (token do campo): traz a foto do checklist e os intervalos (lote B). */
+    const hojeDoConsultor = () =>
+      cs.evaluate(async (api) => {
+        const t = JSON.parse(localStorage.getItem('campoSession') ?? 'null')?.access_token;
+        return (await fetch(`${api}/v1/campo/today`, { headers: { Authorization: `Bearer ${t}` } })).json();
+      }, API);
     const situacaoS = async () => (await api('GET', '/v1/consultores')).find((c) => c.id === consultorSimplesId)?.today;
     const semPendencia = () => cs.waitForFunction(() => !document.body.innerText.toLowerCase().includes('pendente'), null, { timeout: 30000 });
 
@@ -1096,6 +1107,16 @@ try {
     if (v1) leadsSimples.push(v1.lead_id);
     check('simples: a foto virou a chegada no servidor (fluxo simples, sem conclusão)', !!v1 && v1.flow === 'simples' && !v1.checkout_at);
     check('simples: sem resultado o botão diz o que falta', (await corpo(cs)).includes('falta escolher como foi a visita'));
+    // Lote B, L3 (contrato §35): roteiro da conversa + cronômetro só com a flag; sem ela, a tela é a de hoje.
+    if (meS.features?.checklist) {
+      await cs.getByText('Roteiro da conversa · 0 de 7').waitFor({ timeout: 10000 });
+      check('L3: cronômetro da visita aberta (role=timer, sem anúncio)', (await cs.getByRole('timer').getAttribute('aria-live')) === 'off');
+      await cs.getByRole('checkbox', { name: /1\. Apresentação pessoal e da empresa/ }).click();
+      await cs.getByText('Roteiro da conversa · 1 de 7').waitFor({ timeout: 10000 });
+      check('L3: marcar uma etapa = 1 toque na linha', true);
+    } else {
+      check('sem FIELD_CHECKLIST_ENABLED: nem roteiro da conversa nem cronômetro', !(await corpo(cs)).includes('roteiro da conversa') && (await cs.getByRole('timer').count()) === 0);
+    }
     await cs.getByRole('radio', { name: 'Sem interesse', exact: true }).click();
     await cs.getByRole('radio', { name: 'Preço', exact: true }).click();
     const concluir1 = cs.getByRole('button', { name: 'Concluir: Sem interesse, Preço' });
@@ -1112,6 +1133,29 @@ try {
     await semPendencia();
     const f1 = (await diaS()).visits.find((v) => v.client_id === refS1);
     check('simples: concluída com o resultado e o motivo', !!f1?.checkout_at && f1.answers.result === 'sem_interesse' && f1.answers.refusal_reason === 'preco');
+    if (meS.features?.checklist) {
+      const vck = (await hojeDoConsultor()).visits.find((v) => v.client_id === refS1);
+      check('L3: a marca chegou à foto do checklist da visita (1 de 7), fora de answers', vck?.checklist?.done === 1 && vck?.checklist?.total === 7 && !('checklist' in (vck?.answers ?? {})));
+    }
+
+    // Lote B, L4 (contrato §37): intervalo — 1 toque para começar, 1 para voltar; a equipe vê "em intervalo".
+    if (meS.features?.breaks) {
+      await cs.getByRole('button', { name: 'Intervalo', exact: true }).click();
+      await cs.getByText(/Em intervalo desde/).waitFor({ timeout: 10000 });
+      await espera(9500); // o início espera os segundos do "Desfazer" na fila
+      await semPendencia();
+      const emIntervalo = await hojeDoConsultor();
+      check('L4: intervalo aberto no servidor', !!emIntervalo.breaks_open && emIntervalo.breaks.length === 1);
+      const at = (await api('GET', '/v1/consultores/attention')).consultants.find((c) => c.consultant_id === consultorSimplesId);
+      check('L4: a equipe vê "em intervalo desde"', !!at?.on_break_since);
+      await cs.getByRole('button', { name: 'Voltar do intervalo' }).click();
+      await semPendencia();
+      await espera(1000);
+      const depois = await hojeDoConsultor();
+      check('L4: "Voltar do intervalo" encerra (manual) e o botão volta', !depois.breaks_open && depois.breaks[0]?.end_reason === 'manual' && (await cs.getByRole('button', { name: 'Intervalo', exact: true }).count()) === 1);
+    } else {
+      check('sem FIELD_BREAKS_ENABLED: nenhum botão de intervalo', (await cs.getByRole('button', { name: 'Intervalo', exact: true }).count()) === 0);
+    }
 
     // Visita 2: "Quer retorno" + Amanhã + contato (o padrão exige contato no retorno).
     const LUGAR_S2 = `${CAMPO_LUGAR_PREFIXO} Simples B ${CARIMBO}`;
@@ -1149,6 +1193,10 @@ try {
       await cs.waitForURL(/\/campo\?v=resumo/, { timeout: 20000 });
       await cs.getByText('Resultado do seu dia').first().waitFor({ timeout: 20000 });
       check('simples: encerrar abre o resultado do dia', (await corpo(cs)).includes('resultado do seu dia'));
+      if (meS.features?.breaks) {
+        await cs.getByText('Tempo trabalhado (dia − intervalo)').waitFor({ timeout: 20000 });
+        check('L4: o resultado do dia mostra o intervalo e o tempo trabalhado', (await corpo(cs)).includes('tempo trabalhado (dia − intervalo)'));
+      }
     }
     await semPendencia();
     await espera(1500);
