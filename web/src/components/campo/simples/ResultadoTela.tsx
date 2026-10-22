@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { AvisoGps } from '@/components/campo/AvisoGps';
 import { CampoTopo } from '@/components/campo/CampoTopo';
+import { ChecklistVisita } from '@/components/campo/ChecklistVisita';
+import { Cronometro } from '@/components/campo/Cronometro';
 import { FaixaFila } from '@/components/campo/FaixaFila';
 import { Chip, Grupo } from '@/components/campo/simples/Chip';
 import { MaisDetalhes, ContatoCampos } from '@/components/campo/simples/MaisDetalhes';
@@ -11,12 +13,14 @@ import { Input } from '@/components/ui/input';
 import { addDays, todaySp } from '@/lib/dates';
 import { useCampoSession } from '@/modules/campo/application/campo-session.store';
 import { useCampoMe, useDia } from '@/modules/campo/application/use-campo';
+import { useChecklist } from '@/modules/campo/application/use-checklist';
 import { desfazerCheckout, descartarEnvio, enfileirar, useFilaStore } from '@/modules/campo/application/use-fila';
 import { useFluxo } from '@/modules/campo/application/use-fluxo';
 import { useFotoUrl } from '@/modules/campo/application/use-foto-url';
 import { useSol } from '@/modules/campo/application/use-sol';
 import { irPara } from '@/modules/campo/application/use-tela';
 import type { VisitAnswers } from '@/modules/campo/domain/campo.types';
+import { checklistDaTela, pendenciasChecklist, type ChecklistTela } from '@/modules/campo/domain/checklist';
 import {
   faltandoSimples,
   frasePendencia,
@@ -69,14 +73,16 @@ export function ResultadoTela({ refVisita }: { refVisita: string }) {
   const atual = respostas ?? inicial;
   const resultado = (RESULTADOS_SIMPLES as readonly string[]).includes(atual.result ?? '') ? (atual.result as ResultadoSimples) : null;
   const longe = doServidor?.far_from_place === true;
-  const falta = faltandoSimples(atual, todaySp(), config, { far_from_place: longe });
+  // Lote B §35: roteiro da conversa (só com a flag; não obrigatório por padrão = nenhum toque a mais).
+  const ck = useChecklist({ flow: 'simples', naServidor: !!doServidor, foto: doServidor?.checklist, respostas: atual });
+  const falta = [...faltandoSimples(atual, todaySp(), config, { far_from_place: longe }), ...pendenciasChecklist(ck.checklist)];
 
   const pendente = useRef<VisitAnswers | null>(null);
   const relogio = useRef<number | null>(null);
   const consultor = useRef(consultantId);
   consultor.current = consultantId;
-  const cfgRef = useRef({ config, longe });
-  cfgRef.current = { config, longe };
+  const cfgRef = useRef<{ config: typeof config; longe: boolean; checklist: ChecklistTela | null }>({ config, longe, checklist: ck.checklist });
+  cfgRef.current = { config, longe, checklist: ck.checklist };
 
   const guardar = useCallback(async () => {
     if (relogio.current !== null) {
@@ -86,7 +92,10 @@ export function ResultadoTela({ refVisita }: { refVisita: string }) {
     const r = pendente.current;
     if (!r) return;
     pendente.current = null;
-    const completo = faltandoSimples(r, todaySp(), cfgRef.current.config, { far_from_place: cfgRef.current.longe }).length === 0;
+    // O checklist entra na conta do "completo" só quando existe (com as marcas DESTE rascunho).
+    const lista = cfgRef.current.checklist;
+    const pendCk = lista ? pendenciasChecklist(checklistDaTela({ ligado: true, flow: 'simples', naServidor: true, foto: { ...lista, done: 0, total: lista.items.length }, marcas: r.checklist ?? null })) : [];
+    const completo = faltandoSimples(r, todaySp(), cfgRef.current.config, { far_from_place: cfgRef.current.longe }).length === 0 && pendCk.length === 0;
     await enfileirar({ kind: 'answers', visit_ref: refVisita, payload: rascunhoSimples(r) }, consultor.current, { completo });
   }, [refVisita]);
 
@@ -222,7 +231,16 @@ export function ResultadoTela({ refVisita }: { refVisita: string }) {
       <div className="flex items-center gap-3">
         {/* eslint-disable-next-line @next/next/no-img-element -- blob: local, next/image não serve */}
         {foto && <img src={foto} alt="Foto da fachada" className="h-16 w-16 rounded-md object-cover" />}
-        <p className="text-sm text-muted-foreground">✓ Chegada registrada · {hora(local.checkin_at)}{local.auto_closed ? ' · fechada sem conclusão' : ''}</p>
+        <p className="text-sm text-muted-foreground">
+          ✓ Chegada registrada · {hora(local.checkin_at)}
+          {local.auto_closed ? ' · fechada sem conclusão' : ''}
+          {ck.ligado && !fechada && (
+            <>
+              {' · '}
+              <Cronometro desde={local.checkin_at} />
+            </>
+          )}
+        </p>
       </div>
 
       {longe && config.justificativa_distancia !== 'nao' && (
@@ -250,7 +268,11 @@ export function ResultadoTela({ refVisita }: { refVisita: string }) {
         </section>
       )}
 
-      <section className="space-y-3">
+      {ck.checklist && (
+        <ChecklistVisita checklist={ck.checklist} abertoInicial={ck.abertoInicial} desabilitado={fechada} onMarcas={(m) => set({ checklist: m })} />
+      )}
+
+      <section id="como-foi" className="space-y-3">
         <h2 className="text-[22px] font-black">Como foi a visita?</h2>
         <Grupo rotulo="Resultado da visita">
           {RESULTADOS_SIMPLES.map((r) => (
@@ -353,7 +375,23 @@ export function ResultadoTela({ refVisita }: { refVisita: string }) {
       {!fechada && (
         <div className="fixed inset-x-0 bottom-0 border-t border-border bg-background/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
           <div className="mx-auto max-w-md space-y-2">
-            {frase && <p className="text-center text-sm text-muted-foreground">{frase}</p>}
+            {frase &&
+              (ck.checklist && falta[0] === 'resultado da visita' ? (
+                // Com o roteiro aberto os chips descem: a frase vira atalho para eles (UX §3.5).
+                <button
+                  type="button"
+                  onClick={() => {
+                    const alvo = document.getElementById('como-foi');
+                    alvo?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    alvo?.querySelector<HTMLButtonElement>('[role="radio"]')?.focus({ preventScroll: true });
+                  }}
+                  className="mx-auto block min-h-12 text-center text-sm text-muted-foreground underline underline-offset-4"
+                >
+                  {frase}
+                </button>
+              ) : (
+                <p className="text-center text-sm text-muted-foreground">{frase}</p>
+              ))}
             {checkoutBloqueado ? (
               <button type="button" onClick={() => void salvarCorrecoes()} disabled={ocupado || falta.length > 0} className="flex h-14 w-full items-center justify-center rounded-md bg-primary text-base font-bold text-primary-foreground disabled:opacity-50">
                 Salvar correções

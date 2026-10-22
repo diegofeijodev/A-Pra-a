@@ -4,16 +4,20 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { AvisoGps } from '@/components/campo/AvisoGps';
 import { CampoTopo } from '@/components/campo/CampoTopo';
+import { ChecklistVisita } from '@/components/campo/ChecklistVisita';
+import { Cronometro } from '@/components/campo/Cronometro';
 import { FaixaFila } from '@/components/campo/FaixaFila';
 import { Questionario } from '@/components/campo/Questionario';
 import { Button } from '@/components/ui/button';
 import { todaySp } from '@/lib/dates';
 import { useCampoSession } from '@/modules/campo/application/campo-session.store';
 import { useCampoMe, useDia } from '@/modules/campo/application/use-campo';
+import { useChecklist } from '@/modules/campo/application/use-checklist';
 import { enfileirar, useFilaStore } from '@/modules/campo/application/use-fila';
 import { useFotoUrl } from '@/modules/campo/application/use-foto-url';
 import { irPara } from '@/modules/campo/application/use-tela';
 import type { VisitAnswers } from '@/modules/campo/domain/campo.types';
+import { checklistDaTela, pendenciasChecklist, type ChecklistTela } from '@/modules/campo/domain/checklist';
 import { hora } from '@/modules/campo/domain/formatos';
 import type { MotivoGps } from '@/modules/campo/domain/gps-mensagens';
 import { faltando, RESPOSTAS_VAZIAS } from '@/modules/campo/domain/questionario';
@@ -47,6 +51,10 @@ export function VisitaTela({ refVisita }: { refVisita: string }) {
   /** `null` = ainda não mexeu: segue o que vier do servidor/fila. */
   const [respostas, setRespostas] = useState<VisitAnswers | null>(null);
   const atual = respostas ?? inicial;
+  // Lote B §35: roteiro da conversa acima do questionário (só com a flag).
+  const ck = useChecklist({ flow: 'completo', naServidor: !!doServidor, foto: doServidor?.checklist, respostas: atual });
+  const ckRef = useRef<ChecklistTela | null>(ck.checklist);
+  ckRef.current = ck.checklist;
 
   // Rascunho ainda não guardado na fila (sujo) e o relógio da espera.
   const pendente = useRef<VisitAnswers | null>(null);
@@ -63,7 +71,14 @@ export function VisitaTela({ refVisita }: { refVisita: string }) {
     const r = pendente.current;
     if (!r) return;
     pendente.current = null;
-    await enfileirar({ kind: 'answers', visit_ref: refVisita, payload: r }, consultor.current);
+    const lista = ckRef.current;
+    if (!lista) {
+      await enfileirar({ kind: 'answers', visit_ref: refVisita, payload: r }, consultor.current);
+      return;
+    }
+    // Com o checklist, o "completo" (que destrava um checkout recusado) inclui as etapas obrigatórias deste rascunho.
+    const pendCk = pendenciasChecklist(checklistDaTela({ ligado: true, flow: 'completo', naServidor: true, foto: { ...lista, done: 0, total: lista.items.length }, marcas: r.checklist ?? null }));
+    await enfileirar({ kind: 'answers', visit_ref: refVisita, payload: r }, consultor.current, { completo: faltando(r, todaySp()).length === 0 && pendCk.length === 0 });
   }, [refVisita]);
 
   // Sair da visão (QR, Voltar, outra tela) ou esconder a página: nada digitado se perde.
@@ -86,7 +101,7 @@ export function VisitaTela({ refVisita }: { refVisita: string }) {
   }
 
   const fechada = !!local?.checkout_at || !!local?.auto_closed;
-  const falta = faltando(atual, todaySp());
+  const falta = [...faltando(atual, todaySp()), ...pendenciasChecklist(ck.checklist)];
 
   async function checkout() {
     setGps(null);
@@ -149,6 +164,12 @@ export function VisitaTela({ refVisita }: { refVisita: string }) {
         Check-in às {hora(local.checkin_at)}
         {doServidor?.far_from_place ? ' · longe do local' : ''}
         {local.auto_closed ? ' · fechada sem checkout' : ''}
+        {ck.ligado && !fechada && (
+          <>
+            {' · '}
+            <Cronometro desde={local.checkin_at} />
+          </>
+        )}
       </p>
       {/* eslint-disable-next-line @next/next/no-img-element -- blob: local, next/image não serve */}
       {foto && <img src={foto} alt="Foto da fachada" className="w-full rounded-md" />}
@@ -157,6 +178,10 @@ export function VisitaTela({ refVisita }: { refVisita: string }) {
         <p role="alert" className="rounded-md border border-danger/40 bg-danger/10 p-3 text-sm">
           O checkout desta visita foi recusado: {checkoutBloqueado.bloqueio}
         </p>
+      )}
+
+      {ck.checklist && (
+        <ChecklistVisita checklist={ck.checklist} abertoInicial={ck.abertoInicial} desabilitado={fechada || ocupado} onMarcas={(m) => mudar({ ...atual, checklist: m })} />
       )}
 
       <Questionario

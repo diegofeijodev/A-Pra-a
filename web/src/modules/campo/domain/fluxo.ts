@@ -6,6 +6,7 @@
  * Origem dos valores do "Perfil do chefe": versão Lovable (`src/lib/visita.ts`).
  */
 import type { VisitAnswers } from './campo.types';
+import { fraseChecklist } from './checklist';
 
 export type FluxoVisita = 'simples' | 'completo';
 export const ehFluxo = (v: unknown): v is FluxoVisita => v === 'simples' || v === 'completo';
@@ -72,6 +73,9 @@ export function frasePendencia(falta: string[]): string | null {
   if (primeiro === 'resultado da visita') return 'Falta escolher como foi a visita.';
   if (primeiro === 'motivo') return 'Falta escolher o motivo.';
   if (primeiro?.startsWith('quando voltar')) return 'Falta dizer quando voltar.';
+  // Lote B §35.5: o checklist obrigatório (só aparece na lista quando a foto diz `todas`).
+  const ck = primeiro ? fraseChecklist(primeiro) : null;
+  if (ck) return ck;
   return `Falta informar: ${falta.join(', ')}.`;
 }
 

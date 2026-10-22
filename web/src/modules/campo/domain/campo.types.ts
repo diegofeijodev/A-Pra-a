@@ -4,6 +4,7 @@ import type { CadastrosConfirmados } from './cadastros-confirmados';
 import type { SignupPayload } from './cadastro-empresa';
 import type { MotivoPulo } from '@/modules/rotas/domain/rota.schema';
 import type { ConfigVisita, FluxoVisita } from './fluxo';
+import type { ChecklistConfigCampo, ChecklistVisitaView, MarcaChecklist } from './checklist';
 
 
 export interface CampoConsultantMe {
@@ -33,11 +34,26 @@ export interface CampoMeResponse {
   consultant: CampoConsultantMe;
   channels: string[];
   /** Chaves do servidor que ligam telas (contrato §26.3). Ausente em respostas antigas guardadas no aparelho. */
-  features?: { company_signup: boolean; earnings?: boolean; payouts?: boolean; visit_flow?: boolean; declared_signups?: boolean; day_summary?: boolean; map_pins?: boolean };
+  features?: {
+    company_signup: boolean;
+    earnings?: boolean;
+    payouts?: boolean;
+    visit_flow?: boolean;
+    declared_signups?: boolean;
+    day_summary?: boolean;
+    map_pins?: boolean;
+    /** Lote B (contrato §35.6, §37.6). */
+    checklist?: boolean;
+    breaks?: boolean;
+  };
   /** Modo do chefe §31.4: o fluxo que vale agora para ele. Ausente em respostas antigas guardadas no aparelho = `completo`. */
   visit_flow?: FluxoVisita;
   /** Só com a flag ligada: o que a tela confere sem sinal (o servidor decide). */
   visit_config?: ConfigVisita;
+  /** Lote B §35.6: só com `FIELD_CHECKLIST_ENABLED` — a lista para mostrar sem sinal (a foto do servidor vale mais). */
+  checklist_config?: ChecklistConfigCampo;
+  /** Lote B §37.6: só com `FIELD_BREAKS_ENABLED`. */
+  breaks_config?: { intervalo_ativo: boolean; intervalo_lembrete_min: number };
 }
 
 /** Posição + hora real do aparelho. */
@@ -103,6 +119,8 @@ export interface VisitAnswers {
   /** Modo do chefe §31.5 — só o fluxo `simples` usa. */
   result?: string | null;
   distance_note?: string | null;
+  /** Lote B §35.4: marcas do roteiro da conversa. Só existe com o checklist ligado (o servidor recusa com ele desligado). */
+  checklist?: MarcaChecklist[] | null;
 }
 
 export interface VisitView {
@@ -128,6 +146,8 @@ export interface VisitView {
   flow?: FluxoVisita;
   answers: VisitAnswers;
   missing: string[];
+  /** Lote B §35.6: foto do checklist (só com a flag ligada e foto gravada). Fica FORA de `answers` de propósito. */
+  checklist?: ChecklistVisitaView;
 }
 
 export interface TodayView {
