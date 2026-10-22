@@ -88,6 +88,15 @@ describe('env — restante da Lovable, lote B (§35/§37)', () => {
   });
 });
 
+describe('env — restante da Lovable, lote C (§36/§38)', () => {
+  it('segmentos, pedidos de cupom e cupom no Freela: desligados por padrão e aceitam true', () => {
+    for (const k of ['FIELD_SEGMENTS_ENABLED', 'FIELD_VOUCHERS_ENABLED', 'FIELD_VOUCHER_COUPONS_ENABLED'] as const) {
+      expect(validateEnv(BASE)[k]).toBe('false');
+      expect(validateEnv({ ...BASE, [k]: 'true' })[k]).toBe('true');
+    }
+  });
+});
+
 describe('env — restante da Lovable, lote A (§33/§34)', () => {
   it('painel, resumo do dia e mapa de pinos: desligados por padrão e aceitam true', () => {
     for (const k of ['FIELD_DASHBOARD_ENABLED', 'FIELD_DAY_SUMMARY_ENABLED', 'FIELD_MAP_PINS_ENABLED'] as const) {

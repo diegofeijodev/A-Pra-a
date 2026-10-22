@@ -225,6 +225,7 @@ model leads {
   company_signups  field_company_signups[]
   signups_freela   field_signups[]
   declared_signups field_declared_signups[]
+  vouchers         field_vouchers[]
 
   @@unique([source, source_ref])
   @@index([praca_id, lat, lng])
@@ -307,6 +308,8 @@ model app_settings {
   field_channels    Json    @default("[\"Nenhum\",\"Grupos de WhatsApp\",\"Indicação de conhecidos\",\"Agência de mão de obra\"]")
   // Parâmetros de negócio do campo (roteiro, F3; a F5 acrescenta chaves). Ver contrato §23.1.
   field_config      Json    @default("{}")
+  // Segmentos editáveis da busca (lote C, contrato §36): { segments, atualizado_por, atualizado_em }; nulo = padrão do código.
+  place_segments    Json?
 }
 
 model blocklist {
@@ -613,6 +616,7 @@ model field_consultants {
   payout_periods   field_payout_periods[]
   payouts          field_payouts[]
   journey_breaks   field_journey_breaks[]
+  vouchers         field_vouchers[]
 }
 
 model field_journeys {
@@ -739,6 +743,7 @@ model field_visits {
   route_stops       field_route_stops[]
   company_signups   field_company_signups[]
   declared_signup   field_declared_signups?
+  vouchers          field_vouchers[]
 
   // Mais o índice único PARCIAL `field_visits_one_open_per_consultant`.
   @@index([consultant_id, checkin_at])
@@ -772,30 +777,32 @@ model field_areas {
 // F2 da prospecção (contrato §22): uma pesquisa de estabelecimentos numa área.
 // `cache_key` = hash da geometria + tipos + fonte; reaproveitada por 7 dias.
 model place_import_runs {
-  id              String    @id @default(uuid()) @db.Uuid
-  praca_id        String    @db.Uuid
-  area_id         String    @db.Uuid
-  area_name       String
-  source          String
-  types           String[]
-  lat             Float
-  lng             Float
-  radius_m        Int
-  cache_key       String
-  status          String    @default("queued") // queued | running | done | error | cancelled
-  found           Int       @default(0)
-  novos           Int       @default(0)
-  duplicados      Int       @default(0)
-  descartados     Int       @default(0)
-  truncated       Boolean   @default(false)
+  id                String    @id @default(uuid()) @db.Uuid
+  praca_id          String    @db.Uuid
+  area_id           String    @db.Uuid
+  area_name         String
+  source            String
+  types             String[]
+  lat               Float
+  lng               Float
+  radius_m          Int
+  cache_key         String
+  status            String    @default("queued") // queued | running | done | error | cancelled
+  found             Int       @default(0)
+  novos             Int       @default(0)
+  duplicados        Int       @default(0)
+  descartados       Int       @default(0)
+  truncated         Boolean   @default(false)
   // Apify: lugares reservados ao começar (teto mensal); o actor cobra mesmo se cancelarmos.
-  reserved_places Int       @default(0)
-  est_cost_usd    Float     @default(0)
-  error           String?
-  requested_by    String    @db.Uuid
-  created_at      DateTime  @default(now())
-  started_at      DateTime?
-  finished_at     DateTime?
+  reserved_places   Int       @default(0)
+  est_cost_usd      Float     @default(0)
+  error             String?
+  requested_by      String    @db.Uuid
+  created_at        DateTime  @default(now())
+  started_at        DateTime?
+  finished_at       DateTime?
+  // Foto das definições dos segmentos pedidos (lote C, §36.6); nulo = tipos fixos de hoje.
+  segments_snapshot Json?
 
   praca      pracas             @relation(fields: [praca_id], references: [id], onDelete: Cascade)
   requester  users              @relation(fields: [requested_by], references: [id], onDelete: Restrict)
@@ -1161,4 +1168,71 @@ model field_declared_signup_voids {
   client_id      String   @unique @db.Uuid
 
   declared field_declared_signups @relation(fields: [declared_id], references: [id], onDelete: Restrict)
+}
+
+// ── cupons da 1ª contratação (lote C da Lovable, contrato §38) ──
+// O pedido é um fato: o trigger `field_vouchers_guard` (só no SQL) barra DELETE e congela consultor, lead, praça, `client_id`,
+// as fotos e `created_at`; o estado só muda por compare-and-set com evento na mesma transação. CHECKs e o índice parcial
+// `field_vouchers_one_coupon_per_contractor` vivem só na migração.
+model field_vouchers {
+  id                     String    @id @default(uuid()) @db.Uuid
+  client_id              String    @unique @db.Uuid
+  consultant_id          String    @db.Uuid
+  praca_id               String    @db.Uuid
+  lead_id                String    @db.Uuid
+  visit_id               String?   @db.Uuid
+  company_name           String
+  uf                     String
+  city                   String
+  segment                String
+  freelas_per_week       Int
+  status                 String    @default("pendente") // pendente | aprovado | reprovado | cancelado
+  decision_reason        String?
+  decided_by             String?   @db.Uuid
+  decided_by_name        String?
+  decided_at             DateTime?
+  contractor_user_id     String?
+  contractor_name        String?
+  contractor_source      String? // company_signup | signup_sync | manual
+  coupon_status          String? // nao_aplicavel | aguardando_vinculo | aguardando_freela | criado | usado | vencido | desativado | erro
+  coupon_code            String?   @unique
+  coupon_id              String?
+  coupon_params          Json?
+  coupon_expires_at      DateTime?
+  coupon_error_code      String?
+  coupon_error           String?
+  coupon_attempts        Int       @default(0)
+  coupon_last_attempt_at DateTime?
+  coupon_synced_at       DateTime?
+  redeemed_at            DateTime?
+  created_at             DateTime  @default(now())
+
+  consultant field_consultants      @relation(fields: [consultant_id], references: [id], onDelete: Restrict)
+  lead       leads                  @relation(fields: [lead_id], references: [id], onDelete: Restrict)
+  visit      field_visits?          @relation(fields: [visit_id], references: [id], onDelete: SetNull)
+  events     field_voucher_events[]
+
+  @@index([lead_id, status])
+  @@index([consultant_id, created_at])
+  @@index([praca_id, created_at])
+  @@index([coupon_status])
+  @@index([contractor_user_id])
+}
+
+// Trilha do pedido: só INSERT (trigger `field_earnings_immutable`). Nunca telefone nem e-mail.
+model field_voucher_events {
+  id         String   @id @default(uuid()) @db.Uuid
+  voucher_id String   @db.Uuid
+  type       String
+  client_id  String?  @unique @db.Uuid
+  actor_kind String // consultor | equipe | sistema
+  actor_id   String?  @db.Uuid
+  actor_name String?
+  reason     String?
+  data       Json     @default("{}")
+  created_at DateTime @default(now())
+
+  voucher field_vouchers @relation(fields: [voucher_id], references: [id], onDelete: Restrict)
+
+  @@index([voucher_id, created_at])
 }

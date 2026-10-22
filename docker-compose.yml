@@ -85,6 +85,10 @@ services:
       FIELD_MAP_PINS_ENABLED: ${FIELD_MAP_PINS_ENABLED:-false}
       FIELD_CHECKLIST_ENABLED: ${FIELD_CHECKLIST_ENABLED:-false}
       FIELD_BREAKS_ENABLED: ${FIELD_BREAKS_ENABLED:-false}
+      # Restante da Lovable, lote C (contrato §36/§38): segmentos da busca, pedidos de cupom e o cupom real no Freela (este exige FIELD_VOUCHERS_ENABLED).
+      FIELD_SEGMENTS_ENABLED: ${FIELD_SEGMENTS_ENABLED:-false}
+      FIELD_VOUCHERS_ENABLED: ${FIELD_VOUCHERS_ENABLED:-false}
+      FIELD_VOUCHER_COUPONS_ENABLED: ${FIELD_VOUCHER_COUPONS_ENABLED:-false}
     ports:
       - '3014:3014'
 

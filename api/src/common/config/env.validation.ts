@@ -89,6 +89,11 @@ const envBase = z.object({
   // Restante da Lovable, lote B (contrato §35/§37). Desligadas = nada novo no wire e rotas do intervalo 404.
   FIELD_CHECKLIST_ENABLED: z.string().default('false'),
   FIELD_BREAKS_ENABLED: z.string().default('false'),
+  // Restante da Lovable, lote C (contrato §36/§38). Desligadas = rotas 404, busca e painel idênticos aos de hoje, nenhuma chamada ao Freela.
+  FIELD_SEGMENTS_ENABLED: z.string().default('false'),
+  FIELD_VOUCHERS_ENABLED: z.string().default('false'),
+  // Cupom real no Freela (§38.7). Só vale com FIELD_VOUCHERS_ENABLED; sem ela o pedido aprovado é só registro (NoopIssuer).
+  FIELD_VOUCHER_COUPONS_ENABLED: z.string().default('false'),
 
   SWAGGER_ENABLED: z.string().optional(),
 

@@ -10,8 +10,10 @@ import {
   fluxoSelectLigadoProvider,
   LOVABLE_A_FLAGS,
   LOVABLE_B_FLAGS,
+  LOVABLE_C_FLAGS,
   lovableAFlagsProvider,
   lovableBFlagsProvider,
+  lovableCFlagsProvider,
   ROTAS_LIGADAS,
   rotasLigadasProvider,
 } from './rotas.tokens';
@@ -22,7 +24,7 @@ import {
  */
 @Module({
   controllers: [RotasCampoController, RotasEquipeController, RotasConfigController],
-  providers: [RotasConfigService, RotasCampoService, RotasEquipeService, rotasLigadasProvider, fluxoSelectLigadoProvider, lovableAFlagsProvider, lovableBFlagsProvider, ModoCampoService],
-  exports: [RotasCampoService, RotasConfigService, ROTAS_LIGADAS, FLUXO_SELECT_LIGADO, LOVABLE_A_FLAGS, LOVABLE_B_FLAGS, ModoCampoService],
+  providers: [RotasConfigService, RotasCampoService, RotasEquipeService, rotasLigadasProvider, fluxoSelectLigadoProvider, lovableAFlagsProvider, lovableBFlagsProvider, lovableCFlagsProvider, ModoCampoService],
+  exports: [RotasCampoService, RotasConfigService, ROTAS_LIGADAS, FLUXO_SELECT_LIGADO, LOVABLE_A_FLAGS, LOVABLE_B_FLAGS, LOVABLE_C_FLAGS, ModoCampoService],
 })
 export class RotasModule {}

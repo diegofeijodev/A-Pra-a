@@ -64,3 +64,29 @@ export const lovableAFlagsProvider: Provider = {
     };
   },
 };
+
+/**
+ * Restante da Lovable, lote C (contrato §36, §38): segmentos editáveis da busca, pedidos de cupom e o cupom real no Freela.
+ * `voucher_coupons` só vale com `vouchers` (como os pagamentos exigem a remuneração): sem ela, a porta do cupom é o `NoopIssuer`.
+ */
+export interface FlagsLovableC {
+  segments: boolean;
+  vouchers: boolean;
+  voucher_coupons: boolean;
+}
+export const LOVABLE_C_FLAGS = Symbol('LOVABLE_C_FLAGS');
+
+export function lerFlagsLovableC(env: Record<string, unknown> = process.env): FlagsLovableC {
+  const e = validateEnv(env);
+  const vouchers = e.FIELD_VOUCHERS_ENABLED === 'true';
+  return {
+    segments: e.FIELD_SEGMENTS_ENABLED === 'true',
+    vouchers,
+    voucher_coupons: vouchers && e.FIELD_VOUCHER_COUPONS_ENABLED === 'true',
+  };
+}
+
+export const lovableCFlagsProvider: Provider = {
+  provide: LOVABLE_C_FLAGS,
+  useFactory: (): FlagsLovableC => lerFlagsLovableC(),
+};
