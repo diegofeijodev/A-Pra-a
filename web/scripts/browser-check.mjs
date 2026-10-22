@@ -176,6 +176,9 @@ let acaoConcluida = null;
 let consultorId = null;
 let leadCampoId = null;
 let leadCampoId2 = null;
+/** Fluxo SIMPLES (contrato §31): consultor e lugares próprios, apagados no fim. */
+let consultorSimplesId = null;
+const leadsSimples = [];
 const HOJE = hojeSp();
 
 /** Apaga o que der para apagar, sem derrubar a rodada por causa da limpeza. */
@@ -657,6 +660,12 @@ try {
     pix_key: CAMPO_EMAIL,
   });
   consultorId = criado.consultant.id;
+  // O roteiro abaixo é o do fluxo COMPLETO. Com `FIELD_VISIT_FLOW_SELECT_ENABLED` ligada e `fluxo_visita` sem escolha (produção hoje), o padrão é
+  // o simples: a exceção por consultor (§31.3, só admin) prende ESTE consultor no completo. O simples tem consultor e seção próprios.
+  if (criado.consultant.visit_flow_effective === 'simples') {
+    await api('PATCH', `/v1/consultores/${consultorId}`, { visit_flow: 'completo' });
+    check('fluxo simples é o padrão: o consultor do roteiro completo ganha a exceção "completo"', (await api('GET', `/v1/consultores/${consultorId}`)).visit_flow_effective === 'completo');
+  }
   check('equipe cria o consultor e recebe a senha provisória', criado.temp_password?.length === 10);
 
   const manifesto = await (await fetch(`${BASE}/campo/manifest.webmanifest`)).json();
@@ -983,6 +992,174 @@ console.log('-- Campo: GPS negado --');
   await celularCtx.close();
 }
 
+// ── 13b. Campo: o fluxo SIMPLES de ponta a ponta (contrato §31; produção hoje) ──
+// Consultor próprio (prefixo de e-mail e de lugar da faxina). O padrão de produção é usado como está: a exceção "simples" só entra se o
+// fluxo efetivo dele não for simples (ex.: `fluxo_visita=completo`). Sem a flag do modo, a seção é pulada (não há tela simples).
+// Nunca "Cadastrou agora": com FIELD_DECLARED_SIGNUPS_ENABLED a declaração é imutável e o consultor e o lugar não poderiam ser apagados.
+const simplesCtx = await browser.newContext({
+  viewport: { width: 390, height: 844 },
+  isMobile: true,
+  hasTouch: true,
+  geolocation: POSICAO,
+  permissions: ['geolocation'],
+  locale: 'pt-BR',
+  timezoneId: 'America/Sao_Paulo',
+});
+const cs = await simplesCtx.newPage();
+vigiar(cs, 'campo-simples');
+try {
+  console.log('-- Campo: fluxo simples --');
+  const EMAIL_S = `${CAMPO_PREFIXO}simples-${CARIMBO}@praca.local`;
+  const NOME_S = `Consultor Simples ${CARIMBO}`;
+  const criadoS = await api('POST', '/v1/consultores', {
+    name: NOME_S,
+    email: EMAIL_S,
+    phone: '(31) 99999-0001',
+    cpf: cpfValido(Date.now() + 7),
+    praca_id: PRACA,
+    pix_key_type: 'email',
+    pix_key: EMAIL_S,
+  });
+  consultorSimplesId = criadoS.consultant.id;
+  let efetivo = criadoS.consultant.visit_flow_effective;
+  if (efetivo !== 'simples') {
+    await api('PATCH', `/v1/consultores/${consultorSimplesId}`, { visit_flow: 'simples' });
+    efetivo = (await api('GET', `/v1/consultores/${consultorSimplesId}`)).visit_flow_effective;
+  }
+  if (efetivo !== 'simples') {
+    console.log('  (FIELD_VISIT_FLOW_SELECT_ENABLED desligada: sem fluxo simples neste servidor — seção pulada)');
+  } else {
+    const diaS = async () => api('GET', `/v1/consultores/${consultorSimplesId}/days/${HOJE}`);
+    const situacaoS = async () => (await api('GET', '/v1/consultores')).find((c) => c.id === consultorSimplesId)?.today;
+    const semPendencia = () => cs.waitForFunction(() => !document.body.innerText.toLowerCase().includes('pendente'), null, { timeout: 30000 });
+
+    await cs.goto(`${BASE}/campo/entrar`, { waitUntil: 'networkidle' });
+    await cs.locator('#email').fill(EMAIL_S);
+    await cs.locator('#senha').fill(criadoS.temp_password);
+    await cs.getByRole('button', { name: 'Entrar', exact: true }).click();
+    await cs.waitForURL('**/campo/senha', { timeout: 20000 });
+    await cs.locator('#atual').fill(criadoS.temp_password);
+    await cs.locator('#nova').fill(CAMPO_SENHA_NOVA);
+    await cs.locator('#confirma').fill(CAMPO_SENHA_NOVA);
+    await cs.getByRole('button', { name: 'Salvar senha', exact: true }).click();
+    await cs.waitForURL(/\/campo$/, { timeout: 20000 });
+    await cs.getByText('Pronto para sair?').waitFor({ timeout: 20000 });
+    const meS = await cs.evaluate(async (api) => {
+      const t = JSON.parse(localStorage.getItem('campoSession') ?? 'null')?.access_token;
+      const r = await fetch(`${api}/v1/campo/me`, { headers: { Authorization: `Bearer ${t}` } });
+      return r.json();
+    }, API);
+    check('simples: a tela de hoje é a do fluxo simples ("Iniciar o dia")', (await cs.getByRole('button', { name: 'Iniciar o dia' }).count()) === 1 && meS.visit_flow === 'simples');
+
+    await cs.getByRole('button', { name: 'Iniciar o dia' }).click();
+    await cs.getByRole('button', { name: 'Encerrar o dia' }).waitFor({ timeout: 20000 });
+    await semPendencia();
+    check('simples: equipe vê o consultor em jornada', (await situacaoS())?.status === 'em_jornada');
+
+    const jpegS = await cs.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const c = document.createElement('canvas');
+          c.width = 1200;
+          c.height = 900;
+          const g = c.getContext('2d');
+          g.fillStyle = '#7E2E5F';
+          g.fillRect(0, 0, c.width, c.height);
+          c.toBlob((b) => b.arrayBuffer().then((a) => resolve(Array.from(new Uint8Array(a)))), 'image/jpeg', 0.9);
+        }),
+    );
+    /** "Visita fora do roteiro" (ou "Visita no caminho") → cadastrar o lugar → Cheguei/foto. Nunca visita lead do seed. */
+    const chegar = async (nome) => {
+      const fora = cs.getByRole('button', { name: 'Visita fora do roteiro' });
+      if ((await fora.count()) > 0) await fora.click();
+      else await cs.getByRole('button', { name: 'Visita no caminho' }).click();
+      await cs.waitForURL(/\/campo\?v=nova/, { timeout: 20000 });
+      await cs.getByRole('button', { name: 'Não está na lista? Cadastrar o lugar' }).click();
+      await cs.locator('#novo-nome').fill(nome);
+      await cs.locator('#novo-endereco').fill('Rua do Fluxo Simples, 10');
+      await cs.getByRole('button', { name: 'Continuar', exact: true }).click();
+      const input = cs.getByLabel(`Cheguei em ${nome}: tirar a foto da fachada`);
+      const outro = cs.getByRole('button', { name: 'É outro lugar' });
+      await Promise.race([input.waitFor({ state: 'attached', timeout: 15000 }), outro.waitFor({ timeout: 15000 })]);
+      if (await outro.isVisible()) await outro.click();
+      await input.setInputFiles({ name: 'fachada-s.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(jpegS) });
+      await cs.waitForURL(/\/campo\?v=visita&ref=[0-9a-f-]{36}/, { timeout: 20000 });
+      await cs.getByText('Como foi a visita?').waitFor({ timeout: 20000 });
+      await semPendencia();
+      return new URL(cs.url()).searchParams.get('ref');
+    };
+
+    // Visita 1: "Sem interesse" + motivo; concluir, DESFAZER, concluir de novo.
+    const LUGAR_S1 = `${CAMPO_LUGAR_PREFIXO} Simples A ${CARIMBO}`;
+    const refS1 = await chegar(LUGAR_S1);
+    const v1 = (await diaS()).visits.find((v) => v.client_id === refS1);
+    if (v1) leadsSimples.push(v1.lead_id);
+    check('simples: a foto virou a chegada no servidor (fluxo simples, sem conclusão)', !!v1 && v1.flow === 'simples' && !v1.checkout_at);
+    check('simples: sem resultado o botão diz o que falta', (await corpo(cs)).includes('falta escolher como foi a visita'));
+    await cs.getByRole('radio', { name: 'Sem interesse', exact: true }).click();
+    await cs.getByRole('radio', { name: 'Preço', exact: true }).click();
+    const concluir1 = cs.getByRole('button', { name: 'Concluir: Sem interesse, Preço' });
+    await concluir1.waitFor({ timeout: 10000 });
+    check('simples: resultado em 1 chip + motivo libera "Concluir: Sem interesse, Preço"', !(await concluir1.isDisabled()));
+    await concluir1.click();
+    await cs.getByRole('button', { name: 'Desfazer' }).click();
+    await cs.waitForURL(/\/campo\?v=visita&ref=/, { timeout: 15000 });
+    await espera(1500);
+    check('simples: "Desfazer" volta para a visita, que segue aberta no servidor', !(await diaS()).visits.find((v) => v.client_id === refS1)?.checkout_at);
+    await cs.getByRole('button', { name: 'Concluir: Sem interesse, Preço' }).click();
+    await cs.waitForURL(/\/campo(\?v=hoje)?$/, { timeout: 20000 });
+    await espera(9000); // o checkout espera os segundos do "Desfazer" na fila
+    await semPendencia();
+    const f1 = (await diaS()).visits.find((v) => v.client_id === refS1);
+    check('simples: concluída com o resultado e o motivo', !!f1?.checkout_at && f1.answers.result === 'sem_interesse' && f1.answers.refusal_reason === 'preco');
+
+    // Visita 2: "Quer retorno" + Amanhã + contato (o padrão exige contato no retorno).
+    const LUGAR_S2 = `${CAMPO_LUGAR_PREFIXO} Simples B ${CARIMBO}`;
+    const refS2 = await chegar(LUGAR_S2);
+    const v2 = (await diaS()).visits.find((v) => v.client_id === refS2);
+    if (v2) leadsSimples.push(v2.lead_id);
+    await cs.getByRole('radio', { name: 'Quer retorno', exact: true }).click();
+    await cs.getByRole('radio', { name: 'Amanhã', exact: true }).click();
+    await cs.locator('#r-nome').fill('Rui Simples');
+    await cs.getByRole('radio', { name: 'Gerente', exact: true }).click();
+    await cs.locator('#r-fone').fill('31988887777');
+    const concluir2 = cs.getByRole('button', { name: 'Concluir: Quer retorno' });
+    await concluir2.waitFor({ timeout: 10000 });
+    check('simples: "Quer retorno" com dia e contato libera o Concluir', !(await concluir2.isDisabled()));
+    await concluir2.click();
+    await cs.waitForURL(/\/campo(\?v=hoje)?$/, { timeout: 20000 });
+    await espera(9000);
+    await semPendencia();
+    const f2 = (await diaS()).visits.find((v) => v.client_id === refS2);
+    const amanha = new Date(`${HOJE}T12:00:00Z`);
+    amanha.setUTCDate(amanha.getUTCDate() + 1);
+    check(
+      'simples: retorno gravado com a data de amanhã e o contato',
+      !!f2?.checkout_at && f2.answers.result === 'retorno' && f2.answers.followup_date === amanha.toISOString().slice(0, 10) && f2.answers.interlocutor_name === 'Rui Simples',
+    );
+    if (f2) {
+      const leadS2 = await api('GET', `/v1/leads/${f2.lead_id}`);
+      check('simples: CRM com evento de visita e o próximo passo do retorno', (leadS2.events ?? []).some((e) => e.kind === 'visit') && leadS2.next_step?.date === amanha.toISOString().slice(0, 10));
+    }
+
+    // Encerrar o dia (diálogo do navegador) → resumo do dia, se ligado.
+    cs.once('dialog', (d) => void d.accept());
+    await cs.getByRole('button', { name: 'Encerrar o dia' }).click();
+    if (meS.features?.day_summary) {
+      await cs.waitForURL(/\/campo\?v=resumo/, { timeout: 20000 });
+      await cs.getByText('Resultado do seu dia').first().waitFor({ timeout: 20000 });
+      check('simples: encerrar abre o resultado do dia', (await corpo(cs)).includes('resultado do seu dia'));
+    }
+    await semPendencia();
+    await espera(1500);
+    check('simples: a jornada foi encerrada no servidor', (await situacaoS())?.status === 'encerrou');
+  }
+} catch (e) {
+  ko('roteiro do fluxo simples interrompido', String(e).slice(0, 300));
+} finally {
+  await simplesCtx.close();
+}
+
 // ── limpeza: o banco volta ao seed ──────────────────────────────
 // CADA passo no seu próprio `try`: com um `try` só, um erro no primeiro
 // `DELETE` pulava todos os outros e as afirmações de resíduo — que é como a
@@ -1025,6 +1202,16 @@ if (consultorId) {
 if (leadCampoId2) {
   await tentar('lead da segunda visita apagado', async () =>
     check('lead da segunda visita apagado', (await api('DELETE', `/v1/leads/${leadCampoId2}`)).ok === true),
+  );
+}
+if (consultorSimplesId) {
+  await tentar('consultor do fluxo simples apagado', async () =>
+    check('consultor do fluxo simples apagado', (await api('DELETE', `/v1/consultores/${consultorSimplesId}`)).ok === true),
+  );
+}
+for (const id of leadsSimples) {
+  await tentar('lead do fluxo simples apagado', async () =>
+    check('lead do fluxo simples apagado', (await api('DELETE', `/v1/leads/${id}`)).ok === true),
   );
 }
 if (leadCampoId) {
