@@ -77,6 +77,32 @@ export class StartJourneyDto extends PosicaoDto {
   client_id!: string;
 }
 
+/** Lote B §37.4: início/fim do intervalo — `client_id` + hora real; a posição é opcional. */
+export class IntervaloDto {
+  @IsUUID()
+  client_id!: string;
+
+  @IsISO8601({ strict: true })
+  at!: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsLatitude()
+  lat?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsLongitude()
+  lng?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0)
+  @Max(100_000)
+  accuracy?: number;
+}
+
 export class PontoDto extends PosicaoDto {
   @IsUUID()
   client_id!: string;

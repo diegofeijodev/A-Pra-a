@@ -186,6 +186,8 @@ export class EarningsService {
     return {
       declared: ctx.versoes.some((v) => v.config.signup_source === 'declared'),
       routes: ctx.versoes.some((v) => v.config.daily_base_condition === 'route_assigned' && (v.config.daily_base_cents ?? 0) > 0),
+      // Lote B §37.6: só busca jornadas/intervalos de novo se alguma versão exige tempo trabalhado.
+      ...(ctx.versoes.some((v) => v.config.daily_base_min_worked_minutes != null) ? { worked: true } : {}),
     };
   }
 
@@ -228,6 +230,7 @@ export class EarningsService {
         ...(raw?.route_equipe ? { route_assigned: true } : {}),
         ...(acima > 0 ? { declared_over_cap: acima } : {}),
         ...(anuladas > 0 ? { declared_voided: anuladas } : {}),
+        ...(regra?.daily_base_min_worked_minutes != null ? { worked_minutes: raw?.worked_minutes ?? 0 } : {}),
       };
     }
     return out;
@@ -585,6 +588,8 @@ export class EarningsService {
       features: {
         routes_enabled: this.opcoes.rotasLigadas ?? false,
         declared_signups_enabled: this.opcoes.declaradasLigado ?? false,
+        // Lote B §37.6: a chave daily_base_min_worked_minutes só existe com o intervalo ligado (ausente com ele desligado).
+        ...(this.opcoes.intervaloLigado ? { breaks_enabled: true } : {}),
       },
     };
   }
@@ -603,6 +608,12 @@ export class EarningsService {
         code: 'DECLARED_DISABLED',
         message:
           'signup_source: o cadastro declarado precisa de FIELD_DECLARED_SIGNUPS_ENABLED (e FIELD_EARNINGS_ENABLED) ligadas.',
+      });
+    if (r.regra.daily_base_min_worked_minutes != null && !this.opcoes.intervaloLigado)
+      throw new ConflictException({
+        code: 'BREAKS_DISABLED',
+        message:
+          'daily_base_min_worked_minutes: o tempo trabalhado desconta o intervalo e precisa de FIELD_BREAKS_ENABLED ligada.',
       });
     const versoes = await this.repo.versoes();
     const travada = await this.repo.existeRazaoOuFechamento();
@@ -649,6 +660,7 @@ export class EarningsService {
         journey_open: dto.journey_open ?? false,
         elegivel: true,
         ...(dto.route_assigned ? { route_assigned: true } : {}),
+        ...(dto.worked_minutes !== undefined ? { worked_minutes: dto.worked_minutes } : {}),
       },
       version,
     );
@@ -665,6 +677,7 @@ export class EarningsService {
         journey_open: x.journey_open ?? false,
         elegivel: true,
         ...(x.route_assigned ? { route_assigned: true } : {}),
+        ...(x.worked_minutes !== undefined ? { worked_minutes: x.worked_minutes } : {}),
       };
     });
     const w = calcularSemana({

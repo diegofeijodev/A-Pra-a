@@ -14,6 +14,8 @@ export class DiaSimuladoDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(1000) visits?: number;
   @IsOptional() @IsBoolean() journey_open?: boolean;
   @IsOptional() @IsBoolean() route_assigned?: boolean;
+  /** Lote B §37.6: minutos trabalhados do dia (só pesa com `daily_base_min_worked_minutes`). */
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(1440) worked_minutes?: number;
 }
 
 export class SimularDto {
@@ -24,6 +26,7 @@ export class SimularDto {
   @Type(() => Number) @IsInt() @Min(0) @Max(1000) signups_confirmed!: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(1000) visits?: number;
   @IsOptional() @IsBoolean() journey_open?: boolean;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(1440) worked_minutes?: number;
 }
 
 export class EarningsQueryDto {

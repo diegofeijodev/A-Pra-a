@@ -5,7 +5,9 @@ import { PrismaService } from '../../common/database/prisma.service';
 import { minutesSp, todaySp, weekdayOf } from '../../common/time/dates';
 import { ehDiaDeTrabalho, metaDoDia, type GoalView } from '../../domain/alerta-rules';
 import { carimbo, PASSADO_MAXIMO_MS } from '../../domain/campo-rules';
+import { fimDaPausa, pausasEmMinutos, type PausaMin } from '../../domain/intervalo-rules';
 import { CONFIG_MODO_DESLIGADO, contaNaMeta } from '../../domain/modo-campo-rules';
+import { breakView, encerrarIntervaloAberto, type BreakView } from './breaks-views';
 import { ModoCampoService } from '../rotas/modo-campo.service';
 import { COM_LEAD, journeyView, visitView, type JourneyView, type VisitView } from './campo-views';
 import type { PontosDto, PosicaoDto, StartJourneyDto } from './dto/campo.dto';
@@ -28,6 +30,9 @@ export interface TodayView {
   goal: (GoalView & { params: GoalParams }) | null;
   /** Cadastros confirmados pelo Freela hoje/na semana, com a regra e a fonte (contrato §27.8); `null` se não pôde ser lido. */
   signups_confirmed: Contagem | null;
+  /** Lote B §37.6 (só com `FIELD_BREAKS_ENABLED`): os intervalos do dia e o aberto. */
+  breaks?: BreakView[];
+  breaks_open?: BreakView | null;
 }
 
 /** Horários da configuração: o aparelho recalcula o ritmo com o relógio dele, mesmo sem sinal. */
@@ -60,7 +65,7 @@ export class JourneysService {
   ) {}
 
   /** Meta do dia do consultor. A leitura do Hoje nunca falha por causa dela. */
-  private async metaDe(feitas: number, agora: Date): Promise<TodayView['goal']> {
+  private async metaDe(feitas: number, agora: Date, pausas?: PausaMin[]): Promise<TodayView['goal']> {
     if (!this.configs) return null;
     try {
       const [config, alertas] = await Promise.all([this.configs.config(), this.configs.alertas()]);
@@ -69,6 +74,8 @@ export class JourneysService {
         feitas,
         config,
         diaDeTrabalho: ehDiaDeTrabalho(weekdayOf(todaySp(agora)), alertas),
+        // Lote B §37.6: com intervalo registrado, o real no lugar do almoço (sem intervalo, a conta de hoje).
+        ...(pausas && pausas.length ? { pausas } : {}),
       });
       return {
         ...goal,
@@ -111,6 +118,13 @@ export class JourneysService {
     // Modo do chefe §31: com a flag desligada nenhuma visita é `simples`, então o padrão basta (e nada é lido a mais).
     const modoCfg = this.modo?.ligado ? await this.modo.config() : CONFIG_MODO_DESLIGADO;
     const views = visitas.map((v) => visitView(v, hoje, modoCfg, { checklist: this.lovB?.checklist === true }));
+    // Lote B §37.6: intervalos do dia (só com a flag; desligada, nenhuma consulta nova e nenhuma chave nova).
+    const pausas = this.intervaloLigado
+      ? await this.prisma.field_journey_breaks.findMany({ where: { consultant_id: c.id, journey: { day: hoje } }, orderBy: { started_at: 'asc' } })
+      : null;
+    const extraIntervalo = pausas
+      ? { breaks: pausas.map((b) => breakView(b, agora)), breaks_open: (() => { const a = pausas.find((b) => !b.ended_at); return a ? breakView(a, agora) : null; })() }
+      : {};
     return {
       day: hoje,
       journey: aberta ? journeyView(aberta) : null,
@@ -126,8 +140,13 @@ export class JourneysService {
         cadastrou_agora: views.filter((v) => v.answers.result === 'cadastrou').length,
       },
       // §31.6: no fluxo `simples` o "fechado" fotografado conta (se configurado); no `completo` fica fora (§30.1).
-      goal: await this.metaDe(views.filter((v) => contaNaMeta({ outcome: v.answers.outcome, flow: v.flow }, modoCfg)).length, agora),
+      goal: await this.metaDe(
+        views.filter((v) => contaNaMeta({ outcome: v.answers.outcome, flow: v.flow }, modoCfg)).length,
+        agora,
+        pausas ? pausasEmMinutos(pausas, agora) : undefined,
+      ),
       signups_confirmed: await this.confirmadosDe(c.id, agora),
+      ...extraIntervalo,
     };
   }
 
@@ -248,6 +267,8 @@ export class JourneysService {
         data: { ended_at: at, end_lat: dto.lat, end_lng: dto.lng, end_accuracy: dto.accuracy },
       });
       if (r.count === 1) {
+        // Lote B §37.5: o fim da jornada encerra o intervalo aberto no mesmo instante.
+        if (this.intervaloLigado) await encerrarIntervaloAberto(tx, aberta.id, at, 'journey_end');
         await tx.field_points.create({
           data: {
             journey_id: aberta.id,
@@ -281,7 +302,11 @@ export class JourneysService {
     let visitas = 0;
     for (const j of vencidas) {
       const fim = j.points[0]?.at ?? j.started_at;
-      const [v] = await this.prisma.$transaction([
+      // Lote B §37.5: o intervalo aberto fecha junto, no fim da jornada (nunca antes do próprio início).
+      const pausa = this.intervaloLigado
+        ? await this.prisma.field_journey_breaks.findFirst({ where: { journey_id: j.id, ended_at: null }, select: { id: true, started_at: true } })
+        : null;
+      const ops = [
         this.prisma.field_visits.updateMany({
           where: { journey_id: j.id, checkout_at: null, auto_closed: false },
           data: { auto_closed: true },
@@ -290,10 +315,23 @@ export class JourneysService {
           where: { id: j.id, ended_at: null },
           data: { ended_at: fim, auto_closed: true },
         }),
-      ]);
-      visitas += v.count;
+      ];
+      if (pausa) {
+        ops.push(
+          this.prisma.field_journey_breaks.updateMany({
+            where: { id: pausa.id, ended_at: null },
+            data: { ended_at: fimDaPausa(pausa.started_at, fim), auto_closed: true, end_reason: 'auto' },
+          }),
+        );
+      }
+      const [v] = await this.prisma.$transaction(ops);
+      visitas += v!.count;
     }
     return { journeys: vencidas.length, visits: visitas };
+  }
+
+  private get intervaloLigado(): boolean {
+    return this.lovB?.breaks === true;
   }
 
   async abertaOuFalha(consultantId: string) {

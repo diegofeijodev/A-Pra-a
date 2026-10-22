@@ -33,6 +33,7 @@ import {
   pendenciasChecklist,
   resumoChecklist,
 } from '../../domain/checklist-rules';
+import { fimDaPausa } from '../../domain/intervalo-rules';
 import {
   CONFIG_MODO_PADRAO,
   derivarDoResultado,
@@ -234,6 +235,18 @@ export class VisitsService {
         },
       }),
     );
+    // Lote B §37.5 (decisão do arquiteto): chegar durante o intervalo o encerra no instante da chegada (a fila offline não trava).
+    const pausa = this.lovB?.breaks
+      ? await this.prisma.field_journey_breaks.findFirst({ where: { journey_id: jornada.id, ended_at: null }, select: { id: true, started_at: true } })
+      : null;
+    if (pausa) {
+      ops.push(
+        this.prisma.field_journey_breaks.updateMany({
+          where: { id: pausa.id, ended_at: null },
+          data: { ended_at: fimDaPausa(pausa.started_at, at), end_reason: 'checkin' },
+        }),
+      );
+    }
     // Roteiro (contrato §23.3): check-in numa parada pendente/adiada do dia da jornada a marca como
     // visitada. Só essas duas origens: já seguram o lugar no dia, então não há violação de único aqui.
     if (this.rotas && dto.lead_id) {

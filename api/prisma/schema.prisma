@@ -23,7 +23,7 @@ model users {
   sort            Int      @default(0)
   created_at      DateTime @default(now())
 
-  dismissed_notifs user_dismissed_notifs[]
+  dismissed_notifs          user_dismissed_notifs[]
   field_consultants_created field_consultants[]
   field_areas_created       field_areas[]
   place_runs_requested      place_import_runs[]
@@ -53,11 +53,11 @@ model pracas {
   vizinhas         String[] @default([])
   created_at       DateTime @default(now())
 
-  step_states praca_step_states[]
-  actions     actions[]
-  leads       leads[]
-  proofs      proofs[]
-  campanhas   campanhas[]
+  step_states       praca_step_states[]
+  actions           actions[]
+  leads             leads[]
+  proofs            proofs[]
+  campanhas         campanhas[]
   field_consultants field_consultants[]
   field_areas       field_areas[]
   place_import_runs place_import_runs[]
@@ -172,62 +172,62 @@ model indicator_entries {
 
 // ── funil ────────────────────────────────────────────────────
 model leads {
-  id              String    @id @default(uuid()) @db.Uuid
-  praca_id        String?   @db.Uuid
-  name            String
-  city            String    @default("")
-  address         String    @default("")
-  phone           String    @default("")
-  phone_key       String    @default("")
-  cnpj            String?
-  instagram       String?
-  site            String?
-  decisor         String    @default("—")
-  decisor_role    String    @default("")
-  classe          String    @default("alvo")
-  origem          String    @default("prospecção")
-  owner_id        String?   @db.Uuid
-  stage           Int       @default(1)
-  entered_at      String
-  stage_since     String
-  last_contact_at DateTime?
-  next_step_what  String?
-  next_step_date  String?
-  lost_reason     String?
-  reheat_at       String?
-  archived        Boolean   @default(false)
-  import_batch_id String?   @db.Uuid
-  possible_dup    Boolean   @default(false)
-  snooze_until    String?
-  campanha_id     String?   @db.Uuid
-  form_answer     String?
-  is_test         Boolean   @default(false)
+  id                 String             @id @default(uuid()) @db.Uuid
+  praca_id           String?            @db.Uuid
+  name               String
+  city               String             @default("")
+  address            String             @default("")
+  phone              String             @default("")
+  phone_key          String             @default("")
+  cnpj               String?
+  instagram          String?
+  site               String?
+  decisor            String             @default("—")
+  decisor_role       String             @default("")
+  classe             String             @default("alvo")
+  origem             String             @default("prospecção")
+  owner_id           String?            @db.Uuid
+  stage              Int                @default(1)
+  entered_at         String
+  stage_since        String
+  last_contact_at    DateTime?
+  next_step_what     String?
+  next_step_date     String?
+  lost_reason        String?
+  reheat_at          String?
+  archived           Boolean            @default(false)
+  import_batch_id    String?            @db.Uuid
+  possible_dup       Boolean            @default(false)
+  snooze_until       String?
+  campanha_id        String?            @db.Uuid
+  form_answer        String?
+  is_test            Boolean            @default(false)
   // Localização do estabelecimento (§5). Nula nos que já existiam; o bloco B
   // preenche em massa; a visita de campo grava a do check-in no lead novo.
-  lat             Float?
-  lng             Float?
+  lat                Float?
+  lng                Float?
   // Origem técnica do lead criado pela pesquisa automática (F2): `source` = fonte
   // ('osm' | 'apify'), `source_ref` = id externo, `location_precision` = 'point'.
   // Nulos nos leads antigos; NULLs não conflitam no UNIQUE abaixo.
   source             String?
   source_ref         String?
   location_precision String?
-  created_at      DateTime  @default(now())
-  praca           pracas?   @relation(fields: [praca_id], references: [id], onDelete: SetNull)
-  place_candidates place_candidates[]
+  created_at         DateTime           @default(now())
+  praca              pracas?            @relation(fields: [praca_id], references: [id], onDelete: SetNull)
+  place_candidates   place_candidates[]
 
-  events      lead_events[]
-  vagas       lead_vagas[]
-  sends       msg_sends[]
-  enrollments enrollments[]
-  field_visits field_visits[]
-  route_stops  field_route_stops[]
-  company_signups field_company_signups[]
-  signups_freela  field_signups[]
+  events           lead_events[]
+  vagas            lead_vagas[]
+  sends            msg_sends[]
+  enrollments      enrollments[]
+  field_visits     field_visits[]
+  route_stops      field_route_stops[]
+  company_signups  field_company_signups[]
+  signups_freela   field_signups[]
   declared_signups field_declared_signups[]
 
-  @@index([praca_id, lat, lng])
   @@unique([source, source_ref])
+  @@index([praca_id, lat, lng])
   @@index([praca_id, stage])
   @@index([phone_key])
   @@index([import_batch_id])
@@ -404,18 +404,18 @@ model cadence_nodes {
 }
 
 model enrollments {
-  id             String    @id @default(uuid()) @db.Uuid
-  cadence_id     String    @db.Uuid
-  lead_id        String    @db.Uuid
+  id             String   @id @default(uuid()) @db.Uuid
+  cadence_id     String   @db.Uuid
+  lead_id        String   @db.Uuid
   started_at     DateTime
   next_at        DateTime
-  status         String    @default("ativo")
+  status         String   @default("ativo")
   exit_reason    String?
   stage_at_start Int
-  is_test        Boolean   @default(false)
+  is_test        Boolean  @default(false)
   compress_sec   Int?
-  cadence        cadences  @relation(fields: [cadence_id], references: [id], onDelete: Cascade)
-  lead           leads     @relation(fields: [lead_id], references: [id], onDelete: Cascade)
+  cadence        cadences @relation(fields: [cadence_id], references: [id], onDelete: Cascade)
+  lead           leads    @relation(fields: [lead_id], references: [id], onDelete: Cascade)
 
   logs enrollment_logs[]
 
@@ -486,27 +486,27 @@ model campanha_provas {
 }
 
 model creatives {
-  id                     String    @id @default(uuid()) @db.Uuid
-  campanha_id            String    @db.Uuid
-  formato                String
-  titulo                 String    @default("")
-  gancho                 String    @default("")
-  roteiro_gancho         String    @default("")
-  roteiro_desenvolvimento String   @default("")
-  roteiro_prova          String    @default("")
-  roteiro_cta            String    @default("")
-  legenda                String    @default("")
-  cta_botao              String    @default("Saiba mais")
-  owner_id               String?   @db.Uuid
-  due                    String
-  publish_at             String?
-  status                 String    @default("a_fazer")
-  file_url               String    @default("")
-  ia_tool                String?
-  ia_prompt              String?
-  approved_at            DateTime?
-  created_at             DateTime  @default(now())
-  campanha               campanhas @relation(fields: [campanha_id], references: [id], onDelete: Cascade)
+  id                      String    @id @default(uuid()) @db.Uuid
+  campanha_id             String    @db.Uuid
+  formato                 String
+  titulo                  String    @default("")
+  gancho                  String    @default("")
+  roteiro_gancho          String    @default("")
+  roteiro_desenvolvimento String    @default("")
+  roteiro_prova           String    @default("")
+  roteiro_cta             String    @default("")
+  legenda                 String    @default("")
+  cta_botao               String    @default("Saiba mais")
+  owner_id                String?   @db.Uuid
+  due                     String
+  publish_at              String?
+  status                  String    @default("a_fazer")
+  file_url                String    @default("")
+  ia_tool                 String?
+  ia_prompt               String?
+  approved_at             DateTime?
+  created_at              DateTime  @default(now())
+  campanha                campanhas @relation(fields: [campanha_id], references: [id], onDelete: Cascade)
 
   comments creative_comments[]
 }
@@ -602,16 +602,17 @@ model field_consultants {
   praca                pracas    @relation(fields: [praca_id], references: [id], onDelete: Restrict)
   creator              users     @relation(fields: [created_by], references: [id], onDelete: Restrict)
 
-  journeys field_journeys[]
-  visits   field_visits[]
-  routes   field_routes[]
-  company_signups field_company_signups[]
-  signups         field_signups[]
+  journeys         field_journeys[]
+  visits           field_visits[]
+  routes           field_routes[]
+  company_signups  field_company_signups[]
+  signups          field_signups[]
   declared_signups field_declared_signups[]
-  signup_sync     field_signup_sync_state?
-  earnings        field_earnings_ledger[]
-  payout_periods  field_payout_periods[]
-  payouts         field_payouts[]
+  signup_sync      field_signup_sync_state?
+  earnings         field_earnings_ledger[]
+  payout_periods   field_payout_periods[]
+  payouts          field_payouts[]
+  journey_breaks   field_journey_breaks[]
 }
 
 model field_journeys {
@@ -633,11 +634,40 @@ model field_journeys {
 
   points field_points[]
   visits field_visits[]
+  breaks field_journey_breaks[]
 
   // Mais o índice único PARCIAL `field_journeys_one_open_per_consultant`
   // (SQL cru na migração — o Prisma 5 não declara índice parcial).
   @@index([consultant_id, day])
   @@index([day])
+}
+
+/// Lote B da Lovable (contrato §37.3): intervalo/almoço como evento da jornada. Idempotente por `client_id` (início) e
+/// `end_client_id` (fim). Mais o índice único PARCIAL `field_journey_breaks_one_open_per_journey` (SQL cru na migração).
+model field_journey_breaks {
+  id             String            @id @default(uuid()) @db.Uuid
+  journey_id     String            @db.Uuid
+  consultant_id  String            @db.Uuid
+  client_id      String            @unique @db.Uuid
+  end_client_id  String?           @unique @db.Uuid
+  started_at     DateTime
+  ended_at       DateTime?
+  start_lat      Float?
+  start_lng      Float?
+  start_accuracy Float?
+  end_lat        Float?
+  end_lng        Float?
+  end_accuracy   Float?
+  /// manual | checkin | journey_end | auto
+  end_reason     String?
+  auto_closed    Boolean           @default(false)
+  clock_adjusted Boolean           @default(false)
+  created_at     DateTime          @default(now())
+  journey        field_journeys    @relation(fields: [journey_id], references: [id], onDelete: Cascade)
+  consultant     field_consultants @relation(fields: [consultant_id], references: [id], onDelete: Cascade)
+
+  @@index([consultant_id, started_at])
+  @@index([journey_id])
 }
 
 model field_points {
@@ -657,55 +687,55 @@ model field_points {
 }
 
 model field_visits {
-  id                String            @id @default(uuid()) @db.Uuid
-  client_id         String            @unique @db.Uuid
-  journey_id        String            @db.Uuid
-  consultant_id     String            @db.Uuid
-  lead_id           String            @db.Uuid
+  id                String                  @id @default(uuid()) @db.Uuid
+  client_id         String                  @unique @db.Uuid
+  journey_id        String                  @db.Uuid
+  consultant_id     String                  @db.Uuid
+  lead_id           String                  @db.Uuid
   checkin_at        DateTime
   checkin_lat       Float
   checkin_lng       Float
   checkin_accuracy  Float
   distance_m        Int?
-  far_from_place    Boolean           @default(false)
+  far_from_place    Boolean                 @default(false)
   photo_key         String
   photo_bytes       Int
   checkout_at       DateTime?
   checkout_lat      Float?
   checkout_lng      Float?
-  auto_closed       Boolean           @default(false)
-  clock_adjusted    Boolean           @default(false)
+  auto_closed       Boolean                 @default(false)
+  clock_adjusted    Boolean                 @default(false)
   interlocutor_name String?
   interlocutor_role String?
   freela_status     String?
   interest          String?
   open_vagas        Int?
-  vaga_roles        String[]          @default([])
+  vaga_roles        String[]                @default([])
   freelas_per_week  Int?
-  channels          String[]          @default([])
+  channels          String[]                @default([])
   channel_other     String?
   needs_followup    Boolean?
   followup_what     String?
   followup_date     String?
   notes             String?
   // P0 comparação Lovable (contrato §30): resultado da visita, motivo de recusa, hora do retorno, telefone do contato.
-  outcome           String            @default("conversa") // conversa | fechado
+  outcome           String                  @default("conversa") // conversa | fechado
   refusal_reason    String? // slug de MOTIVOS_RECUSA (domain/catalog/refusal.ts)
   refusal_note      String?
   followup_time     String? // HH:mm (Brasília)
   contact_phone     String? // só dígitos (10–11); nunca em log
   // Modo do chefe S1 (contrato §31): fluxo gravado na abertura da visita (simples | completo), o resultado
   // escolhido no fluxo simples (cadastrou | ja_usa | retorno | sem_interesse | fechado) e a justificativa de distância.
-  flow              String            @default("completo")
+  flow              String                  @default("completo")
   result            String?
   distance_note     String?
   // Lote B da Lovable (contrato §35.3): foto do checklist no check-in ({ required, items: [{ id, text, done, note }] }).
   checklist         Json?
-  created_at        DateTime          @default(now())
-  updated_at        DateTime          @updatedAt
-  journey           field_journeys    @relation(fields: [journey_id], references: [id], onDelete: Cascade)
-  consultant        field_consultants @relation(fields: [consultant_id], references: [id], onDelete: Cascade)
-  lead              leads             @relation(fields: [lead_id], references: [id], onDelete: Cascade)
+  created_at        DateTime                @default(now())
+  updated_at        DateTime                @updatedAt
+  journey           field_journeys          @relation(fields: [journey_id], references: [id], onDelete: Cascade)
+  consultant        field_consultants       @relation(fields: [consultant_id], references: [id], onDelete: Cascade)
+  lead              leads                   @relation(fields: [lead_id], references: [id], onDelete: Cascade)
   route_stops       field_route_stops[]
   company_signups   field_company_signups[]
   declared_signup   field_declared_signups?
@@ -742,30 +772,30 @@ model field_areas {
 // F2 da prospecção (contrato §22): uma pesquisa de estabelecimentos numa área.
 // `cache_key` = hash da geometria + tipos + fonte; reaproveitada por 7 dias.
 model place_import_runs {
-  id           String    @id @default(uuid()) @db.Uuid
-  praca_id     String    @db.Uuid
-  area_id      String    @db.Uuid
-  area_name    String
-  source       String
-  types        String[]
-  lat          Float
-  lng          Float
-  radius_m     Int
-  cache_key    String
-  status       String    @default("queued") // queued | running | done | error | cancelled
-  found        Int       @default(0)
-  novos        Int       @default(0)
-  duplicados   Int       @default(0)
-  descartados  Int       @default(0)
-  truncated    Boolean   @default(false)
+  id              String    @id @default(uuid()) @db.Uuid
+  praca_id        String    @db.Uuid
+  area_id         String    @db.Uuid
+  area_name       String
+  source          String
+  types           String[]
+  lat             Float
+  lng             Float
+  radius_m        Int
+  cache_key       String
+  status          String    @default("queued") // queued | running | done | error | cancelled
+  found           Int       @default(0)
+  novos           Int       @default(0)
+  duplicados      Int       @default(0)
+  descartados     Int       @default(0)
+  truncated       Boolean   @default(false)
   // Apify: lugares reservados ao começar (teto mensal); o actor cobra mesmo se cancelarmos.
-  reserved_places Int    @default(0)
-  est_cost_usd Float     @default(0)
-  error        String?
-  requested_by String    @db.Uuid
-  created_at   DateTime  @default(now())
-  started_at   DateTime?
-  finished_at  DateTime?
+  reserved_places Int       @default(0)
+  est_cost_usd    Float     @default(0)
+  error           String?
+  requested_by    String    @db.Uuid
+  created_at      DateTime  @default(now())
+  started_at      DateTime?
+  finished_at     DateTime?
 
   praca      pracas             @relation(fields: [praca_id], references: [id], onDelete: Cascade)
   requester  users              @relation(fields: [requested_by], references: [id], onDelete: Restrict)
@@ -798,8 +828,8 @@ model place_candidates {
   lead_id            String?  @db.Uuid
   created_at         DateTime @default(now())
 
-  run  place_import_runs @relation(fields: [run_id], references: [id], onDelete: Cascade)
-  lead leads?            @relation(fields: [lead_id], references: [id], onDelete: SetNull)
+  run         place_import_runs   @relation(fields: [run_id], references: [id], onDelete: Cascade)
+  lead        leads?              @relation(fields: [lead_id], references: [id], onDelete: SetNull)
   route_stops field_route_stops[]
 
   @@unique([run_id, source, source_ref])
@@ -865,10 +895,10 @@ model field_route_stops {
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
 
-  route     field_routes      @relation(fields: [route_id], references: [id], onDelete: Cascade)
-  lead      leads             @relation(fields: [lead_id], references: [id], onDelete: Restrict)
-  visit     field_visits?     @relation(fields: [visit_id], references: [id], onDelete: SetNull)
-  candidate place_candidates? @relation(fields: [candidate_id], references: [id], onDelete: SetNull)
+  route     field_routes         @relation(fields: [route_id], references: [id], onDelete: Cascade)
+  lead      leads                @relation(fields: [lead_id], references: [id], onDelete: Restrict)
+  visit     field_visits?        @relation(fields: [visit_id], references: [id], onDelete: SetNull)
+  candidate place_candidates?    @relation(fields: [candidate_id], references: [id], onDelete: SetNull)
   events    field_route_events[]
 
   @@index([route_id, seq])
@@ -888,7 +918,7 @@ model field_route_events {
   at            DateTime
   created_at    DateTime @default(now())
 
-  route field_routes      @relation(fields: [route_id], references: [id], onDelete: Cascade)
+  route field_routes       @relation(fields: [route_id], references: [id], onDelete: Cascade)
   stop  field_route_stops? @relation(fields: [stop_id], references: [id], onDelete: SetNull)
 
   @@index([route_id, created_at])
@@ -897,25 +927,25 @@ model field_route_events {
 /// Cadastro assistido da empresa visitada no Freela (F6, contrato §26). NUNCA guarda o link de
 /// primeiro acesso nem senha: só o fato da emissão, telefone/e-mail mascarados e o userId do Freela.
 model field_company_signups {
-  id                   String    @id @default(uuid()) @db.Uuid
-  client_id            String    @unique @db.Uuid
-  consultant_id        String    @db.Uuid
-  visit_id             String?   @db.Uuid
-  lead_id              String?   @db.Uuid
+  id                   String            @id @default(uuid()) @db.Uuid
+  client_id            String            @unique @db.Uuid
+  consultant_id        String            @db.Uuid
+  visit_id             String?           @db.Uuid
+  lead_id              String?           @db.Uuid
   company_name         String
   phone_masked         String
   email_masked         String?
-  status               String    @default("creating")
+  status               String            @default("creating")
   freela_user_id       String?
   freela_contractor_id String?
   link_issued_at       DateTime?
   link_expires_at      DateTime?
-  reissue_count        Int       @default(0)
+  reissue_count        Int               @default(0)
   activated_at         DateTime?
   last_error_code      String?
   last_error           String?
-  created_at           DateTime  @default(now())
-  updated_at           DateTime  @updatedAt
+  created_at           DateTime          @default(now())
+  updated_at           DateTime          @updatedAt
   consultant           field_consultants @relation(fields: [consultant_id], references: [id], onDelete: Cascade)
   visit                field_visits?     @relation(fields: [visit_id], references: [id], onDelete: SetNull)
   lead                 leads?            @relation(fields: [lead_id], references: [id], onDelete: SetNull)
@@ -1071,7 +1101,7 @@ model field_payouts {
   created_by_name String?
   created_at      DateTime  @default(now())
 
-  consultant field_consultants      @relation(fields: [consultant_id], references: [id], onDelete: Restrict)
+  consultant field_consultants     @relation(fields: [consultant_id], references: [id], onDelete: Restrict)
   events     field_payout_events[]
 
   @@index([week_start, status])
@@ -1111,9 +1141,9 @@ model field_declared_signups {
   client_id     String   @unique @db.Uuid
   flow          String   @default("simples")
 
-  consultant field_consultants              @relation(fields: [consultant_id], references: [id], onDelete: Restrict)
-  visit      field_visits                   @relation(fields: [visit_id], references: [id], onDelete: Restrict)
-  lead       leads                          @relation(fields: [lead_id], references: [id], onDelete: Restrict)
+  consultant field_consultants            @relation(fields: [consultant_id], references: [id], onDelete: Restrict)
+  visit      field_visits                 @relation(fields: [visit_id], references: [id], onDelete: Restrict)
+  lead       leads                        @relation(fields: [lead_id], references: [id], onDelete: Restrict)
   void       field_declared_signup_voids?
 
   @@index([consultant_id, declared_day])

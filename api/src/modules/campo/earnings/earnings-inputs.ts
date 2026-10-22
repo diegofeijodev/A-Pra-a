@@ -25,12 +25,16 @@ export interface DiaBruto {
   pareados_declarados?: string[];
   /** S2: havia rota da equipe (`source = 'equipe'`) no dia. */
   route_equipe?: boolean;
+  /** Lote B §37.6: minutos trabalhados no dia (jornadas − intervalos; a aberta até agora). */
+  worked_minutes?: number;
 }
 
 /** Quais insumos extras buscar (derivado das versões da regra; sem versão que use, nenhuma consulta nova). */
 export interface InsumosExtras {
   declared: boolean;
   routes: boolean;
+  /** Lote B §37.6: alguma versão usa `daily_base_min_worked_minutes`. */
+  worked?: boolean;
 }
 
 export interface ConsultorBasico {
@@ -139,7 +143,23 @@ export class PrismaEarningsInputs implements EarningsInputs {
       for (const r of rotas) slot(r.consultant_id, r.day).route_equipe = true;
     }
     if (extras.declared) await this.declaradas(ids, from, to, dia, slot);
+    if (extras.worked) await this.trabalhado(ids, from, to, slot);
     return out;
+  }
+
+  /** Lote B §37.6: minutos trabalhados por dia = Σ(fim − início das jornadas, a aberta até agora) − Σ intervalos. */
+  private async trabalhado(ids: string[], from: string, to: string, slot: (c: string, d: string) => DiaBruto, agora = new Date()): Promise<void> {
+    const js = await this.prisma.field_journeys.findMany({
+      where: { consultant_id: { in: ids }, day: { gte: from, lte: to } },
+      select: { consultant_id: true, day: true, started_at: true, ended_at: true, breaks: { select: { started_at: true, ended_at: true } } },
+    });
+    const min = (a: Date, b: Date) => Math.max(0, Math.floor((b.getTime() - a.getTime()) / 60_000));
+    for (const j of js) {
+      const fim = j.ended_at ?? agora;
+      const pausa = j.breaks.reduce((a, b) => a + min(b.started_at, b.ended_at ?? fim), 0);
+      const x = slot(j.consultant_id, j.day);
+      x.worked_minutes = (x.worked_minutes ?? 0) + Math.max(0, min(j.started_at, fim) - pausa);
+    }
   }
 
   /** S3: declarações por dia (menos anuladas) e o pareamento com os confirmados do mesmo consultor. */

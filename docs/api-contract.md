@@ -4604,11 +4604,11 @@ O fim nunca fica antes do início.
 - **Alertas (§25.3):** `sem_registro` não sai com intervalo aberto; alerta novo `intervalo_longo` (`media`) quando o intervalo aberto passa de `alerta_intervalo_min`, com a conta
   ("Agora 13:24 − início do intervalo 12:04 = 80 min; o limite é 75 min."). `consultants[]` ganha `on_break_since` (ISO ou `null`).
 - **Relógio do roteiro (§23):** na reotimização depois de um intervalo encerrado no dia, o relógio não insere mais o almoço configurado (`pausaFeita`).
-- **Resumo do dia (§33.5):** `intervalo_min` = soma dos intervalos do dia (o aberto até agora; `0` sem intervalo) e `trabalhado_min` = `total_min − intervalo_min` (aditivo;
-  `null` com a flag desligada); a frase "o intervalo passou de…" usa `nota_intervalo_alerta_min`.
+- **Resumo do dia (§33.5):** `intervalo_min` = soma dos intervalos do dia (o aberto até agora; `0` sem intervalo) e `trabalhado_min` = `total_min − intervalo_min` (aditivo,
+  **ausente** com a flag desligada); a frase "o intervalo passou de…" usa `nota_intervalo_alerta_min`; a conta ganha a linha do intervalo e do tempo trabalhado.
 - **Remuneração (§32.1):** chave nova opcional `daily_base_min_worked_minutes` (inteiro 0–1440 ou `null`; ausente/`null` = hoje): a diária só vale com ao menos esse tanto
   de tempo trabalhado no dia (jornadas − intervalos). Exige a flag (`409 BREAKS_DISABLED`). Só vale para versões novas que a usem; v1 e caracterização intactas.
-  `GET /v1/consultores/earnings/config` ganha `features.breaks_enabled`.
+  `GET /v1/consultores/earnings/config` ganha `features.breaks_enabled: true` **só** com a flag ligada (ausente com ela desligada).
 - `GET /v1/campo/me`: `features.breaks` e, com a flag ligada, `breaks_config: { intervalo_ativo, intervalo_lembrete_min }`. `GET settings/config`: `features.breaks`.
 
 ### 37.7 Variáveis

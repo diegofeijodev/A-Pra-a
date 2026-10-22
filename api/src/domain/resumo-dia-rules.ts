@@ -147,6 +147,7 @@ export interface ResumoDia {
   first_start: string | null;
   last_end: string | null;
   intervalo_min: number | null;
+  trabalhado_min?: number;
   avg_visit_min: number | null;
   avaliacao: string[];
   conta: string[];
@@ -250,6 +251,10 @@ export function resumoDia(e: EntradaResumoDia): ResumoDia {
   conta.push(
     `Tempo do dia = soma das jornadas, do início ao fim${abertas ? ' (a aberta conta até agora)' : ''}${e.intervaloMin == null ? '; intervalo ainda não é registrado neste servidor' : ''}.`,
   );
+  if (e.intervaloMin != null)
+    conta.push(
+      `Intervalo = soma dos intervalos registrados no dia (${duracaoTexto(e.intervaloMin)}); tempo trabalhado = tempo do dia − intervalo = ${duracaoTexto(Math.max(0, total - e.intervaloMin))}.`,
+    );
   if (e.diaAberto) conta.push('Dia ainda aberto: a conta é até agora.');
   conta.push(
     `Calculado às ${minParaHhmm(minutesSp(e.agora))}. Uma confirmação que chegar depois muda a conta.`,
@@ -273,6 +278,8 @@ export function resumoDia(e: EntradaResumoDia): ResumoDia {
     first_start: primeiro,
     last_end: ultimo,
     intervalo_min: e.intervaloMin,
+    // Lote B §37.6: só com o intervalo registrado (flag ligada); sem ele, a resposta é a do lote A.
+    ...(e.intervaloMin != null ? { trabalhado_min: Math.max(0, total - e.intervaloMin) } : {}),
     avg_visit_min: media,
     avaliacao,
     conta,

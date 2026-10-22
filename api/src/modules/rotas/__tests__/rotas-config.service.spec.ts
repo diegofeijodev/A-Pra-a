@@ -5,6 +5,7 @@ import { CONFIG_MODO_PADRAO, PRESETS_MODO } from '../../../domain/modo-campo-rul
 import { CONFIG_ROTA_PADRAO } from '../../../domain/rota-rules';
 import { RotasConfigService } from '../rotas-config.service';
 import { CONFIG_CHECKLIST } from '../../../domain/checklist-rules';
+import { CONFIG_INTERVALO } from '../../../domain/intervalo-rules';
 import { AGORA, fakePrisma } from './fixtures';
 
 const ADMIN: AuthUser = { id: '00000000-0000-4000-8000-0000000000dd', email: 'a@a.com', name: 'A', is_admin: true };
@@ -14,8 +15,8 @@ describe('RotasConfigService', () => {
   it('sem linha no banco: devolve os padrões e nenhum autor', async () => {
     const s = new RotasConfigService(fakePrisma() as unknown as PrismaService);
     // Lote A da Lovable: + raio_checkin_m (§23.1) e as chaves do resumo do dia e do painel (§33.2), aditivas.
-    // Lote B: + as quatro chaves do checklist (§35.2), aditivas.
-    expect(await s.view()).toEqual({ ...CONFIG_ROTA_PADRAO, ...CONFIG_ALERTAS_PADRAO, ...CONFIG_MODO_PADRAO, ...CONFIG_CHECKLIST.padrao, raio_checkin_m: 200, ui_resumo_dia: 'nota', nota_peso_rota: 7, nota_peso_conversao: 3, nota_meta_conversao_pct: 30, nota_intervalo_alerta_min: 75, painel_tempo_medio: 'intervalo', painel_gap_max_min: 120, presets: PRESETS_MODO, confirmation_rule: 'activated', atualizado_por: null, atualizado_em: null });
+    // Lote B: + as quatro chaves do checklist (§35.2) e as três do intervalo (§37.2), aditivas.
+    expect(await s.view()).toEqual({ ...CONFIG_ROTA_PADRAO, ...CONFIG_ALERTAS_PADRAO, ...CONFIG_MODO_PADRAO, ...CONFIG_CHECKLIST.padrao, ...CONFIG_INTERVALO.padrao, raio_checkin_m: 200, ui_resumo_dia: 'nota', nota_peso_rota: 7, nota_peso_conversao: 3, nota_meta_conversao_pct: 30, nota_intervalo_alerta_min: 75, painel_tempo_medio: 'intervalo', painel_gap_max_min: 120, presets: PRESETS_MODO, confirmation_rule: 'activated', atualizado_por: null, atualizado_em: null });
   });
 
   it('PUT parcial: mescla, grava quem/quando e preserva chaves de outras fases', async () => {

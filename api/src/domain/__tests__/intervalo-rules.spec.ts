@@ -1,6 +1,7 @@
 import { calcularAlertas, CONFIG_ALERTAS_PADRAO, metaDoDia, type EntradaConsultor } from '../alerta-rules';
 import { calcularDia, normalizarRegra, REGRA_PADRAO, validarRegra } from '../earnings-rules';
 import { CONFIG_INTERVALO, fimDaPausa, minutosDePausas, minutosUteisComPausas, pausasEmMinutos } from '../intervalo-rules';
+import { CONFIG_RESUMO_DIA, resumoDia, type EntradaResumoDia } from '../resumo-dia-rules';
 import { calcularRelogio, CONFIG_ROTA_PADRAO, paramsDaConfig, ritmo, type PontoRota } from '../rota-rules';
 
 const D = (hhmm: string) => new Date(`2026-10-22T${hhmm}:00-03:00`);
@@ -132,5 +133,35 @@ describe('diária com tempo trabalhado mínimo (§37.6, daily_base_min_worked_mi
     expect(acima.conta.join(' ')).toContain('ao menos 6h00 trabalhados');
     expect(validarRegra({ ...REGRA_PADRAO, daily_base_min_worked_minutes: 1441 }).ok).toBe(false);
     expect(validarRegra({ ...REGRA_PADRAO, daily_base_min_worked_minutes: 1.5 }).ok).toBe(false);
+  });
+});
+
+describe('resumo do dia com o intervalo (§37.6)', () => {
+  const base: EntradaResumoDia = {
+    agora: new Date('2026-10-22T20:43:00.000Z'),
+    diaAberto: false,
+    jornadas: [{ started_at: new Date('2026-10-22T12:02:00.000Z'), ended_at: new Date('2026-10-22T20:42:00.000Z') }],
+    intervaloMin: null,
+    rota: { planejadas: 30, visitadas: 24 },
+    meta: 30,
+    visitasConcluidas: 24,
+    duracoesMin: [5, 7, 9],
+    cadastros: 6,
+    fonte: 'declared',
+    syncLigado: false,
+    cuponsLigados: false,
+    cfg: CONFIG_RESUMO_DIA.padrao,
+  };
+  it('sem registro (flag desligada): a resposta do lote A, sem trabalhado_min', () => {
+    const r = resumoDia(base);
+    expect(r.intervalo_min).toBeNull();
+    expect(r).not.toHaveProperty('trabalhado_min');
+  });
+  it('com intervalo: trabalhado = tempo do dia − intervalo, com a conta; acima do limite, a frase da Lovable', () => {
+    const r = resumoDia({ ...base, intervaloMin: 58 });
+    expect(r.total_min).toBe(520);
+    expect(r.trabalhado_min).toBe(462);
+    expect(r.conta.join(' ')).toContain('tempo trabalhado = tempo do dia − intervalo = 7h42');
+    expect(resumoDia({ ...base, intervaloMin: 80 }).avaliacao.join(' ')).toContain('O intervalo passou de 1 hora');
   });
 });

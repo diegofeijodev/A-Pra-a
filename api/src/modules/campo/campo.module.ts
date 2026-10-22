@@ -46,6 +46,7 @@ import { signupSyncOpcoesProvider } from './signup-sync.tokens';
 import { SignupsCampoController, SignupsEquipeController } from './signups.controller';
 import { SignupsLeituraService } from './signups-leitura.service';
 import { VisitsService } from './visits.service';
+import { BreaksService } from './breaks.service';
 
 /**
  * Consultores de campo — spec 2026-10-08, contrato §20.
@@ -87,6 +88,7 @@ import { VisitsService } from './visits.service';
     CampoAutocloseScheduler,
     PlacesService,
     VisitsService,
+    BreaksService,
     CompanySignupService,
     companySignupLigadoProvider,
     SignupSyncService,

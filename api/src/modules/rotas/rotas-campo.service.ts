@@ -23,7 +23,7 @@ import {
   type LeadParaRota,
 } from './rotas-plano';
 import { COM_PARADAS, lerSnapshot, novoSnapshot, routeView, type RouteView } from './rotas-views';
-import { ROTAS_LIGADAS } from './rotas.tokens';
+import { ROTAS_LIGADAS, LOVABLE_B_FLAGS, type FlagsLovableB } from './rotas.tokens';
 
 export interface HojeRotaView {
   enabled: boolean;
@@ -53,7 +53,14 @@ export class RotasCampoService {
     private readonly configs: RotasConfigService,
     @Inject(ROTAS_LIGADAS) private readonly ligado: boolean,
     @Optional() private readonly modo?: ModoCampoService,
+    @Optional() @Inject(LOVABLE_B_FLAGS) private readonly lovB?: FlagsLovableB,
   ) {}
+
+  /** Lote B §37.6: houve intervalo ENCERRADO hoje? Então o relógio não insere mais o almoço configurado (só com a flag). */
+  private async pausaFeita(consultantId: string, day: string): Promise<boolean> {
+    if (this.lovB?.breaks !== true) return false;
+    return (await this.prisma.field_journey_breaks.count({ where: { consultant_id: consultantId, ended_at: { not: null }, journey: { day } } })) > 0;
+  }
 
   /** Parâmetros do modo do chefe para a conta de meta (§31.6); sem a flag, o padrão (todas as visitas são `completo`). */
   private async cfgModo() {
@@ -303,6 +310,7 @@ export class RotasCampoService {
     if (dup) return this.viewDe(dup.route_id, agora);
     const rota = await this.ativaDeHoje(c.id, agora);
     if (!rota) throw semRoteiro();
+    const pausaFeita = await this.pausaFeita(c.id, rota.day);
 
     for (let tentativa = 0; ; tentativa += 1) {
       const atual = tentativa === 0 ? rota : await this.ativaDeHoje(c.id, agora);
@@ -319,7 +327,7 @@ export class RotasCampoService {
                 at: carimbo(dto.at, agora, null).at,
               },
             });
-            await reotimizar(tx, atual, { lat: dto.lat, lng: dto.lng }, agora, 'refazer rota', null);
+            await reotimizar(tx, atual, { lat: dto.lat, lng: dto.lng }, agora, 'refazer rota', null, pausaFeita ? { pausaFeita: true } : {});
           },
           { timeout: 15_000 },
         );

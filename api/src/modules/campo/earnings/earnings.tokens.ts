@@ -10,6 +10,8 @@ export interface OpcoesEarnings {
   rotasLigadas?: boolean;
   /** `FIELD_DECLARED_SIGNUPS_ENABLED` E `FIELD_EARNINGS_ENABLED` (contrato §32.5). */
   declaradasLigado?: boolean;
+  /** Lote B §37.6: `FIELD_BREAKS_ENABLED` (a diária com tempo trabalhado mínimo desconta o intervalo). */
+  intervaloLigado?: boolean;
 }
 
 /** `FIELD_EARNINGS_ENABLED` / `FIELD_EARNINGS_AUTOCLOSE_ENABLED` (contrato §28.8). */
@@ -25,6 +27,7 @@ export const earningsOpcoesProvider: Provider = {
       janelaNaoConfirmadosDias: e.FIELD_SIGNUP_RECONCILE_DAYS,
       rotasLigadas: e.FIELD_ROUTES_ENABLED === 'true',
       declaradasLigado: e.FIELD_EARNINGS_ENABLED === 'true' && e.FIELD_DECLARED_SIGNUPS_ENABLED === 'true',
+      intervaloLigado: e.FIELD_BREAKS_ENABLED === 'true',
     };
   },
 };

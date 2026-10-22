@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   Inject,
+  NotFoundException,
   Optional,
   Param,
   Patch,
@@ -24,7 +25,8 @@ import { RotasConfigService } from '../rotas/rotas-config.service';
 import { LOVABLE_A_FLAGS, LOVABLE_B_FLAGS, type FlagsLovableA, type FlagsLovableB } from '../rotas/rotas.tokens';
 import { CampoAuthService } from './campo-auth.service';
 import { COMPANY_SIGNUP_LIGADO } from './company-signup.tokens';
-import { AnswersDto, PlacesQueryDto, PontosDto, PosicaoDto, SimilarQueryDto, StartJourneyDto } from './dto/campo.dto';
+import { BreaksService } from './breaks.service';
+import { AnswersDto, IntervaloDto, PlacesQueryDto, PontosDto, PosicaoDto, SimilarQueryDto, StartJourneyDto } from './dto/campo.dto';
 import { FollowupsService } from './followups.service';
 import { JourneysService } from './journeys.service';
 import { lerCheckinMultipart } from './multipart-checkin';
@@ -52,6 +54,7 @@ export class CampoController {
     @Optional() @Inject(LOVABLE_A_FLAGS) private readonly lovable?: FlagsLovableA,
     @Optional() @Inject(LOVABLE_B_FLAGS) private readonly lovB?: FlagsLovableB,
     @Optional() private readonly configs?: RotasConfigService,
+    @Optional() private readonly breaks?: BreaksService,
   ) {}
 
   @AllowPendingPassword()
@@ -65,6 +68,7 @@ export class CampoController {
     const cfg = ligado && this.modo ? await this.modo.config() : null;
     // Lote B (contrato §35.6/§37.6): a lista do checklist e o intervalo para a tela funcionar sem sinal; só com a flag ligada.
     const ck = this.lovB?.checklist && this.configs ? await this.configs.checklist() : null;
+    const iv = this.lovB?.breaks && this.configs ? await this.configs.intervalo() : null;
     return {
       ...(await this.auth.me(c.id)),
       visit_flow,
@@ -89,6 +93,7 @@ export class CampoController {
             },
           }
         : {}),
+      ...(iv ? { breaks_config: { intervalo_ativo: iv.intervalo_ativo, intervalo_lembrete_min: iv.intervalo_lembrete_min } } : {}),
       features: {
         company_signup: this.signupLigado,
         earnings: this.earnings?.ligado ?? false,
@@ -132,6 +137,20 @@ export class CampoController {
   @Post('journeys/current/end')
   end(@CurrentConsultant() c: CampoConsultant, @Body() dto: PosicaoDto) {
     return this.journeys.end(c, dto);
+  }
+
+  // ── intervalo (lote B, contrato §37.4) ─────────────────────
+  @Post('journeys/current/breaks/start')
+  breakStart(@CurrentConsultant() c: CampoConsultant, @Body() dto: IntervaloDto) {
+    if (!this.breaks) throw new NotFoundException({ code: 'BREAKS_DISABLED', message: 'O intervalo não está ligado neste servidor.' });
+    return this.breaks.start(c, dto);
+  }
+
+  @HttpCode(200)
+  @Post('journeys/current/breaks/end')
+  breakEnd(@CurrentConsultant() c: CampoConsultant, @Body() dto: IntervaloDto) {
+    if (!this.breaks) throw new NotFoundException({ code: 'BREAKS_DISABLED', message: 'O intervalo não está ligado neste servidor.' });
+    return this.breaks.end(c, dto);
   }
 
   // ── estabelecimentos (a estática `places/similar` antes de `places`) ──

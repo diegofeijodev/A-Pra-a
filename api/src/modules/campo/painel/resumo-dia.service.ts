@@ -7,11 +7,12 @@ import { CampoConsultant } from '../../../common/auth/campo-consultant';
 import { PrismaService } from '../../../common/database/prisma.service';
 import { isUuid } from '../../../common/ids/uuid';
 import { addDays, isDateString, todaySp } from '../../../common/time/dates';
+import { minutosDePausas } from '../../../domain/intervalo-rules';
 import { CONFIG_MODO_DESLIGADO, contaNaMeta } from '../../../domain/modo-campo-rules';
 import { resumoDia } from '../../../domain/resumo-dia-rules';
 import { ModoCampoService } from '../../rotas/modo-campo.service';
 import { RotasConfigService } from '../../rotas/rotas-config.service';
-import { ROTAS_LIGADAS } from '../../rotas/rotas.tokens';
+import { LOVABLE_B_FLAGS, ROTAS_LIGADAS, type FlagsLovableB } from '../../rotas/rotas.tokens';
 import { SIGNUP_SYNC_OPCOES, type OpcoesSignupSync } from '../signup-sync.tokens';
 import { CadastrosDoDiaService } from './cadastros-do-dia.service';
 
@@ -29,6 +30,7 @@ export class ResumoDiaService {
     @Optional() @Inject(ROTAS_LIGADAS) private readonly rotasLigadas: boolean = false,
     @Optional() private readonly modo?: ModoCampoService,
     @Optional() @Inject(SIGNUP_SYNC_OPCOES) private readonly sync?: OpcoesSignupSync,
+    @Optional() @Inject(LOVABLE_B_FLAGS) private readonly lovB?: FlagsLovableB,
   ) {}
 
   /** Só o PRÓPRIO consultor (id do token); até 35 dias para trás, nunca no futuro. */
@@ -68,6 +70,10 @@ export class ResumoDiaService {
       this.cadastros.periodo([c.id], dia, dia),
       this.modo?.ligado ? this.modo.config() : Promise.resolve(CONFIG_MODO_DESLIGADO),
     ]);
+    // Lote B §37.6: intervalo registrado do dia (só com a flag; desligada, `null` como no lote A).
+    const pausas = this.lovB?.breaks
+      ? await this.prisma.field_journey_breaks.findMany({ where: { consultant_id: c.id, journey: { day: dia } }, select: { started_at: true, ended_at: true } })
+      : null;
     const concluidas = visitas.filter((v) => v.checkout_at && contaNaMeta(v, modoCfg));
     const idsConcluidas = new Set(concluidas.map((v) => v.id));
     const planejadas = rota ? rota.stops.filter((s) => s.kind === 'planejada' && s.status !== 'descartada') : [];
@@ -75,7 +81,7 @@ export class ResumoDiaService {
       agora,
       diaAberto: dia === hoje && (jornadas.length === 0 || jornadas.some((j) => j.ended_at === null)),
       jornadas,
-      intervaloMin: null,
+      intervaloMin: pausas ? minutosDePausas(pausas, agora) : null,
       rota: rota ? { planejadas: planejadas.length, visitadas: planejadas.filter((s) => s.status === 'visitada' && !!s.visit_id && idsConcluidas.has(s.visit_id)).length } : null,
       meta: cfgRota.meta_diaria,
       visitasConcluidas: concluidas.length,

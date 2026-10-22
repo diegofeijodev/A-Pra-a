@@ -76,6 +76,10 @@ export class ConfigRotaDto {
   @IsOptional() @IsIn(['nao', 'todas']) checklist_obrigatorio?: string | null;
   @IsOptional() @IsArray() @ArrayMaxSize(2) @IsIn(['simples', 'completo'], { each: true }) checklist_fluxos?: string[] | null;
   @IsOptional() @IsBoolean() checklist_aberto?: boolean | null;
+  // Lote B (contrato §37.2): intervalo da jornada.
+  @IsOptional() @IsBoolean() intervalo_ativo?: boolean | null;
+  @IsOptional() @IsInt() @Min(15) @Max(480) intervalo_lembrete_min?: number | null;
+  @IsOptional() @IsInt() @Min(15) @Max(480) alerta_intervalo_min?: number | null;
 }
 
 export class PosicaoRotaDto {

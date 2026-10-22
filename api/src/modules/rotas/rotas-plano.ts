@@ -178,6 +178,8 @@ export async function reotimizar(
   agora: Date,
   motivo: string,
   por: string | null,
+  /** Lote B §37.6: intervalo do dia já feito — o relógio não insere mais o almoço configurado. */
+  opcoes: { pausaFeita?: boolean } = {},
 ): Promise<void> {
   const snap = lerSnapshot(rota.params_snapshot);
   const params = paramsDaRota(rota);
@@ -191,6 +193,7 @@ export async function reotimizar(
     pontos: ordem.map((s) => ({ ...pontoDaParada(s), depois: s.status === 'adiada' })),
     params,
     jaFeitas: rota.stops.filter((s) => s.status === 'visitada').length,
+    ...(opcoes.pausaFeita ? { pausaFeita: true } : {}),
   });
   await gravarPlano(tx, {
     route: rota,

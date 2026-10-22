@@ -11,11 +11,12 @@ import {
   type GoalView,
 } from '../../domain/alerta-rules';
 import { situacaoHoje, type SituacaoHoje } from '../../domain/campo-rules';
+import { pausasEmMinutos } from '../../domain/intervalo-rules';
 import { CONFIG_MODO_DESLIGADO, contaNaMeta } from '../../domain/modo-campo-rules';
 import { ModoCampoService } from '../rotas/modo-campo.service';
 import { minParaHhmm } from '../../domain/rota-rules';
 import { RotasConfigService } from '../rotas/rotas-config.service';
-import { ROTAS_LIGADAS } from '../rotas/rotas.tokens';
+import { LOVABLE_B_FLAGS, ROTAS_LIGADAS, type FlagsLovableB } from '../rotas/rotas.tokens';
 import { COM_PRACA } from './campo-prisma';
 import { DeclaredSignupsService, type AlertaDivergencia } from './declared/declared-signups.service';
 import { PayoutsService } from './payouts/payouts.service';
@@ -30,6 +31,8 @@ export interface AtencaoConsultor {
   status: SituacaoHoje;
   goal: GoalView;
   alerts: Alerta[];
+  /** Lote B §37.6: início do intervalo aberto (ISO) ou `null`; só com `FIELD_BREAKS_ENABLED`. */
+  on_break_since?: string | null;
 }
 
 export interface AtencaoView {
@@ -60,6 +63,7 @@ export class AtencaoService {
     @Optional() private readonly payouts?: PayoutsService,
     @Optional() private readonly modo?: ModoCampoService,
     @Optional() private readonly declared?: DeclaredSignupsService,
+    @Optional() @Inject(LOVABLE_B_FLAGS) private readonly lovB?: FlagsLovableB,
   ) {}
 
   async painel(pracaId: string | undefined, agora = new Date()): Promise<AtencaoView> {
@@ -126,6 +130,18 @@ export class AtencaoService {
       ? await this.prisma.field_points.groupBy({ by: ['journey_id'], where: { journey_id: { in: abertas.map((j) => j.id) } }, _max: { at: true } })
       : [];
     const pontoPorJornada = new Map(ultimosPontos.map((u) => [u.journey_id, u._max.at]));
+    // Lote B §37.6: intervalos do dia (só com a flag; desligada, nenhuma consulta nova).
+    const intervaloLigado = this.lovB?.breaks === true;
+    const [pausas, cfgIntervalo] = intervaloLigado
+      ? await Promise.all([
+          this.prisma.field_journey_breaks.findMany({
+            where: { journey_id: { in: jornadas.map((j) => j.id) } },
+            select: { consultant_id: true, started_at: true, ended_at: true },
+            orderBy: { started_at: 'asc' },
+          }),
+          this.configs.intervalo(),
+        ])
+      : [null, null];
 
     const modoCfg = this.modo?.ligado ? await this.modo.config() : CONFIG_MODO_DESLIGADO;
     const entradas: EntradaConsultor[] = consultores.map((c) => {
@@ -157,10 +173,25 @@ export class AtencaoService {
         paradasPendentes: paradas
           ? paradas.filter((s) => s.route.consultant_id === c.id).map((s) => ({ nome: s.name_snap, eta_min: s.eta_min! }))
           : null,
+        ...(pausas
+          ? (() => {
+              const ps = pausas.filter((b) => b.consultant_id === c.id);
+              const aberta = situacao === 'em_jornada' ? ps.find((b) => !b.ended_at) : undefined;
+              return { intervaloAberto: aberta?.started_at ?? null, pausas: pausasEmMinutos(ps, agora) };
+            })()
+          : {}),
       };
     });
 
-    const resultado = calcularAlertas({ agora, agoraMin, diaSemana, config, alertas, consultores: entradas });
+    const resultado = calcularAlertas({
+      agora,
+      agoraMin,
+      diaSemana,
+      config,
+      alertas,
+      consultores: entradas,
+      ...(cfgIntervalo ? { intervalo: { alerta_intervalo_min: cfgIntervalo.alerta_intervalo_min } } : {}),
+    });
     return {
       ...base,
       alerts: resultado.flatMap((r) => r.alerts).sort(ordenarAlertas),
@@ -173,6 +204,7 @@ export class AtencaoService {
         status: r.consultor.situacao,
         goal: r.goal,
         alerts: r.alerts,
+        ...(intervaloLigado ? { on_break_since: r.consultor.intervaloAberto?.toISOString() ?? null } : {}),
       })),
     };
   }
