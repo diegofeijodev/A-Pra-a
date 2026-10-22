@@ -4379,7 +4379,7 @@ filtra pelos consultores da praça (`field_consultants.praca_id`) e pelos estabe
 - **Resultado das visitas** (`by_result`): cada visita realizada classificada por `categoriaDaVisita` (§34.3); a soma de `n` = `visits`. Ordem fixa da legenda; categorias com 0 também voltam.
 - **Praças abertas** = praças com `start_date ≤ hoje` (sem coluna nova); `consultants_active` = consultores ativos do filtro.
 - **Estabelecimentos mapeados** = leads `archived = false`, `is_test = false`, com `lat/lng` e `location_precision ∈ (point, address)`; `leads_without_exact_location` = os demais leads da mesma base.
-- `vouchers` = `null` enquanto o módulo de cupons (§38) não existir (a tela diz "Não ligado neste servidor").
+- `vouchers` = `null` com `FIELD_VOUCHERS_ENABLED` desligada (a tela diz "Não ligado neste servidor"); ligada, `{ requested, pending, approved, rejected, coupons_created }` (§38.8).
 - Leitura sem N+1: número fixo de consultas (consultores, visitas, paradas, versões da regra, cadastros, praças e contagens de leads).
 
 ### 33.5 Resumo do dia — `GET /v1/campo/day-summary?day=` (`@CampoRoute()`) e `GET /v1/consultores/:id/days/:day/summary` (equipe)
@@ -4543,10 +4543,95 @@ agora (ligar "obrigatório" não trava a fila offline de visitas já abertas). `
 |---|---|---|
 | `FIELD_CHECKLIST_ENABLED` | `false` | liga a foto do checklist, as marcas no rascunho, a cobrança (se configurada) e o cronômetro |
 
+## 36. Segmentos de busca editáveis (restante da Lovable, fase L5) — `/v1/place-searches/segments`
+
+Origem: arquitetura item 8 e UX §3.9; Lovable `0001_migration.sql:33-49` (tabela `segmentos` com tipos do Google e palavras-chave, 8 semeados) e `configuracoes.tsx:31-61`
+(editável pelo admin). Sem Google: cada segmento vira um filtro do mapa aberto (Overpass), montado **no servidor**; nunca se aceita QL vindo do cliente.
+
+### 36.1 Trava: `FIELD_SEGMENTS_ENABLED` (padrão `false`)
+
+| Estado | Efeito |
+|---|---|
+| Desligada | `GET/PUT /v1/place-searches/segments` → `404 SEGMENTS_DISABLED`; `POST /v1/place-searches` valida `types` **como hoje** (os 5 slugs do §22.1, no máximo 5, com a **mesma mensagem** do `400 VALIDATION_ERROR`); consulta do Overpass, categoria dos achados, termos do Apify e chave do cache **byte a byte** os de hoje; `segments_snapshot = null`; `features.segments = false` no `GET /v1/consultores/settings/config`. |
+| Ligada | os tipos válidos da busca são os `slug` dos segmentos **ativos** (até 10 por busca); a busca fotografa as definições usadas. |
+
+### 36.2 Segmento
+
+```json
+{ "slug": "pizzaria", "label": "Pizzaria", "priority": 20, "active": true, "apify_term": "pizzaria",
+  "filters": [[{ "key": "amenity", "op": "~", "value": "restaurant|fast_food" }, { "key": "cuisine", "op": "~", "value": "pizza" }]],
+  "keywords": [] }
+```
+
+| Campo | Regra |
+|---|---|
+| `slug` | `^[a-z0-9_]{2,30}$`, único, **imutável**: um slug que já existe não some da lista (só `active: false`); é o que fica gravado em `types`, `category` e na chave do cache |
+| `label` | 1–40 caracteres (aparado) |
+| `filters` | 1–6 grupos (**OU** entre grupos), cada grupo com 1–4 filtros (**E** dentro do grupo). `key` `^[a-z_:]{1,40}$`; `op` `=` ou `~`; `value`: com `=` um termo, com `~` 1–10 termos separados por `\|`. Termo: letras (com acento), dígitos, `_` e espaço, 1–40 caracteres. Nada de aspas, barras, colchetes ou parênteses |
+| `keywords` | 0–10 palavras no nome (2–40 letras, dígitos ou espaço). Exigem ao menos um filtro de **base** (`amenity`, `shop`, `craft` ou `tourism`) no segmento |
+| `priority` | inteiro 1–999; **menor = primeiro** na classificação (os específicos antes de `restaurante`) |
+| `active` | boolean; a lista precisa de ao menos 1 ativo |
+| `apify_term` | opcional (2–40 letras, dígitos ou espaço); ausente = `label` |
+
+Lista com 1–40 segmentos. Erro de validação → `400 VALIDATION_ERROR` com o campo (`segments[3].filters[0][1].value: …`).
+
+### 36.3 Consulta montada no servidor (`domain/segmentos-rules.ts`)
+
+- Cabeçalho, rodapé e teto **iguais aos de hoje** (`[out:json][timeout:25];` … `out tags center 2000;`).
+- Cada grupo vira uma linha `nwr<f1><f2>…(around:RAIO,LAT,LNG);`; `=` → `["key"="valor"]`; `~` numa chave de base → `["key"~"^(a|b)$"]` (a ancoragem de hoje: `bar`
+  continua `["amenity"~"^(bar|pub)$"]`); `~` em outra chave (ex.: `cuisine`, que no OSM é uma lista com `;`) → `["key"~"(^|;) *(a|b) *(;|$)"]`.
+- As palavras viram, para cada chave de base presente nos filtros do segmento, a linha `nwr["base"]["name"~"p1|p2",i](around:…);`.
+- **Os 5 slugs de hoje têm filtros idênticos aos do §22.1**: a consulta de qualquer subconjunto deles sai byte a byte igual à de hoje.
+- O seletor de lugar (`around`) é uma função própria (`seletorRaio`): a busca de lojas dentro de um shopping (§40, fase L8) troca só o seletor e reaproveita os segmentos
+  como "perfil" das lojas.
+
+### 36.4 Categoria do achado
+
+`classificarSegmento(tags, segmentos da busca)`: o primeiro segmento **da própria busca**, por `priority` (empate = ordem da lista), em que algum grupo casa todos os filtros
+(`=` igualdade; `~` o valor está entre os termos — em chave que não é de base, qualquer item da lista `;`) ou em que uma palavra aparece no nome (sem acento, sem
+maiúsculas) com uma chave de base presente. Sem segmento que case, o achado é ignorado. `category` do candidato = o `slug`. Apify: o primeiro segmento da busca cujo
+`apify_term`/`label` aparece na categoria do Google; senão a regra de hoje, se ela for um dos pedidos; senão o primeiro pedido.
+
+### 36.5 Padrão (os 10, todos ativos; *decisão do arquiteto*)
+
+| `slug` | `label` | Filtro OSM | `priority` | Origem |
+|---|---|---|---|---|
+| `buffet` | Buffet | `craft=caterer` · ou `amenity=restaurant` + `cuisine~buffet` · ou a palavra "buffet" | 10 | Lovable |
+| `pizzaria` | Pizzaria | `amenity~restaurant\|fast_food` + `cuisine~pizza` | 20 | Lovable |
+| `hamburgueria` | Hamburgueria | `amenity~restaurant\|fast_food` + `cuisine~burger` | 30 | Lovable |
+| `hotel` | Hotel | `tourism=hotel` | 40 | Lovable |
+| `motel` | Motel | `tourism=motel` | 50 | Lovable |
+| `bar` | Bar | `amenity~bar\|pub` | 60 | Lovable e nossa |
+| `restaurante` | Restaurante | `amenity=restaurant` | 70 | Lovable e nossa |
+| `lanchonete` | Lanchonete | `amenity=fast_food` | 80 | nossa |
+| `cafe` | Café | `amenity=cafe` | 90 | nossa |
+| `padaria` | Padaria | `shop=bakery` | 100 | Lovable e nossa |
+
+### 36.6 Rotas (só admin, como todo o §22; `segments` vem antes de `:id`)
+
+| Método | Rota | Corpo | Resposta |
+|---|---|---|---|
+| `GET` | `/v1/place-searches/segments` | — | `{ segments: Segmento[], is_default: boolean, updated_at: ISO \| null, updated_by: uuid \| null }` (`is_default` = nada salvo = o padrão do §36.5) |
+| `PUT` | `/v1/place-searches/segments` | `{ segments: Segmento[] }` | a mesma visão. Um slug que já existe e não veio → `400 VALIDATION_ERROR` "segments: o segmento 'x' não pode ser apagado; desative-o." (sem DELETE) |
+
+`POST /v1/place-searches` com a flag ligada: `types` com 1–10 slugs sem repetir, cada um de um segmento **ativo** (senão `400 VALIDATION_ERROR` "types: 'x' não é um segmento
+ativo da busca."). A busca grava `segments_snapshot` (as definições dos pedidos naquele instante); a execução e a classificação usam a foto (editar depois não muda a busca
+em andamento nem o cache). Chave do cache com a flag ligada: a de hoje + o hash da foto; desligada: a de hoje. `SearchRunView` e `CandidateView` não mudam.
+
+### 36.7 Banco (migração aditiva `20261030100000_lovable_l5_segmentos`)
+
+`app_settings.place_segments JSONB NULL` (`{ segments, atualizado_por, atualizado_em }`; nulo = padrão) e `place_import_runs.segments_snapshot JSONB NULL`. Sem `DROP INDEX`.
+
+### 36.8 Variáveis
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `FIELD_SEGMENTS_ENABLED` | `false` | liga os segmentos editáveis na busca de estabelecimentos e a seção "Segmentos da busca" nas Configurações |
+
 ## 37. Intervalo e almoço como evento da jornada (restante da Lovable, fase L4)
 
 Origem: arquitetura item 7 e UX §3.6; Lovable `0009:5` (eventos `inicio_intervalo`/`fim_intervalo`), `src/lib/visita.ts:7-13, 54-58, 69` (`estadoRota`, intervalo no resumo, alerta
-acima de 75 min) e `roteiro…:110-114` (botões só sem visita aberta). (§36 fica para os segmentos, fase L5.)
+acima de 75 min) e `roteiro…:110-114` (botões só sem visita aberta).
 
 ### 37.1 Trava: `FIELD_BREAKS_ENABLED` (padrão `false`)
 
@@ -4618,3 +4703,169 @@ O fim nunca fica antes do início.
 | `FIELD_BREAKS_ENABLED` | `false` | liga as rotas do intervalo e os efeitos do §37.6 |
 
 **Ordem de subida (L3 e L4):** `migrate deploy` → **API** → **web**. Com as flags desligadas o web novo não manda nada novo.
+
+## 38. Cupons da 1ª contratação (restante da Lovable, fases L6a e L6b) — `/v1/campo/vouchers`, `/v1/consultores/vouchers`
+
+Origem: arquitetura item 5 e UX §3.2; Lovable `0005_vouchers.sql:1-20` e `vouchers.tsx` (o consultor pede, **só o admin** avalia, o gestor só lê); dono, 20/10: "é o cupom de
+1ª contratação que já existe no Freela". Na tela é sempre **"cupom"** (nunca "voucher"); `voucher` só no código e no wire.
+
+### 38.1 Travas
+
+| Flag | Padrão | Desligada |
+|---|---|---|
+| `FIELD_VOUCHERS_ENABLED` | `false` | todas as rotas do §38.3/§38.4 → `404 VOUCHERS_DISABLED`; `features.vouchers = false` (`/me` e `GET settings/config`); painel com `kpis.vouchers = null` e as frases de hoje; resumo do dia sem a frase do cupom; o web não mostra nada de cupom |
+| `FIELD_VOUCHER_COUPONS_ENABLED` | `false` (**só vale com `FIELD_VOUCHERS_ENABLED`**) | porta `VoucherCouponIssuer` = `NoopIssuer`: aprovar grava `coupon_status = nao_aplicavel` e o pedido é só registro (como a Lovable); **nenhuma chamada ao Freela**; `contractor-candidates`, `link-contractor`, `coupon/retry` e `coupon/deactivate` → `404 VOUCHER_COUPONS_DISABLED`; `contractor_user_id` não nulo no `approve` → `404 VOUCHER_COUPONS_DISABLED` (nulo = ausente) |
+
+`features` (aditivo): `GET settings/config` ganha `vouchers`, `voucher_coupons` e `segments` (§36); `/v1/campo/me` ganha `vouchers` e, com a flag ligada,
+`voucher_config: { discount_type, percent_off, amount_off_cents, single_use, validade_dias, min_job_hours, coupons: boolean }` (a tela escreve "100% · vale 1 vez · 30 dias" sem sinal).
+
+### 38.2 Configuração — `GET/PUT /v1/consultores/vouchers/config` (leitura: equipe; escrita: só admin; gravada em `field_config.voucher`)
+
+| Chave | Valores | Padrão | Origem |
+|---|---|---|---|
+| `max_por_empresa` | inteiro 1–10 | `1` (conta pendente + aprovado do mesmo estabelecimento) | dono; a Lovable não tem limite |
+| `discount_type` | `PERCENT` \| `FIXED` | `PERCENT` | dono: "1ª contratação grátis" |
+| `percent_off` | inteiro 1–100 \| `null` | `100` | dono |
+| `amount_off_cents` | inteiro ≥ 1 \| `null` | `null` | — |
+| `single_use` | boolean | `true` | — |
+| `validade_dias` | inteiro 1–365 \| `null` (sem validade) | `30` | *decisão do arquiteto* |
+| `min_job_hours` | inteiro 1–24 \| `null` | `null` | — |
+| `motivo_reprovacao` | `obrigatorio` \| `opcional` | `obrigatorio` | desvio da Lovable (motivo opcional por `window.prompt`): o consultor precisa saber o que dizer ao dono |
+| `voucher_sync_min` | inteiro 5–1440 | `30` | intervalo da leitura do estado dos cupons no Freela |
+
+`PERCENT` exige `percent_off`; `FIXED` exige `amount_off_cents`. PUT parcial validado sobre o estado já mesclado; chave desconhecida = `400 VALIDATION_ERROR`; `null` em
+`percent_off`/`amount_off_cents`/`validade_dias`/`min_job_hours` é um valor (sem prazo, sem teto); nas demais, `null` = ausente. A configuração vale para as **aprovações
+seguintes** (a aprovação fotografa os parâmetros em `coupon_params`).
+
+### 38.3 Consultor (`@CampoRoute()`, sempre o próprio)
+
+`POST /v1/campo/vouchers` `{ client_id, lead_id?, visit_ref?, segment, freelas_per_week, uf?, city? }` → `201 CampoVoucherView` (reenvio do mesmo `client_id` → `200` com o mesmo)
+
+- `lead_id` **ou** `visit_ref` (id ou `client_id` de uma visita **dele**): sem sinal, o lugar novo ainda não tem `lead_id` no aparelho, e a fila manda o check-in antes do
+  pedido. Com os dois, o lead da visita tem de ser o `lead_id` (`422 VALIDATION_ERROR`). Lead fora da praça do consultor, visita de outro, id malformado → `404 NOT_FOUND`.
+- `segment` 1–40 caracteres (o chip do ramo; o lead não guarda categoria); `freelas_per_week` inteiro 0–999.
+- **Fotos do pedido** (imutáveis): `company_name` = nome do lead; `city` = cidade do lead, senão a da cobertura da praça, senão a da praça, senão a do corpo; `uf` = a da
+  cobertura da praça, senão a do corpo (2 letras), senão vazio. Nunca telefone nem e-mail.
+- **Limite por empresa** sob `pg_advisory_xact_lock(hashtext('voucher-lead:' || lead_id))`: pendentes + aprovados do lead ≥ `max_por_empresa` → `409 VOUCHER_LIMIT_REACHED`
+  ("Esta empresa já tem um cupom pedido, por Ana em 20/10.").
+- `client_id` de outro consultor → `409 CLIENT_ID_IN_USE`. Fila offline: item `voucher`, idempotente por `client_id`.
+
+`GET /v1/campo/vouchers` → `{ items: CampoVoucherView[] }` (só os dele, mais novos primeiro, até 200).
+
+```json
+{ "id": "uuid", "client_id": "uuid", "lead_id": "uuid", "visit_id": "uuid|null", "company_name": "Padaria Bom Pão", "city": "Belo Horizonte", "uf": "MG",
+  "segment": "Padaria", "freelas_per_week": 3, "status": "pendente|aprovado|reprovado", "situacao": "pedido", "decision_reason": null, "decided_at": null,
+  "coupon_status": null, "coupon_code": null, "coupon_expires_at": null, "redeemed_at": null, "created_at": "…",
+  "coupon": { "discount_type": "PERCENT", "percent_off": 100, "amount_off_cents": null, "single_use": true, "validade_dias": 30, "min_job_hours": null } }
+```
+
+`coupon` = os parâmetros fotografados na aprovação (`null` antes). `coupon_code` só aparece com o cupom criado (`criado`, `usado`, `vencido`, `desativado`): o cupom do Freela é
+preso à conta da empresa (`COUPON_NOT_OWNED` para outra), então o código pode ficar na tela sem sinal.
+
+### 38.4 Equipe (sem `@CampoRoute()`; leitura: equipe; escrita: **só admin**; estáticas antes de `:id`)
+
+| Método | Rota | Corpo / query | Resposta |
+|---|---|---|---|
+| `GET` | `/v1/consultores/vouchers` | `situacao?`, `status?`, `praca_id?`, `consultant_id?`, `from?`, `to?` (dia do pedido, Brasília), `q?` (nome do estabelecimento) | `{ items: VoucherView[], counts: { [situacao]: n, todos: n }, coupons_enabled, freela_configured }` (até 500, mais novos primeiro; `counts` sem o filtro de `situacao`) |
+| `GET` / `PUT` | `/v1/consultores/vouchers/config` | §38.2 | a configuração |
+| `GET` | `/v1/consultores/vouchers/:id` | — | `VoucherView` + `events: [{ id, type, actor_kind, actor_name, reason, data, created_at }]` |
+| `POST` | `…/:id/approve` | `{ client_id, note?, contractor_user_id?, contractor_name? }` | `VoucherView` |
+| `POST` | `…/:id/reject` | `{ client_id, reason }` (3–500; obrigatório com `motivo_reprovacao = obrigatorio`) | `VoucherView` |
+| `GET` | `…/:id/contractor-candidates` | `q?` (padrão: o nome do estabelecimento; mínimo 2) | `{ q, items: [{ user_id, name, city }] }` — só `module = bars-restaurants` |
+| `POST` | `…/:id/link-contractor` | `{ client_id, contractor_user_id, contractor_name? }` | `VoucherView` |
+| `POST` | `…/:id/coupon/retry` | `{}` | `VoucherView` (tenta já) |
+| `POST` | `…/:id/coupon/deactivate` | `{ client_id, reason }` (3–500) | `VoucherView` |
+
+`VoucherView` = `CampoVoucherView` + `consultant_id`, `consultant_name`, `praca_id`, `decided_by_name`, `contractor_user_id`, `contractor_name`, `contractor_source`,
+`coupon_params`, `coupon_error_code`, `coupon_error`, `coupon_attempts`, `coupon_last_attempt_at`, `coupon_synced_at`, `coupon_code` (também com `aguardando_freela`/`erro`: é
+o código que será usado). `contractor_user_id` = 1–64 caracteres `[A-Za-z0-9_-]`; `contractor_name` ≤ 120. Escrita idempotente: o `client_id` vai no evento (UNIQUE) e o
+reenvio devolve o estado atual; um **segundo** pedido com outro `client_id` sobre um estado que já mudou → `409 INVALID_TRANSITION`.
+
+### 38.5 Estados
+
+| `status` | `coupon_status` | `situacao` | Consultor vê | Equipe vê |
+|---|---|---|---|---|
+| `pendente` | `null` | `pedido` | ⏳ Esperando a equipe aprovar | Pedido · esperando aprovação |
+| `reprovado` | `null` | `reprovado` | ✕ Não aprovado: {motivo} | Reprovado por {nome}: {motivo} |
+| `aprovado` | `nao_aplicavel` | `registrado` | ✓ Aprovado | Aprovado (cupom no Freela não ligado neste servidor) |
+| `aprovado` | `aguardando_vinculo` | `aguardando_empresa` | 🏪 Falta a empresa ter conta no Freela | Aprovado · aguardando a empresa se cadastrar no Freela |
+| `aprovado` | `aguardando_freela` | `aguardando_freela` | ⏳ Aprovado. Criando o cupom no Freela | Aprovado — aguardando conexão com o Freela |
+| `aprovado` | `criado` | `criado` | ✓ Cupom pronto: PRACA-… | Cupom criado · ainda não usado |
+| `aprovado` | `usado` | `usado` | ✓ Usado em dd/mm | Usado em dd/mm |
+| `aprovado` | `vencido` | `vencido` | ✕ Venceu dd/mm sem uso | Vencido |
+| `aprovado` | `desativado` | `desativado` | ✕ Cupom cancelado | Desativado |
+| `aprovado` | `erro` | `erro` | ⏳ Aprovado. Criando o cupom no Freela | Erro ao criar o cupom: {mensagem} |
+
+Transições (compare-and-set + evento na mesma transação): `pendente → aprovado | reprovado` (só uma vez); aprovar: Noop → `nao_aplicavel`; com contratante vinculado →
+`aguardando_freela`; sem → `aguardando_vinculo`. `aguardando_vinculo → aguardando_freela` (vínculo); `aguardando_freela → criado | erro`; `erro → aguardando_freela`
+(retry); `criado → usado | vencido | desativado`; `usado → criado` (o Freela devolve o cupom ao cancelar a vaga) `| desativado`. `vencido`, `desativado` e `erro` não liberam
+cupom novo para o mesmo contratante (`409 CONTRACTOR_ALREADY_HAS_COUPON`; só por decisão do dono).
+
+Eventos (`field_voucher_events`, só INSERT; nunca telefone ou e-mail): `requested`, `approved`, `rejected`, `contractor_linked`, `coupon_created`, `coupon_adopted`,
+`coupon_failed`, `coupon_retried`, `coupon_redeemed`, `coupon_unredeemed`, `coupon_expired`, `coupon_deactivated`.
+
+### 38.6 Vínculo com o contratante do Freela (nesta ordem; **nunca** por nome)
+
+1. `field_company_signups.freela_user_id` do lead (§26) — só com `FIELD_COMPANY_SIGNUP_ENABLED`;
+2. `field_signups.freela_user_id` com o mesmo `lead_id` e `match_status = linked` (§27) — só com `FIELD_SIGNUP_SYNC_ENABLED`;
+3. escolha **manual** do admin na lista do CRM (`contractor-candidates`), registrada no evento `contractor_linked` (`contractor_source = manual`).
+
+Em produção hoje (F6 e F7 desligadas) só vale o 3. Os passos 1 e 2 rodam na aprovação e, para `aguardando_vinculo`, no relógio do Freela.
+
+### 38.7 O cupom no Freela (`FIELD_VOUCHER_COUPONS_ENABLED`)
+
+- **Código determinístico:** `PRACA-` + os 10 primeiros caracteres do base32 (RFC 4648, maiúsculo) dos 16 bytes do uuid do pedido (o Freela compara em maiúsculas).
+- **Criação** (fora da transação do banco; uma tentativa logo depois do commit da aprovação, do vínculo e do retry): `POST /v1/admin/coupons`
+  `{ code, discountType, percentOff | amountOffInCents, contractorUserId, singleUse, minJobHours?, expiresAt? }` (`expiresAt` = 23:59:59 de Brasília do dia da tentativa
+  + `validade_dias`), resposta validada com zod.
+- **Relógio:** o de 2 min do Freela (`freela-sync.scheduler.ts`) refaz o que estiver em `aguardando_freela` (até 20 por rodada; espera crescente por `coupon_attempts`:
+  2, 4, 8, 16, 32 e depois 60 min, contada de `coupon_last_attempt_at`). Ele só roda com `FREELA_SYNC_ENABLED=true` e a conexão configurada; com o Freela sem configuração,
+  o log avisa no máximo uma vez por hora e nada quebra o boot.
+
+| Resposta do Freela | Resultado |
+|---|---|
+| `201` | `criado` (`coupon_id`, `coupon_expires_at`), evento `coupon_created` |
+| `400 COUPON_CODE_TAKEN`, `5xx` ou timeout/sem rede (`FREELA_UNREACHABLE`) | relê `GET /v1/admin/coupons`: o mesmo código com o mesmo `contractorUserId` e o mesmo desconto → `criado` por **adoção** (`coupon_adopted`); outro contratante ou outro desconto → `erro` fixo `COUPON_CODE_CONFLICT` (o relógio não repete); não achou → continua `aguardando_freela` e tenta de novo |
+| `401`/`403` | continua `aguardando_freela` (`FREELA_AUTH`), tenta de novo |
+| outro `4xx` | `erro` (`FREELA_REJECTED`, mensagem fixa nossa); só o "Tentar agora" repete |
+| sem configuração (`FREELA_ADMIN_*` vazios) | continua `aguardando_freela` (`FREELA_NOT_CONFIGURED`): "Aprovado — aguardando conexão com o Freela" |
+
+- **Leitura do estado:** no mesmo relógio, a cada `voucher_sync_min` (desde o maior `coupon_synced_at`) e só se houver cupom `criado`/`usado`: `GET /v1/admin/coupons`, só os
+  códigos `PRACA-` conhecidos. `active = false` → `desativado`; `redeemedAt` preenchido → `usado` (`redeemed_at`); `redeemedAt` voltou a nulo → `criado` (`coupon_unredeemed`);
+  `expiresAt` no passado sem uso → `vencido`. Custo anotado: a lista do Freela não tem filtro nem paginação (proposta futura: `?codePrefix=`).
+- **Desativar:** `PATCH /v1/admin/coupons/:id { active: false }` e só então `desativado` (falha do Freela = `502` e nada muda).
+- **Candidatos:** `GET /v1/admin/crm/contractors/search?q=` (só por nome, até 12, com Em Casa) → só `module = bars-restaurants`. Sem a conexão configurada → `503 FREELA_NOT_CONFIGURED`
+  (a tela não chama sem `freela_configured`).
+
+### 38.8 Painel (§33.4) e resumo do dia (§33.5)
+
+Com `FIELD_VOUCHERS_ENABLED`: `kpis.vouchers = { requested, pending, approved, rejected, coupons_created }` (pedidos feitos no período, dia de Brasília, e a situação de cada um
+agora; `coupons_created` = cupom criado, usado, vencido ou desativado). O cartão mostra `approved` (Lovable: "aprovados · N aguardando"), com a conta e a fonte. A frase de
+cadastros do resumo do dia volta a citar "a oferta do cupom da 1ª contratação grátis".
+
+### 38.9 Banco (migração aditiva `20261031100000_lovable_l6_cupons`)
+
+- `field_vouchers`: `id`, `client_id` UNIQUE, `consultant_id` (FK Restrict), `praca_id` (foto, sem FK), `lead_id` (**obrigatório**, FK Restrict), `visit_id` (FK SetNull),
+  fotos `company_name`, `uf`, `city`, `segment`, `freelas_per_week ≥ 0`; `status` CHECK; `decision_reason`, `decided_by`, `decided_by_name`, `decided_at`;
+  `contractor_user_id`, `contractor_name`, `contractor_source` CHECK `company_signup | signup_sync | manual`; `coupon_status` CHECK (nulo ⇔ não aprovado), `coupon_code` UNIQUE,
+  `coupon_id`, `coupon_params jsonb`, `coupon_expires_at`, `coupon_error_code`, `coupon_error`, `coupon_attempts`, `coupon_last_attempt_at`, `coupon_synced_at`,
+  `redeemed_at`, `created_at`.
+- **Trigger** `field_vouchers_guard`: barra `DELETE` e qualquer mudança em consultor, lead, praça, `client_id`, fotos, `created_at`, `visit_id` (só pode virar nulo),
+  `coupon_params` depois de gravado e no `status` depois de decidido.
+- `field_voucher_events` (`client_id` UNIQUE nulo): só INSERT (trigger `field_earnings_immutable`).
+- **Índice único parcial `field_vouchers_one_coupon_per_contractor`** em `(contractor_user_id) WHERE coupon_status IN ('aguardando_freela','criado','usado')` (não existe para o
+  Prisma: entra na lista do `CLAUDE.md`). Sem `DROP INDEX`.
+- `DELETE /v1/consultores/:id` e `DELETE /v1/leads/:id` com pedido de cupom → `409 HAS_VOUCHER` (desative / arquive em vez de apagar).
+
+### 38.10 Variáveis
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `FIELD_VOUCHERS_ENABLED` | `false` | liga o pedido, a avaliação e o cartão "Cupons" |
+| `FIELD_VOUCHER_COUPONS_ENABLED` | `false` | cria e acompanha o cupom real no Freela (exige `FIELD_VOUCHERS_ENABLED` e, para criar, a conexão do Freela) |
+
+**Divergências anotadas:** `lead_id` obrigatório (Lovable: nome em texto livre — sem ele o limite por empresa não existe); `visit_ref` como alternativa ao `lead_id` (fila
+offline); motivo obrigatório ao reprovar (configurável); configuração em rota própria (o `PUT settings/config` não muda); colunas além da arquitetura: `coupon_last_attempt_at`,
+`coupon_expires_at`, `contractor_name`, `field_voucher_events.client_id` e o evento `coupon_retried`. **Fora (L10):** gestor; a equipe ainda não pede cupom pela tela.
+
+**Ordem de subida (L5 e L6):** `migrate deploy` → **API** → **web**. Com as flags desligadas o web novo não manda nada novo.
