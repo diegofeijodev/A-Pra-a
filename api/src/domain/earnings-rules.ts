@@ -59,6 +59,11 @@ export interface ChavesNovas {
   declared_daily_cap: number | null;
   /** Reservado à anulação automática (S4, desligada): dias sem confirmação do Freela; null = desligado. */
   declared_confirm_days: number | null;
+  /**
+   * Lote B §37.6: a diária só vale com ao menos esse tanto de tempo trabalhado no dia (jornadas − intervalos), em minutos.
+   * `null` = sem exigência (hoje). Exige `FIELD_BREAKS_ENABLED` no PUT.
+   */
+  daily_base_min_worked_minutes: number | null;
 }
 
 /** A regra como é gravada e lida: as 13 chaves da v1 + as novas que existirem (cruas, sem preencher). */
@@ -126,6 +131,7 @@ export const CHAVES_NOVAS_PADRAO: ChavesNovas = {
   tiers_mode: 'highest',
   declared_daily_cap: null,
   declared_confirm_days: null,
+  daily_base_min_worked_minutes: null,
 };
 export const CHAVES_REGRA_NOVAS = Object.keys(CHAVES_NOVAS_PADRAO) as (keyof ChavesNovas)[];
 
@@ -134,6 +140,7 @@ export const LIMITES_REGRA_NOVOS = {
   daily_base_min_visits: { min: 0, max: 1000 },
   declared_daily_cap: { min: 1, max: 1000 },
   declared_confirm_days: { min: 1, max: 91 },
+  daily_base_min_worked_minutes: { min: 0, max: 1440 },
 } as const;
 
 /**
@@ -163,6 +170,7 @@ export const PRESET_CHEFE: RegraNormalizada = {
   tiers_mode: 'cumulative',
   declared_daily_cap: 30,
   declared_confirm_days: null,
+  daily_base_min_worked_minutes: null,
 };
 
 /** Regra completa: chave ausente (ou null) vira o comportamento atual. NÃO muda a regra de entrada. */
@@ -185,6 +193,9 @@ export function brl(cents: number): string {
 }
 
 export const plural = (n: number, um: string, varios: string): string => `${n} ${n === 1 ? um : varios}`;
+/** 390 → "6h30"; 45 → "45 min". */
+const horasMin = (min: number): string =>
+  min >= 60 ? `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}` : `${min} min`;
 
 const DIAS_CURTOS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 /** "26/10" */
@@ -237,6 +248,11 @@ export function validarRegra(raw: unknown): ResultadoValidacao {
     return falha('declared_daily_cap', `inteiro de ${N.declared_daily_cap.min} a ${N.declared_daily_cap.max} ou null (sem limite).`);
   if (nv('declared_confirm_days') !== undefined && !ehInt(nv('declared_confirm_days'), N.declared_confirm_days.min, N.declared_confirm_days.max))
     return falha('declared_confirm_days', `inteiro de ${N.declared_confirm_days.min} a ${N.declared_confirm_days.max} ou null (desligado).`);
+  if (
+    nv('daily_base_min_worked_minutes') !== undefined &&
+    !ehInt(nv('daily_base_min_worked_minutes'), N.daily_base_min_worked_minutes.min, N.daily_base_min_worked_minutes.max)
+  )
+    return falha('daily_base_min_worked_minutes', `inteiro em minutos de ${N.daily_base_min_worked_minutes.min} a ${N.daily_base_min_worked_minutes.max} ou null (sem exigência).`);
   const cumulativo = nv('tiers_mode') === 'cumulative';
   if (!ehInt(o.unit_cents, L.unit_cents.min, L.unit_cents.max))
     return falha('unit_cents', `inteiro em centavos de ${L.unit_cents.min} a ${L.unit_cents.max}.`);
@@ -422,6 +438,8 @@ export interface EntradaDia {
   declared_over_cap?: number;
   /** S3: declarações do dia anuladas (já fora de `signups`). */
   declared_voided?: number;
+  /** Lote B §37.6: minutos trabalhados no dia (jornadas − intervalos); só lido com `daily_base_min_worked_minutes`. */
+  worked_minutes?: number;
 }
 
 export interface ProximaFaixa {
@@ -516,6 +534,8 @@ function condicaoDiariaTexto(r: RegraNormalizada): string {
   else partes.push('dia de consultor ativo');
   if (r.daily_base_requires_journey && r.daily_base_condition !== 'journey_open')
     partes.push('jornada iniciada no dia');
+  if (r.daily_base_min_worked_minutes != null)
+    partes.push(`ao menos ${horasMin(r.daily_base_min_worked_minutes)} trabalhados (jornada menos intervalo)`);
   return partes.join(' e ');
 }
 
@@ -530,6 +550,11 @@ function diariaVale(r: RegraNormalizada, e: EntradaDia): { vale: boolean; motivo
     return { vale: false, motivo: `foram ${plural(e.visits, 'visita', 'visitas')} e o mínimo é ${r.daily_base_min_visits}` };
   if ((r.daily_base_condition === 'journey_open' || r.daily_base_requires_journey) && !e.journey_open)
     return { vale: false, motivo: 'não houve jornada iniciada no dia' };
+  if (r.daily_base_min_worked_minutes != null && (e.worked_minutes ?? 0) < r.daily_base_min_worked_minutes)
+    return {
+      vale: false,
+      motivo: `foram ${horasMin(e.worked_minutes ?? 0)} trabalhados (jornada menos intervalo) e o mínimo é ${horasMin(r.daily_base_min_worked_minutes)}`,
+    };
   return { vale: true, motivo: null };
 }
 

@@ -7,6 +7,7 @@
  */
 import { minutesSp } from '../common/time/dates';
 import type { SituacaoHoje } from './campo-rules';
+import { minutosUteisComPausas, type PausaMin } from './intervalo-rules';
 import { minParaHhmm, paramsDaConfig, ritmo, type ConfigRota, type ParamsPlano, type Ritmo } from './rota-rules';
 
 // ── limiares (app_settings.field_config) ────────────────────
@@ -123,12 +124,26 @@ export function contaDaMeta(p: ParamsPlano, agoraMin: number, r: Ritmo, minutosU
   return `${base} Às ${minParaHhmm(t)} já deveriam ser ${r.esperadas} (${minutosUteis} min úteis ÷ ${r.minutos_por_visita_ritmo} min); feitas: ${r.feitas}.`;
 }
 
-export function metaDoDia(e: { agoraMin: number; feitas: number; config: ConfigRota; diaDeTrabalho: boolean }): GoalView {
+/**
+ * A conta com o intervalo REAL (lote B §37.6): "… descontado o intervalo registrado de 58 min …" no lugar de "menos 1 h de almoço".
+ */
+export function contaDaMetaComPausas(p: ParamsPlano, agoraMin: number, r: Ritmo, minutosUteis: number, pausas: readonly PausaMin[]): string {
+  const almoco = Math.max(p.almocoFim - p.almocoIni, 0);
+  const total = p.janelaFim - p.janelaIni - almoco;
+  const janela = `${minParaHhmm(p.janelaIni)}–${minParaHhmm(p.janelaFim)}`;
+  const t = Math.min(Math.max(agoraMin, p.janelaIni), p.janelaFim);
+  const real = pausas.reduce((a, x) => a + Math.max(0, Math.min(x.fim, t) - Math.max(x.ini, p.janelaIni)), 0);
+  const base = `${p.meta} visitas no plano de ${duracao(total)} úteis (${janela} com ${duracao(almoco)} de almoço) = 1 a cada ${r.minutos_por_visita_ritmo} min.`;
+  return `${base} Às ${minParaHhmm(t)} já deveriam ser ${r.esperadas} (${minutosUteis} min úteis — a janela até agora, descontado o intervalo registrado de ${real} min no lugar do almoço — ÷ ${r.minutos_por_visita_ritmo} min); feitas: ${r.feitas}.`;
+}
+
+export function metaDoDia(e: { agoraMin: number; feitas: number; config: ConfigRota; diaDeTrabalho: boolean; pausas?: readonly PausaMin[] }): GoalView {
   const params = paramsDaConfig(e.config);
-  const r = ritmo({ agoraMin: e.agoraMin, feitas: e.feitas, params });
+  const comPausas = !!e.pausas && e.pausas.length > 0;
+  const r = ritmo({ agoraMin: e.agoraMin, feitas: e.feitas, params, ...(comPausas ? { pausas: e.pausas } : {}) });
   const t = Math.min(Math.max(e.agoraMin, params.janelaIni), params.janelaFim);
   const almocoPassado = Math.max(0, Math.min(t, params.almocoFim) - params.almocoIni);
-  const minutosUteis = t - params.janelaIni - almocoPassado;
+  const minutosUteis = comPausas ? minutosUteisComPausas(e.agoraMin, params, e.pausas!) : t - params.janelaIni - almocoPassado;
   return {
     meta: r.meta,
     feitas: r.feitas,
@@ -138,14 +153,14 @@ export function metaDoDia(e: { agoraMin: number; feitas: number; config: ConfigR
     minutos_uteis: minutosUteis,
     minutos_por_visita_ritmo: r.minutos_por_visita_ritmo,
     dia_de_trabalho: e.diaDeTrabalho,
-    conta: contaDaMeta(params, e.agoraMin, r, minutosUteis),
+    conta: comPausas ? contaDaMetaComPausas(params, e.agoraMin, r, minutosUteis, e.pausas!) : contaDaMeta(params, e.agoraMin, r, minutosUteis),
     fonte: FONTE_META,
   };
 }
 
 // ── alertas ─────────────────────────────────────────────────
 
-export type CodigoAlerta = 'nao_iniciou' | 'sem_registro' | 'visita_aberta' | 'ritmo_atrasado' | 'parada_vencida';
+export type CodigoAlerta = 'nao_iniciou' | 'sem_registro' | 'visita_aberta' | 'ritmo_atrasado' | 'parada_vencida' | 'intervalo_longo';
 export type SeveridadeAlerta = 'alta' | 'media';
 
 export interface Alerta {
@@ -176,6 +191,9 @@ export interface EntradaConsultor {
   feitas: number;
   /** Paradas pendentes/planejadas do roteiro ativo de hoje; `null` = sem roteiro (ou roteiro desligado). */
   paradasPendentes: { nome: string; eta_min: number }[] | null;
+  /** Lote B §37.6 (só com `FIELD_BREAKS_ENABLED`): início do intervalo aberto e os intervalos do dia em minutos. */
+  intervaloAberto?: Date | null;
+  pausas?: PausaMin[];
 }
 
 export interface EntradaAlertas {
@@ -186,6 +204,8 @@ export interface EntradaAlertas {
   config: ConfigRota;
   alertas: ConfigAlertas;
   consultores: EntradaConsultor[];
+  /** Lote B §37.6: limite do alerta de intervalo longo. Ausente = intervalo desligado (nenhum alerta novo). */
+  intervalo?: { alerta_intervalo_min: number };
 }
 
 export interface ResultadoConsultor {
@@ -194,7 +214,7 @@ export interface ResultadoConsultor {
   alerts: Alerta[];
 }
 
-const ORDEM_CODIGO: Record<CodigoAlerta, number> = { nao_iniciou: 0, sem_registro: 1, visita_aberta: 2, ritmo_atrasado: 3, parada_vencida: 4 };
+const ORDEM_CODIGO: Record<CodigoAlerta, number> = { nao_iniciou: 0, sem_registro: 1, visita_aberta: 2, ritmo_atrasado: 3, parada_vencida: 4, intervalo_longo: 5 };
 const PESO_SEVERIDADE: Record<SeveridadeAlerta, number> = { alta: 0, media: 1 };
 
 /** Ordem de exibição: severidade, nome do consultor, código. */
@@ -244,8 +264,24 @@ function alertasDe(c: EntradaConsultor, e: EntradaAlertas, goal: GoalView): Aler
     }
   }
 
+  // Lote B §37.6: em intervalo, "sem registro" não sai (a localização fica pausada); acima do limite, o alerta é o do intervalo.
+  const emIntervalo = !!c.intervaloAberto;
+  if (emIntervalo && e.intervalo) {
+    const min = minutosEntre(c.intervaloAberto!, e.agora);
+    if (min > e.intervalo.alerta_intervalo_min) {
+      out.push({
+        ...base,
+        code: 'intervalo_longo',
+        severity: 'media',
+        message: `${c.name} — em intervalo há ${duracao(min)} (desde ${horaDe(c.intervaloAberto!)}).`,
+        conta: `Agora ${minParaHhmm(e.agoraMin)} − início do intervalo ${horaDe(c.intervaloAberto!)} = ${min} min; o limite é ${e.intervalo.alerta_intervalo_min} min.`,
+        since: c.intervaloAberto!.toISOString(),
+      });
+    }
+  }
+
   // Com visita aberta o aviso é o da visita (a pessoa está dentro do estabelecimento).
-  if (c.ultimoRegistro && !aberta) {
+  if (c.ultimoRegistro && !aberta && !emIntervalo) {
     const min = minutosEntre(c.ultimoRegistro, e.agora);
     if (min > lim.alerta_sem_registro_min) {
       out.push({
@@ -295,7 +331,7 @@ export function calcularAlertas(e: EntradaAlertas): ResultadoConsultor[] {
   return e.consultores
     .filter((c) => c.active)
     .map((c) => {
-      const goal = metaDoDia({ agoraMin: e.agoraMin, feitas: c.feitas, config: e.config, diaDeTrabalho: dia });
+      const goal = metaDoDia({ agoraMin: e.agoraMin, feitas: c.feitas, config: e.config, diaDeTrabalho: dia, ...(c.pausas && c.pausas.length ? { pausas: c.pausas } : {}) });
       return { consultor: c, goal, alerts: alertasDe(c, e, goal).sort(ordenarAlertas) };
     });
 }

@@ -11,6 +11,7 @@
  * com ganho estrito, nada de sorteio nem ordem de Set/Map.
  */
 import { distanciaM, type Coordenada } from './campo-rules';
+import { minutosUteisComPausas, type PausaMin } from './intervalo-rules';
 
 export const RESERVA_MAX = 10;
 
@@ -317,6 +318,8 @@ export interface EntradaRelogio {
   params: ParamsPlano;
   /** Visitas já feitas: abatem a meta e deslocam o `seq`. */
   jaFeitas?: number;
+  /** Lote B §37.6: o intervalo do dia já foi feito — o relógio não insere mais o almoço configurado. Ausente = hoje. */
+  pausaFeita?: boolean;
 }
 
 /**
@@ -338,7 +341,7 @@ export function calcularRelogio(e: EntradaRelogio): Plano {
   let caminho = 0;
   let reservas = 0;
 
-  const noAlmoco = (m: number) => m >= p.almocoIni && m < p.almocoFim;
+  const noAlmoco = (m: number) => !e.pausaFeita && m >= p.almocoIni && m < p.almocoFim;
   const reservar = (ponto: PontoRota) => {
     if (reservas >= reservaMax) {
       excedentes.push(ponto.id);
@@ -393,7 +396,7 @@ export function planejar(e: Omit<EntradaRelogio, 'ordem'> & { pontos: PontoRota[
   const ordemNormal = ordenarComFixas(e.inicio, normais);
   const ultimo: Coordenada = ordemNormal[ordemNormal.length - 1] ?? e.inicio;
   const ordem = [...ordemNormal, ...ordenarTrecho(ultimo, tarde)];
-  return calcularRelogio({ inicio: e.inicio, partidaMin: e.partidaMin, ordem, params: e.params, jaFeitas: e.jaFeitas });
+  return calcularRelogio({ inicio: e.inicio, partidaMin: e.partidaMin, ordem, params: e.params, jaFeitas: e.jaFeitas, ...(e.pausaFeita ? { pausaFeita: true } : {}) });
 }
 
 /**
@@ -457,11 +460,16 @@ export interface Ritmo {
   minutos_por_visita_ritmo: number;
 }
 
-export function ritmo(e: { agoraMin: number; feitas: number; params: ParamsPlano }): Ritmo {
+/**
+ * `pausas` (lote B §37.6): intervalos REAIS do dia em minutos; com algum, os minutos úteis descontam o real NO LUGAR do almoço
+ * configurado (nunca os dois). O ritmo por visita continua o do plano. Ausente ou vazio = a conta de hoje.
+ */
+export function ritmo(e: { agoraMin: number; feitas: number; params: ParamsPlano; pausas?: readonly PausaMin[] }): Ritmo {
   const { params: p } = e;
   const totalUtil = p.janelaFim - p.janelaIni - Math.max(p.almocoFim - p.almocoIni, 0);
   const porVisita = p.meta > 0 ? totalUtil / p.meta : totalUtil;
-  const esperadas = p.meta > 0 ? Math.min(p.meta, Math.floor(minutosUteisAte(e.agoraMin, p) / porVisita)) : 0;
+  const uteis = e.pausas && e.pausas.length > 0 ? minutosUteisComPausas(e.agoraMin, p, e.pausas) : minutosUteisAte(e.agoraMin, p);
+  const esperadas = p.meta > 0 ? Math.min(p.meta, Math.floor(uteis / porVisita)) : 0;
   return {
     meta: p.meta,
     feitas: e.feitas,
