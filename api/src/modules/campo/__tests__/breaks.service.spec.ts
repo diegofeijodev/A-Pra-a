@@ -332,3 +332,32 @@ describe('check-in e fim da jornada encerram o intervalo (flag ligada)', () => {
     expect(tx.field_journey_breaks.findFirst).not.toHaveBeenCalled();
   });
 });
+
+describe('fechamento da meia-noite com o intervalo (flag ligada)', () => {
+  const vencida = { id: 'j0', started_at: new Date('2026-10-21T12:00:00.000Z'), points: [{ at: new Date('2026-10-21T20:00:00.000Z') }] };
+  const montarP = (pausa: unknown) => {
+    const p = {
+      field_journeys: { findMany: jest.fn().mockResolvedValue([vencida]), updateMany: jest.fn().mockReturnValue('op-jornada') },
+      field_visits: { updateMany: jest.fn().mockReturnValue('op-visitas') },
+      field_journey_breaks: { findFirst: jest.fn().mockResolvedValue(pausa), updateMany: jest.fn().mockReturnValue('op-intervalo') },
+      $transaction: jest.fn().mockResolvedValue([{ count: 2 }, { count: 1 }, { count: 1 }]),
+    };
+    return p;
+  };
+  it('intervalo aberto depois do último ponto: fecha no próprio início, auto; as visitas contam pelo update das visitas', async () => {
+    const p = montarP({ id: 'b9', started_at: new Date('2026-10-21T21:00:00.000Z') });
+    const r = await new JourneysService(p as unknown as PrismaService, undefined, undefined, undefined, undefined, { checklist: false, breaks: true }).closeStale(AGORA);
+    expect(p.field_journey_breaks.updateMany.mock.calls[0][0]).toEqual({
+      where: { id: 'b9', ended_at: null },
+      data: { ended_at: new Date('2026-10-21T21:00:00.000Z'), auto_closed: true, end_reason: 'auto' },
+    });
+    expect(p.$transaction.mock.calls[0][0]).toEqual(['op-visitas', 'op-jornada', 'op-intervalo']);
+    expect(r).toEqual({ journeys: 1, visits: 2 });
+  });
+  it('flag desligada: as 2 operações de sempre, sem procurar intervalo', async () => {
+    const p = montarP(null);
+    await new JourneysService(p as unknown as PrismaService, undefined, undefined, undefined, undefined, { checklist: false, breaks: false }).closeStale(AGORA);
+    expect(p.$transaction.mock.calls[0][0]).toEqual(['op-visitas', 'op-jornada']);
+    expect(p.field_journey_breaks.findFirst).not.toHaveBeenCalled();
+  });
+});

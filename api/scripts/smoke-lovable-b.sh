@@ -89,6 +89,11 @@ check "outro início com um aberto = BREAK_ALREADY_OPEN" "409|BREAK_ALREADY_OPEN
 check "Hoje: breaks e breaks_open; a meta conta o intervalo real" "1|true|true" \
   "$(curl -s $API/v1/campo/today -H "$HC" | jq -r '"\(.breaks | length)|\(.breaks_open != null)|\(.goal.conta | contains("descontado o intervalo registrado"))"')"
 check "Atenção agora: on_break_since do consultor" "true" "$(curl -s $API/v1/consultores/attention -H "$HD" | jq --arg c "$CONS" '[.consultants[] | select(.consultant_id==$c)][0].on_break_since != null')"
+JID=$($PSQL "select journey_id from field_journey_breaks where client_id='$B1'" | tr -d '[:space:]')
+$PSQL "insert into field_journey_breaks (id, journey_id, consultant_id, client_id, started_at) values (gen_random_uuid(), '$JID', '$CONS', gen_random_uuid(), now())" > /dev/null 2>&1
+RC_INDICE=$?
+check "índice parcial: um 2º intervalo aberto na mesma jornada é recusado pelo banco (WHERE ended_at IS NULL)" "1|t" \
+  "$RC_INDICE|$($PSQL "select indexdef like '%WHERE (ended_at IS NULL)%' from pg_indexes where indexname='field_journey_breaks_one_open_per_journey'" | tr -d '[:space:]')"
 V3=$(uuid); checkin "$V3" "padaria" > /dev/null
 check "check-in durante o intervalo o encerra (checkin)" "checkin|false" \
   "$(curl -s $API/v1/campo/today -H "$HC" | jq -r '"\(.breaks[0].end_reason)|\(.breaks_open != null)"')"
