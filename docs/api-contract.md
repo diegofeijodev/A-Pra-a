@@ -4479,3 +4479,142 @@ outro consultor que não passou por ele **não aparece**.
 | Variável | Padrão | Efeito |
 |---|---|---|
 | `FIELD_MAP_PINS_ENABLED` | `false` | liga as três rotas e a tela "Mapa por situação" |
+
+## 35. Checklist de abordagem e cronômetro da visita (restante da Lovable, fase L3)
+
+Origem: arquitetura item 1 e UX §3.5; Lovable `configuracoes.checklist_visita` (7 etapas, `0000_migration.sql:130`), `roteiro.$rotaId.tsx:180, 217-267` (foto da lista no check-in, um
+checkbox e uma observação por etapa, gravação no finalizar) e `src/lib/visita.ts:35-46` (`pendenciasFinalizar` **não** confere o checklist). Vale nos dois fluxos (§31).
+
+### 35.1 Trava: `FIELD_CHECKLIST_ENABLED` (padrão `false`)
+
+| Estado | Efeito |
+|---|---|
+| Desligada | nenhuma foto do checklist nasce no check-in; `checklist` **não nulo** no rascunho → `422 CHECKLIST_DISABLED` (`null` ou ausente = ignorado, sem erro: o web antigo nunca o manda); o checkout não confere nada novo; `VisitView` **sem** a chave `checklist`; `features.checklist = false` e sem `checklist_config` no `/me`. **Rascunho e checkout dos dois fluxos ficam byte a byte os de hoje** (testes de caracterização `visits-checkout-caracterizacao.spec.ts`). |
+| Ligada | foto no check-in, marcas no rascunho, cobrança no checkout só se a foto disser `todas`, cronômetro na tela. |
+
+### 35.2 Configuração — `GET/PUT /v1/consultores/settings/config` (chaves novas; `null` no PUT = ausente; gravadas só quando enviadas)
+
+| Chave | Valores | Padrão (Lovable) | Significado |
+|---|---|---|---|
+| `checklist_items` | lista de 1–20 `{ id?, text }`; `text` 1–120 caracteres (aparado); `id` `^[a-z0-9_]{1,40}$`, único | as 7 etapas da Lovable (texto palavra por palavra, "voucher" → "cupom") | etapas do "Roteiro da conversa". Item **sem `id`** ganha um gerado pelo servidor (`etapa_` + 8 hex) e o `id` nunca muda depois; mandar o `id` de volta mantém a etapa |
+| `checklist_obrigatorio` | `nao` \| `todas` | `nao` (Lovable não confere) | `todas`: o checkout exige todas as etapas marcadas |
+| `checklist_fluxos` | subconjunto de `simples`, `completo` | os dois | em que fluxo a lista aparece; `[]` = sem checklist (nossa versão) |
+| `checklist_aberto` | boolean | `true` (UX: começa aberto) | só da tela: a lista começa aberta ou fechada |
+
+Ids das 7 etapas padrão: `apresentacao`, `entender_negocio`, `identificar_necessidade`, `apresentar_solucao`, `oferecer_cupom`, `tratar_objecoes`, `fechamento`.
+Chave desconhecida, lista vazia, mais de 20, texto fora da faixa, `id` inválido ou repetido → `400 VALIDATION_ERROR` (com o campo). A configuração vale para as visitas **abertas depois** de salvar (a foto do check-in não muda).
+
+### 35.3 Foto no check-in (`POST /v1/campo/visits`)
+
+Com a flag ligada e o fluxo da visita em `checklist_fluxos`, o servidor grava em `field_visits.checklist`
+`{ "required": "nao"|"todas", "items": [ { "id", "text", "done": false, "note": null } ] }` com a configuração **daquele instante**. Sem isso, `null`.
+Check-in que estava na fila desde antes de ligar a flag também ganha a foto se for processado com ela ligada (a regra é a de quando o servidor recebe). Visita sem foto nunca cobra checklist.
+
+### 35.4 Rascunho (`PATCH /v1/campo/visits/:ref/answers`)
+
+Campo novo `checklist?: [{ id (texto ≤ 40), done?: boolean, note?: texto ≤ 200 | null }] | null` (≤ 20 itens; sem inicializador no DTO). Com a flag ligada:
+- cada marca com `id` da foto atualiza `done` (se veio) e `note` (aparada; vazia = `null`, se veio); as etapas não citadas ficam como estavam;
+- `id` desconhecido é **ignorado** (o aparelho sem sinal pode ter a lista de uma configuração mais velha); visita sem foto ignora o campo inteiro;
+- vale nos dois fluxos e não mexe na derivação do resultado (§31.5) nem no questionário.
+
+### 35.5 Checkout (`POST /v1/campo/visits/:ref/checkout`)
+
+Só com a flag ligada **e** a foto com `required = "todas"`: etapa não marcada entra no fim da lista do `422 ANSWERS_INCOMPLETE`, como
+`roteiro da visita (etapas 3, 5)` (números = posição na foto). `faltando`/`faltandoSimples` não mudam; a obrigatoriedade é sempre lida **da foto**, nunca da configuração de
+agora (ligar "obrigatório" não trava a fila offline de visitas já abertas). `VisitView.missing` traz o mesmo item. Com foto, o texto do evento do CRM ganha no fim
+`Roteiro da conversa: 5 de 7 etapas.` (só a contagem, nunca as observações).
+
+### 35.6 Leituras (acréscimos aditivos)
+
+- `VisitView.checklist` (**só** com a flag ligada e foto gravada): `{ required, items: [{ id, text, done, note }], done, total }`.
+  **Divergência anotada (arquitetura × aqui):** a arquitetura pôs a foto em `answers.checklist`; aqui ela fica **fora** de `answers` porque o web reenvia `answers` inteiro no
+  rascunho do fluxo completo (lição da S1: a foto voltaria no PATCH e daria `400`/`422`).
+- `GET /v1/campo/me`: `features.checklist` e, com a flag ligada, `checklist_config: { items: [{id, text}], obrigatorio, fluxos, aberto }` (a tela mostra a lista sem sinal).
+- `GET /v1/consultores/settings/config`: as quatro chaves do §35.2 (sempre, normalizadas) e `features.checklist`.
+- **Cronômetro** (Lovable `roteiro…:223-227, 252`): só na tela, mm:ss desde `checkin_at` da visita aberta, com a flag ligada. Nada no servidor.
+
+### 35.7 Banco (migração aditiva `20261028100000_lovable_l3_checklist`)
+
+`field_visits.checklist JSONB NULL` (a coluna reservada no §31.8). Sem `DROP INDEX`, sem migração de dado.
+
+### 35.8 Variáveis
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `FIELD_CHECKLIST_ENABLED` | `false` | liga a foto do checklist, as marcas no rascunho, a cobrança (se configurada) e o cronômetro |
+
+## 37. Intervalo e almoço como evento da jornada (restante da Lovable, fase L4)
+
+Origem: arquitetura item 7 e UX §3.6; Lovable `0009:5` (eventos `inicio_intervalo`/`fim_intervalo`), `src/lib/visita.ts:7-13, 54-58, 69` (`estadoRota`, intervalo no resumo, alerta
+acima de 75 min) e `roteiro…:110-114` (botões só sem visita aberta). (§36 fica para os segmentos, fase L5.)
+
+### 37.1 Trava: `FIELD_BREAKS_ENABLED` (padrão `false`)
+
+Desligada: as duas rotas abaixo respondem `404 BREAKS_DISABLED`; `GET /v1/campo/today` **sem** a chave `breaks`; meta/ritmo, alertas, relógio do roteiro, resumo do dia
+(`intervalo_min: null`) e remuneração **idênticos** aos de hoje; `features.breaks = false` e sem `breaks_config` no `/me`; regra de remuneração com
+`daily_base_min_worked_minutes` não nulo → `409 BREAKS_DISABLED`.
+
+### 37.2 Configuração — `GET/PUT /v1/consultores/settings/config` (chaves novas; `null` no PUT = ausente)
+
+| Chave | Valores | Padrão | Significado |
+|---|---|---|---|
+| `intervalo_ativo` | boolean | `true` (Lovable) | mostra "Intervalo"/"Voltar do intervalo" no campo. `false` = nossa versão (só a janela de almoço configurada); o servidor continua aceitando o que estiver na fila |
+| `intervalo_lembrete_min` | inteiro 15–480 | `60` (UX) | depois disso o aparelho mostra "Intervalo há 1h. Voltar agora?" (nunca encerra sozinho) |
+| `alerta_intervalo_min` | inteiro 15–480 | `75` (Lovable) | intervalo aberto há mais que isso gera o alerta `intervalo_longo` na "Atenção agora" |
+
+### 37.3 Banco (migração aditiva `20261029100000_lovable_l4_intervalo`)
+
+`field_journey_breaks`: `id` uuid, `journey_id` FK cascade, `consultant_id` FK cascade, `client_id` UNIQUE, `end_client_id` UNIQUE NULL, `started_at`, `ended_at` NULL,
+`start_lat/lng/accuracy` NULL, `end_lat/lng/accuracy` NULL, `end_reason` NULL (CHECK `manual` \| `checkin` \| `journey_end` \| `auto`), `auto_closed` boolean, `clock_adjusted`
+boolean, `created_at`; índice `(consultant_id, started_at)`. **Índice único parcial `field_journey_breaks_one_open_per_journey`** em `(journey_id) WHERE ended_at IS NULL`
+(não existe para o Prisma: entra na lista do `CLAUDE.md`). Não usa `field_points` (que alimenta a camada "passagem" do mapa de calor). Sem `DROP INDEX`.
+
+### 37.4 Rotas (`@CampoRoute()`, sempre do próprio consultor)
+
+`POST /v1/campo/journeys/current/breaks/start` `{ client_id, at, lat?, lng?, accuracy? }` → `201 BreakView`
+`POST /v1/campo/journeys/current/breaks/end` `{ client_id, at, lat?, lng?, accuracy? }` → `200 BreakView` (o `client_id` do fim vai para `end_client_id`)
+
+`BreakView`: `{ id, client_id, journey_id, started_at, ended_at, minutes, end_reason, auto_closed, clock_adjusted }` (`minutes` = fim − início, a aberta até agora, inteiro).
+Hora (`at`) saneada como no §20.2 (`carimbo`, não antes do início da jornada). Fila offline: `break_start`/`break_end`, idempotentes por `client_id`.
+
+| Situação | Resposta |
+|---|---|
+| reenvio do mesmo `client_id` (início) ou do mesmo `client_id` de fim | a mesma pausa (200/201), nada novo |
+| `client_id` de outro consultor | `409 CLIENT_ID_IN_USE` |
+| sem jornada aberta (início) | `409 NO_OPEN_JOURNEY` |
+| visita aberta (início) | `409 VISIT_OPEN` (Lovable: os botões só aparecem sem visita aberta) |
+| já há intervalo aberto (início) | `409 BREAK_ALREADY_OPEN` |
+| fim sem intervalo aberto, mas o último foi encerrado sozinho (check-in, fim da jornada, meia-noite) há menos de 24 h | `200` com esse intervalo (a fila não mostra erro) |
+| fim sem intervalo aberto, nos demais casos | `409 NO_OPEN_BREAK` |
+
+### 37.5 Encerramentos automáticos
+
+- **Check-in durante o intervalo** (*decisão do arquiteto*): o servidor encerra o intervalo no `at` do check-in (`end_reason = checkin`), na mesma transação.
+- **Fim da jornada** (`journeys/current/end`): encerra no `at` do fim (`journey_end`).
+- **Fechamento da meia-noite** (§20.5): encerra no fim da jornada fechada (o último ponto, ou o início do intervalo se for depois), `auto_closed = true`, `end_reason = auto`.
+O fim nunca fica antes do início.
+
+### 37.6 Efeitos (só com a flag ligada)
+
+- **`GET /v1/campo/today`** ganha `breaks: BreakView[]` (do dia) e `breaks_open: BreakView | null`.
+- **Meta e ritmo (§25.2):** no dia **com** intervalo registrado, os minutos úteis até agora descontam o intervalo **real** (a sobreposição dos intervalos com a janela até agora)
+  **no lugar** do almoço configurado — nunca os dois. O ritmo por visita (`minutos_por_visita_ritmo`) continua o do plano (janela − almoço configurado ÷ meta). Sem intervalo,
+  a conta é a de hoje, byte a byte. A conta escrita troca "menos X de almoço" por "descontado o intervalo registrado de N min". O aparelho repete a conta com os
+  intervalos que conhece (`today.breaks` + fila).
+- **Alertas (§25.3):** `sem_registro` não sai com intervalo aberto; alerta novo `intervalo_longo` (`media`) quando o intervalo aberto passa de `alerta_intervalo_min`, com a conta
+  ("Agora 13:24 − início do intervalo 12:04 = 80 min; o limite é 75 min."). `consultants[]` ganha `on_break_since` (ISO ou `null`).
+- **Relógio do roteiro (§23):** na reotimização depois de um intervalo encerrado no dia, o relógio não insere mais o almoço configurado (`pausaFeita`).
+- **Resumo do dia (§33.5):** `intervalo_min` = soma dos intervalos do dia (o aberto até agora; `0` sem intervalo) e `trabalhado_min` = `total_min − intervalo_min` (aditivo;
+  `null` com a flag desligada); a frase "o intervalo passou de…" usa `nota_intervalo_alerta_min`.
+- **Remuneração (§32.1):** chave nova opcional `daily_base_min_worked_minutes` (inteiro 0–1440 ou `null`; ausente/`null` = hoje): a diária só vale com ao menos esse tanto
+  de tempo trabalhado no dia (jornadas − intervalos). Exige a flag (`409 BREAKS_DISABLED`). Só vale para versões novas que a usem; v1 e caracterização intactas.
+  `GET /v1/consultores/earnings/config` ganha `features.breaks_enabled`.
+- `GET /v1/campo/me`: `features.breaks` e, com a flag ligada, `breaks_config: { intervalo_ativo, intervalo_lembrete_min }`. `GET settings/config`: `features.breaks`.
+
+### 37.7 Variáveis
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `FIELD_BREAKS_ENABLED` | `false` | liga as rotas do intervalo e os efeitos do §37.6 |
+
+**Ordem de subida (L3 e L4):** `migrate deploy` → **API** → **web**. Com as flags desligadas o web novo não manda nada novo.
