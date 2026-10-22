@@ -21,7 +21,7 @@ exports[`caracterização — checkout do fluxo COMPLETO flag do modo desligada:
         "data": {
           "accuracy": 12,
           "at": 2026-10-20T14:59:00.000Z,
-          "client_id": "d66775e0-cec9-46ca-a3c0-2e1c29bbd6ca",
+          "client_id": "<uuid>",
           "clock_adjusted": false,
           "journey_id": "j1",
           "kind": "checkout",
@@ -133,7 +133,7 @@ exports[`caracterização — checkout do fluxo COMPLETO flag do modo desligada:
         "data": {
           "accuracy": 12,
           "at": 2026-10-20T14:59:00.000Z,
-          "client_id": "68e9895c-239b-41ac-b7a0-87c3f5290e80",
+          "client_id": "<uuid>",
           "clock_adjusted": false,
           "journey_id": "j1",
           "kind": "checkout",
@@ -250,7 +250,7 @@ exports[`caracterização — checkout do fluxo COMPLETO flag do modo ligada: fe
         "data": {
           "accuracy": 12,
           "at": 2026-10-20T14:59:00.000Z,
-          "client_id": "4588d6db-8553-4ccf-bce1-9b5642ac2e23",
+          "client_id": "<uuid>",
           "clock_adjusted": false,
           "journey_id": "j1",
           "kind": "checkout",
@@ -362,7 +362,7 @@ exports[`caracterização — checkout do fluxo COMPLETO flag do modo ligada: pr
         "data": {
           "accuracy": 12,
           "at": 2026-10-20T14:59:00.000Z,
-          "client_id": "2acf7f64-a0aa-49e5-bb79-b4fc3133e11f",
+          "client_id": "<uuid>",
           "clock_adjusted": false,
           "journey_id": "j1",
           "kind": "checkout",
@@ -494,7 +494,7 @@ exports[`caracterização — checkout do fluxo SIMPLES quer retorno: sem contat
         "data": {
           "accuracy": 12,
           "at": 2026-10-20T14:59:00.000Z,
-          "client_id": "b6d3cb87-ec22-45b3-a230-7393935b86d1",
+          "client_id": "<uuid>",
           "clock_adjusted": false,
           "journey_id": "j1",
           "kind": "checkout",
@@ -622,7 +622,7 @@ exports[`caracterização — checkout do fluxo SIMPLES sem resultado → 422; j
         "data": {
           "accuracy": 12,
           "at": 2026-10-20T14:59:00.000Z,
-          "client_id": "0fd8b29a-5f41-43ba-a9de-421cff5b8101",
+          "client_id": "<uuid>",
           "clock_adjusted": false,
           "journey_id": "j1",
           "kind": "checkout",
@@ -719,7 +719,7 @@ exports[`caracterização — checkout do fluxo SIMPLES sem resultado → 422; j
         "data": {
           "accuracy": 12,
           "at": 2026-10-20T14:59:00.000Z,
-          "client_id": "2e8c8b93-bce4-464a-9560-850984f48482",
+          "client_id": "<uuid>",
           "clock_adjusted": false,
           "journey_id": "j1",
           "kind": "checkout",
@@ -827,7 +827,7 @@ exports[`caracterização — checkout do fluxo SIMPLES sem resultado → 422; j
         "data": {
           "accuracy": 12,
           "at": 2026-10-20T14:59:00.000Z,
-          "client_id": "1fb28d93-c617-4c57-9394-a26c69b7c248",
+          "client_id": "<uuid>",
           "clock_adjusted": false,
           "journey_id": "j1",
           "kind": "checkout",
@@ -968,7 +968,7 @@ exports[`caracterização — rascunho do fluxo COMPLETO com o corpo real do web
     "photo_bytes",
     "possible_dup",
   ],
-  "dto": AnswersDto {
+  "dto": {
     "channel_other": null,
     "channels": [],
     "contact_phone": null,
@@ -1059,7 +1059,7 @@ exports[`caracterização — rascunho do fluxo COMPLETO com o corpo real do web
     "photo_bytes",
     "possible_dup",
   ],
-  "dto": AnswersDto {
+  "dto": {
     "channel_other": null,
     "channels": [
       "Grupos de WhatsApp",
@@ -1158,11 +1158,10 @@ exports[`caracterização — rascunho do fluxo COMPLETO com o corpo real do web
     "photo_bytes",
     "possible_dup",
   ],
-  "dto": AnswersDto {
+  "dto": {
     "channel_other": null,
     "channels": [],
     "contact_phone": null,
-    "distance_note": undefined,
     "followup_date": null,
     "followup_time": null,
     "followup_what": null,
@@ -1177,7 +1176,6 @@ exports[`caracterização — rascunho do fluxo COMPLETO com o corpo real do web
     "outcome": "conversa",
     "refusal_note": null,
     "refusal_reason": null,
-    "result": undefined,
     "vaga_roles": [],
   },
   "gravado": {
@@ -1248,7 +1246,7 @@ exports[`caracterização — rascunho do fluxo COMPLETO com o corpo real do web
     "photo_bytes",
     "possible_dup",
   ],
-  "dto": AnswersDto {
+  "dto": {
     "channel_other": null,
     "channels": [],
     "contact_phone": null,
@@ -1339,7 +1337,7 @@ exports[`caracterização — rascunho do fluxo COMPLETO com o corpo real do web
     "photo_bytes",
     "possible_dup",
   ],
-  "dto": AnswersDto {
+  "dto": {
     "channel_other": null,
     "channels": [
       "Grupos de WhatsApp",
@@ -1438,11 +1436,10 @@ exports[`caracterização — rascunho do fluxo COMPLETO com o corpo real do web
     "photo_bytes",
     "possible_dup",
   ],
-  "dto": AnswersDto {
+  "dto": {
     "channel_other": null,
     "channels": [],
     "contact_phone": null,
-    "distance_note": undefined,
     "followup_date": null,
     "followup_time": null,
     "followup_what": null,
@@ -1457,7 +1454,6 @@ exports[`caracterização — rascunho do fluxo COMPLETO com o corpo real do web
     "outcome": "conversa",
     "refusal_note": null,
     "refusal_reason": null,
-    "result": undefined,
     "vaga_roles": [],
   },
   "gravado": {
@@ -1528,7 +1524,7 @@ exports[`caracterização — rascunho do fluxo SIMPLES com o corpo real do web 
     "photo_bytes",
     "possible_dup",
   ],
-  "dto": AnswersDto {
+  "dto": {
     "channel_other": null,
     "channels": [],
     "contact_phone": null,
@@ -1536,15 +1532,12 @@ exports[`caracterização — rascunho do fluxo SIMPLES com o corpo real do web 
     "followup_date": null,
     "followup_time": null,
     "followup_what": null,
-    "freela_status": undefined,
     "freelas_per_week": null,
     "interest": null,
     "interlocutor_name": null,
     "interlocutor_role": null,
-    "needs_followup": undefined,
     "notes": null,
     "open_vagas": null,
-    "outcome": undefined,
     "refusal_note": null,
     "refusal_reason": null,
     "result": "fechado",
@@ -1614,23 +1607,19 @@ exports[`caracterização — rascunho do fluxo SIMPLES com o corpo real do web 
     "photo_bytes",
     "possible_dup",
   ],
-  "dto": AnswersDto {
+  "dto": {
     "channel_other": null,
     "channels": [],
     "contact_phone": null,
-    "distance_note": undefined,
     "followup_date": null,
     "followup_time": null,
     "followup_what": null,
-    "freela_status": undefined,
     "freelas_per_week": null,
     "interest": null,
     "interlocutor_name": null,
     "interlocutor_role": null,
-    "needs_followup": undefined,
     "notes": null,
     "open_vagas": null,
-    "outcome": undefined,
     "refusal_note": null,
     "refusal_reason": null,
     "result": "ja_usa",
@@ -1699,7 +1688,7 @@ exports[`caracterização — rascunho do fluxo SIMPLES com o corpo real do web 
     "photo_bytes",
     "possible_dup",
   ],
-  "dto": AnswersDto {
+  "dto": {
     "channel_other": null,
     "channels": [],
     "contact_phone": null,
@@ -1707,15 +1696,12 @@ exports[`caracterização — rascunho do fluxo SIMPLES com o corpo real do web 
     "followup_date": "2026-10-21",
     "followup_time": null,
     "followup_what": "Retornar",
-    "freela_status": undefined,
     "freelas_per_week": null,
     "interest": "medio",
     "interlocutor_name": null,
     "interlocutor_role": null,
-    "needs_followup": undefined,
     "notes": "Volta amanhã",
     "open_vagas": null,
-    "outcome": undefined,
     "refusal_note": null,
     "refusal_reason": null,
     "result": "retorno",
@@ -1786,7 +1772,7 @@ exports[`caracterização — rascunho do fluxo SIMPLES com o corpo real do web 
     "photo_bytes",
     "possible_dup",
   ],
-  "dto": AnswersDto {
+  "dto": {
     "channel_other": null,
     "channels": [],
     "contact_phone": "(31) 98888-7777",
@@ -1794,15 +1780,12 @@ exports[`caracterização — rascunho do fluxo SIMPLES com o corpo real do web 
     "followup_date": "2026-10-21",
     "followup_time": "09:00",
     "followup_what": null,
-    "freela_status": undefined,
     "freelas_per_week": null,
     "interest": null,
     "interlocutor_name": "Rui",
     "interlocutor_role": "gerente",
-    "needs_followup": undefined,
     "notes": null,
     "open_vagas": null,
-    "outcome": undefined,
     "refusal_note": null,
     "refusal_reason": null,
     "result": "retorno",
@@ -1872,7 +1855,7 @@ exports[`caracterização — rascunho do fluxo SIMPLES com o corpo real do web 
     "photo_bytes",
     "possible_dup",
   ],
-  "dto": AnswersDto {
+  "dto": {
     "channel_other": null,
     "channels": [],
     "contact_phone": null,
@@ -1880,15 +1863,12 @@ exports[`caracterização — rascunho do fluxo SIMPLES com o corpo real do web 
     "followup_date": null,
     "followup_time": null,
     "followup_what": null,
-    "freela_status": undefined,
     "freelas_per_week": null,
     "interest": null,
     "interlocutor_name": null,
     "interlocutor_role": null,
-    "needs_followup": undefined,
     "notes": null,
     "open_vagas": null,
-    "outcome": undefined,
     "refusal_note": null,
     "refusal_reason": "preco",
     "result": "sem_interesse",

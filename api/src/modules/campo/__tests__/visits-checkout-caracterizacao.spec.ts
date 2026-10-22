@@ -114,16 +114,26 @@ function servico(p: ReturnType<typeof fakePrisma>, modoLigado: boolean) {
 const gravado = (p: ReturnType<typeof fakePrisma>) => ({
   update: p.field_visits.update.mock.calls.map((c) => c[0]),
   updateMany: p.field_visits.updateMany.mock.calls.map((c) => c[0]),
-  ponto: p.field_points.create.mock.calls.map((c) => c[0]),
+  // O `client_id` do ponto da trilha é um `randomUUID()` novo a cada chamada: fica marcado, não congelado.
+  ponto: p.field_points.create.mock.calls.map((c) => {
+    const a = c[0] as { data: Record<string, unknown> };
+    return { ...a, data: { ...a.data, client_id: typeof a.data.client_id === 'string' ? '<uuid>' : a.data.client_id } };
+  }),
   lead: p.leads.update.mock.calls.map((c) => c[0]),
   evento: p.lead_events.create.mock.calls.map((c) => c[0]),
 });
+
+/**
+ * O DTO validado SEM as chaves `undefined`: a instância do `class-transformer` declara toda propriedade da classe (um campo novo opcional
+ * apareceria como `undefined` sem mudar comportamento nenhum); o que importa é o que foi ACEITO e o que o serviço gravou.
+ */
+const aceito = (o: object) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
 
 async function rascunho(linha: Record<string, unknown>, body: unknown, modoLigado: boolean) {
   const dto = await corpo(AnswersDto, body);
   const p = fakePrisma(linha);
   const view = await servico(p, modoLigado).saveAnswers(C, CLIENT, dto, AGORA);
-  return { dto, gravado: gravado(p), missing: view.missing, chaves: Object.keys(view).sort() };
+  return { dto: aceito(dto), gravado: gravado(p), missing: view.missing, chaves: Object.keys(view).sort() };
 }
 
 async function checkout(linha: Record<string, unknown>, modoLigado: boolean) {
