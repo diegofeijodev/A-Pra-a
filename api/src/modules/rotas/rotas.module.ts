@@ -5,7 +5,16 @@ import { RotasConfigService } from './rotas-config.service';
 import { RotasConfigController, RotasEquipeController } from './rotas-equipe.controller';
 import { RotasEquipeService } from './rotas-equipe.service';
 import { ModoCampoService } from './modo-campo.service';
-import { FLUXO_SELECT_LIGADO, fluxoSelectLigadoProvider, LOVABLE_A_FLAGS, lovableAFlagsProvider, ROTAS_LIGADAS, rotasLigadasProvider } from './rotas.tokens';
+import {
+  FLUXO_SELECT_LIGADO,
+  fluxoSelectLigadoProvider,
+  LOVABLE_A_FLAGS,
+  LOVABLE_B_FLAGS,
+  lovableAFlagsProvider,
+  lovableBFlagsProvider,
+  ROTAS_LIGADAS,
+  rotasLigadasProvider,
+} from './rotas.tokens';
 
 /**
  * Roteiro do dia (F3, contrato §23). Folha: não importa o CampoModule — é o CampoModule que
@@ -13,7 +22,7 @@ import { FLUXO_SELECT_LIGADO, fluxoSelectLigadoProvider, LOVABLE_A_FLAGS, lovabl
  */
 @Module({
   controllers: [RotasCampoController, RotasEquipeController, RotasConfigController],
-  providers: [RotasConfigService, RotasCampoService, RotasEquipeService, rotasLigadasProvider, fluxoSelectLigadoProvider, lovableAFlagsProvider, ModoCampoService],
-  exports: [RotasCampoService, RotasConfigService, ROTAS_LIGADAS, FLUXO_SELECT_LIGADO, LOVABLE_A_FLAGS, ModoCampoService],
+  providers: [RotasConfigService, RotasCampoService, RotasEquipeService, rotasLigadasProvider, fluxoSelectLigadoProvider, lovableAFlagsProvider, lovableBFlagsProvider, ModoCampoService],
+  exports: [RotasCampoService, RotasConfigService, ROTAS_LIGADAS, FLUXO_SELECT_LIGADO, LOVABLE_A_FLAGS, LOVABLE_B_FLAGS, ModoCampoService],
 })
 export class RotasModule {}

@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, Logger, Optional } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { CampoConsultant } from '../../common/auth/campo-consultant';
 import { PrismaService } from '../../common/database/prisma.service';
@@ -11,6 +11,7 @@ import { COM_LEAD, journeyView, visitView, type JourneyView, type VisitView } fr
 import type { PontosDto, PosicaoDto, StartJourneyDto } from './dto/campo.dto';
 import { RotasCampoService } from '../rotas/rotas-campo.service';
 import { RotasConfigService } from '../rotas/rotas-config.service';
+import { LOVABLE_B_FLAGS, type FlagsLovableB } from '../rotas/rotas.tokens';
 import { violouUnico } from './prisma-errors';
 import { SignupsLeituraService, type Contagem } from './signups-leitura.service';
 
@@ -55,6 +56,7 @@ export class JourneysService {
     @Optional() private readonly configs?: RotasConfigService,
     @Optional() private readonly signups?: SignupsLeituraService,
     @Optional() private readonly modo?: ModoCampoService,
+    @Optional() @Inject(LOVABLE_B_FLAGS) private readonly lovB?: FlagsLovableB,
   ) {}
 
   /** Meta do dia do consultor. A leitura do Hoje nunca falha por causa dela. */
@@ -108,7 +110,7 @@ export class JourneysService {
     ]);
     // Modo do chefe §31: com a flag desligada nenhuma visita é `simples`, então o padrão basta (e nada é lido a mais).
     const modoCfg = this.modo?.ligado ? await this.modo.config() : CONFIG_MODO_DESLIGADO;
-    const views = visitas.map((v) => visitView(v, hoje, modoCfg));
+    const views = visitas.map((v) => visitView(v, hoje, modoCfg, { checklist: this.lovB?.checklist === true }));
     return {
       day: hoje,
       journey: aberta ? journeyView(aberta) : null,

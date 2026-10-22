@@ -38,6 +38,21 @@ export interface FlagsLovableA {
 }
 export const LOVABLE_A_FLAGS = Symbol('LOVABLE_A_FLAGS');
 
+/** Restante da Lovable, lote B (contrato §35, §37): checklist da visita e intervalo da jornada. */
+export interface FlagsLovableB {
+  checklist: boolean;
+  breaks: boolean;
+}
+export const LOVABLE_B_FLAGS = Symbol('LOVABLE_B_FLAGS');
+
+export const lovableBFlagsProvider: Provider = {
+  provide: LOVABLE_B_FLAGS,
+  useFactory: (): FlagsLovableB => {
+    const e = validateEnv(process.env);
+    return { checklist: e.FIELD_CHECKLIST_ENABLED === 'true', breaks: e.FIELD_BREAKS_ENABLED === 'true' };
+  },
+};
+
 export const lovableAFlagsProvider: Provider = {
   provide: LOVABLE_A_FLAGS,
   useFactory: (): FlagsLovableA => {

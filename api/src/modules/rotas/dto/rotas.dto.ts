@@ -71,6 +71,11 @@ export class ConfigRotaDto {
   @IsOptional() @IsInt() @Min(15) @Max(480) nota_intervalo_alerta_min?: number | null;
   @IsOptional() @IsIn(['intervalo', 'duracao']) painel_tempo_medio?: string | null;
   @IsOptional() @IsInt() @Min(10) @Max(480) painel_gap_max_min?: number | null;
+  // Lote B (contrato §35.2): checklist da visita. A forma de cada etapa ({ id?, text }) é conferida no domínio (`prepararItensChecklist`).
+  @IsOptional() @IsArray() @ArrayMaxSize(20) checklist_items?: unknown[] | null;
+  @IsOptional() @IsIn(['nao', 'todas']) checklist_obrigatorio?: string | null;
+  @IsOptional() @IsArray() @ArrayMaxSize(2) @IsIn(['simples', 'completo'], { each: true }) checklist_fluxos?: string[] | null;
+  @IsOptional() @IsBoolean() checklist_aberto?: boolean | null;
 }
 
 export class PosicaoRotaDto {

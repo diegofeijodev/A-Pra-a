@@ -1,5 +1,6 @@
 /** Projeções do wire (contrato §20) — uma só para o consultor e para a equipe. */
 import { faltando, type RespostasVisita } from '../../domain/campo-rules';
+import { lerFotoChecklist, pendenciasChecklist, viewDoChecklist } from '../../domain/checklist-rules';
 import { CONFIG_MODO_PADRAO, faltandoSimples, type ConfigModo } from '../../domain/modo-campo-rules';
 
 export interface JourneyView {
@@ -85,6 +86,8 @@ export interface VisitRow extends RespostasVisita {
   clock_adjusted: boolean;
   /** Modo do chefe §31.2: fluxo gravado na abertura. Ausente na linha (testes/antigas) = `completo`. */
   flow?: string;
+  /** Lote B §35.3: foto do checklist (JSON). Ausente na linha (testes/antigas) = sem foto. */
+  checklist?: unknown;
   lead: { name: string; possible_dup: boolean };
 }
 
@@ -111,6 +114,8 @@ export interface VisitView {
   flow: string;
   answers: RespostasVisita;
   missing: string[];
+  /** Lote B §35.6: só com `FIELD_CHECKLIST_ENABLED` e foto gravada (fora de `answers`: o web reenvia `answers` no rascunho). */
+  checklist?: ReturnType<typeof viewDoChecklist>;
 }
 
 export function respostasDe(v: RespostasVisita): RespostasVisita {
@@ -140,9 +145,16 @@ export function respostasDe(v: RespostasVisita): RespostasVisita {
   };
 }
 
-export function visitView(v: VisitRow, hoje: string, modo: ConfigModo = CONFIG_MODO_PADRAO): VisitView {
+/** Opções do lote B: com o checklist desligado a projeção é a de hoje, byte a byte. */
+export interface OpcoesView {
+  checklist?: boolean;
+}
+
+export function visitView(v: VisitRow, hoje: string, modo: ConfigModo = CONFIG_MODO_PADRAO, opcoes: OpcoesView = {}): VisitView {
   const answers = respostasDe(v);
-  return {
+  const foto = opcoes.checklist ? lerFotoChecklist(v.checklist) : null;
+  const fechada = !!v.checkout_at || v.auto_closed;
+  const view: VisitView = {
     id: v.id,
     client_id: v.client_id,
     journey_id: v.journey_id,
@@ -164,11 +176,16 @@ export function visitView(v: VisitRow, hoje: string, modo: ConfigModo = CONFIG_M
     flow: v.flow ?? 'completo',
     answers,
     // Visita fechada não "falta" nada: a lista é para o botão de checkout. A conta segue o fluxo da visita (§31.2).
-    missing:
-      v.checkout_at || v.auto_closed
-        ? []
-        : v.flow === 'simples'
-          ? faltandoSimples(answers, hoje, modo, { far_from_place: v.far_from_place })
-          : faltando(answers, hoje),
+    missing: fechada
+      ? []
+      : [
+          ...(v.flow === 'simples'
+            ? faltandoSimples(answers, hoje, modo, { far_from_place: v.far_from_place })
+            : faltando(answers, hoje)),
+          // §35.5: a obrigatoriedade vem da FOTO do check-in (e só com a flag ligada).
+          ...pendenciasChecklist(foto),
+        ],
   };
+  if (foto) view.checklist = viewDoChecklist(foto);
+  return view;
 }

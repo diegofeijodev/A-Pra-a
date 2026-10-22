@@ -6,7 +6,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CandidatosQueryDto, ConfigRotaDto, MontarRotaDto, OrdenarRotaDto, ReotimizarEquipeDto, RotasQueryDto } from './dto/rotas.dto';
 import { RotasConfigService } from './rotas-config.service';
 import { RotasEquipeService } from './rotas-equipe.service';
-import { LOVABLE_A_FLAGS, type FlagsLovableA } from './rotas.tokens';
+import { LOVABLE_A_FLAGS, LOVABLE_B_FLAGS, type FlagsLovableA, type FlagsLovableB } from './rotas.tokens';
 
 /**
  * Roteiros vistos e montados pela equipe (§23.4). Leitura: equipe. Escrita: só admin.
@@ -61,6 +61,7 @@ export class RotasConfigController {
   constructor(
     private readonly config: RotasConfigService,
     @Optional() @Inject(LOVABLE_A_FLAGS) private readonly flags?: FlagsLovableA,
+    @Optional() @Inject(LOVABLE_B_FLAGS) private readonly flagsB?: FlagsLovableB,
   ) {}
 
   /** `features` (contrato §33.1): o web mostra os links novos sem sondar rota desligada. Só no GET. */
@@ -68,7 +69,14 @@ export class RotasConfigController {
   async get() {
     return {
       ...(await this.config.view()),
-      features: { dashboard: this.flags?.dashboard ?? false, day_summary: this.flags?.day_summary ?? false, map_pins: this.flags?.map_pins ?? false },
+      features: {
+        dashboard: this.flags?.dashboard ?? false,
+        day_summary: this.flags?.day_summary ?? false,
+        map_pins: this.flags?.map_pins ?? false,
+        // Lote B (contrato §35.6, §37.6).
+        checklist: this.flagsB?.checklist ?? false,
+        breaks: this.flagsB?.breaks ?? false,
+      },
     };
   }
 

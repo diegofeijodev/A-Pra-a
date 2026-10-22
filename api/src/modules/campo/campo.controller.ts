@@ -20,7 +20,8 @@ import { CampoConsultant } from '../../common/auth/campo-consultant';
 import { AllowPendingPassword, CampoRoute } from '../../common/decorators/campo-route.decorator';
 import { CurrentConsultant } from '../../common/decorators/current-consultant.decorator';
 import { ModoCampoService } from '../rotas/modo-campo.service';
-import { LOVABLE_A_FLAGS, type FlagsLovableA } from '../rotas/rotas.tokens';
+import { RotasConfigService } from '../rotas/rotas-config.service';
+import { LOVABLE_A_FLAGS, LOVABLE_B_FLAGS, type FlagsLovableA, type FlagsLovableB } from '../rotas/rotas.tokens';
 import { CampoAuthService } from './campo-auth.service';
 import { COMPANY_SIGNUP_LIGADO } from './company-signup.tokens';
 import { AnswersDto, PlacesQueryDto, PontosDto, PosicaoDto, SimilarQueryDto, StartJourneyDto } from './dto/campo.dto';
@@ -49,6 +50,8 @@ export class CampoController {
     @Optional() @Inject(PAYOUTS_OPCOES) private readonly payouts?: OpcoesPayouts,
     @Optional() private readonly modo?: ModoCampoService,
     @Optional() @Inject(LOVABLE_A_FLAGS) private readonly lovable?: FlagsLovableA,
+    @Optional() @Inject(LOVABLE_B_FLAGS) private readonly lovB?: FlagsLovableB,
+    @Optional() private readonly configs?: RotasConfigService,
   ) {}
 
   @AllowPendingPassword()
@@ -60,6 +63,8 @@ export class CampoController {
     const ligado = this.modo?.ligado ?? false;
     const visit_flow = this.modo ? await this.modo.fluxoDoConsultor(c.id) : 'completo';
     const cfg = ligado && this.modo ? await this.modo.config() : null;
+    // Lote B (contrato §35.6/§37.6): a lista do checklist e o intervalo para a tela funcionar sem sinal; só com a flag ligada.
+    const ck = this.lovB?.checklist && this.configs ? await this.configs.checklist() : null;
     return {
       ...(await this.auth.me(c.id)),
       visit_flow,
@@ -74,6 +79,16 @@ export class CampoController {
             },
           }
         : {}),
+      ...(ck
+        ? {
+            checklist_config: {
+              items: ck.checklist_items,
+              obrigatorio: ck.checklist_obrigatorio,
+              fluxos: ck.checklist_fluxos,
+              aberto: ck.checklist_aberto,
+            },
+          }
+        : {}),
       features: {
         company_signup: this.signupLigado,
         earnings: this.earnings?.ligado ?? false,
@@ -83,6 +98,9 @@ export class CampoController {
         // Restante da Lovable, lote A (contrato §33.1): resumo do dia e mapa de pinos.
         day_summary: this.lovable?.day_summary ?? false,
         map_pins: this.lovable?.map_pins ?? false,
+        // Lote B (contrato §35.6, §37.6): checklist da visita e intervalo.
+        checklist: this.lovB?.checklist ?? false,
+        breaks: this.lovB?.breaks ?? false,
       },
     };
   }

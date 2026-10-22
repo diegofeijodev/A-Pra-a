@@ -27,6 +27,13 @@ import {
 } from '../../domain/campo-rules';
 import { rotuloMotivoRecusa } from '../../domain/catalog/refusal';
 import {
+  fotografarChecklist,
+  lerFotoChecklist,
+  mesclarMarcas,
+  pendenciasChecklist,
+  resumoChecklist,
+} from '../../domain/checklist-rules';
+import {
   CONFIG_MODO_PADRAO,
   derivarDoResultado,
   ehResultadoSimples,
@@ -49,7 +56,7 @@ import {
 } from './photo-storage';
 import { ModoCampoService } from '../rotas/modo-campo.service';
 import { RotasConfigService } from '../rotas/rotas-config.service';
-import { ROTAS_LIGADAS } from '../rotas/rotas.tokens';
+import { LOVABLE_B_FLAGS, ROTAS_LIGADAS, type FlagsLovableB } from '../rotas/rotas.tokens';
 import { PlacesService } from './places.service';
 import { violouUnico } from './prisma-errors';
 
@@ -70,6 +77,11 @@ const fluxoDiferente = () =>
     message: 'Este envio é de outro modo de visita. Atualize o aplicativo e abra a visita de novo.',
   });
 const texto = (s: string | null | undefined): string | null => (s == null ? null : s.trim() || null);
+const checklistDesligado = () =>
+  new UnprocessableEntityException({
+    code: 'CHECKLIST_DISABLED',
+    message: 'O roteiro da conversa não está ligado neste servidor. Atualize o aplicativo e abra a visita de novo.',
+  });
 
 @Injectable()
 export class VisitsService {
@@ -82,7 +94,13 @@ export class VisitsService {
     @Optional() private readonly modo?: ModoCampoService,
     @Optional() private readonly declared?: DeclaredSignupsService,
     @Optional() private readonly configs?: RotasConfigService,
+    @Optional() @Inject(LOVABLE_B_FLAGS) private readonly lovB?: FlagsLovableB,
   ) {}
+
+  /** Lote B §35: checklist da visita. Desligado = nada novo no wire (nem foto, nem cobrança). */
+  private get checklistLigado(): boolean {
+    return this.lovB?.checklist === true;
+  }
 
   /** Parâmetros do modo do chefe (§31.3); flag desligada = nenhuma visita é `simples`, o padrão basta. */
   private cfgModo() {
@@ -170,6 +188,8 @@ export class VisitsService {
     const flow = this.modo?.ligado
       ? fluxoDoCheckin({ ligado: true, resolvido: await this.modo.fluxoDoConsultor(c.id), dica: dto.flow })
       : 'completo';
+    // Lote B §35.3: a lista do checklist é fotografada com a configuração DESTE instante (a foto nunca muda depois).
+    const fotoChecklist = this.checklistLigado && this.configs ? fotografarChecklist(await this.configs.checklist(), flow) : null;
 
     // O id da visita existe ANTES da foto: a chave leva o id.
     const visitId = randomUUID();
@@ -196,6 +216,7 @@ export class VisitsService {
           photo_bytes: foto.length,
           clock_adjusted: ajustado,
           ...(flow === 'simples' ? { flow } : {}),
+          ...(fotoChecklist ? { checklist: fotoChecklist as unknown as Prisma.InputJsonValue } : {}),
         },
       }),
     );
@@ -258,6 +279,8 @@ export class VisitsService {
     // Contrato §31.2: `result` só existe no fluxo simples; o questionário antigo vale nos dois (no simples é "Mais detalhes").
     // `result: null` NÃO conta: o rascunho do questionário completo reenvia o estado inteiro da tela (inclui `result: null`).
     if (dto.result != null && flow !== 'simples') throw fluxoDiferente();
+    // Lote B §35.4: `checklist: null` (ou ausente) é ignorado; valor com a flag desligada é recusado sem gravar nada.
+    if (dto.checklist != null && !this.checklistLigado) throw checklistDesligado();
     const data: Prisma.field_visitsUpdateInput = {};
     if (dto.interlocutor_name !== undefined) data.interlocutor_name = texto(dto.interlocutor_name);
     if (dto.interlocutor_role !== undefined) data.interlocutor_role = dto.interlocutor_role;
@@ -275,6 +298,11 @@ export class VisitsService {
     if (dto.notes !== undefined) data.notes = texto(dto.notes);
     if (dto.outcome !== undefined) data.outcome = dto.outcome;
     if (dto.distance_note !== undefined) data.distance_note = texto(dto.distance_note);
+    if (dto.checklist != null) {
+      // Marcas sobre a FOTO: id desconhecido é ignorado; visita sem foto ignora o campo.
+      const foto = lerFotoChecklist(v.checklist);
+      if (foto) data.checklist = mesclarMarcas(foto, dto.checklist) as unknown as Prisma.InputJsonValue;
+    }
     if (dto.contact_phone !== undefined) {
       const tel = normalizarTelefoneContato(dto.contact_phone);
       // A mensagem NÃO repete o número (dado pessoal de terceiro) e nada disso vai para log.
@@ -317,7 +345,7 @@ export class VisitsService {
   async checkout(c: CampoConsultant, ref: string, dto: PosicaoDto, agora = new Date()): Promise<VisitView> {
     const v = await this.daVisita(c.id, ref);
     // Reenvio da fila (a resposta se perdeu): devolve o que já foi feito.
-    if (v.checkout_at) return visitView(v, todaySp(agora), await this.cfgModo());
+    if (v.checkout_at) return visitView(v, todaySp(agora), await this.cfgModo(), this.opcoesView());
     if (v.auto_closed) throw autoFechada();
     const respostas = respostasDe(v);
     // Contrato §31.2: o checkout segue o fluxo gravado na ABERTURA da visita, não a configuração de agora.
@@ -327,9 +355,14 @@ export class VisitsService {
     // sincronizado depois da meia-noite não pode reprovar o retorno marcado
     // para o dia da própria visita.
     const { at, ajustado } = carimbo(dto.at, agora, v.checkin_at);
-    const falta = simples
-      ? faltandoSimples(respostas, todaySp(at), await this.cfgModo(), { far_from_place: v.far_from_place })
-      : faltando(respostas, todaySp(at));
+    // Lote B §35.5: o checklist só cobra com a flag ligada e a FOTO dizendo `todas` (nunca a configuração de agora).
+    const fotoChecklist = this.checklistLigado ? lerFotoChecklist(v.checklist) : null;
+    const falta = [
+      ...(simples
+        ? faltandoSimples(respostas, todaySp(at), await this.cfgModo(), { far_from_place: v.far_from_place })
+        : faltando(respostas, todaySp(at))),
+      ...pendenciasChecklist(fotoChecklist),
+    ];
     if (falta.length > 0) {
       throw new UnprocessableEntityException({
         code: 'ANSWERS_INCOMPLETE',
@@ -421,7 +454,9 @@ export class VisitsService {
           // `visit` (e não "visita"): é o tipo do catálogo — rótulo "Visita" e conta como contato.
           // Fechado: `note` (não conta como contato).
           kind: fechado ? 'note' : 'visit',
-          text: simples ? resumoVisitaSimples(respostas, rotuloMotivoRecusa) : resumoVisita(respostas),
+          text:
+            (simples ? resumoVisitaSimples(respostas, rotuloMotivoRecusa) : resumoVisita(respostas)) +
+            (fotoChecklist ? ` ${resumoChecklist(fotoChecklist)}` : ''),
           stage_to: mudou ? estagio : null,
         },
       });
@@ -483,13 +518,17 @@ export class VisitsService {
 
   private async porId(id: string, agora: Date): Promise<VisitView> {
     const v = await this.prisma.field_visits.findUniqueOrThrow({ where: { id }, include: COM_LEAD });
-    return visitView(v, todaySp(agora), await this.cfgModo());
+    return visitView(v, todaySp(agora), await this.cfgModo(), this.opcoesView());
+  }
+
+  private opcoesView() {
+    return { checklist: this.checklistLigado };
   }
 
   private async daMesmaPessoa(v: VisitRow & { consultant_id: string }, c: CampoConsultant, agora: Date): Promise<VisitView> {
     if (v.consultant_id !== c.id) {
       throw new ConflictException({ code: 'CLIENT_ID_IN_USE', message: 'Identificador de envio já usado.' });
     }
-    return visitView(v, todaySp(agora), await this.cfgModo());
+    return visitView(v, todaySp(agora), await this.cfgModo(), this.opcoesView());
   }
 }

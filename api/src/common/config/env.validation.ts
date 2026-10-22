@@ -86,6 +86,9 @@ const envBase = z.object({
   FIELD_DASHBOARD_ENABLED: z.string().default('false'),
   FIELD_DAY_SUMMARY_ENABLED: z.string().default('false'),
   FIELD_MAP_PINS_ENABLED: z.string().default('false'),
+  // Restante da Lovable, lote B (contrato §35/§37). Desligadas = nada novo no wire e rotas do intervalo 404.
+  FIELD_CHECKLIST_ENABLED: z.string().default('false'),
+  FIELD_BREAKS_ENABLED: z.string().default('false'),
 
   SWAGGER_ENABLED: z.string().optional(),
 

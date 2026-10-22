@@ -4,6 +4,7 @@ import { CONFIG_ALERTAS_PADRAO } from '../../../domain/alerta-rules';
 import { CONFIG_MODO_PADRAO, PRESETS_MODO } from '../../../domain/modo-campo-rules';
 import { CONFIG_ROTA_PADRAO } from '../../../domain/rota-rules';
 import { RotasConfigService } from '../rotas-config.service';
+import { CONFIG_CHECKLIST } from '../../../domain/checklist-rules';
 import { AGORA, fakePrisma } from './fixtures';
 
 const ADMIN: AuthUser = { id: '00000000-0000-4000-8000-0000000000dd', email: 'a@a.com', name: 'A', is_admin: true };
@@ -13,7 +14,8 @@ describe('RotasConfigService', () => {
   it('sem linha no banco: devolve os padrões e nenhum autor', async () => {
     const s = new RotasConfigService(fakePrisma() as unknown as PrismaService);
     // Lote A da Lovable: + raio_checkin_m (§23.1) e as chaves do resumo do dia e do painel (§33.2), aditivas.
-    expect(await s.view()).toEqual({ ...CONFIG_ROTA_PADRAO, ...CONFIG_ALERTAS_PADRAO, ...CONFIG_MODO_PADRAO, raio_checkin_m: 200, ui_resumo_dia: 'nota', nota_peso_rota: 7, nota_peso_conversao: 3, nota_meta_conversao_pct: 30, nota_intervalo_alerta_min: 75, painel_tempo_medio: 'intervalo', painel_gap_max_min: 120, presets: PRESETS_MODO, confirmation_rule: 'activated', atualizado_por: null, atualizado_em: null });
+    // Lote B: + as quatro chaves do checklist (§35.2), aditivas.
+    expect(await s.view()).toEqual({ ...CONFIG_ROTA_PADRAO, ...CONFIG_ALERTAS_PADRAO, ...CONFIG_MODO_PADRAO, ...CONFIG_CHECKLIST.padrao, raio_checkin_m: 200, ui_resumo_dia: 'nota', nota_peso_rota: 7, nota_peso_conversao: 3, nota_meta_conversao_pct: 30, nota_intervalo_alerta_min: 75, painel_tempo_medio: 'intervalo', painel_gap_max_min: 120, presets: PRESETS_MODO, confirmation_rule: 'activated', atualizado_por: null, atualizado_em: null });
   });
 
   it('PUT parcial: mescla, grava quem/quando e preserva chaves de outras fases', async () => {
@@ -152,5 +154,26 @@ describe('RotasConfigService', () => {
       expect(p2.app_settings.upsert).not.toHaveBeenCalled();
       expect(await new RotasConfigService(fakePrisma() as unknown as PrismaService).painel()).toEqual({ painel_tempo_medio: 'intervalo', painel_gap_max_min: 120 });
     });
+  });
+});
+
+describe('RotasConfigService — checklist da visita (lote B, §35.2)', () => {
+  it('PUT: etapa nova ganha id do servidor, a enviada mantém; só as chaves enviadas são gravadas; null = ausente', async () => {
+    const p = fakePrisma();
+    const s = new RotasConfigService(p as unknown as PrismaService);
+    await s.atualizar({ checklist_items: [{ id: 'apresentacao', text: ' Oi ' }, { text: 'Nova' }], checklist_obrigatorio: null } as never, ADMIN, AGORA);
+    const gravado = p.app_settings.upsert.mock.calls[0][0].update.field_config;
+    expect(gravado.checklist_items[0]).toEqual({ id: 'apresentacao', text: 'Oi' });
+    expect(gravado.checklist_items[1].id).toMatch(/^etapa_[0-9a-f]{8}$/);
+    expect(gravado).not.toHaveProperty('checklist_obrigatorio');
+    expect(gravado).not.toHaveProperty('checklist_fluxos');
+  });
+  it('PUT inválido (lista vazia, id repetido, fluxo estranho) → 400 com o campo e nada gravado', async () => {
+    for (const ruim of [{ checklist_items: [] }, { checklist_items: [{ id: 'a', text: 'a' }, { id: 'a', text: 'b' }] }, { checklist_fluxos: ['x'] }]) {
+      const p = fakePrisma();
+      const e = await falha(() => new RotasConfigService(p as unknown as PrismaService).atualizar(ruim as never, ADMIN, AGORA));
+      expect((e as { getStatus: () => number }).getStatus()).toBe(400);
+      expect(p.app_settings.upsert).not.toHaveBeenCalled();
+    }
   });
 });

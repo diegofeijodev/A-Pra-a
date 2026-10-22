@@ -699,6 +699,8 @@ model field_visits {
   flow              String            @default("completo")
   result            String?
   distance_note     String?
+  // Lote B da Lovable (contrato §35.3): foto do checklist no check-in ({ required, items: [{ id, text, done, note }] }).
+  checklist         Json?
   created_at        DateTime          @default(now())
   updated_at        DateTime          @updatedAt
   journey           field_journeys    @relation(fields: [journey_id], references: [id], onDelete: Cascade)

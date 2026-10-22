@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import { AuthUser } from '../../common/auth/auth-user';
 import { PrismaService } from '../../common/database/prisma.service';
 import {
@@ -23,6 +24,7 @@ import {
   type ConfigModo,
 } from '../../domain/modo-campo-rules';
 import { CONFIG_CHECKIN, type ConfigCheckin } from '../../domain/campo-rules';
+import { CONFIG_CHECKLIST, prepararItensChecklist, type ConfigChecklist } from '../../domain/checklist-rules';
 import type { GrupoConfig } from '../../domain/config-grupo';
 import { CONFIG_PAINEL, type ConfigPainel } from '../../domain/painel-rules';
 import { CONFIG_RESUMO_DIA, type ConfigResumoDia } from '../../domain/resumo-dia-rules';
@@ -32,10 +34,18 @@ import type { ConfigRotaDto } from './dto/rotas.dto';
  * Grupos de chaves do restante da Lovable (contrato §23.1 e §33.2). Política comum: `null` no PUT vale como ausente (o web
  * reenvia o que recebeu, lição da S1) e só as chaves ENVIADAS são gravadas (ausente continua = padrão).
  */
-const GRUPOS_NOVOS = [CONFIG_CHECKIN, CONFIG_RESUMO_DIA, CONFIG_PAINEL] as unknown as GrupoConfig<object>[];
+const GRUPOS_NOVOS = [CONFIG_CHECKIN, CONFIG_RESUMO_DIA, CONFIG_PAINEL, CONFIG_CHECKLIST] as unknown as GrupoConfig<object>[];
 const ehChaveNova = (k: string) => GRUPOS_NOVOS.some((g) => g.tem(k));
 
-export interface ConfigView extends ConfigRota, ConfigAlertas, ConfigCadastro, ConfigModo, ConfigCheckin, ConfigResumoDia, ConfigPainel {
+export interface ConfigView
+  extends ConfigRota,
+    ConfigAlertas,
+    ConfigCadastro,
+    ConfigModo,
+    ConfigCheckin,
+    ConfigResumoDia,
+    ConfigPainel,
+    ConfigChecklist {
   /** Os dois botões de preset da tela (contrato §31.3): só preenchem o formulário. */
   presets: { completo: ConfigModo; chefe: ConfigModo };
   atualizado_por: string | null;
@@ -91,9 +101,17 @@ export class RotasConfigService {
     return CONFIG_PAINEL.ler(await this.bruto());
   }
 
+  /** Checklist da visita (contrato §35.2): a foto do check-in usa a configuração do instante. */
+  async checklist(): Promise<ConfigChecklist> {
+    return CONFIG_CHECKLIST.ler(await this.bruto());
+  }
+
   async view(): Promise<ConfigView> {
     const raw = await this.bruto();
-    const novos = Object.assign({}, ...GRUPOS_NOVOS.map((g) => g.ler(raw))) as ConfigCheckin & ConfigResumoDia & ConfigPainel;
+    const novos = Object.assign({}, ...GRUPOS_NOVOS.map((g) => g.ler(raw))) as ConfigCheckin &
+      ConfigResumoDia &
+      ConfigPainel &
+      ConfigChecklist;
     return {
       ...lerConfigRota(raw),
       ...lerConfigAlertas(raw),
@@ -109,6 +127,12 @@ export class RotasConfigService {
   async atualizar(dto: ConfigRotaDto, user: AuthUser, agora = new Date()): Promise<ConfigView> {
     const raw = await this.bruto();
     const parcial = Object.fromEntries(Object.entries(dto).filter(([, v]) => v !== undefined));
+    // Checklist (§35.2): etapa nova ganha `id` do servidor (estável) antes da validação do grupo.
+    if (parcial.checklist_items != null) {
+      const prep = prepararItensChecklist(parcial.checklist_items, () => `etapa_${randomUUID().replace(/-/g, '').slice(0, 8)}`);
+      if (!prep.ok) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: prep.erro });
+      parcial.checklist_items = prep.itens;
+    }
     const chavesAlerta = new Set<string>(CHAVES_CONFIG_ALERTAS);
     const doAlerta = Object.fromEntries(Object.entries(parcial).filter(([k]) => chavesAlerta.has(k)));
     const chavesCadastro = new Set<string>(CHAVES_CONFIG_CADASTRO);

@@ -79,6 +79,15 @@ describe('env — ganho por cadastro declarado (modo do chefe S3, §32.5)', () =
   });
 });
 
+describe('env — restante da Lovable, lote B (§35/§37)', () => {
+  it('checklist e intervalo: desligados por padrão e aceitam true', () => {
+    for (const k of ['FIELD_CHECKLIST_ENABLED', 'FIELD_BREAKS_ENABLED'] as const) {
+      expect(validateEnv(BASE)[k]).toBe('false');
+      expect(validateEnv({ ...BASE, [k]: 'true' })[k]).toBe('true');
+    }
+  });
+});
+
 describe('env — restante da Lovable, lote A (§33/§34)', () => {
   it('painel, resumo do dia e mapa de pinos: desligados por padrão e aceitam true', () => {
     for (const k of ['FIELD_DASHBOARD_ENABLED', 'FIELD_DAY_SUMMARY_ENABLED', 'FIELD_MAP_PINS_ENABLED'] as const) {

@@ -128,6 +128,22 @@ export class CheckinDto extends PosicaoDto {
   flow?: string;
 }
 
+/** Lote B §35.4: marca de uma etapa do checklist (o servidor confere o `id` contra a foto do check-in). */
+export class MarcaChecklistDto {
+  @IsString()
+  @MaxLength(40)
+  id!: string;
+
+  @IsOptional()
+  @IsBoolean()
+  done?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  note?: string | null;
+}
+
 /** Rascunho do questionário: tudo opcional, `null` limpa, SEM inicializador. */
 export class AnswersDto {
   @IsOptional()
@@ -232,6 +248,14 @@ export class AnswersDto {
   @IsString()
   @MaxLength(200)
   distance_note?: string | null;
+
+  /** Lote B §35.4: marcas do checklist; `null`/ausente = ignorado; valor com a flag desligada = `422 CHECKLIST_DISABLED`. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => MarcaChecklistDto)
+  checklist?: MarcaChecklistDto[] | null;
 }
 
 export class PlacesQueryDto {
