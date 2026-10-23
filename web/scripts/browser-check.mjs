@@ -1471,6 +1471,100 @@ try {
   await simplesCtx.close();
 }
 
+// ── 13c. Campo: consultor em DUAS praças (lote F2, contrato §44): só com a flag (descoberta pelo `features` da equipe) ──
+// A praça B e o consultor são deste passo e saem no `finally` (o consultor primeiro: a cascata leva a jornada e o vínculo, e só
+// então a praça pode ser apagada). Criar a praça muda a praça ativa do admin na API: ela é devolvida na hora.
+{
+  const featEquipe = (await api('GET', '/v1/consultores/settings/config').catch(() => ({})))?.features ?? {};
+  if (featEquipe.multi_praca) {
+    const mpCtx = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+      isMobile: true,
+      hasTouch: true,
+      geolocation: POSICAO,
+      permissions: ['geolocation'],
+      locale: 'pt-BR',
+      timezoneId: 'America/Sao_Paulo',
+    });
+    const cm = await mpCtx.newPage();
+    vigiar(cm, 'campo-multi-praca');
+    let pracaB = null;
+    let consultorMpId = null;
+    const ativaAntes = (await api('GET', '/v1/auth/me').catch(() => null))?.user?.active_praca_id ?? null;
+    try {
+      console.log('-- Campo: consultor em duas praças (lote F2) --');
+      const NOME_B = `Praça Check F2 ${CARIMBO}`;
+      pracaB = (await api('POST', '/v1/pracas', { name: NOME_B, city: 'Contagem · MG', start_date: '2026-09-01', end_date: '2026-12-31' })).id;
+      await api('PATCH', '/v1/users/me', { active_praca_id: ativaAntes ?? PRACA });
+      const EMAIL_M = `${CAMPO_PREFIXO}multi-${CARIMBO}@praca.local`;
+      const criadoM = await api('POST', '/v1/consultores', {
+        name: `Consultor Duas Praças ${CARIMBO}`,
+        email: EMAIL_M,
+        phone: '(31) 99999-0002',
+        cpf: cpfValido(Date.now() + 11),
+        praca_id: PRACA,
+        pix_key_type: 'email',
+        pix_key: EMAIL_M,
+      });
+      consultorMpId = criadoM.consultant.id;
+
+      // Equipe (admin): "Praças em que atua" na página do consultor — marca B e salva.
+      await page.goto(`${BASE}/consultores/${consultorMpId}`, { waitUntil: 'networkidle' });
+      await page.getByRole('heading', { name: 'Praças em que atua' }).waitFor({ timeout: 20000 });
+      check('L12: a principal vem marcada e travada', (await page.getByRole('checkbox', { name: /\(principal\)/ }).isDisabled()) && (await page.getByRole('checkbox', { name: /\(principal\)/ }).getAttribute('aria-checked')) === 'true');
+      await page.getByRole('checkbox', { name: NOME_B }).click();
+      await page.getByRole('button', { name: 'Salvar praças' }).click();
+      await page.getByText('Praças salvas.').first().waitFor({ timeout: 20000 });
+      check('L12: a equipe grava as duas praças do consultor', ((await api('GET', `/v1/consultores/${consultorMpId}`)).praca_ids ?? []).length === 2);
+
+      // Campo: a escolha da praça no início (2 praças, sem roteiro), o botão com o nome e o cabeçalho com a praça do dia.
+      await cm.goto(`${BASE}/campo/entrar`, { waitUntil: 'networkidle' });
+      await cm.locator('#email').fill(EMAIL_M);
+      await cm.locator('#senha').fill(criadoM.temp_password);
+      await cm.getByRole('button', { name: 'Entrar', exact: true }).click();
+      await cm.waitForURL('**/campo/senha', { timeout: 20000 });
+      await cm.locator('#atual').fill(criadoM.temp_password);
+      await cm.locator('#nova').fill(CAMPO_SENHA_NOVA);
+      await cm.locator('#confirma').fill(CAMPO_SENHA_NOVA);
+      await cm.getByRole('button', { name: 'Salvar senha', exact: true }).click();
+      await cm.waitForURL(/\/campo$/, { timeout: 20000 });
+      await cm.getByText('Em qual praça você está hoje?').first().waitFor({ timeout: 20000 });
+      check('L12: a escolha mostra as duas praças, a principal marcada', (await cm.getByRole('radio').count()) === 2 && (await cm.getByRole('radio', { checked: true }).count()) === 1);
+      await cm.getByRole('radio', { name: NOME_B }).click();
+      const iniciarEm = cm.getByRole('button', { name: new RegExp(`^Iniciar (o dia|jornada) em ${NOME_B}$`) });
+      check('L12: o botão diz a praça escolhida (1 toque)', (await iniciarEm.count()) === 1);
+      await iniciarEm.click();
+      await cm.getByRole('button', { name: /Encerrar (o dia|jornada)/ }).waitFor({ timeout: 20000 });
+      await cm.waitForFunction(() => !document.body.innerText.toLowerCase().includes('pendente'), null, { timeout: 30000 });
+      const hojeM = await cm.evaluate(async (a) => {
+        const t = JSON.parse(localStorage.getItem('campoSession') ?? 'null')?.access_token;
+        return (await fetch(`${a}/v1/campo/today`, { headers: { Authorization: `Bearer ${t}` } })).json();
+      }, API);
+      check('L12: a jornada no servidor é da praça escolhida', hojeM.journey?.praca_id === pracaB);
+      await cm.waitForFunction((n) => document.body.innerText.includes(`· ${n}`), NOME_B, { timeout: 20000 });
+      check('L12: o cabeçalho mostra a praça do dia', (await cm.locator('header').first().innerText()).includes(NOME_B));
+      cm.once('dialog', (d) => void d.accept());
+      await cm.getByRole('button', { name: /Encerrar (o dia|jornada)/ }).click();
+      await cm.waitForFunction(() => !document.body.innerText.toLowerCase().includes('pendente'), null, { timeout: 30000 });
+      await espera(1500);
+      check('L12: o dia em B foi encerrado no servidor', (await api('GET', '/v1/consultores')).find((c) => c.id === consultorMpId)?.today?.status === 'encerrou');
+    } catch (e) {
+      ko('consultor em duas praças interrompido', String(e).slice(0, 300));
+    } finally {
+      await mpCtx.close().catch(() => undefined);
+      if (consultorMpId) {
+        await tentar('consultor das duas praças apagado', async () =>
+          check('consultor das duas praças apagado', (await api('DELETE', `/v1/consultores/${consultorMpId}`)).ok === true),
+        );
+      }
+      if (pracaB) {
+        await tentar('praça B do browser-check apagada', async () => check('praça B do browser-check apagada', (await api('DELETE', `/v1/pracas/${pracaB}`)).ok === true));
+      }
+      await tentar('praça ativa do admin devolvida', () => api('PATCH', '/v1/users/me', { active_praca_id: ativaAntes }));
+    }
+  }
+}
+
 // ── limpeza: o banco volta ao seed ──────────────────────────────
 // CADA passo no seu próprio `try`: com um `try` só, um erro no primeiro
 // `DELETE` pulava todos os outros e as afirmações de resíduo — que é como a
