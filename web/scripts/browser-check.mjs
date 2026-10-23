@@ -999,9 +999,15 @@ console.log('-- Campo: GPS negado --');
   await page.goto(`${BASE}/consultores/cupons`, { waitUntil: 'networkidle' });
   if (lov.vouchers) {
     await page.getByText('Cupons da 1ª contratação').first().waitFor({ timeout: 20000 });
-    const lc = await api('GET', '/v1/consultores/vouchers');
-    check('Cupons: a tela abre com as situações e a contagem do servidor', (await page.getByRole('tab', { name: /^Pedidos \d+$/ }).count()) === 1 && typeof lc.counts.todos === 'number');
-    check('Cupons: sem pedido, o estado vazio explica de onde vêm', lc.counts.todos > 0 || (await corpo(page)).includes('os consultores pedem o cupom na visita'));
+    // A lista só é pedida depois de `features` chegar: espera o elemento que só existe com ela (o `networkidle` não espera a 2ª busca).
+    await page.getByRole('tab', { name: /^Pedidos \d+$/ }).waitFor({ timeout: 20000 });
+    const lc = await api('GET', '/v1/consultores/vouchers?situacao=pedido');
+    check('Cupons: a tela abre com as situações e a contagem do servidor', typeof lc.counts.todos === 'number');
+    if (lc.items.length === 0) {
+      await page.getByText(/os consultores pedem o cupom na visita/i).waitFor({ timeout: 20000 });
+      check('Cupons: sem pedido, o estado vazio explica de onde vêm', true);
+    }
+    await page.getByText('Regras do cupom').waitFor({ timeout: 20000 });
     check('Cupons: "Regras do cupom" para o admin', (await page.getByText('Regras do cupom').count()) === 1);
   } else {
     check('Cupons desligados: avisa, sem chamar a rota', (await corpo(page)).includes('ainda não está ligado neste servidor'));
@@ -1013,6 +1019,7 @@ console.log('-- Campo: GPS negado --');
   }
   await page.goto(`${BASE}/configuracoes`, { waitUntil: 'networkidle' });
   await page.getByText('Configurações').first().waitFor({ timeout: 20000 });
+  if (lov.segments) await page.getByText('Segmentos da busca de estabelecimentos').waitFor({ timeout: 20000 });
   check('Configurações: "Segmentos da busca" só com os segmentos ligados', ((await page.getByText('Segmentos da busca de estabelecimentos').count()) === 1) === !!lov.segments);
   if (lov.segments) {
     await page.getByText('Segmentos da busca de estabelecimentos').click();
@@ -1021,6 +1028,8 @@ console.log('-- Campo: GPS negado --');
   }
   await page.goto(`${BASE}/prospeccao`, { waitUntil: 'networkidle' });
   await page.getByText('2. O que buscar').first().waitFor({ timeout: 20000 });
+  // Com a flag os chips nascem com os 5 de hoje e viram os segmentos quando a leitura chega: espera um que só existe com ela.
+  await page.getByRole('button', { name: lov.segments ? 'Pizzaria' : 'Bares', exact: true }).waitFor({ timeout: 20000 });
   const chips = await page.locator('fieldset', { hasText: '2. O que buscar' }).locator('button[aria-pressed]').count();
   check(`Buscar estabelecimentos: ${lov.segments ? '10 segmentos (Lovable + nossos)' : 'os 5 tipos de hoje'} (${chips})`, chips === (lov.segments ? 10 : 5));
 } catch (e) {
