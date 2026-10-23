@@ -2,13 +2,15 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect } from 'react';
+import { Suspense, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { paginaInicial } from '@/modules/acesso/domain/acesso';
+import { getFeaturesMenu } from '@/modules/acesso/infrastructure/acesso.api';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 
@@ -37,6 +39,15 @@ const entrarSchema = z.object({
 
 type EntrarForm = z.infer<typeof entrarSchema>;
 
+/** Página inicial (UX §3.1): "Início" só com o painel ligado; sem ele (ou se a leitura falhar), `/hoje`, como sempre. */
+async function destinoInicial(): Promise<string> {
+  try {
+    return paginaInicial(await getFeaturesMenu());
+  } catch {
+    return '/hoje';
+  }
+}
+
 function Entrar() {
   const router = useRouter();
   const params = useSearchParams();
@@ -52,10 +63,17 @@ function Entrar() {
     defaultValues: { email: '', senha: '' },
   });
 
-  // Quem já tem sessão não vê a tela de entrada.
+  // Quem já tem sessão não vê a tela de entrada (uma ida só, mesmo com o login e o efeito chegando juntos).
+  const indo = useRef(false);
+  const irParaInicio = async () => {
+    if (indo.current) return;
+    indo.current = true;
+    router.replace(await destinoInicial());
+  };
   useEffect(() => {
-    if (!loading && user) router.replace('/hoje');
-  }, [loading, user, router]);
+    if (!loading && user) void irParaInicio();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, user]);
 
   // A demonstração é a conta semeada, não um estado falso no navegador — e só
   // existe com `NEXT_PUBLIC_DEMO_LOGIN=1` e as duas credenciais no ambiente.
@@ -70,7 +88,7 @@ function Entrar() {
   async function onSubmit(values: EntrarForm) {
     try {
       await signIn(values.email, values.senha);
-      router.replace('/hoje');
+      await irParaInicio();
     } catch (e) {
       toast.error(apiErrorMessage(e, 'Não foi possível entrar.'));
     }

@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { ehGestor, podeOperar } from '@/modules/acesso/domain/acesso';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { useAreas } from '@/modules/areas/application/use-areas';
 import { rotuloRaio } from '@/modules/areas/domain/area-form';
@@ -67,7 +68,9 @@ const MODOS: { id: ModoLista; label: string }[] = [
  */
 export function BuscaEstabelecimentos({ praca }: { praca: PracaView }) {
   const { user } = useAuth();
-  const admin = !!user?.is_admin;
+  // Lote E §42.3: o gestor também busca, SÓ no mapa aberto (o Apify é pago: só admin — o servidor recusa com 403).
+  const admin = podeOperar(user);
+  const soMapaAberto = ehGestor(user);
   const { data: areas, isPending: carregandoAreas, isError: erroAreas, refetch: refazerAreas } = useAreas(praca.id);
   const { data: fontes } = useSources(admin);
   const { data: recentes } = useSearches(admin ? praca.id : undefined);
@@ -115,7 +118,7 @@ export function BuscaEstabelecimentos({ praca }: { praca: PracaView }) {
   const ids = useMemo(() => idsParaAdicionar(sel, cands ?? []), [sel, cands]);
   const area = ativas.find((a) => a.id === areaId);
   const fonteAtual = fontes?.find((f) => f.id === fonte);
-  const apifyDisponivel = fontes?.some((f) => f.id === 'apify' && f.available) ?? false;
+  const apifyDisponivel = !soMapaAberto && (fontes?.some((f) => f.id === 'apify' && f.available) ?? false);
   const ocupada = emAndamento(run) || iniciar.isPending;
   const podeBuscar = admin && !!area && tipos.length > 0 && !ocupada;
 

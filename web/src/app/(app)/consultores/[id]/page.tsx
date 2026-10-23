@@ -12,6 +12,9 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { todaySp } from '@/lib/dates';
+import { useFeaturesMenu } from '@/modules/acesso/application/use-acesso';
+import { podeOperar } from '@/modules/acesso/domain/acesso';
+import { linkWhatsappAcesso } from '@/modules/acesso/domain/cadastro';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 import {
@@ -27,7 +30,9 @@ const ConsultorMapa = dynamic(() => import('@/components/praca/ConsultorMapa'), 
 export default function ConsultorDetalhePage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
-  const admin = !!user?.is_admin;
+  // Lote E §42.3: editar, desativar, senha provisória e o código no Freela também para o gestor (com a flag); apagar segue só admin.
+  const operar = podeOperar(user);
+  const { features } = useFeaturesMenu();
   const dark = user?.theme !== 'light';
   const [dia, setDia] = useState(todaySp());
   const { data: c, isError: consultorErro, error: erroConsultor, refetch: recarregarConsultor } = useConsultor(id);
@@ -74,7 +79,7 @@ export default function ConsultorDetalhePage() {
         <Button variant="outline" onClick={() => setQr(true)}>
           Ver QR code
         </Button>
-        {admin && (
+        {operar && (
           <>
             <Button variant="outline" onClick={() => setEditando(true)}>
               Editar
@@ -158,6 +163,17 @@ export default function ConsultorDetalhePage() {
               <p data-testid="senha-provisoria" className="rounded-md bg-secondary p-3 text-center font-mono text-lg">
                 {senha}
               </p>
+              {features.consultant_profile &&
+                (() => {
+                  const link = linkWhatsappAcesso({ telefone: c.phone, nome: c.name, email: c.email, senha, endereco: `${window.location.origin}/campo/entrar` });
+                  return link ? (
+                    <Button asChild variant="outline" className="h-12 w-full">
+                      <a href={link} target="_blank" rel="noreferrer">
+                        Enviar pelo WhatsApp
+                      </a>
+                    </Button>
+                  ) : null;
+                })()}
               <Button
                 onClick={fecharSenha}
                 className="w-full"

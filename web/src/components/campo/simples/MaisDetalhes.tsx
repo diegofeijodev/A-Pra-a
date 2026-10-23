@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { EmailContato } from '@/components/campo/EmailContato';
 import { Chip, Grupo } from '@/components/campo/simples/Chip';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -53,6 +54,7 @@ export function ContatoCampos({ valor, onMudar, desabilitado, campos }: { valor:
         />
         {!r.ok && <p className="text-sm text-warning">Faltam dígitos: DDD + número (10 ou 11). Enquanto isso, o telefone não é salvo.</p>}
       </div>
+      <EmailContato valor={valor.contact_email} onMudar={(v) => onMudar({ contact_email: v })} desabilitado={desabilitado} pede={pede('email')} />
     </div>
   );
 }

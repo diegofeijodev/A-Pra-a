@@ -1,9 +1,11 @@
 'use client';
 
+import { useState } from 'react';
 import { CampoTopo } from '@/components/campo/CampoTopo';
 import { FaixaFila } from '@/components/campo/FaixaFila';
+import { AlternarListaMapa, MapaCampo } from '@/components/campo/MapaCampo';
 import { ChegueiBotao } from '@/components/campo/simples/ChegueiBotao';
-import { useDia } from '@/modules/campo/application/use-campo';
+import { useCampoMe, useDia } from '@/modules/campo/application/use-campo';
 import { useSol } from '@/modules/campo/application/use-sol';
 import { irPara } from '@/modules/campo/application/use-tela';
 import { useRoteiro } from '@/modules/rotas/application/use-roteiro';
@@ -18,12 +20,18 @@ export function SimplesListaTela() {
   const { dia } = useDia();
   const { sol } = useSol();
   const pendentes = rot.route ? faltam(rot.route.stops) : [];
+  // Lote E (UX §2.2): "Lista | Mapa" só com o mapa ligado no servidor; desligado, a tela é a de hoje.
+  const mapaLigado = useCampoMe().data?.features?.map_pins === true;
+  const [modo, setModo] = useState<'lista' | 'mapa'>('lista');
 
   return (
     <main data-sol={sol} className="space-y-4 pb-24">
       <CampoTopo titulo="Paradas que faltam" />
       <FaixaFila />
-      {rot.carregando ? (
+      {mapaLigado && <AlternarListaMapa modo={modo} onModo={setModo} />}
+      {mapaLigado && modo === 'mapa' ? (
+        <MapaCampo paradas={pendentes} escuro={!sol} />
+      ) : rot.carregando ? (
         <div aria-busy="true" className="space-y-2">
           <div className="h-20 animate-pulse rounded-lg bg-muted" />
           <div className="h-20 animate-pulse rounded-lg bg-muted" />

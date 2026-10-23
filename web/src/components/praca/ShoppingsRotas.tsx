@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAreas } from '@/modules/areas/application/use-areas';
+import { podeOperar } from '@/modules/acesso/domain/acesso';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { useConsultores } from '@/modules/consultores/application/use-consultores';
 import { useSegmentos } from '@/modules/places/application/use-places';
@@ -221,11 +222,13 @@ function UltimoPlano({ planos, admin, consultores }: { planos: PlanSummary[] | u
 export function ShoppingsRotas({ praca }: { praca: PracaView }) {
   const { user } = useAuth();
   const admin = !!user?.is_admin;
+  // Lote E §42.3: descobrir (só mapa aberto), marcar à mão, lojas e rotas também para o gestor; o critério (configuração) é do admin.
+  const operar = podeOperar(user);
   const lista = useShoppings(praca.id, true);
   const config = useConfigShopping(true);
   const salvarConfig = useSalvarConfigShopping();
   const marcar = useMarcarShopping();
-  const segmentos = useSegmentos(admin);
+  const segmentos = useSegmentos(operar);
   const ativos = (segmentos.data?.segments ?? []).filter((s) => s.active);
   const [tipos, setTipos] = useState<string[]>(['bar', 'restaurante']);
   const [minimo, setMinimo] = useState<number | null>(null);
@@ -262,7 +265,7 @@ export function ShoppingsRotas({ praca }: { praca: PracaView }) {
             </Button>
           </div>
         )}
-        {admin && <Descobrir praca={praca} minimo={cfg?.area_min_m2 ?? 20000} />}
+        {operar && <Descobrir praca={praca} minimo={cfg?.area_min_m2 ?? 20000} />}
         {lista.data && shoppings.length === 0 && <p className="text-sm text-muted-foreground">Nenhum shopping cadastrado nesta praça ainda.</p>}
         {shoppings.length > 0 && (
           <ul className="space-y-2">
@@ -274,7 +277,7 @@ export function ShoppingsRotas({ praca }: { praca: PracaView }) {
                 <p className={s.is_large ? 'font-semibold' : 'text-muted-foreground'}>
                   {s.is_large ? '✓ Grande' : '— Não grande'}: {s.conta}
                 </p>
-                {admin && (
+                {operar && (
                   <div className="mt-2 flex flex-wrap gap-2">
                     {[
                       { v: true, t: 'Marcar como grande' },
@@ -300,7 +303,7 @@ export function ShoppingsRotas({ praca }: { praca: PracaView }) {
         )}
       </section>
 
-      {admin && grandes.length > 0 && (
+      {operar && grandes.length > 0 && (
         <section className="card-surface space-y-3 p-4" aria-label="Lojas dentro dos shoppings">
           <h2 className="text-base font-bold">2. Lojas lá dentro</h2>
           <fieldset className="space-y-1">
@@ -333,7 +336,7 @@ export function ShoppingsRotas({ praca }: { praca: PracaView }) {
 
       <section className="card-surface space-y-3 p-4" aria-label="Rotas dos shoppings">
         <h2 className="text-base font-bold">3. Rotas</h2>
-        {admin && (
+        {operar && (
           <div className="flex flex-col flex-wrap gap-2 sm:flex-row">
             <Button className="h-12" disabled={criar.isPending || grandes.length === 0} onClick={() => criar.mutate({ praca_id: praca.id, kind: 'shoppings', travel_mode: 'carro' })}>
               Gerar a rota dos {grandes.length} {grandes.length === 1 ? 'shopping grande' : 'shoppings grandes'}
@@ -353,8 +356,8 @@ export function ShoppingsRotas({ praca }: { praca: PracaView }) {
               ))}
           </div>
         )}
-        <UltimoPlano planos={planosShop.data} admin={admin} consultores={doPraca} />
-        <PlanosInternos pracaId={praca.id} admin={admin} consultores={doPraca} />
+        <UltimoPlano planos={planosShop.data} admin={operar} consultores={doPraca} />
+        <PlanosInternos pracaId={praca.id} admin={operar} consultores={doPraca} />
         {planosShop.data?.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma rota de shopping gerada ainda.</p>}
       </section>
     </div>

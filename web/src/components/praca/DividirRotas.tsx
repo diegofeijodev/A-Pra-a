@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAreas } from '@/modules/areas/application/use-areas';
+import { podeOperar } from '@/modules/acesso/domain/acesso';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { useConsultores } from '@/modules/consultores/application/use-consultores';
 import { useArquivarPlano, useConfigDivisao, useCriarPlano, usePlano, usePlanos, usePrevia } from '@/modules/planos/application/use-planos';
@@ -22,7 +23,8 @@ const RotasMapa = dynamic(() => import('./RotasMapa'), { ssr: false });
  */
 export function DividirRotas({ praca }: { praca: PracaView }) {
   const { user } = useAuth();
-  const admin = !!user?.is_admin;
+  // Lote E §42.3: gerar, arquivar e publicar também para o gestor (com a flag); a configuração da divisão segue só do admin.
+  const admin = podeOperar(user);
   const config = useConfigDivisao(true);
   const { data: areas } = useAreas(praca.id);
   const [areaId, setAreaId] = useState('');

@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { ConsultorDialog } from '@/components/praca/ConsultorDialog';
 import { AlertasConfig, AtencaoAgora, MetaLinha, RetornosEquipe } from '@/components/praca/EquipeAtencao';
 import { Button } from '@/components/ui/button';
+import { podeOperar } from '@/modules/acesso/domain/acesso';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 import { textoCadastrosConfirmados } from '@/modules/campo/domain/cadastros-confirmados';
@@ -68,7 +69,7 @@ export default function ConsultoresPage() {
           <Link href="/consultores/roteiros" className="text-sm text-primary hover:underline">
             Roteiros do dia
           </Link>
-          {user?.is_admin && <Button onClick={() => setNovo(true)}>Novo consultor</Button>}
+          {podeOperar(user) && <Button onClick={() => setNovo(true)}>Novo consultor</Button>}
         </div>
       </div>
       <div className="mt-4 space-y-4">

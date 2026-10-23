@@ -1,8 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { useState, type ReactNode } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { Fragment, Suspense, useState, type ReactNode } from 'react';
+import { useFeaturesMenu } from '@/modules/acesso/application/use-acesso';
+import { itemAtivo, montarMenu, paginaInicial, type ChaveIcone } from '@/modules/acesso/domain/acesso';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import {
   useDismissNotifications,
@@ -24,25 +26,18 @@ const I = {
   config: "M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33h0a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51h0a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v0a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z",
   busca: "M21 21l-4.3-4.3M11 18a7 7 0 100-14 7 7 0 000 14z",
   freela: "M6 7V3M10 7V3M4 7h8v3a4 4 0 01-8 0V7zM8 14v7",
+  // Lote E (menu agrupado, UX §2.1).
+  inicio: "M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10",
+  clientes: "M4 6h16M4 12h16M4 18h10",
+  mapa: "M9 4L3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14",
+  rotas: "M6 19a2 2 0 100-4 2 2 0 000 4zM18 9a2 2 0 100-4 2 2 0 000 4zM8 17h5a3 3 0 000-6h-2a3 3 0 010-6h5",
+  cupons: "M3 9a3 3 0 010 6v3h18v-3a3 3 0 010-6V6H3v3zM13 6v12",
 };
+const ICONE: Record<ChaveIcone, string> = { ...I };
 
-// Mesma ordem do protótipo (`components/praca/Layout.tsx`). Duas diferenças:
-// "Ações" aponta para `/hoje` (no protótipo era a raiz `/`, que aqui só
-// redireciona) e "Freela" é o item novo da ponte com o api-freela.
-const NAV: { to: string; label: string; icon: string; admin?: boolean }[] = [
-  { to: "/praca", label: "Praça", icon: I.praca },
-  { to: "/funil", label: "Funil", icon: I.funil },
-  { to: "/consultores", label: "Consultores", icon: I.consultores },
-  { to: "/entrada", label: "Entrada", icon: I.entrada },
-  { to: "/prospeccao", label: "Buscar estabelecimentos", icon: I.busca, admin: true },
-  { to: "/mensagens", label: "Mensagens", icon: I.mensagens },
-  { to: "/campanhas", label: "Campanhas", icon: I.campanhas },
-  { to: "/calendario", label: "Calendário", icon: I.calendario },
-  { to: "/indicadores", label: "Indicadores", icon: I.indicadores },
-  { to: "/hoje", label: "Ações", icon: I.hoje },
-  { to: "/configuracoes", label: "Configurações", icon: I.config },
-  { to: "/freela", label: "Freela", icon: I.freela },
-];
+// O menu sai de `montarMenu` (modules/acesso): com os módulos novos desligados é o de hoje, na ordem do protótipo (`components/
+// praca/Layout.tsx`) — "Ações" aponta para `/hoje` e "Freela" é o item da ponte com o api-freela; com eles ligados, os grupos
+// da UX §2.1 (Operação de campo, Comercial, Administração).
 
 function Icon({ d, size = 16 }: { d: string; size?: number }) {
   return (
@@ -95,10 +90,52 @@ function Bell({ pracaId }: { pracaId: string | undefined }) {
   );
 }
 
-export function AppShell({ children }: { children: ReactNode }) {
+/** Os links do menu (a busca da URL decide o item ativo de Clientes/Mapa: fica num Suspense, como o Next pede). */
+function ItensMenu({ onEscolher }: { onEscolher: () => void }) {
   const path = usePathname();
+  const busca = useSearchParams();
+  const { user } = useAuth();
+  const { features } = useFeaturesMenu();
+  const grupos = montarMenu(features, user);
+  return (
+    <>
+      {grupos.map((g) => {
+        const links = g.itens.map((n) => {
+          const active = itemAtivo(n, path, busca.get('modo'));
+          return (
+            <Link
+              key={n.to}
+              href={n.to}
+              onClick={onEscolher}
+              className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                active
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+              }`}
+            >
+              <Icon d={ICONE[n.icon]} />
+              {n.label}
+            </Link>
+          );
+        });
+        // Sem título (módulos desligados): os links direto na barra, como sempre (mesmo espaçamento).
+        if (!g.titulo) return <Fragment key="menu">{links}</Fragment>;
+        return (
+          <div key={g.titulo} role="group" aria-label={g.titulo} className="space-y-0.5 pt-2">
+            <p className="tag px-3 pb-1 pt-1 text-[10px] text-muted-foreground">{g.titulo}</p>
+            {links}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { user, signOut } = useAuth();
+  // Página inicial (UX §3.1): "Início" (o painel) só com FIELD_DASHBOARD_ENABLED; desligado, `/hoje`, como sempre.
+  const inicio = paginaInicial(useFeaturesMenu().features);
   const { praca } = useActivePraca();
   const updateMe = useUpdateMe();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -107,29 +144,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const sidebar = (
     <div className="flex h-full flex-col">
       <div className="px-4 pt-5 pb-4">
-        <Link href="/hoje" className="font-display text-xl font-black tracking-tight" onClick={() => setMobileOpen(false)}>
+        <Link href={inicio} className="font-display text-xl font-black tracking-tight" onClick={() => setMobileOpen(false)}>
           PRAÇA<span className="text-primary">.</span>
         </Link>
       </div>
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-2">
-        {NAV.filter((n) => !n.admin || user?.is_admin).map((n) => {
-          const active = path === n.to;
-          return (
-            <Link
-              key={n.to}
-              href={n.to}
-              onClick={() => setMobileOpen(false)}
-              className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                active
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
-              }`}
-            >
-              <Icon d={n.icon} />
-              {n.label}
-            </Link>
-          );
-        })}
+        <Suspense fallback={null}>
+          <ItensMenu onEscolher={() => setMobileOpen(false)} />
+        </Suspense>
       </nav>
       <div className="space-y-0.5 border-t border-border p-2">
         <Bell pracaId={praca?.id} />
@@ -168,7 +190,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         >
           <Icon d="M4 6h16M4 12h16M4 18h16" />
         </button>
-        <Link href="/hoje" className="font-display text-lg font-black tracking-tight">
+        <Link href={inicio} className="font-display text-lg font-black tracking-tight">
           PRAÇA<span className="text-primary">.</span>
         </Link>
       </header>

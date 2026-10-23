@@ -1,5 +1,6 @@
 'use client';
 
+import { EmailContato } from '@/components/campo/EmailContato';
 import { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -169,6 +170,7 @@ export function Questionario({
         />
         <Opcoes valor={valor.interlocutor_role} opcoes={CARGOS} onEscolher={(v) => mudar({ interlocutor_role: v })} desabilitado={desabilitado} />
         <TelefoneContato valor={valor.contact_phone ?? null} onMudar={(t) => mudar({ contact_phone: t })} desabilitado={desabilitado} />
+        <EmailContato valor={valor.contact_email} onMudar={(v) => mudar({ contact_email: v })} desabilitado={desabilitado} />
       </div>
 
       <div className="space-y-2">

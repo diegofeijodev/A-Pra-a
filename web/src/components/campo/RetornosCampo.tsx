@@ -22,6 +22,7 @@ function Retorno({ f }: { f: FollowupView }) {
         <div className="space-y-1 border-t border-border pt-2">
           <p className="text-sm text-muted-foreground">
             Quem atendeu{f.interlocutor_name ? `: ${f.interlocutor_name}` : ''} · {f.contact_phone_masked}
+            {f.contact_email ? ` · ${f.contact_email}` : ''}
           </p>
           <ContatoLinks phone={f.contact_phone} nome={f.interlocutor_name ?? f.lead_name} />
         </div>

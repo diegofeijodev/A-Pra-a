@@ -19,6 +19,7 @@ import {
   resetSenhaConsultor,
   updateConsultor,
   type CreateConsultorInput,
+  type PerfilConsultorInput,
   type UpdateConsultorInput,
 } from '../infrastructure/consultores.api';
 
@@ -45,7 +46,7 @@ function useInvalidar() {
 export function useCreateConsultor() {
   const invalidar = useInvalidar();
   return useMutation({
-    mutationFn: (input: CreateConsultorInput) => createConsultor(input),
+    mutationFn: (input: CreateConsultorInput & PerfilConsultorInput) => createConsultor(input),
     onSuccess: invalidar,
     onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível criar o consultor.')),
   });

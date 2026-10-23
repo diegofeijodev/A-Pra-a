@@ -135,6 +135,7 @@ function RetornoItem({ f }: { f: FollowupView }) {
         Visita de {f.consultant_name}
         {f.interlocutor_name ? `, falou com ${f.interlocutor_name}` : ''}. {f.address}
         {f.contact_phone_masked ? ` Telefone de quem atendeu: ${f.contact_phone_masked}.` : ''}
+        {f.contact_email_masked ? ` E-mail: ${f.contact_email_masked}.` : ''}
       </p>
       <ContatoLinks phone={f.phone} nome={f.lead_name} />
     </>

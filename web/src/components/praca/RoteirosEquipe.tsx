@@ -6,11 +6,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAreas } from '@/modules/areas/application/use-areas';
+import { podeOperar } from '@/modules/acesso/domain/acesso';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { ConfigLovable } from '@/components/praca/ConfigLovable';
 import { ConfigLoteB } from '@/components/praca/ConfigLoteB';
 import { useConfigModo, useSalvarConfigModo } from '@/modules/rotas/application/use-rotas-equipe';
-import { alternar, CAMPOS_CONTATO, RESULTADOS_COM_CONTATO, type ConfigModo } from '@/modules/rotas/domain/fluxo-config';
+import { alternar, CAMPOS_CONTATO, CAMPOS_CONTATO_COM_EMAIL, RESULTADOS_COM_CONTATO, type ConfigModo } from '@/modules/rotas/domain/fluxo-config';
+import { useFeaturesMenu } from '@/modules/acesso/application/use-acesso';
 import { useConsultores } from '@/modules/consultores/application/use-consultores';
 import type { PracaView } from '@/modules/pracas/application/use-pracas';
 import {
@@ -216,6 +218,8 @@ function Configuracao({ admin }: { admin: boolean }) {
 function FluxoVisitaConfig({ admin }: { admin: boolean }) {
   const { data, isPending, isError } = useConfigModo();
   const salvar = useSalvarConfigModo();
+  // Lote E §41.4: "E-mail" só aparece com o e-mail de quem atendeu ligado no servidor.
+  const camposContato: readonly (readonly [string, string])[] = useFeaturesMenu().features.contact_email ? CAMPOS_CONTATO_COM_EMAIL : CAMPOS_CONTATO;
   const [form, setForm] = useState<ConfigModo | null>(null);
   useEffect(() => {
     if (data) setForm({ fluxo_visita: data.fluxo_visita, justificativa_distancia: data.justificativa_distancia, contato_obrigatorio_em: data.contato_obrigatorio_em, contato_campos: data.contato_campos, fechado_conta_na_meta: data.fechado_conta_na_meta, desfazer_segundos: data.desfazer_segundos, divergencia_alerta_min: data.divergencia_alerta_min, divergencia_alerta_pct: data.divergencia_alerta_pct });
@@ -274,9 +278,9 @@ function FluxoVisitaConfig({ admin }: { admin: boolean }) {
         <fieldset className="space-y-1">
           <legend className="text-sm font-bold">Nesses casos, exigir</legend>
           <div className="flex flex-wrap gap-3">
-            {CAMPOS_CONTATO.map(([k, r]) => (
+            {camposContato.map(([k, r]) => (
               <label key={k} className="flex items-center gap-2 text-sm">
-                <input type="checkbox" disabled={!admin} checked={form.contato_campos.includes(k)} onChange={() => set({ contato_campos: alternar(form.contato_campos, k, CAMPOS_CONTATO) })} />
+                <input type="checkbox" disabled={!admin} checked={form.contato_campos.includes(k)} onChange={() => set({ contato_campos: alternar(form.contato_campos, k, camposContato) })} />
                 {r}
               </label>
             ))}
@@ -323,6 +327,8 @@ function FluxoVisitaConfig({ admin }: { admin: boolean }) {
 export function RoteirosEquipe({ praca }: { praca: PracaView }) {
   const { user } = useAuth();
   const admin = !!user?.is_admin;
+  // Lote E §42.3: montar, ordenar e reotimizar também para o gestor (com a flag); as configurações seguem só do admin.
+  const operar = podeOperar(user);
   const hoje = todaySp();
   const [day, setDay] = useState(hoje);
   const [consultantId, setConsultantId] = useState('');
@@ -463,7 +469,7 @@ export function RoteirosEquipe({ praca }: { praca: PracaView }) {
               </>
             )}
 
-            {admin ? (
+            {operar ? (
               <Button disabled={!consultantId || marcados.size === 0 || montar.isPending} onClick={() => setConfirmando(true)} className="h-10">
                 {montar.isPending ? 'Calculando as rotas…' : 'Montar roteiro'}
               </Button>
@@ -489,7 +495,7 @@ export function RoteirosEquipe({ praca }: { praca: PracaView }) {
             ) : rotas.data.length === 0 ? (
               <p className="text-sm text-muted-foreground">Nenhum roteiro montado para este dia.</p>
             ) : (
-              rotas.data.map((r) => <RoteiroCartao key={r.id} r={r} admin={admin} />)
+              rotas.data.map((r) => <RoteiroCartao key={r.id} r={r} admin={operar} />)
             )}
           </section>
         </>

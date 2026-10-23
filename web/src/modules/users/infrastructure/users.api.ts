@@ -19,6 +19,8 @@ export interface UpdateUserInput {
   color?: string;
   phone?: string;
   is_admin?: boolean;
+  /** Lote E §42.2: só com `TEAM_GESTOR_ENABLED` (o web só manda com `features.team_gestor`). */
+  is_gestor?: boolean;
   active?: boolean;
   sort?: number;
 }
@@ -31,6 +33,7 @@ export interface CreateUserInput {
   color?: string;
   phone?: string;
   is_admin?: boolean;
+  is_gestor?: boolean;
 }
 
 export async function listUsers(): Promise<UserView[]> {

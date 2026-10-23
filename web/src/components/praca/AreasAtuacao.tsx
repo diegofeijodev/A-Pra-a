@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { podeOperar } from '@/modules/acesso/domain/acesso';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { useAreas, useCreateArea, useUpdateArea } from '@/modules/areas/application/use-areas';
 import {
@@ -28,11 +29,12 @@ const VAZIO = { name: '', lat: null as number | null, lng: null as number | null
  * Círculo (centro + raio) dentro da praça, usado pelo trabalho de campo. Uma
  * praça sem cobertura do IBGE (ex.: "São Paulo – Moema") funciona só com
  * áreas. Mapa nunca é o único jeito de ver: a lista traz o mesmo conteúdo.
- * Leitura para toda a equipe; criar e editar é só de admin.
+ * Leitura para toda a equipe; criar e editar é de admin (e do gestor, com o perfil ligado — §42.3).
  */
 export function AreasAtuacao({ praca }: { praca: PracaView }) {
   const { user } = useAuth();
-  const admin = !!user?.is_admin;
+  // Lote E §42.3: criar e editar área também para o gestor (com a flag).
+  const admin = podeOperar(user);
   const dark = user?.theme !== 'light';
   const { data: areas, isPending, isError, refetch } = useAreas(praca.id);
   const criar = useCreateArea(praca.id);

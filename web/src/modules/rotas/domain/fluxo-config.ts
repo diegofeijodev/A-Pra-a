@@ -12,6 +12,8 @@ export const CAMPOS_CONTATO = [
   ['cargo', 'Cargo'],
   ['telefone', 'Telefone'],
 ] as const;
+/** Lote E §41.4: + e-mail, só com `features.contact_email` (desligada, o servidor recusa `email` com a mensagem de hoje). */
+export const CAMPOS_CONTATO_COM_EMAIL = [...CAMPOS_CONTATO, ['email', 'E-mail']] as const;
 
 export const configModoSchema = z.object({
   fluxo_visita: z.enum(['simples', 'completo']).nullable(),

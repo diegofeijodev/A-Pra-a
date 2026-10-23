@@ -24,7 +24,8 @@ export const ROTULO_RESULTADO: Record<ResultadoSimples, string> = {
   fechado: 'Estabelecimento fechado',
 };
 
-export type CampoContato = 'nome' | 'cargo' | 'telefone';
+/** Lote E §41.4: `email` só vem do servidor com `FIELD_CONTACT_EMAIL_ENABLED`. */
+export type CampoContato = 'nome' | 'cargo' | 'telefone' | 'email';
 export type JustificativaDistancia = 'nao' | 'opcional' | 'obrigatoria';
 
 export interface ConfigVisita {
@@ -59,6 +60,7 @@ export function faltandoSimples(r: VisitAnswers, hoje: string, cfg: ConfigVisita
     if (cfg.contato_campos.includes('nome') && vazio(r.interlocutor_name)) f.push('nome de quem atendeu');
     if (cfg.contato_campos.includes('cargo') && !r.interlocutor_role) f.push('cargo de quem atendeu');
     if (cfg.contato_campos.includes('telefone') && vazio(r.contact_phone)) f.push('telefone de quem atendeu');
+    if (cfg.contato_campos.includes('email') && vazio(r.contact_email)) f.push('e-mail de quem atendeu');
   }
   if (ctx.far_from_place && cfg.justificativa_distancia === 'obrigatoria' && vazio(r.distance_note)) {
     f.push('motivo de a visita ter sido longe do local');

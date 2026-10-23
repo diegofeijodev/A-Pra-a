@@ -3,12 +3,16 @@
 import { AreasAtuacao } from '@/components/praca/AreasAtuacao';
 import { CanaisCampo } from '@/components/praca/CanaisCampo';
 import { RemuneracaoConfig } from '@/components/praca/RemuneracaoConfig';
+import { RegraSenha } from '@/components/praca/RegraSenha';
 import { SegmentosBusca } from '@/components/praca/SegmentosBusca';
 import Link from 'next/link';
 import { useState } from 'react';
 import { fmtBR } from '@/lib/dates';
 import { dueDateOf, recLabel } from '@/lib/recurrence';
 import { useActions } from '@/modules/actions/application/use-actions';
+import { useFeaturesMenu, usePoliticaSenha, useSalvarPoliticaSenha } from '@/modules/acesso/application/use-acesso';
+import { corpoDoPerfil, perfilDe, ROTULO_PERFIL, type Perfil } from '@/modules/acesso/domain/acesso';
+import { senhaCumpre } from '@/modules/acesso/domain/senha';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { useCatalog } from '@/modules/catalog/application/use-catalog';
 import {
@@ -98,6 +102,7 @@ export default function ConfiguracoesPage() {
     <>
       <h1 className="font-display text-xl font-extrabold">Configurações</h1>
       <Pessoas />
+      <SegurancaSenha />
       <CanaisCampo />
       <RemuneracaoConfig />
       <AreasAtuacao praca={praca} />
@@ -136,10 +141,25 @@ function Pessoas() {
     });
   const admin = !!user?.is_admin;
   const lista = users ?? [];
+  // Lote E: perfil Admin / Gestor / Equipe (§42.2) e a regra da senha nova (§41.2), só com as flags (leitura de 200 sempre).
+  const { features } = useFeaturesMenu();
+  const politica = usePoliticaSenha(features.password_policy);
+  const regra = features.password_policy ? politica.data : undefined;
+  const [perfilNovo, setPerfilNovo] = useState<Perfil>('equipe');
 
   return (
     <section className="mt-6">
       <h2 className="tag text-muted-foreground">Pessoas</h2>
+      {features.team_gestor && (
+        <details className="mt-1 text-xs text-muted-foreground">
+          <summary className="cursor-pointer py-1">ⓘ O que cada perfil pode fazer</summary>
+          <p>
+            <strong>Admin:</strong> tudo. <strong>Gestor:</strong> cria e edita consultores (o Pix só ao criar), gera senha provisória de consultor, áreas, rotas e
+            buscas no mapa aberto; não mexe em Pix, pagamentos, cupons, configuração nem pessoas. <strong>Equipe:</strong> vê tudo e trabalha no funil, sem
+            configurar nem pagar. Consultores de campo recebem acesso na tela Consultores.
+          </p>
+        </details>
+      )}
       <div className="mt-2 space-y-2">
         {lista.map((p) => (
           <div key={p.id} className={`card-surface flex flex-wrap items-center gap-2 p-3 ${p.active ? "" : "opacity-60"}`}>
@@ -165,6 +185,20 @@ function Pessoas() {
               onBlur={(e) => { if (e.target.value !== p.phone) gravar(p.id, { phone: e.target.value }); }}
               className={`w-32 ${inputCls}`}
             />
+            {features.team_gestor && (
+              <select
+                aria-label={`Perfil de ${p.name}`}
+                key={`${keyFor(p.id, "perfil")}-${perfilDe(p)}`}
+                defaultValue={perfilDe(p)}
+                disabled={!admin || p.id === user?.id}
+                onChange={(e) => gravar(p.id, corpoDoPerfil(e.target.value as Perfil))}
+                className={`h-8 ${inputCls}`}
+              >
+                {(['admin', 'gestor', 'equipe'] as Perfil[]).map((x) => (
+                  <option key={x} value={x}>{ROTULO_PERFIL[x]}</option>
+                ))}
+              </select>
+            )}
             {(admin || p.id === user?.id) && (
               <>
                 <input
@@ -175,13 +209,14 @@ function Pessoas() {
                 <button
                   onClick={() => {
                     const senha = senhas[p.id];
-                    if (!senha) return;
+                    if (!senha || !senhaCumpre(senha, regra)) return;
                     definirSenha.mutate({ id: p.id, password: senha }, {
                       onSuccess: () => setSenhas((s) => ({ ...s, [p.id]: "" })),
                     });
                   }}
                   className="rounded-md border border-border px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground"
                 >definir senha</button>
+                {regra?.enabled && !!senhas[p.id] && <RegraSenha id={`regra-${p.id}`} senha={senhas[p.id] ?? ""} politica={regra} compacta />}
               </>
             )}
             {admin && lista.length > 1 && (
@@ -201,10 +236,18 @@ function Pessoas() {
           <input value={nova.role_label} disabled={!admin} onChange={(e) => setNova({ ...nova, role_label: e.target.value })} placeholder="Função" className={`min-w-40 flex-1 ${inputCls}`} />
           <input value={nova.email} disabled={!admin} onChange={(e) => setNova({ ...nova, email: e.target.value })} placeholder="e-mail" className={`w-44 ${inputCls}`} />
           <input type="password" value={nova.password} disabled={!admin} onChange={(e) => setNova({ ...nova, password: e.target.value })} placeholder="senha" className={`w-32 ${inputCls}`} />
+          {features.team_gestor && (
+            <select aria-label="Perfil da pessoa nova" value={perfilNovo} disabled={!admin} onChange={(e) => setPerfilNovo(e.target.value as Perfil)} className={`h-8 ${inputCls}`}>
+              {(['admin', 'gestor', 'equipe'] as Perfil[]).map((x) => (
+                <option key={x} value={x}>{ROTULO_PERFIL[x]}</option>
+              ))}
+            </select>
+          )}
           <button
             disabled={!admin}
             onClick={() => {
               if (!nova.name.trim() || !nova.email.trim() || !nova.password) return;
+              if (!senhaCumpre(nova.password, regra)) return;
               criar.mutate(
                 {
                   email: nova.email.trim(),
@@ -212,13 +255,56 @@ function Pessoas() {
                   name: nova.name.trim(),
                   role_label: nova.role_label,
                   color: nova.color,
+                  ...(features.team_gestor ? corpoDoPerfil(perfilNovo) : {}),
                 },
                 { onSuccess: () => setNova({ ...NOVA_PESSOA, color: "#3E8E5A" }) },
               );
             }}
             className="rounded-md bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground"
           >+ Adicionar</button>
+          {regra?.enabled && !!nova.password && <RegraSenha id="regra-nova-pessoa" senha={nova.password} politica={regra} compacta />}
         </div>
+      </div>
+    </section>
+  );
+}
+
+// ── segurança (lote E §41.2) ──────────────────────────────────
+/** Regra da senha NOVA (só admin muda; só com PASSWORD_POLICY_ENABLED). Vale para senhas novas; ninguém é obrigado a trocar. */
+function SegurancaSenha() {
+  const { user } = useAuth();
+  const { features } = useFeaturesMenu();
+  const politica = usePoliticaSenha(features.password_policy);
+  const salvar = useSalvarPoliticaSenha();
+  const p = politica.data?.enabled ? politica.data : null;
+  const [min, setMin] = useState<number | null>(null);
+  const [maiuscula, setMaiuscula] = useState<boolean | null>(null);
+  const [numero, setNumero] = useState<boolean | null>(null);
+  if (!features.password_policy || !p) return null;
+  const admin = !!user?.is_admin;
+  const vMin = min ?? p.min_length;
+  const vMai = maiuscula ?? p.require_upper;
+  const vNum = numero ?? p.require_digit;
+  return (
+    <section className="mt-8">
+      <h2 className="tag text-muted-foreground">Segurança</h2>
+      <div className="card-surface mt-2 flex flex-wrap items-center gap-3 p-4 text-sm">
+        <label className="flex items-center gap-2">Senha nova precisa de
+          <input type="number" min={8} max={12} value={vMin} disabled={!admin} onChange={(e) => setMin(Number(e.target.value))} className="h-10 w-16 rounded-md border border-input bg-background px-2" />
+          caracteres
+        </label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={vMai} disabled={!admin} onChange={(e) => setMaiuscula(e.target.checked)} className="h-5 w-5" /> 1 maiúscula</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={vNum} disabled={!admin} onChange={(e) => setNumero(e.target.checked)} className="h-5 w-5" /> 1 número</label>
+        {admin && (
+          <button
+            disabled={salvar.isPending}
+            onClick={() => salvar.mutate({ min_length: vMin, require_upper: vMai, require_digit: vNum }, { onSuccess: () => { setMin(null); setMaiuscula(null); setNumero(null); } })}
+            className="h-10 rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground"
+          >Salvar</button>
+        )}
+        <p className="w-full text-xs text-muted-foreground">
+          {p.is_default ? 'Padrão da Lovable: 8 caracteres, 1 maiúscula e 1 número. ' : ''}Vale para senhas novas (troca do consultor e senha definida aqui); ninguém é obrigado a trocar a senha que já tem. De 8 a 12 caracteres: a senha provisória gerada sempre cumpre a regra mais forte (12, com maiúscula e número).
+        </p>
       </div>
     </section>
   );

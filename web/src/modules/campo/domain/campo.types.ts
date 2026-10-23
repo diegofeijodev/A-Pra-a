@@ -51,6 +51,9 @@ export interface CampoMeResponse {
     vouchers?: boolean;
     /** Lote D (contrato §39.7): "Próximos dias" (as rotas futuras do próprio consultor). */
     route_plans?: boolean;
+    /** Lote E (contrato §41.1): regra de senha nova e e-mail de quem atendeu. */
+    password_policy?: boolean;
+    contact_email?: boolean;
   };
   /** Modo do chefe §31.4: o fluxo que vale agora para ele. Ausente em respostas antigas guardadas no aparelho = `completo`. */
   visit_flow?: FluxoVisita;
@@ -124,6 +127,8 @@ export interface VisitAnswers {
   followup_time?: string | null;
   /** Só dígitos (10–11). */
   contact_phone?: string | null;
+  /** Lote E §41.4: só existe com `FIELD_CONTACT_EMAIL_ENABLED` (o servidor manda; o web nunca põe no rascunho vazio). */
+  contact_email?: string | null;
   /** Modo do chefe §31.5 — só o fluxo `simples` usa. */
   result?: string | null;
   distance_note?: string | null;

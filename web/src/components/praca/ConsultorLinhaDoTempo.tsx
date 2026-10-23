@@ -1,5 +1,6 @@
 'use client';
 
+import { mascararEmail } from '@/modules/acesso/domain/cadastro';
 import { useEffect, useState } from 'react';
 import type { VisitView } from '@/modules/campo/domain/campo.types';
 import { fmtBR } from '@/lib/dates';
@@ -78,6 +79,7 @@ export function ConsultorLinhaDoTempo({ dia }: { dia: DiaConsultor }) {
                       </p>
                     )}
                     {a.contact_phone && <p className="text-xs">Telefone de quem atendeu: {mascararTelefone(a.contact_phone)}</p>}
+                    {a.contact_email && <p className="text-xs">E-mail de quem atendeu: {mascararEmail(a.contact_email)}</p>}
                     {a.open_vagas != null && (
                       <p className="text-xs">
                         Vagas: {a.open_vagas}

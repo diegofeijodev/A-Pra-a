@@ -7,6 +7,8 @@ export interface AuthUser {
   color: string;
   phone: string;
   is_admin: boolean;
+  /** Lote E §42.1: só vem com `TEAM_GESTOR_ENABLED` (gestor efetivo). */
+  is_gestor?: boolean;
   active: boolean;
   theme: Theme;
   active_praca_id: string | null;

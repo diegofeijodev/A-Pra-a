@@ -4,8 +4,11 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { CampoTopo } from '@/components/campo/CampoTopo';
 import { FaixaFila } from '@/components/campo/FaixaFila';
+import { AlternarListaMapa, MapaCampo } from '@/components/campo/MapaCampo';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useCampoMe } from '@/modules/campo/application/use-campo';
+import { useSol } from '@/modules/campo/application/use-sol';
 import { irPara } from '@/modules/campo/application/use-tela';
 import { useAcoesRoteiro, useRoteiro } from '@/modules/rotas/application/use-roteiro';
 import { etaTexto, faltam, periodoDaParada, porSeq, proximaParada } from '@/modules/rotas/domain/rota-local';
@@ -47,6 +50,10 @@ export function RoteiroTela() {
   const { refazer } = useAcoesRoteiro();
   const [aberto, setAberto] = useState(false);
   const [ocupado, setOcupado] = useState(false);
+  // Lote E (UX §2.2): "Lista | Mapa" só com o mapa ligado no servidor; desligado, a tela é a de hoje.
+  const mapaLigado = useCampoMe().data?.features?.map_pins === true;
+  const [modo, setModo] = useState<'lista' | 'mapa'>('lista');
+  const { sol } = useSol();
 
   const route = rot.route;
   const voltar = (
@@ -112,7 +119,10 @@ export function RoteiroTela() {
           Lista guardada neste aparelho. O mapa e os horários novos voltam com o sinal.
         </p>
       )}
-      {visiveis.length === 0 ? (
+      {mapaLigado && <AlternarListaMapa modo={modo} onModo={setModo} />}
+      {mapaLigado && modo === 'mapa' ? (
+        <MapaCampo paradas={faltam(route.stops)} escuro={!sol} />
+      ) : visiveis.length === 0 ? (
         <p className="card-surface p-5 text-sm">Nenhuma parada pendente. Você fez tudo.</p>
       ) : (
         <>

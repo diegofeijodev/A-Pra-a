@@ -37,7 +37,25 @@ export interface ConsultorView {
   created_by: string;
   created_at: string;
   updated_at: string;
+  /** Lote E §41.3 (só com FIELD_CONSULTANT_PROFILE_ENABLED): endereço e banco; `bank_account` completa só vem para o admin. */
+  address_cep?: string | null;
+  address_street?: string | null;
+  address_number?: string | null;
+  address_complement?: string | null;
+  address_district?: string | null;
+  address_city?: string | null;
+  address_state?: string | null;
+  bank_name?: string | null;
+  bank_branch?: string | null;
+  bank_account_type?: string | null;
+  bank_account_masked?: string | null;
+  bank_account?: string | null;
 }
+
+export const CAMPOS_ENDERECO = ['address_cep', 'address_street', 'address_number', 'address_complement', 'address_district', 'address_city', 'address_state'] as const;
+export const CAMPOS_BANCO = ['bank_name', 'bank_branch', 'bank_account', 'bank_account_type'] as const;
+export type CampoPerfil = (typeof CAMPOS_ENDERECO)[number] | (typeof CAMPOS_BANCO)[number];
+export type PerfilConsultorInput = Partial<Record<CampoPerfil, string | null>>;
 
 export interface ConsultorListItem extends ConsultorView {
   today: { status: 'em_jornada' | 'encerrou' | 'nao_iniciou'; visits: number; /** Estabelecimento fechado (§30.1), dentro de `visits`. */ closed?: number; cadastros: number; last_point_at: string | null };
@@ -61,7 +79,7 @@ export interface CreateConsultorInput {
   pix_key: string;
 }
 
-export type UpdateConsultorInput = Partial<CreateConsultorInput> & { active?: boolean; visit_flow?: 'simples' | 'completo' | null };
+export type UpdateConsultorInput = Partial<CreateConsultorInput> & PerfilConsultorInput & { active?: boolean; visit_flow?: 'simples' | 'completo' | null };
 
 export async function listConsultores(): Promise<ConsultorListItem[]> {
   const { data } = await api.get('/v1/consultores');
@@ -73,7 +91,7 @@ export async function getConsultor(id: string): Promise<ConsultorView> {
   return data as ConsultorView;
 }
 
-export async function createConsultor(input: CreateConsultorInput): Promise<{ consultant: ConsultorView; temp_password: string }> {
+export async function createConsultor(input: CreateConsultorInput & PerfilConsultorInput): Promise<{ consultant: ConsultorView; temp_password: string }> {
   const { data } = await api.post('/v1/consultores', input);
   return data as { consultant: ConsultorView; temp_password: string };
 }

@@ -87,6 +87,9 @@ export const followupSchema = z.object({
   contact_phone_masked: z.string().nullable().optional(),
   /** Número completo: SÓ em `GET /v1/campo/followups` (as visitas do próprio consultor). */
   contact_phone: z.string().nullable().optional(),
+  /** Lote E §41.4 (só com a flag): `m***@dominio.com`; o completo só em `GET /v1/campo/followups`. */
+  contact_email_masked: z.string().nullable().optional(),
+  contact_email: z.string().nullable().optional(),
   due: z.enum(['hoje', 'atrasado']),
   days_late: z.number(),
   visited_at: z.string(),

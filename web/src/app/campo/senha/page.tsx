@@ -2,14 +2,18 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useQuery } from '@tanstack/react-query';
+import { RegraSenha } from '@/components/praca/RegraSenha';
+import { politicaSchema, senhaCumpre } from '@/modules/acesso/domain/senha';
 import { useCampoSession } from '@/modules/campo/application/campo-session.store';
+import { campoApi } from '@/modules/campo/infrastructure/campo-http';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 
 const senhaSchema = z
@@ -34,8 +38,21 @@ export default function SenhaCampoPage() {
   const {
     register,
     handleSubmit,
+    watch,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<SenhaForm>({ resolver: zodResolver(senhaSchema), defaultValues: { atual: '', nova: '', confirma: '' } });
+  // Lote E §41.2: a regra da senha NOVA, marcada enquanto digita. `GET /v1/password-policy` é público e responde 200 sempre
+  // (desligada = `{ enabled: false }` e a tela é a de hoje).
+  const politica = useQuery({
+    queryKey: ['senha', 'politica', 'campo'],
+    queryFn: async () => politicaSchema.parse((await campoApi.get('/v1/password-policy')).data),
+    staleTime: 5 * 60_000,
+    enabled: !!session,
+    retry: 1,
+  });
+  const [mostrar, setMostrar] = useState(false);
+  const nova = watch('nova');
 
   useEffect(() => {
     if (!hydrated) hydrate();
@@ -46,6 +63,10 @@ export default function SenhaCampoPage() {
   }, [hydrated, session, router]);
 
   async function onSubmit(values: SenhaForm) {
+    if (!senhaCumpre(values.nova, politica.data)) {
+      setError('nova', { message: 'A senha nova ainda não cumpre a regra abaixo.' });
+      return;
+    }
     try {
       await trocarSenha(values.atual, values.nova);
       toast.success('Senha trocada.');
@@ -75,8 +96,20 @@ export default function SenhaCampoPage() {
         </div>
         <div className="space-y-2">
           <Label htmlFor="nova">Senha nova</Label>
-          <Input id="nova" type="password" autoComplete="new-password" className="h-12" {...register('nova')} />
-          {errors.nova && <p className="text-xs text-destructive">{errors.nova.message}</p>}
+          {politica.data?.enabled ? (
+            <>
+              <div className="flex gap-2">
+                <Input id="nova" type={mostrar ? 'text' : 'password'} autoComplete="new-password" className="h-12" aria-describedby="regra-senha" {...register('nova')} />
+                <Button type="button" variant="outline" className="h-12" onClick={() => setMostrar((m) => !m)} aria-pressed={mostrar}>
+                  {mostrar ? 'Esconder' : 'Mostrar'}
+                </Button>
+              </div>
+              <RegraSenha id="regra-senha" senha={nova ?? ''} politica={politica.data} />
+            </>
+          ) : (
+            <Input id="nova" type="password" autoComplete="new-password" className="h-12" {...register('nova')} />
+          )}
+          {errors.nova && <p role="alert" className="text-xs text-destructive">{errors.nova.message}</p>}
         </div>
         <div className="space-y-2">
           <Label htmlFor="confirma">Repita a senha nova</Label>
