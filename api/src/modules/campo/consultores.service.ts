@@ -1,10 +1,12 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
   Optional,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
@@ -22,6 +24,7 @@ import {
   situacaoHoje,
   type SituacaoHoje,
 } from '../../domain/campo-rules';
+import { CAMPOS_BANCO, CAMPOS_CADASTRO, mascararConta, mascararPix, normalizarCadastro, type CampoCadastro } from '../../domain/consultor-cadastro-rules';
 import { CampoFreelaService } from './campo-freela.service';
 import { lerCanais } from './campo-canais';
 import { signupUrl } from './campo-links';
@@ -65,6 +68,19 @@ export interface ConsultorView {
   created_by: string;
   created_at: string;
   updated_at: string;
+  // Lote E §41.3 (só com FIELD_CONSULTANT_PROFILE_ENABLED): endereço e banco; `bank_account` completa só para o admin.
+  address_cep?: string | null;
+  address_street?: string | null;
+  address_number?: string | null;
+  address_complement?: string | null;
+  address_district?: string | null;
+  address_city?: string | null;
+  address_state?: string | null;
+  bank_name?: string | null;
+  bank_branch?: string | null;
+  bank_account_type?: string | null;
+  bank_account_masked?: string | null;
+  bank_account?: string | null;
 }
 
 export interface ConsultorListItem extends ConsultorView {
@@ -106,6 +122,25 @@ export function toConsultorView(c: ConsultorRow, efetivo = 'completo'): Consulto
 
 const naoAchado = () => new NotFoundException({ code: 'NOT_FOUND', message: 'Consultor não encontrado.' });
 
+const perfilDesligado = () =>
+  new UnprocessableEntityException({
+    code: 'CONSULTANT_PROFILE_DISABLED',
+    message: 'Endereço e banco do consultor não estão ligados neste servidor.',
+  });
+
+/** §42.3: o que o gestor não muda (o Pix, o modo da visita e o banco são do admin). Sem o valor na mensagem. */
+const ROTULO_PROIBIDO: Record<string, string> = {
+  pix_key: 'a chave Pix',
+  pix_key_type: 'o tipo da chave Pix',
+  visit_flow: 'o modo da visita',
+  bank: 'os dados do banco',
+};
+const campoProibido = (campo: keyof typeof ROTULO_PROIBIDO) =>
+  new ForbiddenException({ code: 'FORBIDDEN_FIELD', message: `Gestor não muda ${ROTULO_PROIBIDO[campo]}: peça a um administrador.` });
+
+/** Gestor efetivo (o guard já combinou a flag com a coluna); admin nunca é tratado como gestor. */
+const ehGestor = (u?: AuthUser): boolean => !!u && !u.is_admin && u.is_gestor === true;
+
 const emailEmUso = () =>
   new ConflictException({ code: 'EMAIL_IN_USE', message: 'Já existe um consultor com este e-mail.' });
 const cpfEmUso = () =>
@@ -122,12 +157,55 @@ export class ConsultoresService {
     @Optional() @Inject(LOVABLE_E_FLAGS) private readonly lovE?: FlagsLovableE,
   ) {}
 
+  private get perfilLigado(): boolean {
+    return this.lovE?.consultant_profile === true;
+  }
+
+  /**
+   * O que cada um vê (§41.3, §42.3): o gestor vê o Pix mascarado; com o cadastro ligado entram endereço e banco, e a conta
+   * completa só vai ao admin. Sem quem pede (chamadas internas) = o mais restrito para a conta.
+   */
+  private projetar(view: ConsultorView, c: ConsultorRow, quem?: AuthUser): ConsultorView {
+    let out = ehGestor(quem) ? { ...view, pix_key: mascararPix(view.pix_key) } : view;
+    if (!this.perfilLigado) return out;
+    out = {
+      ...out,
+      address_cep: c.address_cep ?? null,
+      address_street: c.address_street ?? null,
+      address_number: c.address_number ?? null,
+      address_complement: c.address_complement ?? null,
+      address_district: c.address_district ?? null,
+      address_city: c.address_city ?? null,
+      address_state: c.address_state ?? null,
+      bank_name: c.bank_name ?? null,
+      bank_branch: c.bank_branch ?? null,
+      bank_account_type: c.bank_account_type ?? null,
+      bank_account_masked: mascararConta(c.bank_account),
+      ...(quem?.is_admin ? { bank_account: c.bank_account ?? null } : {}),
+    };
+    return out;
+  }
+
+  /** Endereço e banco do corpo (§41.3): desligado = `null`/ausente ignorado e valor recusado; o gestor nunca escreve o banco (§42.3). */
+  private cadastroDoCorpo(dto: object, quem?: AuthUser): Partial<Record<CampoCadastro, string | null>> {
+    const corpo = dto as Partial<Record<CampoCadastro, unknown>>;
+    const presentes = CAMPOS_CADASTRO.filter((k) => corpo[k] !== undefined);
+    if (!this.perfilLigado) {
+      if (presentes.some((k) => corpo[k] !== null)) throw perfilDesligado();
+      return {};
+    }
+    if (ehGestor(quem) && presentes.some((k) => (CAMPOS_BANCO as readonly string[]).includes(k))) throw campoProibido('bank');
+    const r = normalizarCadastro(corpo);
+    if (!r.ok) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: r.erro });
+    return r.dados;
+  }
+
   /** Fluxo da visita que vale para o consultor agora (contrato §31.1); sem o serviço, `completo`. */
   private async fluxoEfetivo(c: { id: string; visit_flow: string | null }): Promise<string> {
     return this.modo ? this.modo.fluxoDoConsultor(c.id) : 'completo';
   }
 
-  async list(agora = new Date()): Promise<ConsultorListItem[]> {
+  async list(agora = new Date(), quem?: AuthUser): Promise<ConsultorListItem[]> {
     const hoje = todaySp(agora);
     const [consultores, jornadas, visitas] = await Promise.all([
       this.prisma.field_consultants.findMany({
@@ -167,7 +245,7 @@ export class ConsultoresService {
       const pontos = js.map((j) => ultimoPorJornada.get(j.id)).filter((d): d is Date => d instanceof Date);
       const ultimo = pontos.length ? new Date(Math.max(...pontos.map((d) => d.getTime()))) : null;
       return {
-        ...toConsultorView(c, efetivos.get(c.id)),
+        ...this.projetar(toConsultorView(c, efetivos.get(c.id)), c, quem),
         today: {
           status: situacaoHoje(js),
           visits: vs.length,
@@ -184,9 +262,9 @@ export class ConsultoresService {
     });
   }
 
-  async get(id: string): Promise<ConsultorView> {
+  async get(id: string, quem?: AuthUser): Promise<ConsultorView> {
     const c = await this.findOrFail(id);
-    return toConsultorView(c, await this.fluxoEfetivo(c));
+    return this.projetar(toConsultorView(c, await this.fluxoEfetivo(c)), c, quem);
   }
 
   async create(
@@ -197,6 +275,7 @@ export class ConsultoresService {
     const cpf = this.cpfOuFalha(dto.cpf);
     const phone = this.telefoneOuFalha(dto.phone);
     this.pixOuFalha(dto.pix_key_type, dto.pix_key);
+    const cadastro = this.cadastroDoCorpo(dto, admin);
     await this.pracaOrFail(dto.praca_id);
     await this.emailLivre(email);
     await this.cpfLivre(cpf);
@@ -215,18 +294,24 @@ export class ConsultoresService {
           pix_key: normalizarPix(dto.pix_key_type, dto.pix_key),
           password_hash: await bcrypt.hash(temp, 10),
           created_by: admin.id,
+          ...cadastro,
         },
       });
     } catch (e) {
       throw this.conflitoUnico(e);
     }
     await this.freela.sync(criado.id);
-    return { consultant: await this.get(criado.id), temp_password: temp };
+    return { consultant: await this.get(criado.id, admin), temp_password: temp };
   }
 
-  async update(id: string, dto: UpdateConsultorDto): Promise<ConsultorView> {
+  async update(id: string, dto: UpdateConsultorDto, quem?: AuthUser): Promise<ConsultorView> {
+    // §42.3: o gestor não muda Pix nem o modo da visita — a PRESENÇA da chave basta (mesmo `null`), antes de qualquer leitura.
+    if (ehGestor(quem)) {
+      for (const k of ['pix_key', 'pix_key_type', 'visit_flow'] as const) if (dto[k] !== undefined) throw campoProibido(k);
+    }
+    const cadastro = this.cadastroDoCorpo(dto, quem);
     const atual = await this.findOrFail(id);
-    const data: Prisma.field_consultantsUncheckedUpdateInput = {};
+    const data: Prisma.field_consultantsUncheckedUpdateInput = { ...cadastro };
     let sincronizar = false;
 
     if (dto.name !== undefined) data.name = dto.name.trim();
@@ -276,7 +361,7 @@ export class ConsultoresService {
       throw this.conflitoUnico(e);
     }
     if (sincronizar) await this.freela.sync(id);
-    return this.get(id);
+    return this.get(id, quem);
   }
 
   async resetPassword(id: string): Promise<{ temp_password: string }> {

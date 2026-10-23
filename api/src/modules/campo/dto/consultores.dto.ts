@@ -41,6 +41,20 @@ export class CreateConsultorDto {
   @IsString()
   @Length(1, 140)
   pix_key!: string;
+
+  // Lote E §41.3 (endereço e banco, com FIELD_CONSULTANT_PROFILE_ENABLED): validados no serviço, que diz o campo e nunca o valor.
+  // Sem inicializador: ausente = mantém; `null` = limpa (com a flag desligada, `null`/ausente é ignorado e valor = 422).
+  @IsOptional() @IsString() @MaxLength(160) address_cep?: string | null;
+  @IsOptional() @IsString() @MaxLength(160) address_street?: string | null;
+  @IsOptional() @IsString() @MaxLength(160) address_number?: string | null;
+  @IsOptional() @IsString() @MaxLength(160) address_complement?: string | null;
+  @IsOptional() @IsString() @MaxLength(160) address_district?: string | null;
+  @IsOptional() @IsString() @MaxLength(160) address_city?: string | null;
+  @IsOptional() @IsString() @MaxLength(160) address_state?: string | null;
+  @IsOptional() @IsString() @MaxLength(160) bank_name?: string | null;
+  @IsOptional() @IsString() @MaxLength(160) bank_branch?: string | null;
+  @IsOptional() @IsString() @MaxLength(160) bank_account?: string | null;
+  @IsOptional() @IsString() @MaxLength(160) bank_account_type?: string | null;
 }
 
 /** Tudo opcional e SEM inicializador: `active` ausente = mantém (CLAUDE.md). */
@@ -86,6 +100,20 @@ export class UpdateConsultorDto {
   @IsOptional()
   @IsIn(['simples', 'completo'])
   visit_flow?: string | null;
+
+  // Lote E §41.3 (endereço e banco, com FIELD_CONSULTANT_PROFILE_ENABLED): validados no serviço, que diz o campo e nunca o valor.
+  // Sem inicializador: ausente = mantém; `null` = limpa (com a flag desligada, `null`/ausente é ignorado e valor = 422).
+  @IsOptional() @IsString() @MaxLength(160) address_cep?: string | null;
+  @IsOptional() @IsString() @MaxLength(160) address_street?: string | null;
+  @IsOptional() @IsString() @MaxLength(160) address_number?: string | null;
+  @IsOptional() @IsString() @MaxLength(160) address_complement?: string | null;
+  @IsOptional() @IsString() @MaxLength(160) address_district?: string | null;
+  @IsOptional() @IsString() @MaxLength(160) address_city?: string | null;
+  @IsOptional() @IsString() @MaxLength(160) address_state?: string | null;
+  @IsOptional() @IsString() @MaxLength(160) bank_name?: string | null;
+  @IsOptional() @IsString() @MaxLength(160) bank_branch?: string | null;
+  @IsOptional() @IsString() @MaxLength(160) bank_account?: string | null;
+  @IsOptional() @IsString() @MaxLength(160) bank_account_type?: string | null;
 }
 
 export class ChannelsDto {

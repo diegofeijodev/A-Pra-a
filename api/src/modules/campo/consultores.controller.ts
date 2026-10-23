@@ -42,8 +42,8 @@ export class ConsultoresController {
   ) {}
 
   @Get()
-  list() {
-    return this.consultores.list();
+  list(@CurrentUser() user: AuthUser) {
+    return this.consultores.list(undefined, user);
   }
 
   @AdminOnly()
@@ -92,8 +92,8 @@ export class ConsultoresController {
 
   // ── rotas com :id ──
   @Get(':id')
-  get(@Param('id') id: string) {
-    return this.consultores.get(id);
+  get(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.consultores.get(id, user);
   }
 
   @Get(':id/days/:day')
@@ -103,8 +103,8 @@ export class ConsultoresController {
 
   @AdminOnly()
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateConsultorDto) {
-    return this.consultores.update(id, dto);
+  update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateConsultorDto) {
+    return this.consultores.update(id, dto, user);
   }
 
   @AdminOnly()
