@@ -22,6 +22,19 @@ export type Db = Prisma.TransactionClient;
 /** Situações em que a parada segura o lugar no dia (espelha o índice único parcial). */
 export const SEGURA_LUGAR = ['pendente', 'visitada', 'adiada'] as const;
 
+/**
+ * Regras de lead que pode entrar num roteiro (contrato §23.4): as dos candidatos da equipe, também usadas pelos planos de rota
+ * (§39.4). Mesma forma (e mesma ordem das chaves) que o `candidates` sempre mandou ao Prisma.
+ */
+export const filtroElegivel = (estagioMaximo: number) => ({
+  archived: false,
+  is_test: false,
+  stage: { lte: estagioMaximo },
+  // Modo do chefe S3 (§32.5): lead com cadastro declarado (não anulado) sai das rotas. Sem declaração, nada muda.
+  declared_signups: { none: { void: null } },
+  location_precision: { in: ['point', 'address'] },
+});
+
 export const conflitoVersao = () =>
   new ConflictException({ code: 'ROUTE_VERSION_CONFLICT', message: 'O roteiro mudou enquanto você editava. Recarregue e tente de novo.' });
 

@@ -4932,7 +4932,7 @@ Com `lead_ids` (1–2.000): cada um da praça, não arquivado e com coordenada (
 | POST | `/v1/route-plans/:id/items/:itemId/assign` | `{consultant_id, day, confirm_replace?}` | `200 { item: PlanItemView, route: RouteView, dropped: n }` |
 | POST | `/v1/route-plans/:id/archive` | — | `200 PlanView` (idempotente) |
 
-`PlanSummary`: `{ id, praca_id, area_id, area_name, kind, parent_lead_id, travel_mode, modelo_tempo, items, assigned, leads, truncated, created_at, created_by, archived_at }`.
+`PlanSummary`: `{ id, praca_id, area_id, area_name, kind, parent_lead_id, travel_mode, modelo_tempo, item_count, assigned_count, lead_count, truncated, created_at, created_by, archived_at }`.
 
 `PlanView` = `PlanSummary` + `params` (a foto de `field_config.divisao` e do relógio usados) + `items: PlanItemView[]` (ordem `seq`):
 
@@ -4967,7 +4967,7 @@ hoje é substituído só com `confirm_replace`). Arquivar nunca mexe nos roteiro
 
 ### 39.7 "Minhas rotas" do consultor — `GET /v1/campo/routes?from=&to=` (`@CampoRoute()`, só as do próprio consultor)
 
-`from`/`to` `YYYY-MM-DD` (padrão: hoje e hoje + 30), `from ≤ to`, no máximo 62 dias (senão `400 VALIDATION_ERROR`). Resposta `{ from, to, routes: [RouteView & { plan: { plan_id, name, color } | null }] }`,
+`from`/`to` `YYYY-MM-DD` (padrão: hoje e hoje + 30), `from ≤ to`, `to − from` ≤ 62 dias (senão `400 VALIDATION_ERROR`). Resposta `{ from, to, routes: [RouteView & { route_plan: { plan_id, item_id, name, color } | null }] }` (`plan` já é o resumo do §23.2),
 por dia: os roteiros do consultor no intervalo (ativos e encerrados), só leitura. O `GET /v1/campo/route/today` e as ações do roteiro de hoje não mudam.
 
 ### 39.8 Banco (migração aditiva `20261101100000_lovable_l7_planos`)

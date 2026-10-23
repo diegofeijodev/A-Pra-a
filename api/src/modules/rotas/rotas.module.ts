@@ -5,6 +5,8 @@ import { RotasConfigService } from './rotas-config.service';
 import { RotasConfigController, RotasEquipeController } from './rotas-equipe.controller';
 import { RotasEquipeService } from './rotas-equipe.service';
 import { ModoCampoService } from './modo-campo.service';
+import { MinhasRotasController, PlanosController } from './planos/planos.controller';
+import { PlanosService } from './planos/planos.service';
 import {
   FLUXO_SELECT_LIGADO,
   fluxoSelectLigadoProvider,
@@ -25,8 +27,8 @@ import {
  * importa este (início da jornada gera o roteiro; o check-in marca a parada).
  */
 @Module({
-  controllers: [RotasCampoController, RotasEquipeController, RotasConfigController],
-  providers: [RotasConfigService, RotasCampoService, RotasEquipeService, rotasLigadasProvider, fluxoSelectLigadoProvider, lovableAFlagsProvider, lovableBFlagsProvider, lovableCFlagsProvider, lovableDFlagsProvider, ModoCampoService],
+  controllers: [RotasCampoController, RotasEquipeController, RotasConfigController, PlanosController, MinhasRotasController],
+  providers: [RotasConfigService, RotasCampoService, RotasEquipeService, PlanosService, rotasLigadasProvider, fluxoSelectLigadoProvider, lovableAFlagsProvider, lovableBFlagsProvider, lovableCFlagsProvider, lovableDFlagsProvider, ModoCampoService],
   exports: [RotasCampoService, RotasConfigService, ROTAS_LIGADAS, FLUXO_SELECT_LIGADO, LOVABLE_A_FLAGS, LOVABLE_B_FLAGS, LOVABLE_C_FLAGS, LOVABLE_D_FLAGS, ModoCampoService],
 })
 export class RotasModule {}
