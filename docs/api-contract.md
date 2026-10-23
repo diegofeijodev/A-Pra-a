@@ -5285,7 +5285,7 @@ semana se ainda estiver aberta (senão a 1ª aberta depois dela, pelo mecanismo 
 a parte do mês é um alvo a mais da semana que contém o último dia. Confirmação tardia (ou anulação de declaração) dentro de `late_grace_days` depois do fim dessa semana gera **delta**
 (`source = "late_confirmation"`); fora do prazo nada é lançado. `snapshot`: `rule` (a versão do dia 1), `scope: "month"`, `inputs: { month, signups_month }` e a `conta`.
 Migração aditiva `20261106100000_lovable_l11_mensal`: os CHECKs do razão passam a aceitar `month` (`work_scope ∈ {day, week, month, manual}`; `accrual` ⇔ escopo `day|week|month`;
-`work_day` não nulo ⇔ escopo `day|month`). O trigger de imutabilidade não muda.
+`work_day` não nulo ⇔ escopo `day|month`) e o CHECK novo `field_earnings_ledger_month_day_check` (escopo `month` só com `work_day` no dia 1). O trigger de imutabilidade não muda.
 
 ### 43.4 Exemplo (outubro de 2026, semana de segunda a domingo, Pix na segunda)
 
