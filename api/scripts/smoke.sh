@@ -2211,6 +2211,29 @@ curl -s -X PATCH $API/v1/campo/visits/$V2/answers -H "$J" -H "$HC" \
 curl -s -X POST $API/v1/campo/visits/$V2/checkout -H "$J" -H "$HC" -d "{$POS_CAMPO}" > /dev/null
 check "segunda visita: etapa ≥ 3 se mantém" "3" "$(curl -s $API/v1/leads/$LEAD_CAMPO -H "$HD" | jq .stage)"
 
+echo "── Restante da Lovable, lote F1 (§43/§45), flags desligadas: nada muda ──"
+# Com FIELD_EARNINGS_MONTHLY_ENABLED e FIELD_EARNINGS_PER_CONSULTANT_ENABLED desligadas (padrão) o cálculo, o razão e o wire são os
+# de hoje. Ligadas: `scripts/smoke-lovable-f1.sh` (não roda junto). Vale com a remuneração ligada (produção) ou desligada.
+REM_CODE=$(curl -s -o /tmp/praca-smoke-f.json -w '%{http_code}' $API/v1/consultores/earnings/config -H "$HD")
+if [ "$REM_CODE" = "200" ]; then
+  F_BASE=$(jq -c '.current.config' /tmp/praca-smoke-f.json)
+  F_DIA1=$(date -d "$(TZ=America/Sao_Paulo date +%Y-%m-01) +1 month" +%F)
+  check "config da remuneração: sem as features do lote F1" "false|false" "$(jq -r '.features | "\(has("monthly_enabled"))|\(has("per_consultant_enabled"))"' /tmp/praca-smoke-f.json)"
+  check "tiers_period month = 409 MONTHLY_DISABLED (PUT e simulador); nada gravado" "409|MONTHLY_DISABLED|409|$(jq '.history | length' /tmp/praca-smoke-f.json)" \
+    "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' -X PUT $API/v1/consultores/earnings/config -H "$J" -H "$HD" -d "{\"valid_from\":\"$F_DIA1\",\"config\":$(echo "$F_BASE" | jq -c '. + {tiers_period:"month",combine:"sum"}')}")|$(jq -r .error.code /tmp/praca-smoke-l.json)|$(curl -s -o /dev/null -w '%{http_code}' -X POST $API/v1/consultores/earnings/simulate -H "$J" -H "$HD" -d "{\"signups_confirmed\":1,\"config\":$(echo "$F_BASE" | jq -c '. + {tiers_period:"month",combine:"sum"}')}")|$(curl -s $API/v1/consultores/earnings/config -H "$HD" | jq '.history | length')"
+  check "outro tiers_period inválido = 400 com a frase de hoje" "400|tiers_period: use day ou week." \
+    "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' -X PUT $API/v1/consultores/earnings/config -H "$J" -H "$HD" -d "{\"valid_from\":\"$F_DIA1\",\"config\":$(echo "$F_BASE" | jq -c '. + {tiers_period:"ano"}')}")|$(jq -r .error.message /tmp/praca-smoke-l.json)"
+  check "regra por consultor: GET e POST = PER_CONSULTANT_DISABLED" "404|PER_CONSULTANT_DISABLED|404" \
+    "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' "$API/v1/consultores/earnings/consultant-rules?consultant_id=$CONS_ID" -H "$HD")|$(jq -r .error.code /tmp/praca-smoke-l.json)|$(curl -s -o /dev/null -w '%{http_code}' -X POST $API/v1/consultores/earnings/consultant-rules -H "$J" -H "$HD" -d '{}')"
+  check "simulador: consultant_id = 422 PER_CONSULTANT_DISABLED; null é ignorado (resposta de hoje)" "422|PER_CONSULTANT_DISABLED|200|false" \
+    "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' -X POST $API/v1/consultores/earnings/simulate -H "$J" -H "$HD" -d "{\"signups_confirmed\":1,\"consultant_id\":\"$CONS_ID\"}")|$(jq -r .error.code /tmp/praca-smoke-l.json)|$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' -X POST $API/v1/consultores/earnings/simulate -H "$J" -H "$HD" -d '{"signups_confirmed":1,"consultant_id":null}')|$(jq 'has("rule") or has("month")' /tmp/praca-smoke-l.json)"
+  check "extrato e ganhos do consultor sem month nem rule" "false|false" \
+    "$(curl -s "$API/v1/consultores/earnings?consultant_id=$CONS_ID" -H "$HD" | jq '[.consultants[] | (has("month") or has("rule"))] | any')|$(curl -s $API/v1/campo/earnings -H "$HC" | jq 'has("month") or has("rule")')"
+else
+  check "remuneração desligada: regra por consultor = EARNINGS_DISABLED" "404|EARNINGS_DISABLED" \
+    "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' "$API/v1/consultores/earnings/consultant-rules?consultant_id=$CONS_ID" -H "$HD")|$(jq -r .error.code /tmp/praca-smoke-l.json)"
+fi
+
 echo "── Campo: P0 §30 (fechado, recusa, retorno com hora, contato) ──"
 V3=$(uuid)
 VISITA_3=$(checkin "$V3" "$LAT" "lead_id=$LEAD_CAMPO" /tmp/praca-smoke-fachada.jpg)

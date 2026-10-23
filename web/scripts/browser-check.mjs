@@ -983,6 +983,37 @@ console.log('-- Campo: GPS negado --');
     }
   }
 
+  // ── Restante da Lovable, lote F1 (contrato §43/§45): só com as flags (descobertas pelo `features` da remuneração, sem sondar 404) ──
+  // Sem a remuneração ligada a chamada direta dá 404 (fora do navegador: não conta como falha de página) e o bloco não roda.
+  const remCfg = await api('GET', '/v1/consultores/earnings/config').catch(() => null);
+  const remFeat = remCfg?.features ?? {};
+  if (remFeat.monthly_enabled) {
+    console.log('-- Equipe: bônus mensal (L11) --');
+    const versoesAntesF1 = remCfg.history.length;
+    await page.goto(`${BASE}/configuracoes`, { waitUntil: 'networkidle' });
+    check('Remuneração: "Mês" entre os períodos das faixas', (await page.locator('#rem-period option[value="month"]').count()) === 1);
+    await page.locator('#rem-period').selectOption('month');
+    await page.getByText('O bônus do mês é pago no primeiro Pix depois do fim do mês').first().waitFor({ timeout: 10000 });
+    check('Mês: a ajuda mostra a data real do Pix (mês → dia do Pix)', /\(\S+ → (seg|ter|qua|qui|sex|sáb|dom) \d{2}\/\d{2}\)/.test(await page.locator('body').innerText()));
+    check('Mês: "o maior dos dois" fica desligado e o teto também', (await page.locator('#rem-combine option[value="max"]').isDisabled()) && (await page.locator('#rem-cap').isDisabled()));
+    await page.getByLabel('Simular o mês').check();
+    await page.getByText('o bônus do mês é').first().waitFor({ timeout: 15000 });
+    check('Simular o mês: calcula pela mesma função do servidor, com a conta', (await corpo(page)).includes('no mês, o bônus do mês é') && (await corpo(page)).includes('bônus do mês: r$'));
+    await page.getByLabel('Simular o mês').uncheck();
+    await page.locator('#rem-period').selectOption('day');
+    check('Mês: só preenche o formulário, nenhuma versão nova', (await api('GET', '/v1/consultores/earnings/config')).history.length === versoesAntesF1);
+  }
+  if (remFeat.per_consultant_enabled && consultorId) {
+    console.log('-- Equipe: regra de pagamento por consultor (L13) --');
+    await page.goto(`${BASE}/consultores/${consultorId}`, { waitUntil: 'networkidle' });
+    const resumo = page.getByText('Regra de pagamento deste consultor');
+    await resumo.first().waitFor({ timeout: 15000 });
+    await resumo.first().click();
+    await page.getByText('Hoje vale:').first().waitFor({ timeout: 15000 });
+    check('Consultor: "Hoje vale: Regra geral · versão N" (sem regra própria)', /hoje vale: regra geral · versão \d+\./.test(await corpo(page)));
+    check('Consultor: o calendário fica com a regra geral (sem os campos da semana)', (await page.locator('#rem-wstart').count()) === 0 && (await page.getByRole('button', { name: 'Salvar regra própria' }).count()) === 1);
+  }
+
   // ── Restante da Lovable, lote A (contrato §33/§34): links e telas só com as flags; desligadas, nada é sondado (sem 404) ──
   console.log('-- Equipe: lote A da Lovable (painel, resumo do dia, mapa por situação) --');
   const lov = (await api('GET', '/v1/consultores/settings/config')).features ?? {};
