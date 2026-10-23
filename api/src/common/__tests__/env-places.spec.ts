@@ -1,6 +1,7 @@
 import { validateEnv } from '../config/env.validation';
 import { lerFlagsLovableD, velocidadeCarroKmh } from '../../modules/rotas/rotas.tokens';
 import { lerFlagsLovableE } from '../flags/lovable-e.flags';
+import { earningsOpcoesProvider } from '../../modules/campo/earnings/earnings.tokens';
 
 const BASE = { DATABASE_URL: 'postgresql://praca:praca@localhost:5437/praca', JWT_SECRET: 'x'.repeat(16) };
 
@@ -145,5 +146,31 @@ describe('env — restante da Lovable, lote A (§33/§34)', () => {
       expect(validateEnv(BASE)[k]).toBe('false');
       expect(validateEnv({ ...BASE, [k]: 'true' })[k]).toBe('true');
     }
+  });
+});
+
+describe('env — restante da Lovable, lote F1 (§43/§45)', () => {
+  const F1 = ['FIELD_EARNINGS_MONTHLY_ENABLED', 'FIELD_EARNINGS_PER_CONSULTANT_ENABLED'] as const;
+  const opcoes = (env: Record<string, string>) => {
+    const antes = { ...process.env };
+    try {
+      Object.assign(process.env, BASE, env);
+      return (earningsOpcoesProvider as { useFactory: () => { mensalLigado?: boolean; porConsultorLigado?: boolean } }).useFactory();
+    } finally {
+      for (const k of Object.keys(process.env)) if (!(k in antes)) delete process.env[k];
+      Object.assign(process.env, antes);
+    }
+  };
+  it('bônus mensal e regra por consultor: desligados por padrão e aceitam true', () => {
+    for (const k of F1) {
+      expect(validateEnv(BASE)[k]).toBe('false');
+      expect(validateEnv({ ...BASE, [k]: 'true' })[k]).toBe('true');
+    }
+  });
+  it('só valem com FIELD_EARNINGS_ENABLED; cada flag liga só o seu módulo', () => {
+    const off = { FIELD_EARNINGS_ENABLED: 'false', FIELD_EARNINGS_MONTHLY_ENABLED: 'true', FIELD_EARNINGS_PER_CONSULTANT_ENABLED: 'true' };
+    expect(opcoes(off)).toMatchObject({ mensalLigado: false, porConsultorLigado: false });
+    expect(opcoes({ FIELD_EARNINGS_ENABLED: 'true', FIELD_EARNINGS_MONTHLY_ENABLED: 'true', FIELD_EARNINGS_PER_CONSULTANT_ENABLED: 'false' })).toMatchObject({ mensalLigado: true, porConsultorLigado: false });
+    expect(opcoes({ FIELD_EARNINGS_ENABLED: 'true', FIELD_EARNINGS_MONTHLY_ENABLED: 'false', FIELD_EARNINGS_PER_CONSULTANT_ENABLED: 'true' })).toMatchObject({ mensalLigado: false, porConsultorLigado: true });
   });
 });

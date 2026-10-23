@@ -66,6 +66,8 @@ export interface VersaoNova {
   reason: string | null;
   created_by: string | null;
   created_by_name: string | null;
+  /** L13 (§45.3): regra própria do consultor; ausente/nulo = regra geral. */
+  consultant_id?: string | null;
 }
 
 /** Versão da regra como foi registrada (com autoria), para a tela de configuração. */
@@ -73,6 +75,8 @@ export interface VersaoRegistrada extends VersaoRegra {
   reason: string | null;
   created_by_name: string | null;
   created_at: Date;
+  /** L13 (§45.3): só nas regras próprias de consultor (as gerais não têm a chave). */
+  consultant_id?: string;
 }
 
 export interface FiltroLancamentos {
@@ -86,7 +90,12 @@ export interface FiltroLancamentos {
 
 /** Leituras (sem transação). */
 export interface EarningsLeitura {
+  /** Só a regra GERAL (`consultant_id` nulo). Regra de consultor NUNCA entra aqui (senão valeria para todos). */
   versoes(): Promise<VersaoRegistrada[]>;
+  /** L13 (§45.2): as regras próprias de cada consultor (quem não tem não aparece). Só chamada com a flag ligada. */
+  versoesDosConsultores(consultantIds: string[]): Promise<Map<string, VersaoRegistrada[]>>;
+  /** L13 (§45.4): `week_end` da última semana fechada do consultor (null = nenhuma). */
+  ultimaSemanaFechada(consultantId: string): Promise<string | null>;
   existeRazaoOuFechamento(): Promise<boolean>;
   /** Menor `week_start` com fechamento de CADA consultor (quem nunca fechou não aparece). */
   primeiraSemanaPorConsultor(consultantIds: string[]): Promise<Map<string, string>>;
@@ -104,6 +113,8 @@ export interface EarningsTx extends EarningsLeitura {
   inserirLancamento(n: LancamentoNovo): Promise<{ criado: boolean; row: LancamentoRow }>;
   /** Se a semana já está fechada devolve o fechamento existente com `criado: false`. */
   inserirPeriodo(p: PeriodoNovo): Promise<{ criado: boolean; row: PeriodoRow }>;
+  /** L13 (§45.4): a regra própria do consultor nasce sob o MESMO lock do fechamento dele. */
+  inserirVersao(v: VersaoNova): Promise<VersaoRegistrada>;
 }
 
 export interface EarningsRepository extends EarningsLeitura {
@@ -166,17 +177,41 @@ function paraVersao(r: Record<string, any>): VersaoRegistrada {
     reason: r.reason,
     created_by_name: r.created_by_name,
     created_at: r.created_at,
+    ...(r.consultant_id ? { consultant_id: r.consultant_id as string } : {}),
   };
 }
+
+const ORDEM_VERSOES = [{ valid_from: 'asc' as const }, { version: 'asc' as const }];
 
 class Leitor implements EarningsLeitura {
   constructor(protected readonly db: Cliente) {}
 
   async versoes(): Promise<VersaoRegistrada[]> {
     const rows = await this.db.field_pay_rule_versions.findMany({
-      orderBy: [{ valid_from: 'asc' }, { version: 'asc' }],
+      where: { consultant_id: null },
+      orderBy: ORDEM_VERSOES,
     });
     return rows.map(paraVersao);
+  }
+
+  async versoesDosConsultores(consultantIds: string[]): Promise<Map<string, VersaoRegistrada[]>> {
+    const out = new Map<string, VersaoRegistrada[]>();
+    if (!consultantIds.length) return out;
+    const rows = await this.db.field_pay_rule_versions.findMany({
+      where: { consultant_id: { in: consultantIds } },
+      orderBy: ORDEM_VERSOES,
+    });
+    for (const r of rows) {
+      const lista = out.get(r.consultant_id as string) ?? [];
+      lista.push(paraVersao(r));
+      out.set(r.consultant_id as string, lista);
+    }
+    return out;
+  }
+
+  async ultimaSemanaFechada(consultantId: string): Promise<string | null> {
+    const r = await this.db.field_payout_periods.aggregate({ where: { consultant_id: consultantId }, _max: { week_end: true } });
+    return r._max.week_end ?? null;
   }
 
   async existeRazaoOuFechamento(): Promise<boolean> {
@@ -279,6 +314,11 @@ export class TxPrisma extends Leitor implements EarningsTx {
     if (existente) return { criado: false, row: paraPeriodo(existente) };
     const row = await this.tx.field_payout_periods.create({ data: { ...p, status: 'closed' } });
     return { criado: true, row: paraPeriodo(row) };
+  }
+
+  async inserirVersao(v: VersaoNova): Promise<VersaoRegistrada> {
+    const r = await this.tx.field_pay_rule_versions.create({ data: { ...v, config: v.config as Prisma.InputJsonValue } });
+    return paraVersao(r);
   }
 }
 

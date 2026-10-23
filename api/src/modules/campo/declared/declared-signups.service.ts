@@ -28,6 +28,7 @@ import {
   type StatusDeclaracao,
 } from '../../../domain/declared-rules';
 import { inicioDaSemana, normalizarRegra, versaoVigente, type VersaoRegra } from '../../../domain/earnings-rules';
+import { versoesDoConsultor } from '../../../domain/regra-consultor-rules';
 import { CAMPO_DA_REGRA, type RegraConfirmacao } from '../../../domain/signup-sync-rules';
 import { RotasConfigService } from '../../rotas/rotas-config.service';
 import { EARNINGS_REPOSITORY, type EarningsRepository } from '../earnings/earnings.repository';
@@ -182,8 +183,11 @@ export class DeclaredSignupsService {
       arr.push({ consultant_id: c.consultant_id, confirmado: c[evento] != null });
       porLead.set(c.lead_id as string, arr);
     }
-    const regraDoDia = (dia: string) => normalizarRegra((versaoVigente(versoes, dia) as VersaoRegra | null)?.config ?? ({} as never));
-    const capDoDia = (dia: string) => regraDoDia(dia).declared_daily_cap;
+    // L13 (§45.5): com a flag, cada consultor pela regra dele (a própria a partir da 1ª; antes, a geral). Desligada: a geral.
+    const proprias = this.opcoes?.porConsultorLigado ? await this.repo.versoesDosConsultores([...new Set(decl.map((d) => d.consultant_id))]) : new Map<string, VersaoRegra[]>();
+    const regraDoDia = (dia: string, consultantId: string) =>
+      normalizarRegra((versaoVigente(versoesDoConsultor(versoes, proprias.get(consultantId) ?? []), dia) as VersaoRegra | null)?.config ?? ({} as never));
+    const capDoDia = (dia: string, consultantId: string) => regraDoDia(dia, consultantId).declared_daily_cap;
     const acima = acimaDoLimite(
       decl.map((d) => ({
         id: d.id,
@@ -211,7 +215,7 @@ export class DeclaredSignupsService {
         lead_id: d.lead_id,
         visit_id: d.visit_id,
         rule_version: d.rule_version,
-        paid_by: regraDoDia(d.declared_day).signup_source,
+        paid_by: regraDoDia(d.declared_day, d.consultant_id).signup_source,
         status: c.status,
         over_cap: acima.has(d.id),
         confirmed_by_other_consultant: c.por_outro,

@@ -388,12 +388,14 @@ export class ConsultoresService {
   async remove(id: string): Promise<{ ok: true }> {
     const c = await this.findOrFail(id);
     // O razão da remuneração é permanente (FK Restrict, §28.3): quem tem ganhos lançados é desativado, não apagado.
-    const [ganhos, fechamentos, declaracoes] = await Promise.all([
+    // L13 (§45.3): regra própria também é permanente (FK Restrict + trigger): uma contagem a mais, mesmo com a flag desligada.
+    const [ganhos, fechamentos, declaracoes, regras] = await Promise.all([
       this.prisma.field_earnings_ledger.count({ where: { consultant_id: id } }),
       this.prisma.field_payout_periods.count({ where: { consultant_id: id } }),
       this.prisma.field_declared_signups.count({ where: { consultant_id: id } }),
+      this.prisma.field_pay_rule_versions.count({ where: { consultant_id: id } }),
     ]);
-    if (ganhos + fechamentos + declaracoes > 0) {
+    if (ganhos + fechamentos + declaracoes + regras > 0) {
       throw new ConflictException({ code: 'HAS_EARNINGS', message: 'Este consultor tem ganhos lançados e não pode ser apagado. Desative o acesso em vez de apagar.' });
     }
     // Pedido de cupom é um fato (FK Restrict + trigger, contrato §38.9): quem pediu é desativado, não apagado.

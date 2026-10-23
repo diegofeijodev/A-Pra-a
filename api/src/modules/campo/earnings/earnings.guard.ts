@@ -17,3 +17,20 @@ export class EarningsLigadoGuard implements CanActivate {
     return true;
   }
 }
+
+export const porConsultorDesligado = () =>
+  new NotFoundException({
+    code: 'PER_CONSULTANT_DISABLED',
+    message: 'A regra de pagamento por consultor não está habilitada.',
+  });
+
+/** L13 §45.1: rotas da regra por consultor só existem com a flag (e a remuneração) ligadas. */
+@Injectable()
+export class PorConsultorLigadoGuard implements CanActivate {
+  constructor(@Inject(EARNINGS_OPCOES) private readonly opcoes: OpcoesEarnings) {}
+
+  canActivate(): boolean {
+    if (!this.opcoes.porConsultorLigado) throw porConsultorDesligado();
+    return true;
+  }
+}

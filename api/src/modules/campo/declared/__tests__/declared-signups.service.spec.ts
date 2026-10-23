@@ -34,7 +34,7 @@ interface Decl {
   consultant: { name: string; praca_id: string };
 }
 
-function montar(opts: { ligado?: boolean; regra?: object; confirmacao?: 'activated' | 'first_vacancy' } = {}) {
+function montar(opts: { ligado?: boolean; regra?: object; confirmacao?: 'activated' | 'first_vacancy'; porConsultor?: boolean; proprias?: Record<string, object> } = {}) {
   const decls: Decl[] = [];
   const signups: Array<Record<string, unknown>> = [];
   const nomes: Record<string, string> = { [C1]: 'Ana', [C2]: 'Beto' };
@@ -68,6 +68,14 @@ function montar(opts: { ligado?: boolean; regra?: object; confirmacao?: 'activat
   };
   const repo = {
     versoes: async () => [{ version: 1, valid_from: '1970-01-01', config: (opts.regra ?? PRESET_CHEFE) as never, reason: null, created_by_name: null, created_at: new Date() }],
+    // L13: regra própria de cada consultor (versão 9, desde 01/10), só lida com a flag.
+    versoesDosConsultores: jest.fn(async (ids: string[]) =>
+      new Map(
+        ids
+          .filter((id) => opts.proprias?.[id])
+          .map((id) => [id, [{ version: 9, valid_from: '2026-10-01', config: opts.proprias?.[id] as never, reason: null, created_by_name: null, created_at: new Date(), consultant_id: id }]]),
+      ),
+    ),
   } as unknown as EarningsRepository;
   const configs = {
     cadastro: async () => ({ confirmation_rule: opts.confirmacao ?? 'activated' }),
@@ -78,6 +86,7 @@ function montar(opts: { ligado?: boolean; regra?: object; confirmacao?: 'activat
     autoClose: false,
     janelaNaoConfirmadosDias: 45,
     declaradasLigado: opts.ligado ?? true,
+    porConsultorLigado: opts.porConsultor ?? false,
   });
   const declarar = async (n: number, o: { c?: string; dia?: string; hora?: number } = {}) => {
     const agora = new Date(`${o.dia ?? '2026-10-26'}T${String(o.hora ?? 12).padStart(2, '0')}:00:00.000Z`);
@@ -92,7 +101,7 @@ function montar(opts: { ligado?: boolean; regra?: object; confirmacao?: 'activat
       preparo,
     });
   };
-  return { s, prisma, decls, signups, declarar };
+  return { s, prisma, decls, signups, declarar, repo };
 }
 
 describe('registro na declaração (dentro do checkout)', () => {
@@ -160,6 +169,21 @@ describe('relatório de divergência', () => {
     const m = montar({ regra: { ...REGRA_PADRAO } });
     await m.declarar(1);
     expect((await m.s.relatorio({ from: '2026-10-26', to: '2026-10-26' }, AGORA)).rows[0]?.paid_by).toBe('freela_confirmed');
+  });
+  it('L13: com a flag, paid_by e o limite seguem a regra própria do consultor; desligada, a geral (sem consultar)', async () => {
+    const proprias = { [C1]: { ...PRESET_CHEFE, declared_daily_cap: 2 } };
+    const m = montar({ regra: { ...REGRA_PADRAO }, porConsultor: true, proprias });
+    for (let i = 1; i <= 3; i++) await m.declarar(i, { hora: 10 + i });
+    await m.declarar(4, { c: C2 });
+    const r = await m.s.relatorio({ from: '2026-10-26', to: '2026-10-26' }, AGORA);
+    expect(r.rows.filter((x) => x.consultant_id === C1).map((x) => x.paid_by)).toEqual(['declared', 'declared', 'declared']);
+    expect(r.rows.find((x) => x.consultant_id === C2)?.paid_by).toBe('freela_confirmed');
+    expect(r.totals.over_cap).toBe(1);
+    const off = montar({ regra: { ...REGRA_PADRAO }, proprias });
+    for (let i = 1; i <= 3; i++) await off.declarar(i, { hora: 10 + i });
+    const r2 = await off.s.relatorio({ from: '2026-10-26', to: '2026-10-26' }, AGORA);
+    expect(r2.rows.every((x) => x.paid_by === 'freela_confirmed') && r2.totals.over_cap === 0).toBe(true);
+    expect((off.repo as unknown as { versoesDosConsultores: jest.Mock }).versoesDosConsultores).not.toHaveBeenCalled();
   });
   it('período inválido ou longo demais = 400', async () => {
     const m = montar();

@@ -52,7 +52,8 @@ export interface DeclaracaoParaLimite {
  */
 export function acimaDoLimite(
   decls: readonly DeclaracaoParaLimite[],
-  capDoDia: (dia: string) => number | null,
+  /** L13 (§45.5): recebe também o consultor (a regra própria dele pode ter outro limite). */
+  capDoDia: (dia: string, consultantId: string) => number | null,
 ): Set<string> {
   const grupos = new Map<string, DeclaracaoParaLimite[]>();
   for (const d of decls) {
@@ -64,7 +65,8 @@ export function acimaDoLimite(
   }
   const acima = new Set<string>();
   for (const [k, g] of grupos) {
-    const cap = capDoDia(k.split('|')[1] as string);
+    const [consultantId, dia] = k.split('|') as [string, string];
+    const cap = capDoDia(dia, consultantId);
     if (cap === null) continue;
     g.sort((a, b) => a.declared_at.getTime() - b.declared_at.getTime() || a.id.localeCompare(b.id));
     for (const d of g.slice(cap)) acima.add(d.id);

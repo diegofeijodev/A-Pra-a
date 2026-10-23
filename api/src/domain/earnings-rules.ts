@@ -918,6 +918,27 @@ export function calcularSemana(p: {
   };
 }
 
+/**
+ * A frase do mês para a tela (contrato §43.5): "Meta de outubro: 42 cadastros confirmados → faixa 40 = R$ 300,00, entra no
+ * Pix de seg 02/11." ou, em andamento, "Meta do mês (outubro): 28 de 40 cadastros confirmados. Faltam 12 para R$ 300,00 (Pix…)".
+ */
+export function fraseDoMes(m: ResultadoMes, o: { fonte: FonteCadastro; cumulativo: boolean; pixLabel: string }): string {
+  const [um, varios] = o.fonte === 'declared' ? ['cadastro declarado', 'cadastros declarados'] : ['cadastro confirmado', 'cadastros confirmados'];
+  const nome = nomeDoMes(m.mes);
+  const faixa = m.faixa ? (o.cumulativo ? `metas atingidas = ${brl(m.month_part_cents)}` : `faixa ${m.faixa.min_signups} = ${brl(m.month_part_cents)}`) : null;
+  if (m.encerrado)
+    return faixa
+      ? `Meta de ${nome}: ${plural(m.signups, um, varios)} → ${faixa}, entra no Pix de ${o.pixLabel}.`
+      : `Meta de ${nome}: ${plural(m.signups, um, varios)}; nenhuma faixa do mês atingida.`;
+  const prox = m.proxima_faixa;
+  const agora = faixa ? `${plural(m.signups, um, varios)} → ${faixa} até agora` : null;
+  if (prox) {
+    const base = agora ?? `${m.signups} de ${plural(prox.min_signups, um, varios)}`;
+    return `Meta do mês (${nome}): ${base}. Faltam ${prox.faltam} para ${brl(prox.amount_cents)} (Pix de ${o.pixLabel}).`;
+  }
+  return `Meta do mês (${nome}): ${agora ?? plural(m.signups, um, varios)} (Pix de ${o.pixLabel}).`;
+}
+
 // ── razão: alvos, deltas, semana de pagamento ─────────────────────────────
 
 /** `month` (L11 §43.3): a parte do mês, alvo da semana que contém o último dia; `work_day` = dia 1 do mês. */

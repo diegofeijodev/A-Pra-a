@@ -8,8 +8,8 @@ import { CurrentConsultant } from '../../../common/decorators/current-consultant
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { isUuid } from '../../../common/ids/uuid';
 import { NotFoundException } from '@nestjs/common';
-import { AjusteDto, ConfigRemuneracaoDto, EarningsQueryDto, EstornoDto, FecharDto, ReconciliarDto, SimularDto } from './dto/earnings.dto';
-import { EarningsLigadoGuard } from './earnings.guard';
+import { AjusteDto, ConfigRemuneracaoDto, EarningsQueryDto, EstornoDto, FecharDto, ReconciliarDto, RegraConsultorDto, RegrasConsultorQueryDto, SimularDto } from './dto/earnings.dto';
+import { EarningsLigadoGuard, PorConsultorLigadoGuard } from './earnings.guard';
 import { EarningsService } from './earnings.service';
 
 /**
@@ -39,6 +39,21 @@ export class EarningsEquipeController {
   @Post('simulate')
   simular(@Body() dto: SimularDto) {
     return this.earnings.simular(dto);
+  }
+
+  /** L13 §45.4: regra própria do consultor. Leitura e escrita SÓ admin (o gestor não vê pagamento nem configuração). */
+  @AdminOnly()
+  @UseGuards(PorConsultorLigadoGuard)
+  @Get('consultant-rules')
+  regrasDoConsultor(@Query() q: RegrasConsultorQueryDto) {
+    return this.earnings.regrasDoConsultor(q.consultant_id);
+  }
+
+  @AdminOnly()
+  @UseGuards(PorConsultorLigadoGuard)
+  @Post('consultant-rules')
+  criarRegraDoConsultor(@CurrentUser() user: AuthUser, @Body() dto: RegraConsultorDto) {
+    return this.earnings.criarRegraDoConsultor(dto, user);
   }
 
   @Get()

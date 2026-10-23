@@ -12,6 +12,10 @@ export interface OpcoesEarnings {
   declaradasLigado?: boolean;
   /** Lote B §37.6: `FIELD_BREAKS_ENABLED` (a diária com tempo trabalhado mínimo desconta o intervalo). */
   intervaloLigado?: boolean;
+  /** L11 §43.1: `FIELD_EARNINGS_MONTHLY_ENABLED` E `FIELD_EARNINGS_ENABLED` (aceita `tiers_period = month`). */
+  mensalLigado?: boolean;
+  /** L13 §45.1: `FIELD_EARNINGS_PER_CONSULTANT_ENABLED` E `FIELD_EARNINGS_ENABLED` (desligada = regras por consultor ignoradas). */
+  porConsultorLigado?: boolean;
 }
 
 /** `FIELD_EARNINGS_ENABLED` / `FIELD_EARNINGS_AUTOCLOSE_ENABLED` (contrato §28.8). */
@@ -28,6 +32,8 @@ export const earningsOpcoesProvider: Provider = {
       rotasLigadas: e.FIELD_ROUTES_ENABLED === 'true',
       declaradasLigado: e.FIELD_EARNINGS_ENABLED === 'true' && e.FIELD_DECLARED_SIGNUPS_ENABLED === 'true',
       intervaloLigado: e.FIELD_BREAKS_ENABLED === 'true',
+      mensalLigado: e.FIELD_EARNINGS_ENABLED === 'true' && e.FIELD_EARNINGS_MONTHLY_ENABLED === 'true',
+      porConsultorLigado: e.FIELD_EARNINGS_ENABLED === 'true' && e.FIELD_EARNINGS_PER_CONSULTANT_ENABLED === 'true',
     };
   },
 };

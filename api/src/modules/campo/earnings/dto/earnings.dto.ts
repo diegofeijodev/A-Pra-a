@@ -27,6 +27,22 @@ export class SimularDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(1000) visits?: number;
   @IsOptional() @IsBoolean() journey_open?: boolean;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(1440) worked_minutes?: number;
+  /** L11 §43.5: cadastros do mês para simular a parte mensal (só pesa com regra mensal). */
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(30000) month_signups?: number;
+  /** L13 §45.5: simula pela regra do consultor (com a flag; null = ignorado). */
+  @IsOptional() @IsString() @MaxLength(64) consultant_id?: string | null;
+}
+
+/** L13 §45.4: id inválido vira 404 no serviço (como os ids da URL). */
+export class RegrasConsultorQueryDto {
+  @IsString() @MaxLength(64) consultant_id!: string;
+}
+
+export class RegraConsultorDto {
+  @IsString() @MaxLength(64) consultant_id!: string;
+  @IsDayString() valid_from!: string;
+  @IsOptional() @IsString() @MaxLength(500) reason?: string;
+  @IsObject() config!: Record<string, unknown>;
 }
 
 export class EarningsQueryDto {

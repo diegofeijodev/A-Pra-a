@@ -14,16 +14,23 @@ import {
 } from '@nestjs/common';
 import { AuthUser } from '../../../common/auth/auth-user';
 import { CampoConsultant } from '../../../common/auth/campo-consultant';
-import { addDays, minutesSp, todaySp, weekdaySp } from '../../../common/time/dates';
+import { isUuid } from '../../../common/ids/uuid';
+import { addDays, eachDay, minutesSp, todaySp, weekdaySp } from '../../../common/time/dates';
 import {
   alvosDaSemana,
   brl,
   calcularDia,
+  calcularMes,
   calcularSemana,
   dataBR,
   dentroDoPrazoTardio,
   diaMes,
+  fraseDoMes,
   inicioDaSemana,
+  mesDoDia,
+  mesQueTerminaNaSemana,
+  nomeDoMes,
+  rotuloDia,
   CHAVES_NOVAS_PADRAO,
   LIMITES_REGRA,
   LIMITES_REGRA_NOVOS,
@@ -36,6 +43,7 @@ import {
   REGRA_PADRAO,
   semanaDePagamento,
   semanaEncerrada,
+  ultimoDiaDoMes,
   validarRegra,
   validarVigencia,
   versaoVigente,
@@ -45,11 +53,13 @@ import {
   type JaLancado,
   type RegraBruta,
   type ResultadoDia,
+  type ResultadoMes,
   type ResultadoSemana,
 } from '../../../domain/earnings-rules';
+import { rotuloRegraAplicada, validarRegraDoConsultor, versoesDoConsultor, type EscopoRegra } from '../../../domain/regra-consultor-rules';
 import type { RegraConfirmacao } from '../../../domain/signup-sync-rules';
 import { RotasConfigService } from '../../rotas/rotas-config.service';
-import type { AjusteDto, ConfigRemuneracaoDto, EstornoDto, SimularDto } from './dto/earnings.dto';
+import type { AjusteDto, ConfigRemuneracaoDto, EstornoDto, RegraConsultorDto, SimularDto } from './dto/earnings.dto';
 import { EARNINGS_INPUTS, type ConsultorBasico, type DiaBruto, type EarningsInputs, type InsumosExtras } from './earnings-inputs';
 import {
   EARNINGS_REPOSITORY,
@@ -84,6 +94,20 @@ interface Ctx {
   vigente: VersaoRegistrada;
   weekStart: number;
   semanaAtual: string;
+  /**
+   * L13 (§45.2): regras próprias dos consultores já lidos nesta operação. Vazio com a flag desligada (nenhuma consulta):
+   * aí todo consultor usa `versoes` (a geral) e o cálculo é o de sempre.
+   */
+  proprias: Map<string, VersaoRegistrada[]>;
+}
+
+/** A regra que valeu num dia para um consultor (contrato §45.4). */
+export interface RegraAplicada {
+  scope: EscopoRegra;
+  version: number;
+  valid_from: string;
+  label: string;
+  config_effective: ReturnType<typeof normalizarRegra>;
 }
 
 export interface Visao {
@@ -109,6 +133,10 @@ export interface SimulacaoView {
     conta: string[];
     rule_version: number | null;
   };
+  /** L11 §43.5: a parte do mês, só com regra mensal e `month_signups`. */
+  month?: { total_cents: number; conta: string[] };
+  /** L13 §45.5: só quando simulou pela regra de um consultor. */
+  rule?: RegraAplicada;
 }
 
 export interface Ator {
@@ -145,6 +173,8 @@ export const versaoView = (v: VersaoRegistrada) => ({
   config: v.config,
   /** A regra completa (chaves ausentes preenchidas com o padrão = comportamento atual). */
   config_effective: normalizarRegra(v.config),
+  /** L13 §45.4: só nas regras próprias de consultor. */
+  ...(v.consultant_id ? { consultant_id: v.consultant_id } : {}),
 });
 
 @Injectable()
@@ -173,7 +203,65 @@ export class EarningsService {
       vigente,
       weekStart,
       semanaAtual: inicioDaSemana(hoje, weekStart),
+      proprias: new Map(),
     };
+  }
+
+  // ── L13: regra por consultor (§45.2) ────────────────────────────────────
+
+  /** Lê as regras próprias dos consultores ainda não lidos. Flag desligada: nada (nenhuma consulta). */
+  private async carregarProprias(ctx: Ctx, ids: string[]): Promise<void> {
+    if (!this.opcoes.porConsultorLigado) return;
+    const faltam = ids.filter((id) => !ctx.proprias.has(id));
+    if (!faltam.length) return;
+    const lidas = await this.repo.versoesDosConsultores(faltam);
+    for (const id of faltam) ctx.proprias.set(id, lidas.get(id) ?? []);
+  }
+
+  /** Versões que valem para o consultor: as dele a partir da 1ª, a geral antes. Sem regra própria = a MESMA lista geral. */
+  private versoesDe(ctx: Ctx, consultantId: string): readonly VersaoRegistrada[] {
+    return versoesDoConsultor(ctx.versoes, ctx.proprias.get(consultantId) ?? []);
+  }
+
+  private temPropria(ctx: Ctx, consultantId: string): boolean {
+    return (ctx.proprias.get(consultantId)?.length ?? 0) > 0;
+  }
+
+  private regraAplicada(ctx: Ctx, c: ConsultorBasico, dia: string): RegraAplicada {
+    const v = versaoVigente(this.versoesDe(ctx, c.id), dia) ?? ctx.vigente;
+    const scope: EscopoRegra = v.consultant_id ? 'consultant' : 'global';
+    return { scope, version: v.version, valid_from: v.valid_from, label: rotuloRegraAplicada(scope, v.version, c.name), config_effective: normalizarRegra(v.config) };
+  }
+
+  /** Todas as versões em jogo (geral + próprias lidas): é delas que sai a decisão de buscar insumos extras. */
+  private todasAsVersoes(ctx: Ctx): VersaoRegistrada[] {
+    return [...ctx.versoes, ...[...ctx.proprias.values()].flat()];
+  }
+
+  /**
+   * Quem tem regra própria: a conta de cada dia dela começa dizendo qual regra valeu, e a da semana lista as regras da
+   * semana. Vai também para o `snapshot` do razão. Quem não tem: nada muda.
+   */
+  private rotularProprias(ctx: Ctx, c: ConsultorBasico, s: ResultadoSemana): void {
+    const own = ctx.proprias.get(c.id);
+    if (!own?.length) return;
+    const minhas = new Set(own.map((v) => v.version));
+    const trechos: Array<{ version: number; de: string; ate: string }> = [];
+    for (const d of s.days) {
+      if (d.futuro || d.rule_version === null) continue;
+      if (minhas.has(d.rule_version)) d.conta = [`${rotuloRegraAplicada('consultant', d.rule_version, c.name)}.`, ...d.conta];
+      const ult = trechos[trechos.length - 1];
+      if (ult && ult.version === d.rule_version) ult.ate = d.dia;
+      else trechos.push({ version: d.rule_version, de: d.dia, ate: d.dia });
+    }
+    if (trechos.length)
+      s.conta.unshift(
+        `Regras desta semana: ${trechos
+          .map((t) => `${rotuloRegraAplicada(minhas.has(t.version) ? 'consultant' : 'global', t.version, c.name)} (${t.de === t.ate ? diaMes(t.de) : `${diaMes(t.de)} a ${diaMes(t.ate)}`})`)
+          .join('; ')}.`,
+      );
+    if (s.month?.rule_version != null && minhas.has(s.month.rule_version))
+      s.month.conta.unshift(`${rotuloRegraAplicada('consultant', s.month.rule_version, c.name)}.`);
   }
 
   /** Semana (início) anterior à `from`, `k` vezes. */
@@ -183,12 +271,18 @@ export class EarningsService {
 
   /** Quais insumos extras buscar: só se alguma versão da regra usa o recurso (sem uso, nenhuma consulta nova). */
   private extras(ctx: Ctx): InsumosExtras {
+    const versoes = this.todasAsVersoes(ctx);
     return {
-      declared: ctx.versoes.some((v) => v.config.signup_source === 'declared'),
-      routes: ctx.versoes.some((v) => v.config.daily_base_condition === 'route_assigned' && (v.config.daily_base_cents ?? 0) > 0),
+      declared: versoes.some((v) => v.config.signup_source === 'declared'),
+      routes: versoes.some((v) => v.config.daily_base_condition === 'route_assigned' && (v.config.daily_base_cents ?? 0) > 0),
       // Lote B §37.6: só busca jornadas/intervalos de novo se alguma versão exige tempo trabalhado.
-      ...(ctx.versoes.some((v) => v.config.daily_base_min_worked_minutes != null) ? { worked: true } : {}),
+      ...(versoes.some((v) => v.config.daily_base_min_worked_minutes != null) ? { worked: true } : {}),
     };
+  }
+
+  /** L11: alguma versão em jogo é mensal? Sem nenhuma, a leitura dos insumos e o cálculo são os de sempre. */
+  private algumMensal(ctx: Ctx): boolean {
+    return this.todasAsVersoes(ctx).some((v) => v.config.tiers_period === 'month');
   }
 
   private entradasDaSemana(
@@ -197,11 +291,20 @@ export class EarningsService {
     from: string,
     brutos: Map<string, DiaBruto> | undefined,
   ): Record<string, EntradaDia> {
+    return this.entradasDosDias(ctx, c, Array.from({ length: 7 }, (_, i) => addDays(from, i)), brutos);
+  }
+
+  private entradasDosDias(
+    ctx: Ctx,
+    c: ConsultorBasico,
+    dias: readonly string[],
+    brutos: Map<string, DiaBruto> | undefined,
+  ): Record<string, EntradaDia> {
+    const versoes = this.versoesDe(ctx, c.id);
     const out: Record<string, EntradaDia> = {};
-    for (let i = 0; i < 7; i++) {
-      const dia = addDays(from, i);
+    for (const dia of dias) {
       const raw = brutos?.get(dia);
-      const bruta = versaoVigente(ctx.versoes, dia)?.config;
+      const bruta = versaoVigente(versoes, dia)?.config;
       const regra = bruta ? normalizarRegra(bruta) : undefined;
       const visits =
         regra?.visits_count === 'checkout' ? (raw?.visits_checkout ?? 0) : (raw?.visits_checkin ?? 0);
@@ -217,7 +320,7 @@ export class EarningsService {
       } else if (raw?.pareados_declarados?.length) {
         // Pagar uma vez por empresa: confirmado pareado a declaração JÁ paga sob regra `declared` não conta de novo.
         const jaPagas = raw.pareados_declarados.filter(
-          (dd) => normalizarRegra(versaoVigente(ctx.versoes, dd)?.config ?? CHAVES_VAZIAS).signup_source === 'declared',
+          (dd) => normalizarRegra(versaoVigente(versoes, dd)?.config ?? CHAVES_VAZIAS).signup_source === 'declared',
         ).length;
         signups = Math.max(0, signups - jaPagas);
       }
@@ -244,9 +347,17 @@ export class EarningsService {
   ): Promise<Map<string, Map<string, ResultadoSemana>>> {
     const out = new Map<string, Map<string, ResultadoSemana>>(consultores.map((c) => [c.id, new Map()]));
     if (!consultores.length || !semanas.length) return out;
+    await this.carregarProprias(ctx, consultores.map((c) => c.id));
     const ordenadas = [...semanas].sort();
-    const from = ordenadas[0] as string;
+    let from = ordenadas[0] as string;
     const to = addDays(ordenadas[ordenadas.length - 1] as string, 6);
+    // L11: a semana que contém o fim de um mês com regra mensal precisa dos dias do mês inteiro (só então a leitura cresce).
+    const mensal = this.algumMensal(ctx);
+    if (mensal)
+      for (const w of semanas) {
+        const m = mesQueTerminaNaSemana(w);
+        if (m && `${m}-01` < from) from = `${m}-01`;
+      }
     const brutos = await this.inputs.dias(
       consultores.map((c) => c.id),
       from,
@@ -255,19 +366,28 @@ export class EarningsService {
       this.extras(ctx),
     );
     for (const c of consultores) {
+      const versoes = this.versoesDe(ctx, c.id);
       for (const w of semanas) {
-        out
-          .get(c.id)
-          ?.set(
-            w,
-            calcularSemana({
-              from: w,
-              to: addDays(w, 6),
+        const m = mensal ? mesQueTerminaNaSemana(w) : null;
+        const mes: ResultadoMes | null = m
+          ? calcularMes({
+              mes: m,
               hoje: ctx.hoje,
-              versoes: ctx.versoes,
-              entradas: this.entradasDaSemana(ctx, c, w, brutos.get(c.id)),
-            }),
-          );
+              versoes,
+              entradas: this.entradasDosDias(ctx, c, eachDay(`${m}-01`, ultimoDiaDoMes(m)), brutos.get(c.id)),
+              weekStart: ctx.weekStart,
+            })
+          : null;
+        const calc = calcularSemana({
+          from: w,
+          to: addDays(w, 6),
+          hoje: ctx.hoje,
+          versoes,
+          entradas: this.entradasDaSemana(ctx, c, w, brutos.get(c.id)),
+          ...(mes ? { mes } : {}),
+        });
+        this.rotularProprias(ctx, c, calc);
+        out.get(c.id)?.set(w, calc);
       }
     }
     return out;
@@ -279,10 +399,26 @@ export class EarningsService {
     calc: ResultadoSemana,
     extra: Record<string, unknown> = {},
   ): Record<string, unknown> {
-    const regra =
-      (d.rule_version !== null ? ctx.versoes.find((v) => v.version === d.rule_version)?.config : null) ??
-      ctx.vigente.config;
+    const versao = d.rule_version !== null ? this.todasAsVersoes(ctx).find((v) => v.version === d.rule_version) : undefined;
+    const regra = versao?.config ?? ctx.vigente.config;
     const dia = d.scope === 'day' ? calc.days.find((x) => x.dia === d.work_day) : null;
+    // L11: a parte do mês fotografa o mês (contagem e conta); L13: a regra própria diz que é do consultor.
+    const mes = d.scope === 'month' ? calc.month : undefined;
+    const proprio = versao?.consultant_id ? { rule_scope: 'consultant' } : {};
+    if (mes)
+      return {
+        rule_version: d.rule_version,
+        rule: regra,
+        confirmation_rule: ctx.regraConfirmacao,
+        confirmation_day_field: ctx.regraConfirmacao === 'activated' ? 'activated_day' : ctx.regraConfirmacao === 'first_vacancy' ? 'first_vacancy_day' : 'first_job_day',
+        scope: d.scope,
+        target_cents: d.cents,
+        delta_cents: d.delta_cents,
+        inputs: { month: mes.mes, signups_month: mes.signups },
+        conta: mes.conta,
+        ...proprio,
+        ...extra,
+      };
     return {
       rule_version: d.rule_version,
       rule: regra,
@@ -300,6 +436,7 @@ export class EarningsService {
         ? { signups: dia.signups, visits: dia.visits, journey_open: dia.journey_open }
         : { signups_week: calc.signups_week },
       conta: dia ? dia.conta : calc.conta,
+      ...proprio,
       ...extra,
     };
   }
@@ -458,6 +595,41 @@ export class EarningsService {
     return conta;
   }
 
+  /** O dia de uma semana pelo qual se diz "a regra desta semana": o último já calculado (hoje, se a semana é a atual). */
+  private diaDeReferencia(ctx: Ctx, semana: string): string {
+    const to = addDays(semana, 6);
+    return ctx.hoje < semana ? semana : ctx.hoje < to ? ctx.hoje : to;
+  }
+
+  private diaDaPropria(ctx: Ctx, c: ConsultorBasico, d: ResultadoDia): boolean {
+    const own = ctx.proprias.get(c.id);
+    return !!own?.length && !d.futuro && own.some((v) => v.version === d.rule_version);
+  }
+
+  /** L11 §43.5: a parte do mês para a tela, com a conta e o Pix em que entra (o da semana que contém o último dia). */
+  private mesView(ctx: Ctx, m: ResultadoMes) {
+    const v = this.todasAsVersoes(ctx).find((x) => x.version === m.rule_version);
+    const regra = normalizarRegra(v?.config ?? ctx.vigente.config);
+    const pix = proximoPagamento(addDays(m.work_week, 6), ctx.vigente.config.payout_weekday);
+    return {
+      month: m.mes,
+      label: nomeDoMes(m.mes),
+      from: m.from,
+      to: m.to,
+      rule_version: m.rule_version,
+      signups: m.signups,
+      tier: m.faixa,
+      amount_cents: m.month_part_cents,
+      next_tier: m.proxima_faixa,
+      ended: m.encerrado,
+      work_week: m.work_week,
+      pix_date: pix,
+      pix_label: rotuloDia(pix),
+      text: fraseDoMes(m, { fonte: regra.signup_source, cumulativo: regra.tiers_mode === 'cumulative', pixLabel: rotuloDia(pix) }),
+      conta: m.conta,
+    };
+  }
+
   // ── equipe ──────────────────────────────────────────────────────────────
 
   async equipe(q: { week?: string; praca_id?: string; consultant_id?: string }, agora = new Date()) {
@@ -502,8 +674,11 @@ export class EarningsService {
           rule_version: d.rule_version,
           future: d.futuro,
           conta: d.conta,
+          ...(this.diaDaPropria(ctx, v.consultor, d) ? { rule_scope: 'consultant' as const } : {}),
         })),
         conta: this.contaVisao(v),
+        ...(v.calculo.month ? { month: this.mesView(ctx, v.calculo.month), month_part_cents: v.calculo.month.month_part_cents } : {}),
+        ...(this.temPropria(ctx, v.consultor.id) ? { rule: this.regraAplicada(ctx, v.consultor, this.diaDeReferencia(ctx, semana)) } : {}),
       })),
       ...(ledger ? { ledger: ledger.map(lancamentoView) } : {}),
     };
@@ -527,11 +702,17 @@ export class EarningsService {
       anteriores.push({ from: v.week.from, to: v.week.to, total_cents: v.total_cents, status: v.status });
     }
     const pixData = proximoPagamento(visao.week.to, ctx.vigente.config.payout_weekday);
+    // L13 §45.5: com regra própria hoje, a versão, a fonte e o texto são os dela (sem regra própria: os de sempre).
+    const propria = this.temPropria(ctx, c.id) ? this.regraAplicada(ctx, basico, ctx.hoje) : null;
+    const vHoje = propria ? (versaoVigente(this.versoesDe(ctx, c.id), ctx.hoje) ?? ctx.vigente) : ctx.vigente;
+    const mes = await this.projecaoDoMes(ctx, basico);
     return {
-      rule_version: ctx.vigente.version,
+      rule_version: vHoje.version,
       confirmation_rule: ctx.regraConfirmacao,
-      source: `${fonteDe(ctx.vigente.config)} (versão ${ctx.vigente.version})`,
-      ...fonteDeclarada(ctx.vigente.config),
+      source: `${fonteDe(vHoje.config)} (versão ${vHoje.version})`,
+      ...fonteDeclarada(vHoje.config),
+      ...(propria ? { rule: propria } : {}),
+      ...(mes ? { month: mes } : {}),
       as_of: agora.toISOString(),
       today: {
         day: ctx.hoje,
@@ -569,6 +750,32 @@ export class EarningsService {
     };
   }
 
+  /**
+   * L11 §43.5: projeção do mês corrente para o consultor ("Meta do mês (outubro): 28 de 40…"), só quando o dia 1 do mês
+   * tem regra mensal para ele. Sem isso, nenhuma leitura a mais.
+   */
+  private async projecaoDoMes(ctx: Ctx, c: ConsultorBasico) {
+    const mes = mesDoDia(ctx.hoje);
+    const versoes = this.versoesDe(ctx, c.id);
+    if (versaoVigente(versoes, `${mes}-01`)?.config.tiers_period !== 'month') return null;
+    const brutos = await this.inputs.dias([c.id], `${mes}-01`, ctx.hoje, ctx.regraConfirmacao, this.extras(ctx));
+    const m = calcularMes({
+      mes,
+      hoje: ctx.hoje,
+      versoes,
+      entradas: this.entradasDosDias(ctx, c, eachDay(`${mes}-01`, ctx.hoje), brutos.get(c.id)),
+      weekStart: ctx.weekStart,
+    });
+    if (!m) return null;
+    this.rotularMes(ctx, c, m);
+    return this.mesView(ctx, m);
+  }
+
+  private rotularMes(ctx: Ctx, c: ConsultorBasico, m: ResultadoMes): void {
+    if (m.rule_version != null && ctx.proprias.get(c.id)?.some((v) => v.version === m.rule_version))
+      m.conta.unshift(`${rotuloRegraAplicada('consultant', m.rule_version, c.name)}.`);
+  }
+
   // ── configuração ────────────────────────────────────────────────────────
 
   async lerConfig(agora = new Date()) {
@@ -590,31 +797,55 @@ export class EarningsService {
         declared_signups_enabled: this.opcoes.declaradasLigado ?? false,
         // Lote B §37.6: a chave daily_base_min_worked_minutes só existe com o intervalo ligado (ausente com ele desligado).
         ...(this.opcoes.intervaloLigado ? { breaks_enabled: true } : {}),
+        // Lote F1 (§43.1, §45.1): só aparecem com a flag ligada (o web nunca sonda rota desligada).
+        ...(this.opcoes.mensalLigado ? { monthly_enabled: true } : {}),
+        ...(this.opcoes.porConsultorLigado ? { per_consultant_enabled: true } : {}),
       },
     };
   }
 
-  async salvarConfig(dto: ConfigRemuneracaoDto, user: AuthUser, agora = new Date()) {
-    const r = validarRegra(dto.config);
+  /** L11 §43.1: `tiers_period = month` com a flag desligada = 409 (antes da validação, senão sairia o 400 de sempre). */
+  private recusarMesSemFlag(config: unknown): void {
+    if (this.opcoes.mensalLigado) return;
+    if (config && typeof config === 'object' && (config as Record<string, unknown>).tiers_period === 'month')
+      throw new ConflictException({
+        code: 'MONTHLY_DISABLED',
+        message: 'tiers_period: o bônus mensal precisa de FIELD_EARNINGS_MONTHLY_ENABLED (e FIELD_EARNINGS_ENABLED) ligadas.',
+      });
+  }
+
+  private validar(config: unknown): RegraBruta {
+    this.recusarMesSemFlag(config);
+    const r = validarRegra(config, { mensal: this.opcoes.mensalLigado === true });
     if (!r.ok) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: r.erro });
-    if (r.regra.daily_base_condition === 'route_assigned' && (r.regra.daily_base_cents ?? 0) > 0 && !this.opcoes.rotasLigadas)
+    return r.regra;
+  }
+
+  /** Chaves que dependem de outro módulo ligado (contrato §32.1, §37.6): sem ele pagariam R$ 0 em silêncio. */
+  private conferirTravas(regra: RegraBruta): void {
+    if (regra.daily_base_condition === 'route_assigned' && (regra.daily_base_cents ?? 0) > 0 && !this.opcoes.rotasLigadas)
       throw new ConflictException({
         code: 'ROUTES_DISABLED',
         message:
           'daily_base_condition: a diária por rota atribuída precisa de FIELD_ROUTES_ENABLED ligada; sem rotas da equipe ela pagaria R$ 0 em silêncio.',
       });
-    if (r.regra.signup_source === 'declared' && !this.opcoes.declaradasLigado)
+    if (regra.signup_source === 'declared' && !this.opcoes.declaradasLigado)
       throw new ConflictException({
         code: 'DECLARED_DISABLED',
         message:
           'signup_source: o cadastro declarado precisa de FIELD_DECLARED_SIGNUPS_ENABLED (e FIELD_EARNINGS_ENABLED) ligadas.',
       });
-    if (r.regra.daily_base_min_worked_minutes != null && !this.opcoes.intervaloLigado)
+    if (regra.daily_base_min_worked_minutes != null && !this.opcoes.intervaloLigado)
       throw new ConflictException({
         code: 'BREAKS_DISABLED',
         message:
           'daily_base_min_worked_minutes: o tempo trabalhado desconta o intervalo e precisa de FIELD_BREAKS_ENABLED ligada.',
       });
+  }
+
+  async salvarConfig(dto: ConfigRemuneracaoDto, user: AuthUser, agora = new Date()) {
+    const r = { regra: this.validar(dto.config) };
+    this.conferirTravas(r.regra);
     const versoes = await this.repo.versoes();
     const travada = await this.repo.existeRazaoOuFechamento();
     const erro = validarVigencia({
@@ -642,10 +873,23 @@ export class EarningsService {
   async simular(dto: SimularDto, agora = new Date()): Promise<SimulacaoView> {
     let regra: RegraBruta;
     let version: number | null = null;
+    let aplicada: RegraAplicada | undefined;
+    // L13 §45.5: `consultant_id` só existe com a flag (null/ausente = ignorado, como os campos novos dos outros lotes).
+    if (dto.consultant_id != null && !this.opcoes.porConsultorLigado)
+      throw new UnprocessableEntityException({
+        code: 'PER_CONSULTANT_DISABLED',
+        message: 'consultant_id: a regra por consultor precisa de FIELD_EARNINGS_PER_CONSULTANT_ENABLED (e FIELD_EARNINGS_ENABLED) ligadas.',
+      });
     if (dto.config !== undefined) {
-      const r = validarRegra(dto.config);
-      if (!r.ok) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: r.erro });
-      regra = r.regra;
+      regra = this.validar(dto.config);
+    } else if (dto.consultant_id != null) {
+      const ctx = await this.contexto(agora);
+      const c = await this.consultorOu404(dto.consultant_id);
+      await this.carregarProprias(ctx, [c.id]);
+      const v = versaoVigente(this.versoesDe(ctx, c.id), ctx.hoje) ?? ctx.vigente;
+      regra = v.config;
+      version = v.version;
+      aplicada = this.regraAplicada(ctx, c, ctx.hoje);
     } else {
       const ctx = await this.contexto(agora);
       regra = ctx.vigente.config;
@@ -664,7 +908,12 @@ export class EarningsService {
       },
       version,
     );
-    const base = { day: { total_cents: d.total_cents, conta: d.conta, rule_version: version } };
+    const mes = this.simularMes(regra, version, dto.month_signups, agora);
+    const base: SimulacaoView = {
+      day: { total_cents: d.total_cents, conta: d.conta, rule_version: version },
+      ...(mes ? { month: mes } : {}),
+      ...(aplicada ? { rule: aplicada } : {}),
+    };
     if (!dto.days?.length) return base;
     const from = inicioDaSemana(todaySp(agora), regra.week_start_weekday);
     const entradas: Record<string, EntradaDia> = {};
@@ -698,6 +947,85 @@ export class EarningsService {
         rule_version: version,
       },
     };
+  }
+
+  /** L11 §43.5: a parte do mês para N cadastros, pela MESMA função do cálculo real (mês corrente, já encerrado). */
+  private simularMes(regra: RegraBruta, version: number | null, n: number | undefined, agora: Date): { total_cents: number; conta: string[] } | null {
+    if (n === undefined || regra.tiers_period !== 'month') return null;
+    const mes = mesDoDia(todaySp(agora));
+    const dia1 = `${mes}-01`;
+    const m = calcularMes({
+      mes,
+      hoje: addDays(ultimoDiaDoMes(mes), 1),
+      versoes: [{ version: version ?? 0, valid_from: VIGENCIA_INICIAL, config: regra }],
+      entradas: { [dia1]: { dia: dia1, signups: n, visits: 0, journey_open: false, elegivel: true } },
+      weekStart: regra.week_start_weekday,
+    });
+    return m ? { total_cents: m.month_part_cents, conta: m.conta } : null;
+  }
+
+  private async consultorOu404(id: string): Promise<ConsultorBasico> {
+    if (!isUuid(id)) throw notFoundConsultor();
+    const [c] = await this.inputs.consultores({ ids: [id] });
+    if (!c) throw notFoundConsultor();
+    return c;
+  }
+
+  // ── L13: regra própria do consultor (§45.4) ─────────────────────────────
+
+  private minValidFrom(ctx: Ctx, c: ConsultorBasico, ultimaFechadaFim: string | null): string {
+    const primeira = inicioDaSemana(c.created_day, ctx.weekStart);
+    const depoisDaFechada = ultimaFechadaFim ? addDays(ultimaFechadaFim, 1) : primeira;
+    return depoisDaFechada > primeira ? depoisDaFechada : primeira;
+  }
+
+  async regrasDoConsultor(consultantId: string, agora = new Date()) {
+    const c = await this.consultorOu404(consultantId);
+    const ctx = await this.contexto(agora);
+    await this.carregarProprias(ctx, [c.id]);
+    const ultima = await this.repo.ultimaSemanaFechada(c.id);
+    return {
+      consultant_id: c.id,
+      name: c.name,
+      today: ctx.hoje,
+      current: this.regraAplicada(ctx, c, ctx.hoje),
+      own: [...(ctx.proprias.get(c.id) ?? [])].reverse().map(versaoView),
+      global_current: versaoView(ctx.vigente),
+      min_valid_from: this.minValidFrom(ctx, c, ultima),
+    };
+  }
+
+  async criarRegraDoConsultor(dto: RegraConsultorDto, user: AuthUser, agora = new Date()) {
+    const c = await this.consultorOu404(dto.consultant_id);
+    const regra = this.validar(dto.config);
+    this.conferirTravas(regra);
+    const ctx = await this.contexto(agora);
+    const v = await this.repo.emTransacao(c.id, async (tx) => {
+      // Sob o MESMO lock do fechamento: a semana não fecha no meio da conferência.
+      const proprias = (await tx.versoesDosConsultores([c.id])).get(c.id) ?? [];
+      const ultima = await tx.ultimaSemanaFechada(c.id);
+      const erro = validarRegraDoConsultor({
+        valid_from: dto.valid_from,
+        nova: regra,
+        geral: ctx.versoes,
+        proprias,
+        ultimaFechadaFim: ultima,
+        primeiraSemana: inicioDaSemana(c.created_day, ctx.weekStart),
+      });
+      if (erro) {
+        const body = { code: erro.code, message: erro.message };
+        throw erro.code === 'WEEK_CLOSED' ? new ConflictException(body) : new BadRequestException(body);
+      }
+      return tx.inserirVersao({
+        valid_from: dto.valid_from,
+        config: regra as unknown as Record<string, unknown>,
+        reason: dto.reason?.trim() || null,
+        created_by: user.id,
+        created_by_name: user.name,
+        consultant_id: c.id,
+      });
+    });
+    return versaoView(v);
   }
 
   // ── fechamento ──────────────────────────────────────────────────────────
@@ -798,6 +1126,12 @@ export class EarningsService {
     return this.repo.emTransacao(c.id, async (tx) => {
       const [existente] = await tx.periodos([c.id], [semana]);
       if (existente) return { consultant_id: c.id, total_cents: existente.total_cents, already_closed: true };
+      // L13 §45.4: a regra própria nasce sob este mesmo lock; se mudou depois do cálculo, não fecha com a regra velha.
+      if (this.opcoes.porConsultorLigado) {
+        const agoraProprias = (await tx.versoesDosConsultores([c.id])).get(c.id) ?? [];
+        if (agoraProprias.length !== (ctx.proprias.get(c.id)?.length ?? 0))
+          throw new ConflictException({ code: 'RULE_CHANGED', message: 'A regra deste consultor mudou enquanto a semana era calculada. Tente fechar de novo.' });
+      }
       const lancado =
         (await tx.lancadoAccrual([c.id], [semana, ...tardias])).get(c.id) ?? new Map<string, JaLancado>();
       const deltas = this.plano(semana, tardias, calcs, lancado);
@@ -826,7 +1160,7 @@ export class EarningsService {
         week_end: addDays(semana, 6),
         total_cents: total,
         entries: entradas.length,
-        rule_version: versaoVigente(ctx.versoes, semana)?.version ?? ctx.vigente.version,
+        rule_version: versaoVigente(this.versoesDe(ctx, c.id), semana)?.version ?? ctx.vigente.version,
         closed_at: agora,
         closed_by: ator.id,
         closed_by_name: ator.name,

@@ -17,7 +17,7 @@ import { DeclaredSignupsEquipeController } from './declared/declared-signups.con
 import { DeclaredLigadoGuard } from './declared/declared.guard';
 import { DeclaredSignupsService } from './declared/declared-signups.service';
 import { EarningsCampoController, EarningsEquipeController } from './earnings/earnings.controller';
-import { EarningsLigadoGuard } from './earnings/earnings.guard';
+import { EarningsLigadoGuard, PorConsultorLigadoGuard } from './earnings/earnings.guard';
 import { EARNINGS_INPUTS, PrismaEarningsInputs } from './earnings/earnings-inputs';
 import { EARNINGS_REPOSITORY, PrismaEarningsRepository } from './earnings/earnings.repository';
 import { EarningsScheduler } from './earnings/earnings.scheduler';
@@ -108,6 +108,7 @@ import { voucherIssuerProvider } from './vouchers/vouchers.tokens';
     EarningsService,
     EarningsScheduler,
     EarningsLigadoGuard,
+    PorConsultorLigadoGuard,
     DeclaredSignupsService,
     DeclaredLigadoGuard,
     earningsOpcoesProvider,

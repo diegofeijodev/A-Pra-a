@@ -64,6 +64,7 @@ function fakePrisma() {
     field_declared_signups: { count: jest.fn().mockResolvedValue(0) },
     field_payout_periods: { count: jest.fn().mockResolvedValue(0) },
     field_vouchers: { count: jest.fn().mockResolvedValue(0) },
+    field_pay_rule_versions: { count: jest.fn().mockResolvedValue(0) },
   };
 }
 
@@ -190,6 +191,15 @@ describe('ConsultoresService.update / resetPassword / remove', () => {
     p.field_earnings_ledger.count.mockResolvedValue(3);
     const { s, freela } = montar(p);
 
+    await expect(s.remove(CONS)).rejects.toMatchObject({ response: { code: 'HAS_EARNINGS' } });
+    expect(freela.desativarAntesDeApagar).not.toHaveBeenCalled();
+    expect(p.field_consultants.delete).not.toHaveBeenCalled();
+  });
+
+  it('consultor com regra de pagamento própria (L13) não é apagado (409 HAS_EARNINGS)', async () => {
+    const p = fakePrisma();
+    p.field_pay_rule_versions.count.mockResolvedValue(1);
+    const { s, freela } = montar(p);
     await expect(s.remove(CONS)).rejects.toMatchObject({ response: { code: 'HAS_EARNINGS' } });
     expect(freela.desativarAntesDeApagar).not.toHaveBeenCalled();
     expect(p.field_consultants.delete).not.toHaveBeenCalled();

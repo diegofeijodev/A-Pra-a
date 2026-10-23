@@ -103,6 +103,10 @@ const envBase = z.object({
   FIELD_CONSULTANT_PROFILE_ENABLED: z.string().default('false'),
   FIELD_CONTACT_EMAIL_ENABLED: z.string().default('false'),
   TEAM_GESTOR_ENABLED: z.string().default('false'),
+  // Restante da Lovable, lote F1 (contrato §43/§45). Só valem com FIELD_EARNINGS_ENABLED. Desligadas = cálculo, razão e wire
+  // iguais aos de hoje: o mês é recusado com 409 MONTHLY_DISABLED e as regras por consultor são ignoradas (rotas 404).
+  FIELD_EARNINGS_MONTHLY_ENABLED: z.string().default('false'),
+  FIELD_EARNINGS_PER_CONSULTANT_ENABLED: z.string().default('false'),
 
   SWAGGER_ENABLED: z.string().optional(),
 

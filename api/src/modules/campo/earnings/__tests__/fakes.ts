@@ -45,10 +45,26 @@ export class FakeRepo implements EarningsRepository {
   periods: PeriodoRow[] = [];
   private tails = new Map<string, Promise<void>>();
 
+  /** Chamadas a `versoesDosConsultores` (a flag do L13 desligada não pode consultar). */
+  chamadasProprias = 0;
+  private ordenadas(l: VersaoRegistrada[]) {
+    return [...l].sort((a, b) => (a.valid_from === b.valid_from ? a.version - b.version : a.valid_from < b.valid_from ? -1 : 1));
+  }
   async versoes() {
-    return [...this.versions].sort((a, b) =>
-      a.valid_from === b.valid_from ? a.version - b.version : a.valid_from < b.valid_from ? -1 : 1,
-    );
+    return this.ordenadas(this.versions.filter((v) => !v.consultant_id));
+  }
+  async versoesDosConsultores(ids: string[]) {
+    this.chamadasProprias++;
+    const out = new Map<string, VersaoRegistrada[]>();
+    for (const v of this.ordenadas(this.versions)) {
+      if (!v.consultant_id || !ids.includes(v.consultant_id)) continue;
+      out.set(v.consultant_id, [...(out.get(v.consultant_id) ?? []), v]);
+    }
+    return out;
+  }
+  async ultimaSemanaFechada(id: string) {
+    const fins = this.periods.filter((p) => p.consultant_id === id).map((p) => p.week_end).sort();
+    return fins[fins.length - 1] ?? null;
   }
   async inserirVersao(v: VersaoNova) {
     const row: VersaoRegistrada = {
@@ -58,6 +74,7 @@ export class FakeRepo implements EarningsRepository {
       reason: v.reason,
       created_by_name: v.created_by_name,
       created_at: new Date(),
+      ...(v.consultant_id ? { consultant_id: v.consultant_id } : {}),
     };
     this.versions.push(row);
     return row;
