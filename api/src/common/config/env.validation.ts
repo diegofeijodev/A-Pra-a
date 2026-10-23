@@ -107,6 +107,9 @@ const envBase = z.object({
   // iguais aos de hoje: o mês é recusado com 409 MONTHLY_DISABLED e as regras por consultor são ignoradas (rotas 404).
   FIELD_EARNINGS_MONTHLY_ENABLED: z.string().default('false'),
   FIELD_EARNINGS_PER_CONSULTANT_ENABLED: z.string().default('false'),
+  // Restante da Lovable, lote F2 (contrato §44): consultor em várias praças. Desligada = o conjunto é ignorado, o guard lê o
+  // consultor como hoje e o início do dia só aceita a praça principal (outra = 422 MULTI_PRACA_DISABLED).
+  FIELD_MULTI_PRACA_ENABLED: z.string().default('false'),
 
   SWAGGER_ENABLED: z.string().optional(),
 

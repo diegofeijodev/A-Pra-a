@@ -11,6 +11,7 @@ import { CampoAuthGuard } from './common/guards/campo-auth.guard';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { HealthModule } from './common/health/health.module';
 import { LovableEFlagsModule } from './common/flags/lovable-e.flags';
+import { PracasDoConsultorModule } from './common/pracas/pracas-do-consultor.module';
 import { ActionsModule } from './modules/actions/actions.module';
 import { AreasModule } from './modules/areas/areas.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -41,6 +42,8 @@ import { UsersModule } from './modules/users/users.module';
     PrismaModule,
     // Lote E da Lovable (contrato §41/§42): flags transversais (guarda global, pessoas, campo).
     LovableEFlagsModule,
+    // Lote F2 da Lovable (contrato §44): consultor em várias praças (o guard do campo e vários módulos leem o conjunto).
+    PracasDoConsultorModule,
     PasswordPolicyModule,
     HealthModule,
     AuthModule,

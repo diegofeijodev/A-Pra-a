@@ -30,6 +30,7 @@ model users {
   field_areas_created       field_areas[]
   place_runs_requested      place_import_runs[]
   route_plans_created       field_route_plans[]
+  consultant_pracas_created field_consultant_pracas[]
 }
 
 model user_dismissed_notifs {
@@ -65,6 +66,9 @@ model pracas {
   field_areas       field_areas[]
   place_import_runs place_import_runs[]
   route_plans       field_route_plans[]
+  // Lote F2 (contrato §44.2): consultores que atuam aqui além da principal e as jornadas gravadas nesta praça.
+  consultant_links  field_consultant_pracas[]
+  journeys          field_journeys[]
 }
 
 model praca_step_states {
@@ -634,20 +638,36 @@ model field_consultants {
   praca                pracas    @relation(fields: [praca_id], references: [id], onDelete: Restrict)
   creator              users     @relation(fields: [created_by], references: [id], onDelete: Restrict)
 
-  journeys         field_journeys[]
-  visits           field_visits[]
-  routes           field_routes[]
-  company_signups  field_company_signups[]
-  signups          field_signups[]
-  declared_signups field_declared_signups[]
-  signup_sync      field_signup_sync_state?
-  earnings         field_earnings_ledger[]
+  journeys          field_journeys[]
+  visits            field_visits[]
+  routes            field_routes[]
+  company_signups   field_company_signups[]
+  signups           field_signups[]
+  declared_signups  field_declared_signups[]
+  signup_sync       field_signup_sync_state?
+  earnings          field_earnings_ledger[]
   pay_rule_versions field_pay_rule_versions[]
-  payout_periods   field_payout_periods[]
-  payouts          field_payouts[]
-  journey_breaks   field_journey_breaks[]
-  vouchers         field_vouchers[]
-  plan_items       field_route_plan_items[]
+  payout_periods    field_payout_periods[]
+  payouts           field_payouts[]
+  journey_breaks    field_journey_breaks[]
+  vouchers          field_vouchers[]
+  plan_items        field_route_plan_items[]
+  extra_pracas      field_consultant_pracas[]
+}
+
+/// Lote F2 da Lovable (contrato §44.2): praças em que o consultor atua ALÉM da principal (`field_consultants.praca_id`, que
+/// nunca é gravada aqui). Conjunto = principal ∪ estas linhas.
+model field_consultant_pracas {
+  consultant_id String            @db.Uuid
+  praca_id      String            @db.Uuid
+  created_by    String            @db.Uuid
+  created_at    DateTime          @default(now())
+  consultant    field_consultants @relation(fields: [consultant_id], references: [id], onDelete: Cascade)
+  praca         pracas            @relation(fields: [praca_id], references: [id], onDelete: Restrict)
+  creator       users             @relation(fields: [created_by], references: [id], onDelete: Restrict)
+
+  @@id([consultant_id, praca_id])
+  @@index([praca_id])
 }
 
 model field_journeys {
@@ -664,8 +684,12 @@ model field_journeys {
   end_lng        Float?
   end_accuracy   Float?
   auto_closed    Boolean           @default(false)
+  // Lote F2 (contrato §44.2): praça da jornada; NULO = a principal do consultor (linhas antigas e flag desligada). Com a flag
+  // ligada o início grava sempre o id explícito. Restrict, nunca SET NULL (o nulo reatribuiria a jornada à principal).
+  praca_id       String?           @db.Uuid
   created_at     DateTime          @default(now())
   consultant     field_consultants @relation(fields: [consultant_id], references: [id], onDelete: Cascade)
+  praca          pracas?           @relation(fields: [praca_id], references: [id], onDelete: Restrict)
 
   points field_points[]
   visits field_visits[]
@@ -675,6 +699,7 @@ model field_journeys {
   // (SQL cru na migração — o Prisma 5 não declara índice parcial).
   @@index([consultant_id, day])
   @@index([day])
+  @@index([praca_id, day])
 }
 
 /// Lote B da Lovable (contrato §37.3): intervalo/almoço como evento da jornada. Idempotente por `client_id` (início) e

@@ -1,6 +1,7 @@
 import { validateEnv } from '../config/env.validation';
 import { lerFlagsLovableD, velocidadeCarroKmh } from '../../modules/rotas/rotas.tokens';
 import { lerFlagsLovableE } from '../flags/lovable-e.flags';
+import { lerMultiPraca } from '../flags/multi-praca.flags';
 import { earningsOpcoesProvider } from '../../modules/campo/earnings/earnings.tokens';
 
 const BASE = { DATABASE_URL: 'postgresql://praca:praca@localhost:5437/praca', JWT_SECRET: 'x'.repeat(16) };
@@ -172,5 +173,15 @@ describe('env — restante da Lovable, lote F1 (§43/§45)', () => {
     expect(opcoes(off)).toMatchObject({ mensalLigado: false, porConsultorLigado: false });
     expect(opcoes({ FIELD_EARNINGS_ENABLED: 'true', FIELD_EARNINGS_MONTHLY_ENABLED: 'true', FIELD_EARNINGS_PER_CONSULTANT_ENABLED: 'false' })).toMatchObject({ mensalLigado: true, porConsultorLigado: false });
     expect(opcoes({ FIELD_EARNINGS_ENABLED: 'true', FIELD_EARNINGS_MONTHLY_ENABLED: 'false', FIELD_EARNINGS_PER_CONSULTANT_ENABLED: 'true' })).toMatchObject({ mensalLigado: false, porConsultorLigado: true });
+  });
+});
+
+describe('env — restante da Lovable, lote F2 (§44)', () => {
+  it('consultor em várias praças: desligado por padrão e aceita true (o módulo global lê a mesma chave)', () => {
+    expect(validateEnv(BASE).FIELD_MULTI_PRACA_ENABLED).toBe('false');
+    expect(validateEnv({ ...BASE, FIELD_MULTI_PRACA_ENABLED: 'true' }).FIELD_MULTI_PRACA_ENABLED).toBe('true');
+    expect(lerMultiPraca(BASE)).toBe(false);
+    expect(lerMultiPraca({ ...BASE, FIELD_MULTI_PRACA_ENABLED: 'true' })).toBe(true);
+    expect(lerMultiPraca({ ...BASE, FIELD_MULTI_PRACA_ENABLED: '' })).toBe(false);
   });
 });

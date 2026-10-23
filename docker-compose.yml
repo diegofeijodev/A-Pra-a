@@ -100,6 +100,8 @@ services:
       # Restante da Lovable, lote F1 (contrato §43/§45): bônus mensal e regra de pagamento por consultor (exigem FIELD_EARNINGS_ENABLED).
       FIELD_EARNINGS_MONTHLY_ENABLED: ${FIELD_EARNINGS_MONTHLY_ENABLED:-false}
       FIELD_EARNINGS_PER_CONSULTANT_ENABLED: ${FIELD_EARNINGS_PER_CONSULTANT_ENABLED:-false}
+      # Restante da Lovable, lote F2 (contrato §44): consultor em várias praças (a praça ativa vem da jornada aberta).
+      FIELD_MULTI_PRACA_ENABLED: ${FIELD_MULTI_PRACA_ENABLED:-false}
     ports:
       - '3014:3014'
 
