@@ -127,13 +127,17 @@ check "publicar de geração arquivada = 409 PLAN_ARCHIVED" "409|PLAN_ARCHIVED" 
 echo "── shoppings (§40) ──"
 check "config dos shoppings: área 20.000, lojas 50, raio 300, fora da rota geral" "area|20000|50|300|true" \
   "$(curl -s $API/v1/consultores/shoppings/config -H "$HD" | jq -r '"\(.criterio)|\(.area_min_m2)|\(.lojas_min)|\(.raio_lojas_m)|\(.fora_da_rota_geral)"')"
-SR=$(curl -s -o $T -w '%{http_code}' -X POST $API/v1/place-searches -H "$J" -H "$HD" -d "{\"praca_id\":\"$PRACA_SEED\",\"kind\":\"shoppings\"}")
+if [ "$(q "select lat is null or lon is null from pracas where id='$PRACA_SEED'")" = "t" ]; then
+  check "praça sem centro e sem área = 422 PRACA_SEM_CENTRO" "422|PRACA_SEM_CENTRO" \
+    "$(curl -s -o $T -w '%{http_code}' -X POST $API/v1/place-searches -H "$J" -H "$HD" -d "{\"praca_id\":\"$PRACA_SEED\",\"kind\":\"shoppings\"}")|$(jq -r .error.code $T)"
+fi
+SR=$(curl -s -o $T -w '%{http_code}' -X POST $API/v1/place-searches -H "$J" -H "$HD" -d "{\"praca_id\":\"$PRACA_SEED\",\"kind\":\"shoppings\",\"area_id\":\"$AREA\"}")
 RUN_S=$(jq -r .id $T)
-check "buscar shoppings (centro da praça, sem área, sem tipos) = 202 kind shoppings, 15 km" "202|shoppings|null|15000" \
+check "buscar shoppings em volta da área (sem tipos) = 202 kind shoppings, 15 km" "202|shoppings|$AREA|15000" \
   "$SR|$(jq -r '"\(.kind)|\(.area_id)|\(.radius_m)"' $T)"
-for i in $(seq 1 40); do ST=$(curl -s "$API/v1/place-searches/$RUN_S?praca_id=$PRACA_SEED" -H "$HD" | jq -r .status); [ "$ST" = "error" ] || [ "$ST" = "done" ] && break; sleep 1; done
-check "Overpass morto: a busca termina em erro legível (sem rede, nada gravado)" "error|true" \
-  "$ST|$(curl -s "$API/v1/place-searches/$RUN_S?praca_id=$PRACA_SEED" -H "$HD" | jq -r '.error | length > 5')"
+# O Overpass está num endereço morto: a busca ficaria nas esperas crescentes (≈ 50 s) até virar erro (coberto no jest). Cancela.
+check "cancelar a busca de shoppings (fila de uma por vez) = cancelled, nada gravado" "cancelled|0" \
+  "$(curl -s -X POST "$API/v1/place-searches/$RUN_S/cancel?praca_id=$PRACA_SEED" -H "$HD" | jq -r .status)|$(q "select count(*) from place_candidates where run_id='$RUN_S'")"
 check "a lista da busca de hoje não mostra a de shoppings" "0" \
   "$(curl -s "$API/v1/place-searches?praca_id=$PRACA_SEED" -H "$HD" | jq --arg r "$RUN_S" '[.[] | select(.id==$r)] | length')"
 MALL1=$($PSQL "insert into leads (id, praca_id, name, entered_at, stage_since, lat, lng, location_precision, source, source_ref, place_kind) values (gen_random_uuid(), '$PRACA_SEED', 'LovD $SUF Shopping Grande', '$HOJE', '$HOJE', $LAT + 0.004, $LNG, 'point', 'osm', 'way/9$SUF', 'shopping') returning id" | head -1 | tr -d '[:space:]')
@@ -148,6 +152,7 @@ curl -s -o /dev/null -X PATCH $API/v1/consultores/shoppings/$MALL2 -H "$J" -H "$
 RL=$(curl -s -o $T -w '%{http_code}' -X POST $API/v1/place-searches -H "$J" -H "$HD" -d "{\"praca_id\":\"$PRACA_SEED\",\"kind\":\"lojas\",\"parent_lead_id\":\"$MALL1\",\"types\":[\"bar\",\"restaurante\"]}")
 check "buscar lojas dentro do shopping = 202 kind lojas, sem área, raio que alcança o polígono" "202|lojas|$MALL1|null|334" \
   "$RL|$(jq -r '"\(.kind)|\(.parent_lead_id)|\(.area_id)|\(.radius_m)"' $T)"
+curl -s -o /dev/null -X POST "$API/v1/place-searches/$(jq -r .id $T)/cancel?praca_id=$PRACA_SEED" -H "$HD"
 for n in 1 2; do
   $PSQL "insert into leads (id, praca_id, name, entered_at, stage_since, lat, lng, location_precision, parent_lead_id) values (gen_random_uuid(), '$PRACA_SEED', 'LovD $SUF loja $n', '$HOJE', '$HOJE', $LAT + 0.004, $LNG + $n * 0.0002, 'point', '$MALL1')" > /dev/null
 done

@@ -7,6 +7,7 @@ import { RotaPlanoCard } from '@/components/praca/RotaPlanoCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useAreas } from '@/modules/areas/application/use-areas';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { useConsultores } from '@/modules/consultores/application/use-consultores';
 import { useSegmentos } from '@/modules/places/application/use-places';
@@ -42,6 +43,12 @@ function useBusca(id: string | null, pracaId: string) {
 /** Passo 1: "Descobrir shoppings da cidade" — busca no mapa aberto, revisão com "Incluir" e "Adicionar". */
 function Descobrir({ praca, minimo }: { praca: PracaView; minimo: number }) {
   const qc = useQueryClient();
+  const { data: areas } = useAreas(praca.id);
+  const ativas = (areas ?? []).filter((a) => a.active);
+  // Centro: o da cidade (cobertura da praça) quando existe; senão uma área de atuação (a API recusa praça sem centro e sem área).
+  const opcoes = [...(praca.cobertura ? [{ id: '', rotulo: `Centro de ${praca.cobertura.cidade}` }] : []), ...ativas.map((a) => ({ id: a.id, rotulo: `Área ${a.name}` }))];
+  const [centro, setCentro] = useState<string | null>(null);
+  const centroAtual = centro ?? opcoes[0]?.id ?? null;
   const [runId, setRunId] = useState<string | null>(null);
   const [iniciando, setIniciando] = useState(false);
   const busca = useBusca(runId, praca.id);
@@ -57,7 +64,7 @@ function Descobrir({ praca, minimo }: { praca: PracaView; minimo: number }) {
   async function descobrir() {
     setIniciando(true);
     try {
-      const r = await buscarShoppings({ praca_id: praca.id, kind: 'shoppings' });
+      const r = await buscarShoppings({ praca_id: praca.id, kind: 'shoppings', ...(centroAtual ? { area_id: centroAtual } : {}) });
       setRunId(r.id);
     } catch (e) {
       toast.error(apiErrorMessage(e, 'Não conseguimos buscar os shoppings agora.'));
@@ -84,12 +91,26 @@ function Descobrir({ praca, minimo }: { praca: PracaView; minimo: number }) {
   const novos = (cands.data ?? []).filter((c) => c.selectable);
   return (
     <div className="space-y-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <Button className="h-12" disabled={iniciando || busca.data?.status === 'running' || busca.data?.status === 'queued'} onClick={() => void descobrir()}>
-          {busca.data?.status === 'running' || busca.data?.status === 'queued' ? 'Buscando no mapa aberto…' : 'Descobrir shoppings da cidade'}
-        </Button>
-        <span className="text-sm text-muted-foreground">Mapa aberto (OpenStreetMap), sem custo; até 15 km do centro da praça.</span>
-      </div>
+      {opcoes.length === 0 ? (
+        <p className="text-sm">Cadastre uma área de atuação em Configurações: a busca dos shoppings parte do centro dela.</p>
+      ) : (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <div className="space-y-1">
+            <Label htmlFor="shop-centro">Buscar em volta de</Label>
+            <select id="shop-centro" value={centroAtual ?? ''} onChange={(e) => setCentro(e.target.value)} className="h-12 w-full rounded-md border border-border bg-background px-3 text-sm">
+              {opcoes.map((o) => (
+                <option key={o.id || 'cidade'} value={o.id}>
+                  {o.rotulo}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Button className="h-12" disabled={iniciando || busca.data?.status === 'running' || busca.data?.status === 'queued'} onClick={() => void descobrir()}>
+            {busca.data?.status === 'running' || busca.data?.status === 'queued' ? 'Buscando no mapa aberto…' : 'Descobrir shoppings da cidade'}
+          </Button>
+          <span className="text-sm text-muted-foreground">Mapa aberto (OpenStreetMap), sem custo; até 15 km do centro escolhido.</span>
+        </div>
+      )}
       {busca.data?.status === 'error' && <p role="alert" className="text-sm">{busca.data.error}</p>}
       {pronta && cands.data && (
         <div className="space-y-2">
