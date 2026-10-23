@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
 import { RotaPlanoCard } from '@/components/praca/RotaPlanoCard';
 import { Button } from '@/components/ui/button';
@@ -11,6 +12,8 @@ import { useConsultores } from '@/modules/consultores/application/use-consultore
 import { useArquivarPlano, useConfigDivisao, useCriarPlano, usePlano, usePlanos, usePrevia } from '@/modules/planos/application/use-planos';
 import { rotuloGeracao } from '@/modules/planos/domain/planos';
 import type { PracaView } from '@/modules/pracas/application/use-pracas';
+
+const RotasMapa = dynamic(() => import('./RotasMapa'), { ssr: false });
 
 /**
  * Rotas > "Dividir em rotas" (contrato §39, UX §3.4; Lovable `rotas.tsx`, aba "Clientes"): praça, área e paradas por rota, a
@@ -36,6 +39,9 @@ export function DividirRotas({ praca }: { praca: PracaView }) {
   const criar = useCriarPlano();
   const arquivar = useArquivarPlano();
   const [confirmarArquivo, setConfirmarArquivo] = useState(false);
+  const [verMapa, setVerMapa] = useState(false);
+  const [destaque, setDestaque] = useState<string | null>(null);
+  const dark = user?.theme !== 'light';
   const { data: consultores } = useConsultores();
   const doPraca = (consultores ?? []).filter((c) => c.praca_id === praca.id && c.active).map((c) => ({ id: c.id, name: c.name }));
   const resumo = planos.data?.find((p) => p.id === atual);
@@ -158,11 +164,34 @@ export function DividirRotas({ praca }: { praca: PracaView }) {
       )}
 
       {plano.data && plano.data.items.length > 0 && (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {plano.data.items.map((it) => (
-            <RotaPlanoCard key={it.id} plano={plano.data!} item={it} admin={admin} consultores={doPraca} />
-          ))}
-        </div>
+        <>
+          <div className="space-y-2">
+            <button type="button" aria-expanded={verMapa} onClick={() => setVerMapa((v) => !v)} className="h-12 w-full rounded-md border border-border px-4 text-sm font-bold sm:w-auto">
+              {verMapa ? 'Esconder o mapa' : 'Ver no mapa'}
+            </button>
+            {verMapa && (
+              <>
+                <label className="flex flex-col gap-1 text-sm sm:max-w-sm">
+                  <span>Destacar a rota</span>
+                  <select value={destaque ?? ''} onChange={(e) => setDestaque(e.target.value || null)} className="h-12 rounded-md border border-border bg-background px-3">
+                    <option value="">Nenhuma</option>
+                    {plano.data.items.map((it) => (
+                      <option key={it.id} value={it.id}>
+                        {it.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <RotasMapa itens={plano.data.items} destaque={destaque} dark={dark} />
+              </>
+            )}
+          </div>
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            {plano.data.items.map((it) => (
+              <RotaPlanoCard key={it.id} plano={plano.data!} item={it} admin={admin} consultores={doPraca} />
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
