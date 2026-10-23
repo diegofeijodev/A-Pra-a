@@ -16,7 +16,8 @@ import {
 export type TipoLancamento = 'accrual' | 'adjustment' | 'reversal' | 'payout' | 'payout_reversal' | 'payout_settlement';
 /** Os tipos da remuneração (F8). Os `payout*` (F9) vivem no mesmo razão, mas NÃO entram nas somas da F8. */
 export const TIPOS_REMUNERACAO: readonly TipoLancamento[] = ['accrual', 'adjustment', 'reversal'];
-export type EscopoLancamento = 'day' | 'week' | 'manual';
+/** `month` (L11 §43.3): a parte do mês. */
+export type EscopoLancamento = 'day' | 'week' | 'month' | 'manual';
 
 export interface LancamentoNovo {
   consultant_id: string;
@@ -234,7 +235,7 @@ class Leitor implements EarningsLeitura {
       _count: { _all: true },
     });
     for (const r of g) {
-      const k = chaveTrabalho(r.work_scope as 'day' | 'week', r.work_day, r.work_week);
+      const k = chaveTrabalho(r.work_scope as 'day' | 'week' | 'month', r.work_day, r.work_week);
       out.get(r.consultant_id)?.set(k, { soma: r._sum.amount_cents ?? 0, qtd: r._count._all });
     }
     return out;

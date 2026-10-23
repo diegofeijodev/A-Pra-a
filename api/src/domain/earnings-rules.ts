@@ -3,10 +3,12 @@
  * Sem banco, rede ou relógio. Todo valor é INTEIRO em centavos; não há divisão no cálculo.
  * Nenhum valor é fixo: `REGRA_PADRAO` é só a versão 1, gravada pela migração e editável por nova versão.
  */
-import { addDays, eachDay, isDateString, weekdayOf } from '../common/time/dates';
+import { addDays, eachDay, isDateString, monthRange, weekdayOf } from '../common/time/dates';
 
 export const PERIODOS_FAIXA = ['day', 'week'] as const;
-export type PeriodoFaixa = (typeof PERIODOS_FAIXA)[number];
+/** L11 (contrato §43): `month` só com `FIELD_EARNINGS_MONTHLY_ENABLED` no PUT; a regra SALVA mensal é sempre lida. */
+export const PERIODOS_FAIXA_MENSAL = ['day', 'week', 'month'] as const;
+export type PeriodoFaixa = (typeof PERIODOS_FAIXA_MENSAL)[number];
 export const COMBINACOES = ['max', 'sum', 'tier_only'] as const;
 export type Combinacao = (typeof COMBINACOES)[number];
 export const CONDICOES_PISO = ['none', 'journey_open', 'min_visits'] as const;
@@ -215,8 +217,11 @@ const oneOf = <T extends string>(lista: readonly T[], v: unknown): v is T =>
 export type ResultadoValidacao =
   { ok: true; regra: RegraBruta } | { ok: false; campo: string; erro: string };
 
-/** Valida a configuração COMPLETA. Chave desconhecida ou ausente = erro com o nome do campo. */
-export function validarRegra(raw: unknown): ResultadoValidacao {
+/**
+ * Valida a configuração COMPLETA. Chave desconhecida ou ausente = erro com o nome do campo.
+ * `mensal` (L11, §43): aceita `tiers_period = month` (sem a opção, "month" é inválido com a frase de sempre).
+ */
+export function validarRegra(raw: unknown, opcoes: { mensal?: boolean } = {}): ResultadoValidacao {
   const falha = (campo: string, erro: string): ResultadoValidacao => ({
     ok: false,
     campo,
@@ -256,7 +261,9 @@ export function validarRegra(raw: unknown): ResultadoValidacao {
   const cumulativo = nv('tiers_mode') === 'cumulative';
   if (!ehInt(o.unit_cents, L.unit_cents.min, L.unit_cents.max))
     return falha('unit_cents', `inteiro em centavos de ${L.unit_cents.min} a ${L.unit_cents.max}.`);
-  if (!oneOf(PERIODOS_FAIXA, o.tiers_period)) return falha('tiers_period', 'use day ou week.');
+  if (opcoes.mensal) {
+    if (!oneOf(PERIODOS_FAIXA_MENSAL, o.tiers_period)) return falha('tiers_period', 'use day, week ou month.');
+  } else if (!oneOf(PERIODOS_FAIXA, o.tiers_period)) return falha('tiers_period', 'use day ou week.');
   if (!Array.isArray(o.tiers) || o.tiers.length > L.tiers_max)
     return falha('tiers', `lista de até ${L.tiers_max} faixas.`);
   const tiers: Faixa[] = [];
@@ -291,6 +298,10 @@ export function validarRegra(raw: unknown): ResultadoValidacao {
     return falha('tiers', 'no modo tier_only é preciso ao menos uma faixa.');
   if (o.cap_cents !== null && !ehInt(o.cap_cents, L.cap_cents.min, L.cap_cents.max))
     return falha('cap_cents', 'inteiro em centavos ou null (sem teto).');
+  // L11 §43.2: o bônus mensal soma (ou é só a faixa) e não tem teto.
+  if (o.tiers_period === 'month' && o.combine === 'max')
+    return falha('combine', 'com bônus mensal use sum ou tier_only (o maior entre dias de semanas diferentes não tem sentido).');
+  if (o.tiers_period === 'month' && o.cap_cents !== null) return falha('cap_cents', 'o bônus mensal não tem teto: use null.');
   if (!ehInt(o.floor_cents, L.floor_cents.min, L.floor_cents.max))
     return falha(
       'floor_cents',
@@ -344,7 +355,8 @@ export function validarRegra(raw: unknown): ResultadoValidacao {
 
 /** JSON já salvo (validado ao entrar). Se estiver corrompido, falha alto: pagar com regra errada é pior que parar. */
 export function lerRegraSalva(raw: unknown): RegraBruta {
-  const r = validarRegra(raw);
+  // Ler nunca depende da flag do mês: desligá-la não pode derrubar a leitura de uma versão já publicada.
+  const r = validarRegra(raw, { mensal: true });
   if (!r.ok) throw new Error(`Regra de remuneração salva inválida (${r.campo}).`);
   return r.regra;
 }
@@ -417,7 +429,113 @@ export function validarVigencia(p: {
         'valid_from: com faixa ou teto semanal (nesta regra ou na vigente) a regra precisa começar no primeiro dia da semana.',
     };
   }
+  // L11 §43.2: os parâmetros do mês seguem a versão do dia 1; trocar no meio do mês misturaria duas regras no mesmo mês.
+  const mensal = p.nova.tiers_period === 'month' || antes?.config.tiers_period === 'month';
+  if (mensal && p.valid_from.slice(8, 10) !== '01') {
+    return {
+      code: 'VALIDATION_ERROR',
+      campo: 'valid_from',
+      message: 'valid_from: com bônus mensal (nesta regra ou na vigente) a regra precisa começar no dia 1 do mês.',
+    };
+  }
   return null;
+}
+
+// ── mês (L11, contrato §43) ───────────────────────────────────────────────
+
+export const NOMES_MES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+/** "2026-10-23" → "2026-10" */
+export const mesDoDia = (dia: string): string => dia.slice(0, 7);
+/** "2026-10" → "outubro" */
+export const nomeDoMes = (mes: string): string => NOMES_MES[Number(mes.slice(5, 7)) - 1] ?? mes;
+export const ultimoDiaDoMes = (mes: string): string => monthRange(`${mes}-01`).to;
+/** Início da semana que contém o último dia do mês: a semana que leva o bônus do mês (`work_week`). */
+export const semanaDoMes = (mes: string, weekStartWeekday: number): string => inicioDaSemana(ultimoDiaDoMes(mes), weekStartWeekday);
+/** O mês cujo último dia cai na semana `from`…`from+6` (no máximo um), ou null. */
+export function mesQueTerminaNaSemana(from: string): string | null {
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(from, i);
+    if (addDays(d, 1).slice(8, 10) === '01') return mesDoDia(d);
+  }
+  return null;
+}
+
+export interface ResultadoMes {
+  mes: string;
+  from: string;
+  to: string;
+  rule_version: number | null;
+  /** Cadastros que pagam nos dias do mês até hoje (cada dia pela fonte e pelo limite da regra do dia). */
+  signups: number;
+  /** A maior faixa atingida (no cumulativo, a maior das que somam). */
+  faixa: Faixa | null;
+  month_part_cents: number;
+  proxima_faixa: ProximaFaixa | null;
+  /** O mês já terminou (hoje é depois do último dia). */
+  encerrado: boolean;
+  /** Semana que contém o último dia do mês (a que leva o lançamento). */
+  work_week: string;
+  conta: string[];
+}
+
+/**
+ * Parte do mês = faixa(N) pela versão vigente no DIA 1 (só quando ela é mensal). N = soma dos cadastros que pagam nos
+ * dias do mês até hoje. Sem teto (a validação garante `cap_cents = null`). Mês ainda não começado ou sem regra mensal = null.
+ */
+export function calcularMes(p: {
+  mes: string;
+  hoje: string;
+  versoes: readonly VersaoRegra[];
+  entradas: Readonly<Record<string, EntradaDia | undefined>>;
+  weekStart: number;
+}): ResultadoMes | null {
+  const from = `${p.mes}-01`;
+  const to = ultimoDiaDoMes(p.mes);
+  if (from > p.hoje) return null;
+  const v = versaoVigente(p.versoes, from);
+  if (!v || v.config.tiers_period !== 'month') return null;
+  const regra = normalizarRegra(v.config);
+  let n = 0;
+  for (const d of eachDay(from, to)) {
+    if (d > p.hoje) break;
+    n += p.entradas[d]?.signups ?? 0;
+  }
+  const faixa = faixaAtingida(regra.tiers, n);
+  const cents = valorDasFaixas(regra, n);
+  const prox = proximaFaixa(regra.tiers, n);
+  const encerrado = to < p.hoje;
+  const cumulativo = regra.tiers_mode === 'cumulative';
+  const conta: string[] = [
+    `Meta de ${nomeDoMes(p.mes)}: ${rotuloCadastro(regra, n)} no mês (${diaMes(from)} a ${diaMes(to)}${encerrado ? '' : ', até agora'}).`,
+  ];
+  if (cumulativo && faixa) {
+    const atingidas = faixasAtingidas(regra.tiers, n);
+    conta.push(
+      `Metas do mês atingidas (todas somam): ${atingidas.map((t) => `${plural(t.min_signups, 'cadastro', 'cadastros')} = ${brl(t.amount_cents)}`).join('; ')}. Soma das metas: ${brl(cents)}.`,
+    );
+  } else if (faixa) {
+    conta.push(`Faixa do mês atingida: ${plural(faixa.min_signups, 'cadastro', 'cadastros')} = ${brl(faixa.amount_cents)}.`);
+  } else {
+    conta.push(encerrado ? 'Nenhuma faixa do mês atingida.' : 'Nenhuma faixa do mês atingida ainda.');
+  }
+  if (prox)
+    conta.push(
+      `Faltam ${rotuloCadastro(regra, prox.faltam)} para a ${cumulativo ? 'meta' : 'faixa'} do mês de ${brl(prox.amount_cents)} (${plural(prox.min_signups, 'cadastro', 'cadastros')}).`,
+    );
+  conta.push(`Bônus do mês: ${brl(cents)}${encerrado ? '' : ' até agora'} (regra versão ${v.version}, vigente no dia 1).`);
+  return {
+    mes: p.mes,
+    from,
+    to,
+    rule_version: v.version,
+    signups: n,
+    faixa,
+    month_part_cents: cents,
+    proxima_faixa: prox,
+    encerrado,
+    work_week: inicioDaSemana(to, p.weekStart),
+    conta,
+  };
 }
 
 // ── cálculo ───────────────────────────────────────────────────────────────
@@ -686,6 +804,8 @@ export interface ResultadoSemana {
   week_part_cents: number;
   total_cents: number;
   conta: string[];
+  /** L11 §43.3: só na semana que contém o último dia de um mês com regra mensal (ausente nas demais). */
+  month?: ResultadoMes;
 }
 
 function diaVazio(dia: string): EntradaDia {
@@ -703,7 +823,11 @@ export function calcularSemana(p: {
   hoje: string;
   versoes: readonly VersaoRegra[];
   entradas: Readonly<Record<string, EntradaDia | undefined>>;
+  /** L11 §43.3: a parte do mês que termina nesta semana (`calcularMes`); ausente/null = semana como sempre. */
+  mes?: ResultadoMes | null;
 }): ResultadoSemana {
+  const mes = p.mes ?? null;
+  if (mes && mes.work_week !== p.from) throw new Error(`O bônus de ${mes.mes} entra na semana ${mes.work_week}, não em ${p.from}.`);
   const vSemana = versaoVigente(p.versoes, p.from);
   const days: ResultadoDia[] = eachDay(p.from, p.to).map((dia) => {
     const v = versaoVigente(p.versoes, dia);
@@ -766,7 +890,11 @@ export function calcularSemana(p: {
     if (rs.cap_cents !== null && pre > rs.cap_cents)
       conta.push(`Teto da semana de ${brl(rs.cap_cents)} aplicado.`);
   }
-  const total = daysCents + parte;
+  if (mes)
+    conta.push(
+      `Bônus do mês de ${nomeDoMes(mes.mes)}: ${brl(mes.month_part_cents)} (${plural(mes.signups, 'cadastro', 'cadastros')} no mês${mes.faixa ? `; faixa de ${plural(mes.faixa.min_signups, 'cadastro', 'cadastros')}` : ''}). Entra nesta semana, que contém o último dia do mês (${diaMes(mes.to)}).`,
+    );
+  const total = daysCents + parte + (mes?.month_part_cents ?? 0);
   conta.push(`Total da semana: ${brl(total)}.`);
   return {
     from: p.from,
@@ -778,12 +906,14 @@ export function calcularSemana(p: {
     week_part_cents: parte,
     total_cents: total,
     conta,
+    ...(mes ? { month: mes } : {}),
   };
 }
 
 // ── razão: alvos, deltas, semana de pagamento ─────────────────────────────
 
-export type EscopoTrabalho = 'day' | 'week';
+/** `month` (L11 §43.3): a parte do mês, alvo da semana que contém o último dia; `work_day` = dia 1 do mês. */
+export type EscopoTrabalho = 'day' | 'week' | 'month';
 
 export interface AlvoLancamento {
   scope: EscopoTrabalho;
@@ -811,11 +941,19 @@ export function alvosDaSemana(s: ResultadoSemana): AlvoLancamento[] {
     cents: s.week_part_cents,
     rule_version: s.rule_version,
   });
+  if (s.month)
+    alvos.push({
+      scope: 'month',
+      work_day: s.month.from,
+      work_week: s.from,
+      cents: s.month.month_part_cents,
+      rule_version: s.month.rule_version,
+    });
   return alvos;
 }
 
 export const chaveTrabalho = (scope: EscopoTrabalho, work_day: string | null, work_week: string): string =>
-  `${scope}:${scope === 'day' ? work_day : work_week}`;
+  `${scope}:${scope === 'day' ? work_day : scope === 'month' ? (work_day ?? '').slice(0, 7) : work_week}`;
 
 export interface JaLancado {
   /** Soma dos lançamentos `accrual` do período de trabalho (ajustes e estornos NÃO entram). */

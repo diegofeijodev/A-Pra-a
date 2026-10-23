@@ -93,7 +93,7 @@ export class FakeRepo implements EarningsRepository {
     for (const l of this.ledger) {
       if (l.kind !== 'accrual' || !ids.includes(l.consultant_id) || !weeks.includes(l.work_week)) continue;
       const m = out.get(l.consultant_id) as Map<string, JaLancado>;
-      const k = chaveTrabalho(l.work_scope as 'day' | 'week', l.work_day, l.work_week);
+      const k = chaveTrabalho(l.work_scope as 'day' | 'week' | 'month', l.work_day, l.work_week);
       const cur = m.get(k) ?? { soma: 0, qtd: 0 };
       m.set(k, { soma: cur.soma + l.amount_cents, qtd: cur.qtd + 1 });
     }
