@@ -269,6 +269,10 @@ export class PlanosService {
     const area = q.area_id ? await this.prisma.field_areas.findFirst({ where: { id: q.area_id, praca_id: q.praca_id } }) : null;
     if (q.area_id && !area) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Área não encontrada.' });
     const porRota = q.por_rota ?? CONFIG_DIVISAO.ler((await this.bruto()).divisao).por_rota;
+    const semArea = !area && (await this.prisma.field_areas.count({ where: { praca_id: q.praca_id, active: true } })) === 0;
+    if (semArea) {
+      return { lead_count: 0, truncated: false, por_rota: porRota, rotas_min: 0, conta: 'Nenhuma área de atuação ativa nesta praça. Cadastre uma em Configurações para dividir em rotas.' };
+    }
     const { pontos, truncated } = await this.elegiveis(q.praca_id, area, agora);
     const n = pontos.length;
     const rotasMin = Math.ceil(n / porRota);

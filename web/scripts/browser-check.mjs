@@ -1043,9 +1043,9 @@ console.log('-- Campo: GPS negado --');
   check('Rotas: sem as flags, a tela é a de antes ("Roteiros do dia", sem abas)', !lov.route_plans || (await page.getByRole('tablist', { name: 'Rotas' }).count()) === 1);
   if (lov.route_plans) {
     await page.getByRole('tab', { name: 'Dividir em rotas' }).click();
-    await page.getByTestId('previa-divisao').filter({ hasText: /estabelecimento/ }).waitFor({ timeout: 20000 });
+    await page.getByTestId('previa-divisao').filter({ hasText: /÷|Nenhum estabelecimento|Nenhuma área/ }).waitFor({ timeout: 20000 });
     const previa = await page.getByTestId('previa-divisao').innerText();
-    check('Dividir em rotas: a prévia com a conta aparece antes de gerar (R1)', /÷|Nenhum estabelecimento/.test(previa));
+    check('Dividir em rotas: a prévia com a conta aparece antes de gerar (R1)', /÷|Nenhum estabelecimento|Nenhuma área/.test(previa));
     check('Dividir em rotas: dois botões de gerar (carro/moto e a pé)', (await page.getByRole('button', { name: 'Gerar rotas de carro/moto' }).count()) === 1 && (await page.getByRole('button', { name: 'Gerar rotas a pé' }).count()) === 1);
   }
   if (lov.malls) {
@@ -1053,7 +1053,11 @@ console.log('-- Campo: GPS negado --');
     await page.getByTestId('criterio-shopping').waitFor({ timeout: 20000 });
     const crit = await page.getByTestId('criterio-shopping').innerText();
     check('Shoppings: o ⓘ descreve o critério que vale (área) e a marcação à mão', crit.includes('m² de área no mapa aberto') && crit.includes('marque à mão'));
-    check('Shoppings: "Descobrir shoppings da cidade" para o admin (não clicado)', (await page.getByRole('button', { name: 'Descobrir shoppings da cidade' }).count()) === 1);
+    // Sem centro na praça nem área ativa (o seed), a tela pede uma área no lugar do botão.
+    check(
+      'Shoppings: "Descobrir shoppings da cidade" para o admin, ou o pedido de uma área (não clicado)',
+      (await page.getByRole('button', { name: 'Descobrir shoppings da cidade' }).count()) === 1 || (await page.getByText('Cadastre uma área de atuação em Configurações').count()) === 1,
+    );
   }
   if (lov.route_plans) {
     await page.getByRole('tab', { name: 'Dia de cada consultor' }).click();

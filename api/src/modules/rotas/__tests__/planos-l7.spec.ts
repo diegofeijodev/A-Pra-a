@@ -39,6 +39,7 @@ function fake() {
         where.id === AREA && where.praca_id === PRACA ? { id: AREA, praca_id: PRACA, lat: -19.92, lng: -43.94, radius_m: 3000 } : null,
       ),
       findMany: jest.fn().mockResolvedValue([{ id: AREA, name: 'Centro', praca_id: PRACA, lat: -19.92, lng: -43.94, radius_m: 3000 }]),
+      count: jest.fn().mockResolvedValue(1),
     },
     leads: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn().mockResolvedValue(null) },
     field_consultants: {
@@ -370,6 +371,9 @@ describe('prévia antes de gerar (UX R1)', () => {
     expect(r).toMatchObject({ lead_count: 41, rotas_min: 3, por_rota: 20, truncated: false });
     expect(r.conta).toBe('41 estabelecimentos com localização exata, fora de roteiro publicado → pelo menos 3 rotas de até 20 paradas (41 ÷ 20 = 2,1; arredonda para cima; o teto de tempo pode criar mais)');
     expect(p.leads.findMany.mock.calls[0][0].where).toMatchObject({ route_stops: { none: { day: { gte: DIA } } } });
+    const sem = fake();
+    sem.field_areas.count.mockResolvedValue(0);
+    expect((await montar(sem).s.previa({ praca_id: PRACA }, AGORA)).conta).toBe('Nenhuma área de atuação ativa nesta praça. Cadastre uma em Configurações para dividir em rotas.');
     const e = await falha(() => montar(fake(), { route_plans: false, malls: false }).s.previa({ praca_id: PRACA }, AGORA));
     expect(codigo(e)).toBe('ROUTE_PLANS_DISABLED');
   });
