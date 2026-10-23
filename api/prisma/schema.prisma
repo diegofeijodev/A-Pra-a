@@ -642,6 +642,7 @@ model field_consultants {
   declared_signups field_declared_signups[]
   signup_sync      field_signup_sync_state?
   earnings         field_earnings_ledger[]
+  pay_rule_versions field_pay_rule_versions[]
   payout_periods   field_payout_periods[]
   payouts          field_payouts[]
   journey_breaks   field_journey_breaks[]
@@ -1061,10 +1062,15 @@ model field_pay_rule_versions {
   created_by      String?  @db.Uuid
   created_by_name String?
   created_at      DateTime @default(now())
+  // L13 (contrato §45.3): nulo = regra GERAL (todas as de antes); preenchido = regra própria do consultor. Restrict: quem
+  // tem regra própria é desativado, não apagado.
+  consultant_id   String?  @db.Uuid
 
-  ledger field_earnings_ledger[]
+  ledger     field_earnings_ledger[]
+  consultant field_consultants?      @relation(fields: [consultant_id], references: [id], onDelete: Restrict)
 
   @@index([valid_from, version])
+  @@index([consultant_id, valid_from, version])
 }
 
 // RAZÃO APPEND-ONLY: trigger no banco barra UPDATE/DELETE; correção = novo lançamento (ajuste/estorno) com motivo.
