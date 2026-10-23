@@ -4,8 +4,10 @@
 # cobre as flags desligadas). NUNCA fala com o Overpass público. Suba a API, em outro terminal, com as flags ligadas:
 #   OVERPASS_URL=http://127.0.0.1:9/api/interpreter FIELD_ROUTES_ENABLED=true FIELD_ROUTE_PLANS_ENABLED=true FIELD_SEGMENTS_ENABLED=true \
 #   FIELD_MALLS_ENABLED=true FIELD_MAP_PINS_ENABLED=true FIELD_VISIT_FLOW_SELECT_ENABLED=true PASSWORD_POLICY_ENABLED=true \
-#   FIELD_CONSULTANT_PROFILE_ENABLED=true FIELD_CONTACT_EMAIL_ENABLED=true TEAM_GESTOR_ENABLED=true npm run start:smoke
-#   bash scripts/smoke-lovable-e.sh
+#   FIELD_CONSULTANT_PROFILE_ENABLED=true FIELD_CONTACT_EMAIL_ENABLED=true TEAM_GESTOR_ENABLED=true npm run start:smoke > /tmp/praca-api.log 2>&1
+#   LOG_API=/tmp/praca-api.log bash scripts/smoke-lovable-e.sh
+# LOG_API = o arquivo com a saída da API acima: sem ele a 68ª checagem (o log da API sem conta, e-mail do contato nem senha) fica
+# de fora e o resultado é 67/67 com um aviso.
 API=${API:-http://localhost:3014}
 PASS=0; FAIL=0
 ok(){ PASS=$((PASS+1)); printf '  \033[32m✓\033[0m %s\n' "$1"; }
