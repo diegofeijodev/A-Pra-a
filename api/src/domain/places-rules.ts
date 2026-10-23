@@ -85,13 +85,13 @@ const CATEGORIA_OSM: Record<string, TipoLugar> = {
 
 const primeiro = (v: string | undefined): string => (v ?? '').split(';')[0]!.trim();
 
-function enderecoOsm(t: Tags): string {
+export function enderecoOsm(t: Tags): string {
   const rua = [t['addr:street'], t['addr:housenumber']].filter(Boolean).join(', ');
   const bairro = t['addr:suburb'] ?? t['addr:neighbourhood'];
   return [rua, bairro].filter(Boolean).join(' - ');
 }
 
-const temMarcaDeFechado = (t: Tags): boolean =>
+export const temMarcaDeFechado = (t: Tags): boolean =>
   Object.keys(t).some((k) => k.startsWith('disused:') || k.startsWith('abandoned:')) || t['opening_hours'] === 'off';
 
 interface ElementoOverpass {
