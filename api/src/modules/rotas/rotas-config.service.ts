@@ -29,6 +29,7 @@ import { CONFIG_INTERVALO, type ConfigIntervalo } from '../../domain/intervalo-r
 import type { GrupoConfig } from '../../domain/config-grupo';
 import { CONFIG_PAINEL, type ConfigPainel } from '../../domain/painel-rules';
 import { CONFIG_RESUMO_DIA, type ConfigResumoDia } from '../../domain/resumo-dia-rules';
+import { CONFIG_SHOPPING, type ConfigShopping } from '../../domain/shopping-rules';
 import type { ConfigRotaDto } from './dto/rotas.dto';
 
 /**
@@ -111,6 +112,11 @@ export class RotasConfigService {
   /** Intervalo da jornada (contrato §37.2). */
   async intervalo(): Promise<ConfigIntervalo> {
     return CONFIG_INTERVALO.ler(await this.bruto());
+  }
+
+  /** Shoppings (lote D, §40.2): grupo próprio em `field_config.shopping` (rota própria; o PUT daqui não o mexe). */
+  async shopping(): Promise<ConfigShopping> {
+    return CONFIG_SHOPPING.ler((await this.bruto()).shopping);
   }
 
   async view(): Promise<ConfigView> {

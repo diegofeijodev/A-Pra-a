@@ -1,4 +1,4 @@
-import { ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsIn, IsOptional, IsString, ValidateIf } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, Min, ValidateIf } from 'class-validator';
 import { FONTES_LUGAR, TIPOS_LUGAR } from '../../../domain/places-rules';
 
 /**
@@ -7,6 +7,10 @@ import { FONTES_LUGAR, TIPOS_LUGAR } from '../../../domain/places-rules';
  * ambiente na hora da validação (o boot já validou as variáveis), como o `FreelaClient`.
  */
 export const segmentosLigados = (): boolean => (process.env.FIELD_SEGMENTS_ENABLED ?? '').trim() === 'true';
+
+/** Lote D (§40.3): `kind` ausente (ou nulo, ou `lugares`) = a busca de hoje — os decorators de hoje valem como hoje. */
+export const KINDS_BUSCA = ['lugares', 'shoppings', 'lojas'] as const;
+const ehLugares = (o: { kind?: string | null }) => o.kind == null || o.kind === 'lugares';
 
 /** Tetos do corpo de "adicionar como leads". */
 export const MAX_IDS_POR_CHAMADA = 300;
@@ -21,10 +25,12 @@ export class StartPlaceSearchDto {
   @IsString()
   praca_id!: string;
 
+  // Shoppings: opcional (sem ela, o centro da praça); lojas: não usa. `lugares`: obrigatória, como hoje.
+  @ValidateIf((o: StartPlaceSearchDto) => ehLugares(o) || o.area_id != null)
   @IsString()
   area_id!: string;
 
-  @ValidateIf(() => !segmentosLigados())
+  @ValidateIf((o: StartPlaceSearchDto) => !segmentosLigados() && ehLugares(o))
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(TIPOS_LUGAR.length)
@@ -40,6 +46,23 @@ export class StartPlaceSearchDto {
   @IsOptional()
   @IsBoolean()
   refresh?: boolean;
+
+  // Lote D (§40.3). Sem default: ausente = `lugares`. Com a flag dos shoppings desligada, `kind` ≠ `lugares` = 404 no serviço.
+  @IsOptional()
+  @IsIn(KINDS_BUSCA)
+  kind?: string | null;
+
+  /** Só em `shoppings`: raio em volta do centro, até 30 km (padrão 15 km). */
+  @IsOptional()
+  @IsInt()
+  @Min(1000)
+  @Max(30000)
+  radius_m?: number | null;
+
+  /** Só em `lojas`: o shopping (lead com `place_kind = 'shopping'`) da praça. */
+  @IsOptional()
+  @IsString()
+  parent_lead_id?: string | null;
 }
 
 export class AddPlaceLeadsDto {

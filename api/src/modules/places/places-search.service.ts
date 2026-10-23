@@ -33,12 +33,14 @@ import {
   MAX_RESULTADOS,
 } from '../../domain/places-rules';
 import { hashSegmentos, lerFotoSegmentos, type Segmento } from '../../domain/segmentos-rules';
+import { CONFIG_SHOPPING, type ConfigShopping } from '../../domain/shopping-rules';
+import { LOVABLE_D_FLAGS, type FlagsLovableD } from '../rotas/rotas.tokens';
 import { violouUnico } from '../campo/prisma-errors';
 import { ImportsService } from '../imports/imports.service';
 import { AddPlaceLeadsDto, StartPlaceSearchDto } from './dto/places.dto';
 import { PlacesSegmentsService } from './places-segments.service';
 import { PLACES_LIMITS, PLACES_PROVIDERS, type PlacesLimits } from './places.tokens';
-import { BuscaCancelada, ProviderError, type PlacesProvider } from './providers/places-provider';
+import { BuscaCancelada, ProviderError, type BuscaParams, type PlacesProvider } from './providers/places-provider';
 
 const ORIGEM_LEAD = 'pesquisa automática';
 const ROTULO_FONTE: Record<FonteLugar, string> = { osm: 'OSM', apify: 'Apify' };
@@ -50,7 +52,8 @@ type Db = PrismaService | Prisma.TransactionClient;
 export interface SearchRunView {
   id: string;
   praca_id: string;
-  area_id: string;
+  /** Nulo só nas buscas de lojas e de shoppings sem área (lote D, §40.3); `lugares` sempre tem. */
+  area_id: string | null;
   area_name: string;
   source: string;
   types: string[];
@@ -70,6 +73,9 @@ export interface SearchRunView {
   started_at: string | null;
   finished_at: string | null;
   expires_at: string | null;
+  /** Lote D (§40.3): só nas buscas de `shoppings`/`lojas` (as de `lugares` não ganham chave nova). */
+  kind?: string;
+  parent_lead_id?: string | null;
 }
 
 export interface SourceView {
@@ -100,6 +106,8 @@ export interface CandidateView {
   lead_id: string | null;
   lead_name: string | null;
   selectable: boolean;
+  /** Lote D (§40.3): só nos achados de `shoppings`. */
+  metrics?: Record<string, unknown>;
 }
 
 export interface AddLeadsView {
@@ -111,7 +119,7 @@ export interface AddLeadsView {
 type RunRow = {
   id: string;
   praca_id: string;
-  area_id: string;
+  area_id: string | null;
   area_name: string;
   source: string;
   types: string[];
@@ -132,6 +140,9 @@ type RunRow = {
   finished_at: Date | null;
   /** Foto dos segmentos (§36.6); ausente/nulo = tipos fixos de hoje. */
   segments_snapshot?: unknown;
+  /** Lote D (§40.3): `lugares` (a de hoje) | `shoppings` | `lojas`. */
+  kind?: string;
+  parent_lead_id?: string | null;
 };
 
 type CandidateRow = {
@@ -151,9 +162,13 @@ type CandidateRow = {
   reason: string | null;
   lead_id: string | null;
   lead?: { name: string } | null;
+  metrics?: unknown;
 };
 
 const naoEncontrada = () => new NotFoundException({ code: 'NOT_FOUND', message: 'Pesquisa não encontrada.' });
+const shoppingsDesligado = () => new NotFoundException({ code: 'MALLS_DISABLED', message: 'Os shoppings não estão ligados neste servidor.' });
+/** Lote D (§40.3): raio padrão da busca de shoppings em volta do centro (até 30 km). */
+const RAIO_SHOPPINGS_PADRAO_M = 15_000;
 const pracaNaoEncontrada = () => new NotFoundException({ code: 'NOT_FOUND', message: 'Praça não encontrada.' });
 
 /**
@@ -174,7 +189,13 @@ export class PlacesSearchService implements OnApplicationBootstrap {
     @Inject(PLACES_PROVIDERS) private readonly providers: Record<FonteLugar, PlacesProvider>,
     @Inject(PLACES_LIMITS) private readonly limits: PlacesLimits,
     @Optional() private readonly segmentos?: PlacesSegmentsService,
+    @Optional() @Inject(LOVABLE_D_FLAGS) private readonly flagsD?: FlagsLovableD,
   ) {}
+
+  /** Lote D (§40): shoppings e lojas de dentro (só valem com os segmentos e os planos de rota). */
+  get shoppingsLigado(): boolean {
+    return this.flagsD?.malls === true;
+  }
 
   /** Execução interrompida por reinício não termina nunca: vira erro legível. */
   async onApplicationBootstrap(): Promise<void> {
@@ -196,6 +217,12 @@ export class PlacesSearchService implements OnApplicationBootstrap {
 
   // ── pedido ──────────────────────────────────────────────────
   async start(dto: StartPlaceSearchDto, user: AuthUser): Promise<{ run: SearchRunView; nova: boolean }> {
+    // Lote D (§40.3): `kind` ausente (ou `lugares`) = tudo como hoje; os outros só com a flag dos shoppings.
+    const kind = dto.kind ?? 'lugares';
+    if (kind !== 'lugares') {
+      if (!this.shoppingsLigado) throw shoppingsDesligado();
+      return kind === 'shoppings' ? this.startShoppings(dto, user) : this.startLojas(dto, user);
+    }
     await this.assertPraca(dto.praca_id);
     if (!isUuid(dto.area_id)) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Área não encontrada.' });
     const area = await this.prisma.field_areas.findFirst({ where: { id: dto.area_id, praca_id: dto.praca_id } });
@@ -262,6 +289,134 @@ export class PlacesSearchService implements OnApplicationBootstrap {
     return { run: toView(row, false), nova: true };
   }
 
+  /** Mesma busca na fila/rodando ou recente (cache de 7 dias): devolve a que existe. */
+  private async reaproveitar(pracaId: string, cacheKey: string, refresh: boolean | undefined): Promise<{ run: SearchRunView; nova: boolean } | null> {
+    const emAndamento = await this.prisma.place_import_runs.findFirst({
+      where: { praca_id: pracaId, cache_key: cacheKey, status: { in: ['queued', 'running'] } },
+      orderBy: { created_at: 'desc' },
+    });
+    if (emAndamento) return { run: toView(emAndamento, false), nova: false };
+    if (!refresh) {
+      const recente = await this.prisma.place_import_runs.findFirst({
+        where: { praca_id: pracaId, cache_key: cacheKey, status: 'done', finished_at: { not: null } },
+        orderBy: { finished_at: 'desc' },
+      });
+      if (recente && cacheValido(recente.finished_at, new Date())) return { run: toView(recente, true), nova: false };
+    }
+    return null;
+  }
+
+  private exigirOsm(dto: StartPlaceSearchDto): void {
+    if ((dto.source ?? 'osm') !== 'osm') {
+      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'source: shoppings e lojas de dentro só pelo mapa aberto (OSM).' });
+    }
+  }
+
+  private async configShopping(): Promise<ConfigShopping> {
+    const s = await this.prisma.app_settings.findUnique({ where: { id: 1 }, select: { field_config: true } });
+    const v = s?.field_config;
+    return CONFIG_SHOPPING.ler(v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>).shopping : undefined);
+  }
+
+  /** Lote D (§40.3): `shop=mall` em volta da área (ou do centro da praça), com o polígono. */
+  private async startShoppings(dto: StartPlaceSearchDto, user: AuthUser): Promise<{ run: SearchRunView; nova: boolean }> {
+    await this.assertPraca(dto.praca_id);
+    this.exigirOsm(dto);
+    let centro: { lat: number; lng: number };
+    let areaId: string | null = null;
+    let areaName: string;
+    if (dto.area_id) {
+      if (!isUuid(dto.area_id)) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Área não encontrada.' });
+      const area = await this.prisma.field_areas.findFirst({ where: { id: dto.area_id, praca_id: dto.praca_id } });
+      if (!area) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Área não encontrada.' });
+      if (!area.active) throw new ConflictException({ code: 'AREA_INACTIVE', message: 'Esta área está desativada. Ative-a em Configurações.' });
+      centro = { lat: area.lat, lng: area.lng };
+      areaId = area.id;
+      areaName = area.name;
+    } else {
+      const praca = await this.prisma.pracas.findUnique({ where: { id: dto.praca_id }, select: { name: true, lat: true, lon: true } });
+      if (praca?.lat == null || praca.lon == null) {
+        throw new UnprocessableEntityException({ code: 'PRACA_SEM_CENTRO', message: 'Esta praça não tem centro no mapa. Escolha uma área.' });
+      }
+      centro = { lat: praca.lat, lng: praca.lon };
+      areaName = praca.name;
+    }
+    const radius = dto.radius_m ?? RAIO_SHOPPINGS_PADRAO_M;
+    const cacheKey = chaveCache({ lat: centro.lat, lng: centro.lng, radius_m: radius, types: [], source: 'osm', kind: 'shoppings' });
+    const reuso = await this.reaproveitar(dto.praca_id, cacheKey, dto.refresh);
+    if (reuso) return reuso;
+    const row = await this.prisma.place_import_runs.create({
+      data: {
+        praca_id: dto.praca_id,
+        area_id: areaId,
+        area_name: areaName,
+        source: 'osm',
+        types: [],
+        lat: centro.lat,
+        lng: centro.lng,
+        radius_m: radius,
+        cache_key: cacheKey,
+        requested_by: user.id,
+        kind: 'shoppings',
+      },
+    });
+    this.enfileirar(row.id);
+    return { run: toView(row, false), nova: true };
+  }
+
+  /** Lote D (§40.3): lojas dentro de um shopping, com os segmentos ativos como perfil. */
+  private async startLojas(dto: StartPlaceSearchDto, user: AuthUser): Promise<{ run: SearchRunView; nova: boolean }> {
+    await this.assertPraca(dto.praca_id);
+    this.exigirOsm(dto);
+    const naoAchado = () => new NotFoundException({ code: 'NOT_FOUND', message: 'Shopping não encontrado.' });
+    if (!dto.parent_lead_id || !isUuid(dto.parent_lead_id)) throw naoAchado();
+    const pai = await this.prisma.leads.findFirst({
+      where: { id: dto.parent_lead_id, praca_id: dto.praca_id, place_kind: 'shopping' },
+      include: { mall_metrics: true },
+    });
+    if (!pai) throw naoAchado();
+    if (pai.lat == null || pai.lng == null) {
+      throw new UnprocessableEntityException({ code: 'PLACE_WITHOUT_LOCATION', message: 'Este shopping não tem localização.' });
+    }
+    if (!this.segmentos) throw shoppingsDesligado();
+    const { types, foto } = await this.segmentos.fotoDaBusca(dto.types);
+    const cfg = await this.configShopping();
+    const m = pai.mall_metrics;
+    // Polígono: o corte por distância precisa alcançar o shopping inteiro (≈ 1,5 × o lado do quadrado de mesma área).
+    const radius = m?.geometry_kind === 'poligono' && m.area_m2 ? Math.max(cfg.raio_lojas_m, Math.ceil(1.5 * Math.sqrt(m.area_m2))) : cfg.raio_lojas_m;
+    const cacheKey = chaveCache({
+      lat: pai.lat,
+      lng: pai.lng,
+      radius_m: radius,
+      types,
+      source: 'osm',
+      segmentos_hash: hashSegmentos(foto),
+      kind: 'lojas',
+      parent_lead_id: pai.id,
+    });
+    const reuso = await this.reaproveitar(dto.praca_id, cacheKey, dto.refresh);
+    if (reuso) return reuso;
+    const row = await this.prisma.place_import_runs.create({
+      data: {
+        praca_id: dto.praca_id,
+        area_id: null,
+        area_name: pai.name,
+        source: 'osm',
+        types,
+        lat: pai.lat,
+        lng: pai.lng,
+        radius_m: radius,
+        cache_key: cacheKey,
+        requested_by: user.id,
+        kind: 'lojas',
+        parent_lead_id: pai.id,
+        segments_snapshot: foto as unknown as Prisma.InputJsonValue,
+      },
+    });
+    this.enfileirar(row.id);
+    return { run: toView(row, false), nova: true };
+  }
+
   /** Fontes disponíveis neste servidor (a tela esconde o que não funciona e avisa o que é pago). */
   async sources(): Promise<SourceView[]> {
     const usado = await this.apifyUsadoNoMes();
@@ -285,7 +440,8 @@ export class PlacesSearchService implements OnApplicationBootstrap {
   async list(pracaId: string): Promise<SearchRunView[]> {
     await this.assertPraca(pracaId);
     const rows = await this.prisma.place_import_runs.findMany({
-      where: { praca_id: pracaId },
+      // Lote D (§40.3): a lista da busca de hoje só mostra as de `lugares` (as de shoppings têm a tela delas).
+      where: { praca_id: pracaId, ...(this.shoppingsLigado ? { kind: 'lugares' } : {}) },
       orderBy: { created_at: 'desc' },
       take: 20,
     });
@@ -413,6 +569,9 @@ export class PlacesSearchService implements OnApplicationBootstrap {
           location_precision: r.location_precision,
           source: r.source,
           source_ref: r.source_ref,
+          // Lote D (§40.3): o shopping vira lead marcado; a loja de dentro aponta para o shopping. `lugares` = nada novo.
+          ...(run.kind === 'shoppings' ? { place_kind: 'shopping' } : {}),
+          ...(run.kind === 'lojas' && run.parent_lead_id ? { parent_lead_id: run.parent_lead_id } : {}),
         })),
       },
       user,
@@ -420,6 +579,24 @@ export class PlacesSearchService implements OnApplicationBootstrap {
     const leadPorRef = new Map(criado.leads.map((l) => [l.source_ref, l.lead_id]));
     for (const r of elegiveis) {
       await tx.place_candidates.update({ where: { id: r.id }, data: { lead_id: leadPorRef.get(r.source_ref) } });
+    }
+    if (run.kind === 'shoppings') {
+      const agora = new Date();
+      await tx.lead_mall_metrics.createMany({
+        data: elegiveis.map((r) => {
+          const m = (r.metrics && typeof r.metrics === 'object' ? r.metrics : {}) as Record<string, unknown>;
+          const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : null);
+          return {
+            lead_id: leadPorRef.get(r.source_ref)!,
+            source_ref: r.source_ref,
+            geometry_kind: m.geometry_kind === 'poligono' ? 'poligono' : 'ponto',
+            area_m2: m.geometry_kind === 'poligono' ? num(m.area_m2) : null,
+            levels: num(m.levels),
+            measured_at: agora,
+          };
+        }),
+        skipDuplicates: true,
+      });
     }
     return { batch_id: criado.batch_id, created: elegiveis.length, skipped };
   }
@@ -449,11 +626,14 @@ export class PlacesSearchService implements OnApplicationBootstrap {
       const limite = await this.limiteDaBusca(run);
       let parcial = false;
       const segmentos = lerFotoSegmentos(run.segments_snapshot);
+      const modo = await this.modoDaBusca(run);
+      let alvo: 'area' | 'raio' | null = null;
       const lugares = await provider.buscar({
         centro: { lat: run.lat, lng: run.lng },
         raio_m: run.radius_m,
         types: run.types as TipoLugar[],
         ...(segmentos ? { segmentos } : {}),
+        ...(modo ? { modo, onAlvo: (t: 'area' | 'raio') => (alvo = t) } : {}),
         limite,
         signal,
         onParcial: () => {
@@ -465,10 +645,25 @@ export class PlacesSearchService implements OnApplicationBootstrap {
             .catch(() => undefined);
         },
       });
-      await this.concluir(run, lugares, parcial);
+      await this.concluir(run, lugares, parcial, alvo);
     } catch (e) {
       await this.falhar(run.id, e);
     }
+  }
+
+  /** Lote D (§40.3): o modo do provedor nas buscas de shoppings/lojas; `lugares` = nenhum (a chamada de hoje). */
+  private async modoDaBusca(run: RunRow): Promise<BuscaParams['modo'] | undefined> {
+    if (run.kind === 'shoppings') return { kind: 'shoppings' };
+    if (run.kind !== 'lojas') return undefined;
+    const m = run.parent_lead_id ? await this.prisma.lead_mall_metrics.findUnique({ where: { lead_id: run.parent_lead_id } }) : null;
+    const cfg = await this.configShopping();
+    const reserva = { centro: { lat: run.lat, lng: run.lng }, raio_m: cfg.raio_lojas_m };
+    const poligono = m?.geometry_kind === 'poligono' && /^(way|relation)\/[1-9][0-9]*$/.test(m.source_ref);
+    return {
+      kind: 'lojas',
+      alvo: poligono ? { tipo: 'area', source_ref: m!.source_ref } : { tipo: 'raio', centro: reserva.centro, raio_m: reserva.raio_m },
+      reserva,
+    };
   }
 
   private async limiteDaBusca(run: RunRow): Promise<number> {
@@ -501,7 +696,7 @@ export class PlacesSearchService implements OnApplicationBootstrap {
     return soma._sum.reserved_places ?? 0;
   }
 
-  private async concluir(run: RunRow, lugares: LugarNormalizado[], parcial: boolean): Promise<void> {
+  private async concluir(run: RunRow, lugares: LugarNormalizado[], parcial: boolean, alvo: 'area' | 'raio' | null = null): Promise<void> {
     const { achados, truncated: passouDoTeto } = classificarAchados(lugares, { lat: run.lat, lng: run.lng }, run.radius_m);
 
     const truncated = passouDoTeto || parcial;
@@ -540,6 +735,7 @@ export class PlacesSearchService implements OnApplicationBootstrap {
         status,
         reason,
         lead_id: leadId,
+        ...(l.metrics ? { metrics: l.metrics as Prisma.InputJsonValue } : {}),
       };
     });
     // A chave única do banco é (run, fonte, ref): a repetição exata da mesma ref na resposta não é gravada duas vezes.
@@ -570,6 +766,10 @@ export class PlacesSearchService implements OnApplicationBootstrap {
       });
       if (count === 0) return;
       await tx.place_candidates.createMany({ data: unicas });
+      // Lote D (§40.3): busca dentro do polígono = quantas lojas o mapa aberto tem no shopping.
+      if (run.kind === 'lojas' && alvo === 'area' && run.parent_lead_id) {
+        await tx.lead_mall_metrics.updateMany({ where: { lead_id: run.parent_lead_id }, data: { pois_mapped: unicas.length, measured_at: new Date() } });
+      }
     });
   }
 
@@ -688,6 +888,7 @@ function toView(r: RunRow, cached: boolean): SearchRunView {
     started_at: r.started_at?.toISOString() ?? null,
     finished_at: r.finished_at?.toISOString() ?? null,
     expires_at: r.status === 'done' && r.finished_at ? fimDoCache(r.finished_at).toISOString() : null,
+    ...(r.kind && r.kind !== 'lugares' ? { kind: r.kind, parent_lead_id: r.parent_lead_id ?? null } : {}),
   };
 }
 
@@ -709,6 +910,7 @@ function toCandidateView(r: CandidateRow): CandidateView {
     lead_id: r.lead_id,
     lead_name: r.lead?.name ?? null,
     selectable: r.status === 'novo',
+    ...(r.metrics && typeof r.metrics === 'object' ? { metrics: r.metrics as Record<string, unknown> } : {}),
   };
 }
 

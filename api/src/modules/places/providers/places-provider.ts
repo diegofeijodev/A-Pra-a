@@ -1,6 +1,7 @@
 import type { Coordenada } from '../../../domain/campo-rules';
 import type { FonteLugar, LugarNormalizado, TipoLugar } from '../../../domain/places-rules';
 import type { Segmento } from '../../../domain/segmentos-rules';
+import type { AlvoLojas } from '../../../domain/shopping-rules';
 
 /** Pedido a um provedor de estabelecimentos. */
 export interface BuscaParams {
@@ -19,6 +20,13 @@ export interface BuscaParams {
   onProgress?: (encontrados: number) => void;
   /** A fonte parou no próprio teto: há mais lugares na área do que veio. */
   onParcial?: () => void;
+  /**
+   * Lote D (§40.3, só Overpass): `shoppings` = `shop=mall` com a geometria (as métricas vão em `metrics`); `lojas` = os segmentos
+   * dentro do polígono do shopping, com o raio como reserva (polígono sem área no Overpass, ou shopping só como ponto). Ausente = hoje.
+   */
+  modo?: { kind: 'shoppings' } | { kind: 'lojas'; alvo: AlvoLojas; reserva: { centro: Coordenada; raio_m: number } };
+  /** Busca de lojas: qual seletor deu o resultado (`area` = dentro do polígono; `raio` = em volta, menos confiável). */
+  onAlvo?: (tipo: 'area' | 'raio') => void;
 }
 
 /**

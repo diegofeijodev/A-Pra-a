@@ -1,5 +1,6 @@
 import { MAX_ELEMENTOS_OVERPASS, montarQueryOverpass, normalizarOverpass, type LugarNormalizado } from '../../../domain/places-rules';
 import { montarQuerySegmentos, normalizarOverpassSegmentos, seletorRaio } from '../../../domain/segmentos-rules';
+import { montarQueryLojas, montarQueryShoppings, normalizarShoppings } from '../../../domain/shopping-rules';
 import {
   BuscaCancelada,
   ProviderError,
@@ -43,9 +44,43 @@ export class OverpassProvider implements PlacesProvider {
   }
 
   async buscar(p: BuscaParams): Promise<LugarNormalizado[]> {
+    if (p.modo?.kind === 'shoppings') return this.buscarShoppings(p);
+    if (p.modo?.kind === 'lojas') return this.buscarLojas(p, p.modo);
     const query = p.segmentos
       ? montarQuerySegmentos(p.segmentos, seletorRaio(p.centro, p.raio_m))
       : montarQueryOverpass(p.centro, p.raio_m, p.types);
+    const json = await this.consultar(query, p);
+    const lugares = p.segmentos ? normalizarOverpassSegmentos(json, p.segmentos) : normalizarOverpass(json);
+    p.onProgress?.(lugares.length);
+    return lugares;
+  }
+
+  /** Lote D (§40.3): `shop=mall` com a geometria; as métricas do polígono vão em `metrics`. */
+  private async buscarShoppings(p: BuscaParams): Promise<LugarNormalizado[]> {
+    const json = await this.consultar(montarQueryShoppings(p.centro, p.raio_m), p);
+    const lugares = normalizarShoppings(json).map((s) => ({ ...s.lugar, metrics: { ...s.metricas } }));
+    p.onProgress?.(lugares.length);
+    return lugares;
+  }
+
+  /** Lote D (§40.3): lojas dentro do polígono; nada veio (área não gerada no Overpass) → em volta, no raio (menos confiável). */
+  private async buscarLojas(p: BuscaParams, modo: Extract<NonNullable<BuscaParams['modo']>, { kind: 'lojas' }>): Promise<LugarNormalizado[]> {
+    const segmentos = p.segmentos ?? [];
+    let alvo = modo.alvo;
+    let json = await this.consultar(montarQueryLojas(segmentos, alvo), p);
+    let lugares = normalizarOverpassSegmentos(json, segmentos);
+    if (alvo.tipo === 'area' && lugares.length === 0) {
+      alvo = { tipo: 'raio', centro: modo.reserva.centro, raio_m: modo.reserva.raio_m };
+      json = await this.consultar(montarQueryLojas(segmentos, alvo), p);
+      lugares = normalizarOverpassSegmentos(json, segmentos);
+    }
+    p.onAlvo?.(alvo.tipo);
+    p.onProgress?.(lugares.length);
+    return lugares;
+  }
+
+  /** Uma consulta com as esperas de hoje (429/5xx/timeout); devolve o JSON cru. */
+  private async consultar(query: string, p: BuscaParams): Promise<unknown> {
     const esperas = this.cfg.esperasMs ?? ESPERAS_PADRAO;
     const tentativas = esperas.length + 1;
 
@@ -55,9 +90,7 @@ export class OverpassProvider implements PlacesProvider {
       if (r.tipo === 'ok') {
         const elementos = (r.json as { elements?: unknown[] }).elements;
         if (Array.isArray(elementos) && elementos.length >= MAX_ELEMENTOS_OVERPASS) p.onParcial?.();
-        const lugares = p.segmentos ? normalizarOverpassSegmentos(r.json, p.segmentos) : normalizarOverpass(r.json);
-        p.onProgress?.(lugares.length);
-        return lugares;
+        return r.json;
       }
       if (r.tipo === 'fatal') throw new ProviderError(r.userMessage, r.detalhe);
       if (i === tentativas - 1) {

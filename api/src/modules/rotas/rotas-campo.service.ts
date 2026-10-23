@@ -23,7 +23,7 @@ import {
   type LeadParaRota,
 } from './rotas-plano';
 import { COM_PARADAS, lerSnapshot, novoSnapshot, routeView, type RouteView } from './rotas-views';
-import { ROTAS_LIGADAS, LOVABLE_B_FLAGS, type FlagsLovableB } from './rotas.tokens';
+import { ROTAS_LIGADAS, LOVABLE_B_FLAGS, LOVABLE_D_FLAGS, type FlagsLovableB, type FlagsLovableD } from './rotas.tokens';
 
 export interface HojeRotaView {
   enabled: boolean;
@@ -54,6 +54,7 @@ export class RotasCampoService {
     @Inject(ROTAS_LIGADAS) private readonly ligado: boolean,
     @Optional() private readonly modo?: ModoCampoService,
     @Optional() @Inject(LOVABLE_B_FLAGS) private readonly lovB?: FlagsLovableB,
+    @Optional() @Inject(LOVABLE_D_FLAGS) private readonly lovD?: FlagsLovableD,
   ) {}
 
   /** Lote B §37.6: houve intervalo ENCERRADO hoje? Então o relógio não insere mais o almoço configurado (só com a flag). */
@@ -253,6 +254,8 @@ export class RotasCampoService {
       const b = caixaEnvolvente(a, a.radius_m);
       return { lat: { gte: b.latMin, lte: b.latMax }, lng: { gte: b.lngMin, lte: b.lngMax } };
     });
+    // Lote D (§40.6): com os shoppings ligados e `fora_da_rota_geral`, o automático deixa shoppings e lojas de dentro de fora (Lovable).
+    const semShopping = this.lovD?.malls === true && (await this.configs.shopping()).fora_da_rota_geral;
     const linhas = await this.prisma.leads.findMany({
       where: {
         praca_id: pracaId,
@@ -263,6 +266,7 @@ export class RotasCampoService {
         declared_signups: { none: { void: null } },
         location_precision: { in: ['point', 'address'] },
         OR: caixas,
+        ...(semShopping ? { place_kind: null, parent_lead_id: null } : {}),
       },
       select: { id: true, name: true, address: true, phone: true, phone_key: true, lat: true, lng: true },
       orderBy: { id: 'asc' },

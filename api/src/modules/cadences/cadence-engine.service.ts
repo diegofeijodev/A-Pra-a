@@ -12,7 +12,7 @@
  * O que continua igual ao protótipo: a ordem das três fases (entrada
  * automática, avanço, fila de espera), as saídas e os textos dos eventos.
  */
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/database/prisma.service';
 import { phoneKey } from '../../common/phone/phone';
@@ -30,6 +30,7 @@ import {
 import { atSpHour, nextSlot, type SendSettings } from '../../domain/send-schedule';
 import { renderTemplate, type RenderPraca } from '../../domain/template-render';
 import { MessagesService } from '../messages/messages.service';
+import { LOVABLE_D_FLAGS, type FlagsLovableD } from '../rotas/rotas.tokens';
 import { AGUARDANDO, ATIVO, CONCLUIDO, SAIU } from './cadences.service';
 
 /** Prisma normal ou o cliente de uma transação já aberta. */
@@ -68,6 +69,7 @@ export class CadenceEngineService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly messages: MessagesService,
+    @Optional() @Inject(LOVABLE_D_FLAGS) private readonly lovD?: FlagsLovableD,
   ) {}
 
   /**
@@ -170,6 +172,8 @@ export class CadenceEngineService {
         is_test: false,
         ...where,
         enrollments: { none: { cadence_id: cad.id } },
+        // Lote D (§40.3): o lead do SHOPPING não entra sozinho em cadência (as lojas de dentro entram). Desligada = hoje.
+        ...(this.lovD?.malls === true ? { place_kind: null } : {}),
       },
       select: { id: true, stage: true, reheat_at: true },
       // Os mais antigos primeiro: o teto por rodada não pode deixar ninguém

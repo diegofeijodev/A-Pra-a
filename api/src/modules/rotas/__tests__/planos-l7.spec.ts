@@ -214,6 +214,37 @@ describe('criar: elegíveis, determinismo e praça', () => {
   });
 });
 
+describe('planos dos shoppings (L8, flag ligada)', () => {
+  it('rota dos shoppings: só os grandes pelo critério (à mão vale mais), todos numa rota até o teto de tempo', async () => {
+    const p = fake();
+    const shopping = (n: number, area: number | null, over: Record<string, unknown> = {}) => ({
+      ...leadGeo(n),
+      mall_metrics: { geometry_kind: area === null ? 'ponto' : 'poligono', area_m2: area, levels: null, pois_mapped: null, large_override: null, ...over },
+    });
+    p.leads.findMany.mockResolvedValueOnce([shopping(1, 49331), shopping(2, 8497), shopping(3, 8497, { large_override: true }), shopping(4, null)]);
+    p.field_route_plans.findUnique.mockImplementation(async () => ({ ...p.planos[0], items: [] }));
+    await montar(p, { route_plans: true, malls: true }).s.criar({ praca_id: PRACA, kind: 'shoppings', por_rota: 2 }, ADMIN, AGORA);
+    expect(p.leads.findMany.mock.calls[0][0].where).toMatchObject({ praca_id: PRACA, place_kind: 'shopping', archived: false });
+    expect(p.itens.flatMap((i) => i.lead_ids as string[]).sort()).toEqual([LEAD(1), LEAD(3)].sort());
+    expect(p.itens).toHaveLength(1);
+    expect(p.itens[0]).toMatchObject({ name: 'Rota dos shoppings' });
+  });
+  it('rota interna: exige o shopping da praça; as lojas de dentro numa rota "Dentro do X"', async () => {
+    const p = fake();
+    const { s } = montar(p, { route_plans: true, malls: true });
+    expect(status(await falha(() => s.criar({ praca_id: PRACA, kind: 'shopping_interno' }, ADMIN, AGORA)))).toBe(400);
+    expect(status(await falha(() => s.criar({ praca_id: PRACA, kind: 'shopping_interno', parent_lead_id: LEAD(9) }, ADMIN, AGORA)))).toBe(404);
+    p.leads.findFirst.mockResolvedValue({ id: LEAD(9), name: 'BH Shopping' });
+    p.leads.findMany.mockResolvedValueOnce([leadGeo(1), leadGeo(2)]);
+    p.field_route_plans.findUnique.mockImplementation(async () => ({ ...p.planos[0], items: [] }));
+    await s.criar({ praca_id: PRACA, kind: 'shopping_interno', parent_lead_id: LEAD(9) }, ADMIN, AGORA);
+    expect(p.leads.findFirst.mock.calls.at(-1)[0].where).toEqual({ id: LEAD(9), praca_id: PRACA, place_kind: 'shopping' });
+    expect(p.leads.findMany.mock.calls[0][0].where).toMatchObject({ parent_lead_id: LEAD(9), praca_id: PRACA });
+    expect(p.itens[0]).toMatchObject({ name: 'Dentro do BH Shopping' });
+    expect(p.planos[0]).toMatchObject({ kind: 'shopping_interno', parent_lead_id: LEAD(9) });
+  });
+});
+
 describe('atribuir: mesmo serviço do POST /v1/routes', () => {
   it('consultor com roteiro ativo no dia e sem confirm_replace = 409 ROUTE_EXISTS; com confirm_replace chama o build com a rota', async () => {
     const p = fake();

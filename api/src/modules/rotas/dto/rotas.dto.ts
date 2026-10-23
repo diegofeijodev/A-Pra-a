@@ -134,6 +134,8 @@ export class CandidatosQueryDto {
   @IsOptional() @IsUUID() area_id?: string;
   @IsOptional() @IsString() @MaxLength(80) q?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(200) limit?: number;
+  /** Lote D (§40.6): só com `FIELD_MALLS_ENABLED`; ausente = o resultado de hoje. */
+  @IsOptional() @Matches(/^(geral|shoppings|shopping:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/) scope?: string;
 }
 
 export class ParadaOrdemDto {

@@ -4,6 +4,7 @@ import { CadenceEngineService } from './cadence-engine.service';
 import { CadenceScheduler } from './cadence.scheduler';
 import { CadencesController, EnrollmentsController } from './cadences.controller';
 import { CadencesService } from './cadences.service';
+import { lovableDFlagsProvider } from '../rotas/rotas.tokens';
 
 // `MessagesModule` entra pelas configurações de envio (janela, limite diário,
 // valores-padrão das variáveis), pela lista de bloqueio e pelos vizinhos do
@@ -12,7 +13,7 @@ import { CadencesService } from './cadences.service';
 @Module({
   imports: [MessagesModule],
   controllers: [CadencesController, EnrollmentsController],
-  providers: [CadencesService, CadenceEngineService, CadenceScheduler],
+  providers: [CadencesService, CadenceEngineService, CadenceScheduler, lovableDFlagsProvider],
   exports: [CadencesService, CadenceEngineService],
 })
 export class CadencesModule {}

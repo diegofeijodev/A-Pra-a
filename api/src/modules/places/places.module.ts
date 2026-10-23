@@ -7,6 +7,8 @@ import { RotasModule } from '../rotas/rotas.module';
 import { PlacesSegmentsService } from './places-segments.service';
 import { PlacesController } from './places.controller';
 import { PlacesSearchService } from './places-search.service';
+import { ShoppingsController } from './shoppings.controller';
+import { ShoppingsService } from './shoppings.service';
 import { PLACES_LIMITS, PLACES_PROVIDERS, type PlacesLimits } from './places.tokens';
 import { ApifyProvider } from './providers/apify.provider';
 import { OverpassProvider } from './providers/overpass.provider';
@@ -14,10 +16,11 @@ import { dormir, type PlacesProvider } from './providers/places-provider';
 
 @Module({
   imports: [ImportsModule, RotasModule],
-  controllers: [PlacesController],
+  controllers: [PlacesController, ShoppingsController],
   providers: [
     PlacesSearchService,
     PlacesSegmentsService,
+    ShoppingsService,
     {
       provide: PLACES_PROVIDERS,
       inject: [ConfigService],

@@ -793,7 +793,8 @@ model field_areas {
 model place_import_runs {
   id                String    @id @default(uuid()) @db.Uuid
   praca_id          String    @db.Uuid
-  area_id           String    @db.Uuid
+  // Nulo só nas buscas de shoppings sem área e de lojas (lote D, §40.3; CHECK: `lugares` sempre com área).
+  area_id           String?   @db.Uuid
   area_name         String
   source            String
   types             String[]

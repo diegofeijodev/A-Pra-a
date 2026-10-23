@@ -51,6 +51,8 @@ export interface LugarNormalizado {
   source: FonteLugar;
   source_ref: string;
   closed: boolean;
+  /** Lote D (§40.3): métricas do shopping achado (`{geometry_kind, area_m2, levels}`); ausente nos demais. */
+  metrics?: Record<string, unknown>;
 }
 
 // ── Overpass ──────────────────────────────────────────────────
@@ -291,9 +293,14 @@ export function chaveCache(p: {
   source: string;
   /** Hash da foto dos segmentos (§36.6): só com a flag ligada; ausente = a fórmula de hoje, byte a byte. */
   segmentos_hash?: string;
+  /** Lote D (§40.3): `shoppings` | `lojas` (+ o shopping); ausente ou `lugares` = a fórmula de hoje. */
+  kind?: string;
+  parent_lead_id?: string | null;
 }): string {
   const base = [p.source, p.lat, p.lng, p.radius_m, [...p.types].sort()];
-  const canonico = JSON.stringify(p.segmentos_hash === undefined ? base : [...base, p.segmentos_hash]);
+  const comFoto = p.segmentos_hash === undefined ? base : [...base, p.segmentos_hash];
+  const comKind = p.kind === undefined || p.kind === 'lugares' ? comFoto : [...comFoto, p.kind, p.parent_lead_id ?? null];
+  const canonico = JSON.stringify(comKind);
   return createHash('sha256').update(canonico).digest('hex').slice(0, 40);
 }
 

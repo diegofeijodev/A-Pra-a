@@ -26,7 +26,7 @@ import {
   type LeadParaRota,
 } from './rotas-plano';
 import { COM_PARADAS, lerSnapshot, novoSnapshot, paramsDaRota, routeView, type RouteView } from './rotas-views';
-import { ROTAS_LIGADAS } from './rotas.tokens';
+import { LOVABLE_D_FLAGS, ROTAS_LIGADAS, type FlagsLovableD } from './rotas.tokens';
 
 export interface CandidateView {
   id: string;
@@ -52,6 +52,7 @@ export class RotasEquipeService {
     private readonly configs: RotasConfigService,
     @Inject(ROTAS_LIGADAS) private readonly ligado: boolean,
     @Optional() private readonly modo?: ModoCampoService,
+    @Optional() @Inject(LOVABLE_D_FLAGS) private readonly flagsD?: FlagsLovableD,
   ) {}
 
   /** Parâmetros do modo do chefe para a conta de meta (§31.6); sem a flag, o padrão (todas as visitas são `completo`). */
@@ -89,6 +90,11 @@ export class RotasEquipeService {
   // ── candidatos ──────────────────────────────────────────────
   async candidates(q: CandidatosQueryDto, agora = new Date()): Promise<CandidateView[]> {
     this.exigirLigado();
+    // Lote D (§40.6): `scope` só com os shoppings ligados; ausente = o resultado de hoje.
+    if (q.scope !== undefined && this.flagsD?.malls !== true) {
+      throw new NotFoundException({ code: 'MALLS_DISABLED', message: 'Os shoppings não estão ligados neste servidor.' });
+    }
+    const escopo = q.scope !== undefined ? await this.filtroEscopo(q.scope) : null;
     const praca = await this.prisma.pracas.findUnique({ where: { id: q.praca_id }, select: { id: true } });
     if (!praca) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Praça não encontrada.' });
     const areas = await this.prisma.field_areas.findMany({ where: { praca_id: q.praca_id, ...(q.area_id ? { id: q.area_id } : { active: true }) } });
@@ -106,6 +112,7 @@ export class RotasEquipeService {
         ...filtroElegivel(config.estagio_maximo_rota),
         OR: caixas,
         ...(q.q?.trim() ? { name: { contains: q.q.trim(), mode: 'insensitive' as const } } : {}),
+        ...(escopo ?? {}),
       },
       select: { id: true, name: true, address: true, lat: true, lng: true, stage: true, source: true },
       orderBy: [{ name: 'asc' }, { id: 'asc' }],
@@ -138,6 +145,13 @@ export class RotasEquipeService {
         category: categoria.get(l.id) ?? null,
         in_area: true,
       }));
+  }
+
+  /** `geral` (sem shoppings e lojas de dentro, se `fora_da_rota_geral`) | `shoppings` | `shopping:<lead_id>` (as lojas dele). */
+  private async filtroEscopo(scope: string): Promise<Prisma.leadsWhereInput> {
+    if (scope === 'shoppings') return { place_kind: 'shopping' };
+    if (scope.startsWith('shopping:')) return { parent_lead_id: scope.slice('shopping:'.length) };
+    return (await this.configs.shopping()).fora_da_rota_geral ? { place_kind: null, parent_lead_id: null } : {};
   }
 
   // ── montar ──────────────────────────────────────────────────

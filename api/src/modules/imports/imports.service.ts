@@ -265,6 +265,9 @@ export class ImportsService {
         location_precision: string;
         source: string;
         source_ref: string;
+        /** Lote D (§40.3): só nos achados de shoppings/lojas; ausente = o lead de hoje. */
+        place_kind?: string;
+        parent_lead_id?: string;
       }[];
     },
     user: AuthUser,
@@ -293,6 +296,8 @@ export class ImportsService {
       location_precision: it.location_precision,
       source: it.source,
       source_ref: it.source_ref,
+      ...(it.place_kind ? { place_kind: it.place_kind } : {}),
+      ...(it.parent_lead_id ? { parent_lead_id: it.parent_lead_id } : {}),
       classe: 'alvo',
       origem: input.origem,
       owner_id: pool[i % pool.length]!,
