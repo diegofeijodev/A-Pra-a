@@ -2130,6 +2130,22 @@ check "Hoje sem breaks/breaks_open e visitas sem a chave checklist" "false|false
   "$(curl -s $API/v1/campo/today -H "$HC" | jq -r '"\(has("breaks"))|\(has("breaks_open"))|\([.visits[] | select(has("checklist"))] | length)"')"
 check "Atenção agora: sem on_break_since" "false" "$(curl -s $API/v1/consultores/attention -H "$HD" | jq '[.consultants[] | has("on_break_since")] | any')"
 
+echo "── Restante da Lovable, lote C (§36/§38), flags desligadas: nada muda ──"
+# Com FIELD_SEGMENTS_ENABLED, FIELD_VOUCHERS_ENABLED e FIELD_VOUCHER_COUPONS_ENABLED desligadas (padrão) as rotas novas respondem
+# 404, a busca valida os tipos como hoje (mesma frase) e o painel/resumo não mudam. Ligadas: `scripts/smoke-lovable-c.sh`.
+check "/me: vouchers desligado e sem voucher_config" "false|false" "$(echo "$ME_FLAG" | jq -r '"\(.features.vouchers)|\(has("voucher_config"))"')"
+check "config: features do lote C desligadas" "false|false|false" \
+  "$(curl -s $API/v1/consultores/settings/config -H "$HD" | jq -r '"\(.features.segments)|\(.features.vouchers)|\(.features.voucher_coupons)"')"
+check "cupons (consultor e equipe) = VOUCHERS_DISABLED" "404|VOUCHERS_DISABLED|404|VOUCHERS_DISABLED" \
+  "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' $API/v1/campo/vouchers -H "$HC")|$(jq -r .error.code /tmp/praca-smoke-l.json)|$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' $API/v1/consultores/vouchers -H "$HD")|$(jq -r .error.code /tmp/praca-smoke-l.json)"
+check "pedir cupom = VOUCHERS_DISABLED (nada gravado)" "VOUCHERS_DISABLED|0" \
+  "$(curl -s -X POST $API/v1/campo/vouchers -H "$J" -H "$HC" -d "{\"client_id\":\"$(uuid)\",\"lead_id\":\"$(uuid)\",\"segment\":\"Bar\",\"freelas_per_week\":1}" | jq -r .error.code)|$(docker exec praca-postgres psql -U praca -d praca -qtAc 'select count(*) from field_vouchers' 2>/dev/null | tr -d '[:space:]' || echo 0)"
+check "segmentos = SEGMENTS_DISABLED" "404|SEGMENTS_DISABLED" \
+  "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' $API/v1/place-searches/segments -H "$HD")|$(jq -r .error.code /tmp/praca-smoke-l.json)"
+check "busca com tipo novo: a mesma frase do class-validator de hoje" "400|types: each value in types must be one of the following values: bar, restaurante, lanchonete, padaria, cafe" \
+  "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' -X POST $API/v1/place-searches -H "$J" -H "$HD" -d "{\"praca_id\":\"$PRACA_SEED\",\"area_id\":\"$(uuid)\",\"types\":[\"hotel\"]}")|$(jq -r .error.message /tmp/praca-smoke-l.json)"
+check "token de consultor nos cupons da equipe continua 401 (sessão antes da flag)" "401" "$(curl -s -o /dev/null -w '%{http_code}' $API/v1/consultores/vouchers -H "$HC")"
+
 check "CRM: UM evento de visita do consultor, com a etapa nova" "1|3" \
   "$(echo "$LEAD_DEPOIS" | jq -r --arg a "Consultor: Consultor $SUF" '[.events[] | select(.kind=="visit" and .author_label==$a)] | "\(length)|\(.[0].stage_to)"')"
 check "foto da visita para o consultor" "image/jpeg" \
