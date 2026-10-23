@@ -4,7 +4,8 @@
 #   FIELD_DASHBOARD_ENABLED=true FIELD_DAY_SUMMARY_ENABLED=true FIELD_MAP_PINS_ENABLED=true \
 #   FIELD_ROUTES_ENABLED=true FIELD_EARNINGS_ENABLED=true npm run start:smoke
 #   bash scripts/smoke-lovable-a.sh
-# Também roda com as flags dos lotes B, C e D ligadas juntas (o cartão de cupons é conferido pelo `features.vouchers` da própria API).
+# Também roda com as flags dos lotes B, C e D ligadas juntas (o cartão de cupons é conferido pelo `features.vouchers` da própria API),
+# mas SEM FIELD_VISIT_FLOW_SELECT_ENABLED: com ela o fluxo padrão é o simples e este smoke manda o corpo do fluxo completo.
 API=${API:-http://localhost:3014}
 PASS=0; FAIL=0
 ok(){ PASS=$((PASS+1)); printf '  \033[32m✓\033[0m %s\n' "$1"; }
