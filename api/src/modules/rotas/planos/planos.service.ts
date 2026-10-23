@@ -37,7 +37,15 @@ import { filtroElegivel, SEGURA_LUGAR } from '../rotas-plano';
 import { ModoCampoService } from '../modo-campo.service';
 import { COM_PARADAS, routeView, type RouteView } from '../rotas-views';
 import { LOVABLE_D_FLAGS, velocidadeCarroKmh, type FlagsLovableD } from '../rotas.tokens';
-import { MAX_LEADS_PLANO, type AtribuirItemDto, type ConfigDivisaoDto, type CriarPlanoDto, type MinhasRotasQueryDto, type PlanosQueryDto } from './planos.dto';
+import {
+  MAX_LEADS_PLANO,
+  type AtribuirItemDto,
+  type ConfigDivisaoDto,
+  type CriarPlanoDto,
+  type MinhasRotasQueryDto,
+  type PlanosQueryDto,
+  type PreviaPlanoDto,
+} from './planos.dto';
 
 export interface PlanItemView {
   id: string;
@@ -251,6 +259,25 @@ export class PlanosService {
       return p;
     });
     return this.get(criado.id);
+  }
+
+  /** A conta de antes de gerar (UX R1): quantos entram e o mínimo de rotas. Mesmos elegíveis do `criar`. */
+  async previa(q: PreviaPlanoDto, agora = new Date()): Promise<{ lead_count: number; truncated: boolean; por_rota: number; rotas_min: number; conta: string }> {
+    this.exigir();
+    const praca = await this.prisma.pracas.findUnique({ where: { id: q.praca_id }, select: { id: true } });
+    if (!praca) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Praça não encontrada.' });
+    const area = q.area_id ? await this.prisma.field_areas.findFirst({ where: { id: q.area_id, praca_id: q.praca_id } }) : null;
+    if (q.area_id && !area) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Área não encontrada.' });
+    const porRota = q.por_rota ?? CONFIG_DIVISAO.ler((await this.bruto()).divisao).por_rota;
+    const { pontos, truncated } = await this.elegiveis(q.praca_id, area, agora);
+    const n = pontos.length;
+    const rotasMin = Math.ceil(n / porRota);
+    const div = (n / porRota).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+    const conta =
+      n === 0
+        ? 'Nenhum estabelecimento com localização exata e fora de roteiro publicado nesta área.'
+        : `${n.toLocaleString('pt-BR')} ${n === 1 ? 'estabelecimento' : 'estabelecimentos'} com localização exata, fora de roteiro publicado → pelo menos ${rotasMin} ${rotasMin === 1 ? 'rota' : 'rotas'} de até ${porRota} paradas (${n.toLocaleString('pt-BR')} ÷ ${porRota} = ${div}; arredonda para cima; o teto de tempo pode criar mais)`;
+    return { lead_count: n, truncated, por_rota: porRota, rotas_min: rotasMin, conta };
   }
 
   /** Os parâmetros do nosso relógio para o modo (a pé: a configuração; carro: a velocidade do ambiente). */

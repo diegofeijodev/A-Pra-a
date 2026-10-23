@@ -1,3 +1,4 @@
+import { Type } from 'class-transformer';
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
 import { IsDayString } from '../../../common/validation/is-day.decorator';
 import { KINDS_PLANO, MODELOS_TEMPO, MODOS_PLANO } from '../../../domain/divisao-rotas-rules';
@@ -15,6 +16,13 @@ export class CriarPlanoDto {
   @IsOptional() @IsInt() @Min(1) @Max(100) por_rota?: number;
   @IsOptional() @IsIn([...MODOS_PLANO]) travel_mode?: string;
   @IsOptional() @IsIn([...MODELOS_TEMPO]) modelo_tempo?: string;
+}
+
+/** `GET /v1/route-plans/preview` (§39.5): a conta de antes de gerar (UX R1). */
+export class PreviaPlanoDto {
+  @IsUUID() praca_id!: string;
+  @IsOptional() @IsUUID() area_id?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) por_rota?: number;
 }
 
 export class PlanosQueryDto {

@@ -4926,6 +4926,7 @@ Com `lead_ids` (1–2.000): cada um da praça, não arquivado e com coordenada (
 |---|---|---|---|
 | GET | `/v1/route-plans/config` | — | `ConfigDivisao` (§39.2) |
 | PUT | `/v1/route-plans/config` | parcial | `ConfigDivisao` |
+| GET | `/v1/route-plans/preview?praca_id=&area_id=&por_rota=` | — | `{ lead_count, truncated, por_rota, rotas_min, conta }`: a conta de antes de gerar (UX R1), com os mesmos elegíveis do §39.4 |
 | GET | `/v1/route-plans?praca_id=&kind=` | `praca_id` obrigatório; `kind` padrão `geral` | `PlanSummary[]` não arquivados, mais novos primeiro (até 50) |
 | POST | `/v1/route-plans` | `{praca_id, area_id?, kind?, parent_lead_id?, lead_ids?, por_rota?, travel_mode?, modelo_tempo?}` | `201 PlanView`. Determinístico. Ausentes = `field_config.divisao`. Nenhum elegível → `422 PLAN_NO_LEADS` |
 | GET | `/v1/route-plans/:id` | — | `PlanView` (também arquivado) |
@@ -5054,7 +5055,9 @@ Way aberto, relation só com nós ou nó = **ponto** (sem área; o critério de 
 `leads.place_kind TEXT NULL CHECK (place_kind IN ('shopping'))`, `leads.parent_lead_id UUID NULL` (FK `leads` SET NULL) com índices `(parent_lead_id)` e `(praca_id, place_kind)`;
 `lead_mall_metrics` (`lead_id` PK/FK CASCADE, `source_ref`, `geometry_kind` CHECK `poligono|ponto`, `area_m2`, `levels`, `pois_mapped`, `measured_at`, `large_override`, `updated_by`,
 `updated_at`); `place_import_runs.kind TEXT NOT NULL DEFAULT 'lugares'` (CHECK `lugares|shoppings|lojas`) e `parent_lead_id UUID NULL`; `place_candidates.metrics JSONB NULL`. Nenhum lead
-existente muda (colunas nulas). Sem índice parcial novo; sem `DROP INDEX`.
+existente muda (colunas nulas). Sem índice parcial novo; sem `DROP INDEX`. Migração `20261103100000_lovable_l8_busca_sem_area`: só relaxa o `NOT NULL` de `place_import_runs.area_id`
+(busca de lojas não tem área; a de shoppings pode usar o centro da praça), com CHECK `kind <> 'lugares' OR area_id IS NOT NULL`. Com a flag ligada, `GET /v1/place-searches?praca_id=`
+lista só as de `lugares` (a tela de hoje espera `area_id`); as de shoppings/lojas se leem por `GET /v1/place-searches/:id`.
 
 ### 40.8 Variáveis
 

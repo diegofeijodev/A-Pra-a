@@ -361,3 +361,16 @@ describe('arquivar e Minhas rotas', () => {
     for (const m of ['config', 'list', 'get']) expect(marca(m)).toBeUndefined();
   });
 });
+
+describe('prévia antes de gerar (UX R1)', () => {
+  it('a conta dos elegíveis e o mínimo de rotas, com a mesma consulta do criar', async () => {
+    const p = fake();
+    p.leads.findMany.mockResolvedValue(Array.from({ length: 41 }, (_, n) => leadGeo(n + 1)));
+    const r = await montar(p).s.previa({ praca_id: PRACA, por_rota: 20 }, AGORA);
+    expect(r).toMatchObject({ lead_count: 41, rotas_min: 3, por_rota: 20, truncated: false });
+    expect(r.conta).toBe('41 estabelecimentos com localização exata, fora de roteiro publicado → pelo menos 3 rotas de até 20 paradas (41 ÷ 20 = 2,1; arredonda para cima; o teto de tempo pode criar mais)');
+    expect(p.leads.findMany.mock.calls[0][0].where).toMatchObject({ route_stops: { none: { day: { gte: DIA } } } });
+    const e = await falha(() => montar(fake(), { route_plans: false, malls: false }).s.previa({ praca_id: PRACA }, AGORA));
+    expect(codigo(e)).toBe('ROUTE_PLANS_DISABLED');
+  });
+});

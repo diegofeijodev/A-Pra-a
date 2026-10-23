@@ -6,7 +6,7 @@ import { AdminOnly } from '../../../common/decorators/admin-only.decorator';
 import { CampoRoute } from '../../../common/decorators/campo-route.decorator';
 import { CurrentConsultant } from '../../../common/decorators/current-consultant.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
-import { AtribuirItemDto, ConfigDivisaoDto, CriarPlanoDto, MinhasRotasQueryDto, PlanosQueryDto } from './planos.dto';
+import { AtribuirItemDto, ConfigDivisaoDto, CriarPlanoDto, MinhasRotasQueryDto, PlanosQueryDto, PreviaPlanoDto } from './planos.dto';
 import { PlanosService } from './planos.service';
 
 /**
@@ -28,6 +28,11 @@ export class PlanosController {
   @Put('config')
   salvarConfig(@Body() dto: ConfigDivisaoDto) {
     return this.planos.salvarConfig(dto);
+  }
+
+  @Get('preview')
+  previa(@Query() q: PreviaPlanoDto) {
+    return this.planos.previa(q);
   }
 
   @Get()
