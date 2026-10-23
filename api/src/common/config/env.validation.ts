@@ -94,6 +94,10 @@ const envBase = z.object({
   FIELD_VOUCHERS_ENABLED: z.string().default('false'),
   // Cupom real no Freela (§38.7). Só vale com FIELD_VOUCHERS_ENABLED; sem ela o pedido aprovado é só registro (NoopIssuer).
   FIELD_VOUCHER_COUPONS_ENABLED: z.string().default('false'),
+  // Restante da Lovable, lote D (contrato §39/§40). Planos de rota só valem com FIELD_ROUTES_ENABLED; shoppings exigem
+  // FIELD_SEGMENTS_ENABLED e FIELD_ROUTE_PLANS_ENABLED. Desligadas = rotas 404 e busca, candidatos, cadência e roteiro iguais aos de hoje.
+  FIELD_ROUTE_PLANS_ENABLED: z.string().default('false'),
+  FIELD_MALLS_ENABLED: z.string().default('false'),
 
   SWAGGER_ENABLED: z.string().optional(),
 

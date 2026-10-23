@@ -89,6 +89,9 @@ services:
       FIELD_SEGMENTS_ENABLED: ${FIELD_SEGMENTS_ENABLED:-false}
       FIELD_VOUCHERS_ENABLED: ${FIELD_VOUCHERS_ENABLED:-false}
       FIELD_VOUCHER_COUPONS_ENABLED: ${FIELD_VOUCHER_COUPONS_ENABLED:-false}
+      # Restante da Lovable, lote D (contrato §39/§40): planos de rota (exige FIELD_ROUTES_ENABLED) e shoppings (exige SEGMENTS e ROUTE_PLANS).
+      FIELD_ROUTE_PLANS_ENABLED: ${FIELD_ROUTE_PLANS_ENABLED:-false}
+      FIELD_MALLS_ENABLED: ${FIELD_MALLS_ENABLED:-false}
     ports:
       - '3014:3014'
 

@@ -22,7 +22,16 @@ import { AllowPendingPassword, CampoRoute } from '../../common/decorators/campo-
 import { CurrentConsultant } from '../../common/decorators/current-consultant.decorator';
 import { ModoCampoService } from '../rotas/modo-campo.service';
 import { RotasConfigService } from '../rotas/rotas-config.service';
-import { LOVABLE_A_FLAGS, LOVABLE_B_FLAGS, LOVABLE_C_FLAGS, type FlagsLovableA, type FlagsLovableB, type FlagsLovableC } from '../rotas/rotas.tokens';
+import {
+  LOVABLE_A_FLAGS,
+  LOVABLE_B_FLAGS,
+  LOVABLE_C_FLAGS,
+  LOVABLE_D_FLAGS,
+  type FlagsLovableA,
+  type FlagsLovableB,
+  type FlagsLovableC,
+  type FlagsLovableD,
+} from '../rotas/rotas.tokens';
 import { VouchersService } from './vouchers/vouchers.service';
 import { CampoAuthService } from './campo-auth.service';
 import { COMPANY_SIGNUP_LIGADO } from './company-signup.tokens';
@@ -58,6 +67,7 @@ export class CampoController {
     @Optional() private readonly breaks?: BreaksService,
     @Optional() @Inject(LOVABLE_C_FLAGS) private readonly lovC?: FlagsLovableC,
     @Optional() private readonly vouchers?: VouchersService,
+    @Optional() @Inject(LOVABLE_D_FLAGS) private readonly lovD?: FlagsLovableD,
   ) {}
 
   @AllowPendingPassword()
@@ -126,6 +136,8 @@ export class CampoController {
         breaks: this.lovB?.breaks ?? false,
         // Lote C (contrato §38.1): pedido de cupom da 1ª contratação.
         vouchers: this.lovC?.vouchers ?? false,
+        // Lote D (contrato §39.7): "Próximos dias" (as rotas futuras do próprio consultor).
+        route_plans: this.lovD?.route_plans ?? false,
       },
     };
   }

@@ -1,5 +1,5 @@
 import { validateEnv } from '../config/env.validation';
-import { velocidadeCarroKmh } from '../../modules/rotas/rotas.tokens';
+import { lerFlagsLovableD, velocidadeCarroKmh } from '../../modules/rotas/rotas.tokens';
 
 const BASE = { DATABASE_URL: 'postgresql://praca:praca@localhost:5437/praca', JWT_SECRET: 'x'.repeat(16) };
 
@@ -94,6 +94,26 @@ describe('env — restante da Lovable, lote C (§36/§38)', () => {
       expect(validateEnv(BASE)[k]).toBe('false');
       expect(validateEnv({ ...BASE, [k]: 'true' })[k]).toBe('true');
     }
+  });
+});
+
+describe('env — restante da Lovable, lote D (§39/§40)', () => {
+  it('planos de rota e shoppings: desligados por padrão e aceitam true', () => {
+    for (const k of ['FIELD_ROUTE_PLANS_ENABLED', 'FIELD_MALLS_ENABLED'] as const) {
+      expect(validateEnv(BASE)[k]).toBe('false');
+      expect(validateEnv({ ...BASE, [k]: 'true' })[k]).toBe('true');
+    }
+  });
+  it('planos só valem com o roteiro do dia; shoppings só com os segmentos e os planos', () => {
+    const t = 'true';
+    expect(lerFlagsLovableD({ ...BASE })).toEqual({ route_plans: false, malls: false });
+    expect(lerFlagsLovableD({ ...BASE, FIELD_ROUTE_PLANS_ENABLED: t })).toEqual({ route_plans: false, malls: false });
+    expect(lerFlagsLovableD({ ...BASE, FIELD_ROUTES_ENABLED: t, FIELD_ROUTE_PLANS_ENABLED: t })).toEqual({ route_plans: true, malls: false });
+    expect(lerFlagsLovableD({ ...BASE, FIELD_ROUTES_ENABLED: t, FIELD_ROUTE_PLANS_ENABLED: t, FIELD_MALLS_ENABLED: t })).toEqual({ route_plans: true, malls: false });
+    expect(
+      lerFlagsLovableD({ ...BASE, FIELD_ROUTES_ENABLED: t, FIELD_ROUTE_PLANS_ENABLED: t, FIELD_SEGMENTS_ENABLED: t, FIELD_MALLS_ENABLED: t }),
+    ).toEqual({ route_plans: true, malls: true });
+    expect(lerFlagsLovableD({ ...BASE, FIELD_SEGMENTS_ENABLED: t, FIELD_MALLS_ENABLED: t })).toEqual({ route_plans: false, malls: false });
   });
 });
 

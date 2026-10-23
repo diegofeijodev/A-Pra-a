@@ -86,6 +86,27 @@ export function lerFlagsLovableC(env: Record<string, unknown> = process.env): Fl
   };
 }
 
+/**
+ * Restante da Lovable, lote D (contrato §39, §40): divisão em N rotas e shoppings. `route_plans` só vale com o roteiro do dia
+ * (`FIELD_ROUTES_ENABLED`); `malls` só com os segmentos (as lojas de dentro usam os segmentos como perfil) e com os planos.
+ */
+export interface FlagsLovableD {
+  route_plans: boolean;
+  malls: boolean;
+}
+export const LOVABLE_D_FLAGS = Symbol('LOVABLE_D_FLAGS');
+
+export function lerFlagsLovableD(env: Record<string, unknown> = process.env): FlagsLovableD {
+  const e = validateEnv(env);
+  const route_plans = e.FIELD_ROUTES_ENABLED === 'true' && e.FIELD_ROUTE_PLANS_ENABLED === 'true';
+  return { route_plans, malls: route_plans && e.FIELD_SEGMENTS_ENABLED === 'true' && e.FIELD_MALLS_ENABLED === 'true' };
+}
+
+export const lovableDFlagsProvider: Provider = {
+  provide: LOVABLE_D_FLAGS,
+  useFactory: (): FlagsLovableD => lerFlagsLovableD(),
+};
+
 export const lovableCFlagsProvider: Provider = {
   provide: LOVABLE_C_FLAGS,
   useFactory: (): FlagsLovableC => lerFlagsLovableC(),

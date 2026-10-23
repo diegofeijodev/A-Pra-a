@@ -6,7 +6,16 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CandidatosQueryDto, ConfigRotaDto, MontarRotaDto, OrdenarRotaDto, ReotimizarEquipeDto, RotasQueryDto } from './dto/rotas.dto';
 import { RotasConfigService } from './rotas-config.service';
 import { RotasEquipeService } from './rotas-equipe.service';
-import { LOVABLE_A_FLAGS, LOVABLE_B_FLAGS, LOVABLE_C_FLAGS, type FlagsLovableA, type FlagsLovableB, type FlagsLovableC } from './rotas.tokens';
+import {
+  LOVABLE_A_FLAGS,
+  LOVABLE_B_FLAGS,
+  LOVABLE_C_FLAGS,
+  LOVABLE_D_FLAGS,
+  type FlagsLovableA,
+  type FlagsLovableB,
+  type FlagsLovableC,
+  type FlagsLovableD,
+} from './rotas.tokens';
 
 /**
  * Roteiros vistos e montados pela equipe (§23.4). Leitura: equipe. Escrita: só admin.
@@ -63,6 +72,7 @@ export class RotasConfigController {
     @Optional() @Inject(LOVABLE_A_FLAGS) private readonly flags?: FlagsLovableA,
     @Optional() @Inject(LOVABLE_B_FLAGS) private readonly flagsB?: FlagsLovableB,
     @Optional() @Inject(LOVABLE_C_FLAGS) private readonly flagsC?: FlagsLovableC,
+    @Optional() @Inject(LOVABLE_D_FLAGS) private readonly flagsD?: FlagsLovableD,
   ) {}
 
   /** `features` (contrato §33.1): o web mostra os links novos sem sondar rota desligada. Só no GET. */
@@ -81,6 +91,9 @@ export class RotasConfigController {
         segments: this.flagsC?.segments ?? false,
         vouchers: this.flagsC?.vouchers ?? false,
         voucher_coupons: this.flagsC?.voucher_coupons ?? false,
+        // Lote D (contrato §39, §40).
+        route_plans: this.flagsD?.route_plans ?? false,
+        malls: this.flagsD?.malls ?? false,
       },
     };
   }

@@ -37,7 +37,7 @@ describe('CampoController.me — features', () => {
     const on = new CampoController(auth as never, {} as never, {} as never, {} as never, {} as never, true);
     // Lote A da Lovable (§33.1): + day_summary e map_pins; lote B (§35.6/§37.6): + checklist e breaks (aditivos, desligados por padrão).
     // Lote C (§38.1): + vouchers (aditivo, desligado por padrão).
-    const novas = { day_summary: false, map_pins: false, checklist: false, breaks: false, vouchers: false };
+    const novas = { day_summary: false, map_pins: false, checklist: false, breaks: false, vouchers: false, route_plans: false };
     expect((await off.me(C)).features).toEqual({ company_signup: false, earnings: false, payouts: false, visit_flow: false, declared_signups: false, ...novas });
     expect((await on.me(C)).features).toEqual({ company_signup: true, earnings: false, payouts: false, visit_flow: false, declared_signups: false, ...novas });
     expect(await off.me(C)).not.toHaveProperty('checklist_config');

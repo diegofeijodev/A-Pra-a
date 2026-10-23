@@ -27,6 +27,7 @@ model users {
   field_consultants_created field_consultants[]
   field_areas_created       field_areas[]
   place_runs_requested      place_import_runs[]
+  route_plans_created       field_route_plans[]
 }
 
 model user_dismissed_notifs {
@@ -61,6 +62,7 @@ model pracas {
   field_consultants field_consultants[]
   field_areas       field_areas[]
   place_import_runs place_import_runs[]
+  route_plans       field_route_plans[]
 }
 
 model praca_step_states {
@@ -172,22 +174,22 @@ model indicator_entries {
 
 // ── funil ────────────────────────────────────────────────────
 model leads {
-  id                 String             @id @default(uuid()) @db.Uuid
-  praca_id           String?            @db.Uuid
+  id                 String              @id @default(uuid()) @db.Uuid
+  praca_id           String?             @db.Uuid
   name               String
-  city               String             @default("")
-  address            String             @default("")
-  phone              String             @default("")
-  phone_key          String             @default("")
+  city               String              @default("")
+  address            String              @default("")
+  phone              String              @default("")
+  phone_key          String              @default("")
   cnpj               String?
   instagram          String?
   site               String?
-  decisor            String             @default("—")
-  decisor_role       String             @default("")
-  classe             String             @default("alvo")
-  origem             String             @default("prospecção")
-  owner_id           String?            @db.Uuid
-  stage              Int                @default(1)
+  decisor            String              @default("—")
+  decisor_role       String              @default("")
+  classe             String              @default("alvo")
+  origem             String              @default("prospecção")
+  owner_id           String?             @db.Uuid
+  stage              Int                 @default(1)
   entered_at         String
   stage_since        String
   last_contact_at    DateTime?
@@ -195,13 +197,13 @@ model leads {
   next_step_date     String?
   lost_reason        String?
   reheat_at          String?
-  archived           Boolean            @default(false)
-  import_batch_id    String?            @db.Uuid
-  possible_dup       Boolean            @default(false)
+  archived           Boolean             @default(false)
+  import_batch_id    String?             @db.Uuid
+  possible_dup       Boolean             @default(false)
   snooze_until       String?
-  campanha_id        String?            @db.Uuid
+  campanha_id        String?             @db.Uuid
   form_answer        String?
-  is_test            Boolean            @default(false)
+  is_test            Boolean             @default(false)
   // Localização do estabelecimento (§5). Nula nos que já existiam; o bloco B
   // preenche em massa; a visita de campo grava a do check-in no lead novo.
   lat                Float?
@@ -212,9 +214,18 @@ model leads {
   source             String?
   source_ref         String?
   location_precision String?
-  created_at         DateTime           @default(now())
-  praca              pracas?            @relation(fields: [praca_id], references: [id], onDelete: SetNull)
+  // Shoppings (lote D, §40.7): `place_kind = 'shopping'` no lead do shopping; `parent_lead_id` nas lojas de dentro. Nulos em todo
+  // lead existente e com a flag desligada.
+  place_kind         String?
+  parent_lead_id     String?             @db.Uuid
+  created_at         DateTime            @default(now())
+  praca              pracas?             @relation(fields: [praca_id], references: [id], onDelete: SetNull)
   place_candidates   place_candidates[]
+  parent             leads?              @relation("LojasDoShopping", fields: [parent_lead_id], references: [id], onDelete: SetNull)
+  stores             leads[]             @relation("LojasDoShopping")
+  mall_metrics       lead_mall_metrics?
+  store_searches     place_import_runs[] @relation("BuscasDeLojas")
+  route_plans        field_route_plans[]
 
   events           lead_events[]
   vagas            lead_vagas[]
@@ -232,6 +243,8 @@ model leads {
   @@index([praca_id, stage])
   @@index([phone_key])
   @@index([import_batch_id])
+  @@index([parent_lead_id])
+  @@index([praca_id, place_kind])
   // Prova social do render (`{{estabelecimento_vizinho}}`): os primeiros por
   // nome de cada cidade, numa consulta só para o lote inteiro.
   @@index([city, name])
@@ -617,6 +630,7 @@ model field_consultants {
   payouts          field_payouts[]
   journey_breaks   field_journey_breaks[]
   vouchers         field_vouchers[]
+  plan_items       field_route_plan_items[]
 }
 
 model field_journeys {
@@ -803,9 +817,13 @@ model place_import_runs {
   finished_at       DateTime?
   // Foto das definições dos segmentos pedidos (lote C, §36.6); nulo = tipos fixos de hoje.
   segments_snapshot Json?
+  // Lote D (§40.3): lugares (a de hoje) | shoppings | lojas (dentro do shopping `parent_lead_id`).
+  kind              String    @default("lugares")
+  parent_lead_id    String?   @db.Uuid
 
   praca      pracas             @relation(fields: [praca_id], references: [id], onDelete: Cascade)
   requester  users              @relation(fields: [requested_by], references: [id], onDelete: Restrict)
+  parent     leads?             @relation("BuscasDeLojas", fields: [parent_lead_id], references: [id], onDelete: SetNull)
   candidates place_candidates[]
 
   @@index([praca_id, created_at(sort: Desc)])
@@ -833,6 +851,8 @@ model place_candidates {
   status             String   @default("novo")
   reason             String?
   lead_id            String?  @db.Uuid
+  // Lote D (§40.3): métricas do shopping achado (`{geometry_kind, area_m2, levels}`); nulo nos demais.
+  metrics            Json?
   created_at         DateTime @default(now())
 
   run         place_import_runs   @relation(fields: [run_id], references: [id], onDelete: Cascade)
@@ -866,9 +886,10 @@ model field_routes {
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
 
-  consultant field_consultants    @relation(fields: [consultant_id], references: [id], onDelete: Cascade)
+  consultant field_consultants        @relation(fields: [consultant_id], references: [id], onDelete: Cascade)
   stops      field_route_stops[]
   events     field_route_events[]
+  plan_items field_route_plan_items[]
 
   @@index([consultant_id, day])
   @@index([day, praca_id])
@@ -1235,4 +1256,72 @@ model field_voucher_events {
   voucher field_vouchers @relation(fields: [voucher_id], references: [id], onDelete: Restrict)
 
   @@index([voucher_id, created_at])
+}
+
+// ── planos de rota (lote D da Lovable, §39) ──────────────────
+// Rascunho sem dono nem dia: divide os estabelecimentos de uma área em rotas de até N paradas. Arquiva em vez de apagar.
+// `area_id` é coluna simples (sem FK), como em `field_routes`.
+model field_route_plans {
+  id              String    @id @default(uuid()) @db.Uuid
+  praca_id        String    @db.Uuid
+  area_id         String?   @db.Uuid
+  kind            String    @default("geral") // geral | shoppings | shopping_interno
+  parent_lead_id  String?   @db.Uuid
+  travel_mode     String // carro | a_pe
+  modelo_tempo    String // lovable | roteiro
+  params_snapshot Json
+  total_leads     Int
+  truncated       Boolean   @default(false)
+  created_by      String    @db.Uuid
+  created_at      DateTime  @default(now())
+  archived_at     DateTime?
+  archived_by     String?   @db.Uuid
+
+  praca   pracas                   @relation(fields: [praca_id], references: [id], onDelete: Cascade)
+  parent  leads?                   @relation(fields: [parent_lead_id], references: [id], onDelete: SetNull)
+  creator users                    @relation(fields: [created_by], references: [id], onDelete: Restrict)
+  items   field_route_plan_items[]
+
+  @@index([praca_id, kind, created_at(sort: Desc)])
+}
+
+model field_route_plan_items {
+  id                     String    @id @default(uuid()) @db.Uuid
+  plan_id                String    @db.Uuid
+  seq                    Int
+  name                   String
+  color                  String
+  lead_ids               String[]  @db.Uuid
+  distance_m             Int
+  est_minutes            Int
+  assigned_route_id      String?   @db.Uuid
+  assigned_consultant_id String?   @db.Uuid
+  assigned_day           String?
+  assigned_at            DateTime?
+  assigned_by            String?   @db.Uuid
+
+  plan       field_route_plans  @relation(fields: [plan_id], references: [id], onDelete: Cascade)
+  route      field_routes?      @relation(fields: [assigned_route_id], references: [id], onDelete: SetNull)
+  consultant field_consultants? @relation(fields: [assigned_consultant_id], references: [id], onDelete: SetNull)
+
+  @@unique([plan_id, seq])
+  @@index([assigned_route_id])
+  @@index([assigned_consultant_id, assigned_day])
+}
+
+// ── shoppings (lote D da Lovable, §40) ───────────────────────
+// Métricas do shopping (lead com `place_kind = 'shopping'`): área do polígono do mapa aberto, lojas mapeadas dentro e a marcação à mão.
+model lead_mall_metrics {
+  lead_id        String   @id @db.Uuid
+  source_ref     String
+  geometry_kind  String // poligono | ponto
+  area_m2        Int?
+  levels         Int?
+  pois_mapped    Int?
+  measured_at    DateTime
+  large_override Boolean?
+  updated_by     String?  @db.Uuid
+  updated_at     DateTime @updatedAt
+
+  lead leads @relation(fields: [lead_id], references: [id], onDelete: Cascade)
 }
