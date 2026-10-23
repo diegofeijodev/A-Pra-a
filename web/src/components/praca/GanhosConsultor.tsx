@@ -4,10 +4,12 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { RemuneracaoConfig } from '@/components/praca/RemuneracaoConfig';
 import { addDays, todaySp } from '@/lib/dates';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import {
   useAjustarGanhos,
+  useConfigRemuneracao,
   useEstornarAjuste,
   useExtrato,
   useFecharSemana,
@@ -75,9 +77,12 @@ function AjusteDialog({ consultantId, onFechar }: { consultantId: string; onFech
 }
 
 /** Extrato semanal do consultor com a conta de cada dia, o razão e (admin) fechar/ajustar (contrato §28.5). */
-export function GanhosConsultor({ consultantId }: { consultantId: string }) {
+export function GanhosConsultor({ consultantId, nome }: { consultantId: string; nome?: string }) {
   const { user } = useAuth();
   const admin = !!user?.is_admin;
+  // L13 §45: a regra própria só existe para o admin e com a flag no servidor (descoberta pelo `features`, nunca por 404).
+  const cfgRem = useConfigRemuneracao();
+  const regraPropriaOn = admin && cfgRem.data?.features?.per_consultant_enabled === true;
   const hoje = todaySp();
   const [dia, setDia] = useState(hoje);
   const q = useExtrato({ week: dia, consultant_id: consultantId });
@@ -129,6 +134,21 @@ export function GanhosConsultor({ consultantId }: { consultantId: string }) {
           <p className="text-sm text-muted-foreground">
             Conta: {c.confirmed_signups} {q.data.signup_source === 'declared' ? 'cadastros declarados pelo consultor na visita' : 'cadastros confirmados pelo Freela'} na semana. Fonte: {q.data.source}.
           </p>
+          {c.rule && (
+            <p className="text-sm">
+              Regra desta semana: <span className="font-bold">{c.rule.label}</span>
+            </p>
+          )}
+          {c.month && (
+            <div className="rounded-md border border-border p-3">
+              <p className="text-sm font-bold">{c.month.text}</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-muted-foreground">
+                {c.month.conta.map((l) => (
+                  <li key={l}>{l}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           <ul className="list-disc space-y-0.5 pl-5 text-sm">
             {c.conta.map((l) => (
               <li key={l}>{l}</li>
@@ -142,7 +162,7 @@ export function GanhosConsultor({ consultantId }: { consultantId: string }) {
                 .map((d) => (
                   <div key={d.day}>
                     <p className="text-sm font-bold">
-                      {rotuloDia(d.day)} · {brl(d.total_cents)} · versão {d.rule_version}
+                      {rotuloDia(d.day)} · {brl(d.total_cents)} · {d.rule_scope === 'consultant' ? 'regra própria, ' : c.rule ? 'regra geral, ' : ''}versão {d.rule_version}
                     </p>
                     <ul className="list-disc pl-5 text-sm text-muted-foreground">
                       {d.conta.map((l) => (
@@ -192,7 +212,13 @@ export function GanhosConsultor({ consultantId }: { consultantId: string }) {
               {ledger.map((l) => (
                 <tr key={l.id} className="border-t border-border align-top">
                   <td className="py-2 pr-2">{ROTULO_TIPO[l.kind]}</td>
-                  <td className="py-2 pr-2">{l.work_day ? rotuloDia(l.work_day) : `Semana de ${rotuloSemana(l.work_week, addDays(l.work_week, 6))}`}</td>
+                  <td className="py-2 pr-2">
+                    {l.work_scope === 'month' && l.work_day
+                      ? `Bônus do mês ${l.work_day.slice(5, 7)}/${l.work_day.slice(0, 4)}`
+                      : l.work_day
+                        ? rotuloDia(l.work_day)
+                        : `Semana de ${rotuloSemana(l.work_week, addDays(l.work_week, 6))}`}
+                  </td>
                   <td className="py-2 pr-2 text-right font-bold">{brl(l.amount_cents)}</td>
                   <td className="py-2 pr-2 text-muted-foreground">{l.reason ?? (l.source === 'late_confirmation' ? 'Confirmação tardia' : 'Calculado pela regra')}{l.created_by ? ` · ${l.created_by}` : ''}</td>
                   <td className="py-2">
@@ -217,6 +243,12 @@ export function GanhosConsultor({ consultantId }: { consultantId: string }) {
         </div>
       )}
       {ajuste && <AjusteDialog consultantId={consultantId} onFechar={() => setAjuste(false)} />}
+      {regraPropriaOn && (
+        <details className="card-surface p-4">
+          <summary className="min-h-12 cursor-pointer text-sm font-bold leading-[3rem]">Regra de pagamento deste consultor</summary>
+          <RemuneracaoConfig consultor={{ id: consultantId, name: nome ?? c?.name ?? 'o consultor' }} />
+        </details>
+      )}
     </section>
   );
 }

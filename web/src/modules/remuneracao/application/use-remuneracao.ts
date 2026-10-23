@@ -7,10 +7,12 @@ import { useCampoMe } from '@/modules/campo/application/use-campo';
 import {
   ajustarGanhos,
   campoGanhos,
+  criarRegraConsultor,
   estornarAjuste,
   fecharSemana,
   getConfigRemuneracao,
   getExtrato,
+  getRegrasConsultor,
   putConfigRemuneracao,
   remuneracaoDesligada,
   simularRemuneracao,
@@ -99,4 +101,21 @@ export function useGanhosCampo() {
   const ligado = me.data?.features?.earnings === true;
   const q = useQuery({ queryKey: ['campo', 'earnings'], queryFn: campoGanhos, enabled: ligado, refetchInterval: 5 * 60_000, retry: 1 });
   return { ...q, ligado };
+}
+
+/** L13 (§45.4): regra própria de um consultor. Só busca quando a tela já sabe que pode (admin + flag ligada). */
+export function useRegrasConsultor(consultantId: string, enabled: boolean) {
+  return useQuery({ queryKey: [...CHAVE, 'consultor', consultantId], queryFn: () => getRegrasConsultor(consultantId), enabled, retry: 1 });
+}
+
+export function useCriarRegraConsultor() {
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: criarRegraConsultor,
+    onSuccess: () => {
+      invalidar();
+      toast.success('Regra própria salva. Ela vale a partir da data de início; o que já foi fechado não muda.');
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível salvar a regra deste consultor.')),
+  });
 }

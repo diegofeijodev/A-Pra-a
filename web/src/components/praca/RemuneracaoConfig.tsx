@@ -7,10 +7,13 @@ import { todaySp } from '@/lib/dates';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import {
   useConfigRemuneracao,
+  useCriarRegraConsultor,
+  useRegrasConsultor,
   useSalvarConfigRemuneracao,
   useSimularRemuneracao,
 } from '@/modules/remuneracao/application/use-remuneracao';
 import {
+  ajudaPixMensal,
   brl,
   corpoSimulacao,
   DIAS_SEMANA,
@@ -58,17 +61,29 @@ function Versao({ v, atual }: { v: VersaoRegra; atual?: boolean }) {
   );
 }
 
+const CALENDARIO = ['week_start_weekday', 'payout_weekday', 'autoclose_hour', 'late_grace_days'] as const;
+
 /**
  * Configurações → "Remuneração do consultor" (contrato §28). Nada de valor fixo: tudo vem do servidor e cada
  * alteração vira uma NOVA versão com data de início (o passado não muda). Sem a flag no servidor, não aparece.
+ * Com `consultor` (L13, §45): a regra PRÓPRIA dele — só admin e só com `features.per_consultant_enabled`; o calendário
+ * é o da regra geral e a data pode cair numa semana ainda aberta dele.
  */
-export function RemuneracaoConfig() {
+export function RemuneracaoConfig({ consultor }: { consultor?: { id: string; name: string } } = {}) {
   const { user } = useAuth();
   const admin = !!user?.is_admin;
   const cfg = useConfigRemuneracao();
-  const salvar = useSalvarConfigRemuneracao();
+  const porConsultorOn = cfg.data?.features?.per_consultant_enabled === true;
+  const regras = useRegrasConsultor(consultor?.id ?? '', !!consultor && admin && porConsultorOn);
+  const salvarGeral = useSalvarConfigRemuneracao();
+  const salvarProprio = useCriarRegraConsultor();
+  const salvar = consultor ? salvarProprio : salvarGeral;
   const simular = useSimularRemuneracao();
-  const atual = cfg.data?.current;
+  // Na regra do consultor, o formulário parte da regra que vale hoje para ele (a própria ou a geral).
+  const atual = consultor
+    ? regras.data && (regras.data.own.find((v) => v.version === regras.data.current.version) ?? regras.data.global_current)
+    : cfg.data?.current;
+  const minData = consultor ? (regras.data?.min_valid_from ?? todaySp()) : todaySp();
 
   const [form, setForm] = useState<FormRegra | null>(null);
   const [validoDe, setValidoDe] = useState(todaySp());
@@ -82,6 +97,8 @@ export function RemuneracaoConfig() {
     Array.from({ length: 5 }, () => ({ signups: '0', route_assigned: true })),
   );
   const [perfil, setPerfil] = useState<'chefe' | 'completo' | null>(null);
+  const [mesSim, setMesSim] = useState(false);
+  const [cadastrosMes, setCadastrosMes] = useState('40');
 
   useEffect(() => {
     if (atual) {
@@ -92,7 +109,20 @@ export function RemuneracaoConfig() {
 
   const set = <K extends keyof FormRegra>(k: K, v: FormRegra[K]) => setForm((f) => (f ? { ...f, [k]: v } : f));
   const regra = useMemo(() => (form ? formParaRegra(form) : null), [form]);
-  const corpo = useMemo(() => (form ? corpoSimulacao(form, { signups: cadastros, visits: visitas, journey_open: jornada, route_assigned: rotaSim, ...(semanaSim ? { days: diasSim } : {}) }) : null), [form, cadastros, visitas, jornada, rotaSim, semanaSim, diasSim]);
+  const corpo = useMemo(
+    () =>
+      form
+        ? corpoSimulacao(form, {
+            signups: cadastros,
+            visits: visitas,
+            journey_open: jornada,
+            route_assigned: rotaSim,
+            ...(semanaSim ? { days: diasSim } : {}),
+            ...(mesSim && form.tiers_period === 'month' ? { month_signups: cadastrosMes } : {}),
+          })
+        : null,
+    [form, cadastros, visitas, jornada, rotaSim, semanaSim, diasSim, mesSim, cadastrosMes],
+  );
 
   // Simulador: chama o servidor (a mesma função do cálculo real), com pausa para não disparar a cada tecla.
   const { mutate: rodar, reset: limparSimulacao } = simular;
@@ -107,8 +137,9 @@ export function RemuneracaoConfig() {
   }, [corpoJson, rodar, limparSimulacao]);
 
   if (cfg.desligada) return null;
-  if (cfg.isPending) return <p className="mt-8 text-sm text-muted-foreground">Carregando a remuneração…</p>;
-  if (cfg.isError || !cfg.data || !atual || !form) {
+  if (consultor && (!admin || (cfg.data && !porConsultorOn))) return null;
+  if (cfg.isPending || (consultor && regras.isPending)) return <p className="mt-8 text-sm text-muted-foreground">Carregando a remuneração…</p>;
+  if (cfg.isError || !cfg.data || !atual || !form || (consultor && (regras.isError || !regras.data))) {
     return (
       <section className="mt-8 space-y-2">
         <h2 className="tag text-muted-foreground">Remuneração do consultor</h2>
@@ -134,31 +165,60 @@ export function RemuneracaoConfig() {
   const intervaloOn = cfg.data.features?.breaks_enabled === true;
   const declarado = form.signup_source === 'declared';
   const palavra = declarado ? 'declarado' : 'confirmado';
+  // L11 §43: o "Mês" só aparece com a flag no servidor (ou se a regra que veio já é mensal).
+  const mensalOn = cfg.data.features?.monthly_enabled === true;
+  const mensal = form.tiers_period === 'month';
+  const geralHoje = cfg.data.current.config;
 
   const gravar = () => {
     if (!regra || !regra.ok) return;
-    salvar.mutate({ valid_from: validoDe, config: regra.regra, ...(motivo.trim() ? { reason: motivo.trim() } : {}) });
+    const extra = motivo.trim() ? { reason: motivo.trim() } : {};
+    if (consultor) {
+      // O calendário é sempre o da regra geral (§45.2): vai o dela, não o que estava no formulário.
+      const config = { ...regra.regra };
+      for (const k of CALENDARIO) config[k] = geralHoje[k];
+      salvarProprio.mutate({ consultant_id: consultor.id, valid_from: validoDe, config, ...extra });
+    } else salvarGeral.mutate({ valid_from: validoDe, config: regra.regra, ...extra });
   };
+  const mudarPeriodo = (p: FormRegra['tiers_period']) => {
+    setForm((f) => (f ? { ...f, tiers_period: p, ...(p === 'month' ? { cap: '', combine: f.combine === 'max' ? 'sum' : f.combine } : {}) } : f));
+    setValidoDe(sugerirInicio(todaySp(), { tiers_period: p, week_start_weekday: Number(form.week_start_weekday) }));
+  };
+  const historico = consultor ? (regras.data?.own ?? []) : cfg.data.history;
+  const proximas = consultor ? (regras.data?.own ?? []).filter((v) => v.valid_from > todaySp()) : cfg.data.upcoming;
 
   return (
-    <section className="mt-8 space-y-4">
-      <div>
-        <h2 className="tag text-muted-foreground">Remuneração do consultor</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Quanto o consultor ganha por cadastro (confirmado pelo Freela ou declarado por ele na visita, você escolhe). Cada mudança cria uma versão nova a partir da data de início: semanas já fechadas nunca são
-          recalculadas.
-        </p>
-      </div>
+    <section className={consultor ? 'mt-4 space-y-4' : 'mt-8 space-y-4'}>
+      {consultor ? (
+        <div>
+          <h2 className="tag text-muted-foreground">Regra de pagamento de {consultor.name}</h2>
+          <p className="mt-1 text-sm">
+            Hoje vale: <span className="font-bold">{regras.data?.current.label}</span>.
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Por padrão o consultor segue a regra geral. Uma regra própria vale só para ele a partir da data de início, que pode cair numa semana ainda aberta (a partir de {diaMes(minData)}/
+            {minData.slice(0, 4)}); semana fechada não muda. Nunca as duas somadas. O calendário (início da semana, dia do Pix, fechamento e prazo tardio) é sempre o da regra geral.
+          </p>
+        </div>
+      ) : (
+        <div>
+          <h2 className="tag text-muted-foreground">Remuneração do consultor</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Quanto o consultor ganha por cadastro (confirmado pelo Freela ou declarado por ele na visita, você escolhe). Cada mudança cria uma versão nova a partir da data de início: semanas já fechadas nunca são
+            recalculadas.
+          </p>
+        </div>
+      )}
 
       <div className="card-surface space-y-4 p-4">
         <Versao v={atual} atual />
-        {cfg.data.upcoming.map((v) => (
+        {proximas.map((v) => (
           <Versao key={v.version} v={v} />
         ))}
       </div>
 
       <div className="card-surface space-y-4 p-4">
-        <h3 className="text-base font-bold">{admin ? 'Nova versão da regra' : 'Simulador'}</h3>
+        <h3 className="text-base font-bold">{admin ? (consultor ? `Nova regra própria de ${consultor.name}` : 'Nova versão da regra') : 'Simulador'}</h3>
         {admin && presets && (
           <div className="space-y-2 rounded-md border border-border p-3">
             <p className="text-sm font-bold">Começar de um perfil</p>
@@ -207,19 +267,36 @@ export function RemuneracaoConfig() {
             </Campo>
             <Campo id="rem-combine" titulo="Como combinar valor por cadastro e faixa" ajuda="“Maior” paga o que for maior; “Soma” paga os dois; “Só faixa” ignora o valor por cadastro.">
               <select id="rem-combine" className={campo} value={form.combine} onChange={(e) => set('combine', e.target.value as FormRegra['combine'])}>
-                <option value="max">O maior dos dois</option>
+                <option value="max" disabled={mensal}>
+                  O maior dos dois{mensal ? ' (não vale no bônus mensal)' : ''}
+                </option>
                 <option value="sum">Soma dos dois</option>
                 <option value="tier_only">Só a faixa</option>
               </select>
             </Campo>
-            <Campo id="rem-period" titulo="As faixas contam cadastros por" ajuda="Faixa semanal só pode começar na primeira data da semana.">
-              <select id="rem-period" className={campo} value={form.tiers_period} onChange={(e) => set('tiers_period', e.target.value as FormRegra['tiers_period'])}>
+            <Campo
+              id="rem-period"
+              titulo="As faixas contam cadastros por"
+              ajuda={
+                mensal
+                  ? `Faixa mensal só pode começar no dia 1, soma com o valor por cadastro (ou é só a faixa) e não tem teto. ${ajudaPixMensal(validoDe.slice(0, 7), { week_start_weekday: Number(form.week_start_weekday), payout_weekday: Number(form.payout_weekday) })}`
+                  : mensalOn
+                    ? 'Faixa semanal só pode começar na primeira data da semana; faixa mensal, no dia 1.'
+                    : 'Faixa semanal só pode começar na primeira data da semana.'
+              }
+            >
+              <select id="rem-period" className={campo} value={form.tiers_period} onChange={(e) => mudarPeriodo(e.target.value as FormRegra['tiers_period'])}>
                 <option value="day">Dia</option>
                 <option value="week">Semana</option>
+                {(mensalOn || mensal) && (
+                  <option value="month" disabled={!mensalOn && !mensal}>
+                    Mês
+                  </option>
+                )}
               </select>
             </Campo>
-            <Campo id="rem-cap" titulo="Teto por período (R$)" ajuda="Em branco = sem teto.">
-              <Input id="rem-cap" inputMode="decimal" className="h-11" value={form.cap} onChange={(e) => set('cap', e.target.value)} />
+            <Campo id="rem-cap" titulo="Teto por período (R$)" ajuda={mensal ? 'O bônus mensal não tem teto.' : 'Em branco = sem teto.'}>
+              <Input id="rem-cap" inputMode="decimal" className="h-11" value={form.cap} disabled={mensal} onChange={(e) => set('cap', e.target.value)} />
             </Campo>
 
             <div className="space-y-2 sm:col-span-2">
@@ -313,6 +390,8 @@ export function RemuneracaoConfig() {
               </>
             )}
 
+            {!consultor && (
+              <>
             <Campo id="rem-wstart" titulo="A semana começa na" ajuda="Não muda depois que houver ganhos lançados.">
               <select id="rem-wstart" className={campo} value={form.week_start_weekday} onChange={(e) => set('week_start_weekday', e.target.value)}>
                 {DIAS_SEMANA.map((d, i) => (
@@ -337,8 +416,14 @@ export function RemuneracaoConfig() {
             <Campo id="rem-grace" titulo="Confirmação tardia vale por (dias)" ajuda="Depois do fechamento, um cadastro confirmado dentro desse prazo entra como ajuste na semana corrente.">
               <Input id="rem-grace" inputMode="numeric" className="h-11" value={form.late_grace_days} onChange={(e) => set('late_grace_days', e.target.value)} />
             </Campo>
-            <Campo id="rem-from" titulo="Vale a partir de" ajuda="Hoje ou depois. O passado não é reescrito.">
-              <Input id="rem-from" type="date" className="h-11" min={todaySp()} value={validoDe} onChange={(e) => e.target.value && setValidoDe(e.target.value)} />
+              </>
+            )}
+            <Campo
+              id="rem-from"
+              titulo="Vale a partir de"
+              ajuda={consultor ? `De ${diaMes(minData)}/${minData.slice(0, 4)} em diante (semana ainda aberta deste consultor). O que já foi fechado não muda.` : 'Hoje ou depois. O passado não é reescrito.'}
+            >
+              <Input id="rem-from" type="date" className="h-11" min={minData} value={validoDe} onChange={(e) => e.target.value && setValidoDe(e.target.value)} />
             </Campo>
             <Campo id="rem-why" titulo="Motivo da mudança (opcional)">
               <Input id="rem-why" className="h-11" maxLength={500} value={motivo} onChange={(e) => setMotivo(e.target.value)} />
@@ -367,7 +452,20 @@ export function RemuneracaoConfig() {
               <input type="checkbox" className="size-5" checked={semanaSim} onChange={(e) => setSemanaSim(e.target.checked)} />
               Simular a semana
             </label>
+            {mensal && (
+              <label className="flex h-11 items-center gap-2 text-sm">
+                <input type="checkbox" className="size-5" checked={mesSim} onChange={(e) => setMesSim(e.target.checked)} />
+                Simular o mês
+              </label>
+            )}
           </div>
+          {mensal && mesSim && (
+            <div className="mt-3">
+              <Campo id="sim-mes" titulo={`Cadastros ${declarado ? 'declarados' : 'confirmados'} no mês`}>
+                <Input id="sim-mes" inputMode="numeric" className="h-11 w-36" value={cadastrosMes} onChange={(e) => setCadastrosMes(e.target.value)} />
+              </Campo>
+            </div>
+          )}
           {semanaSim && (
             <div className="mt-3 space-y-2">
               <p className="text-sm text-muted-foreground">Um dia por linha, a partir do primeiro dia da semana. A jornada marcada acima vale para todos os dias.</p>
@@ -413,6 +511,18 @@ export function RemuneracaoConfig() {
               </ul>
             </div>
           )}
+          {simular.data?.month && corpo?.month_signups !== undefined && (
+            <div className="mt-2 space-y-1">
+              <p className="text-base font-bold">
+                Com {corpo.month_signups} {corpo.month_signups === 1 ? 'cadastro' : 'cadastros'} no mês, o bônus do mês é {brl(simular.data.month.total_cents)}.
+              </p>
+              <ul className="list-disc space-y-0.5 pl-5 text-sm text-muted-foreground">
+                {simular.data.month.conta.map((l) => (
+                  <li key={l}>{l}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           {simular.data && corpo && !corpo.days && (
             <div className="mt-2 space-y-1">
               <p className="text-base font-bold">{tituloSimulacao(corpo.signups_confirmed, simular.data.day.total_cents)}</p>
@@ -428,7 +538,7 @@ export function RemuneracaoConfig() {
         {admin && (
           <div className="flex flex-wrap items-center gap-3">
             <Button className="h-12" onClick={gravar} disabled={salvar.isPending || !regra?.ok}>
-              Salvar como nova versão
+              {consultor ? 'Salvar regra própria' : 'Salvar como nova versão'}
             </Button>
             <p className="text-sm text-muted-foreground">
               {regra?.ok ? `Passa a valer em ${diaMes(validoDe)}/${validoDe.slice(0, 4)}; cada cadastro confirmado: ${brl(regra.regra.unit_cents)}.` : 'Corrija os campos para salvar.'}
@@ -438,9 +548,12 @@ export function RemuneracaoConfig() {
       </div>
 
       <details className="card-surface p-4">
-        <summary className="min-h-12 cursor-pointer text-sm font-bold leading-[3rem]">Histórico de versões ({cfg.data.history.length})</summary>
+        <summary className="min-h-12 cursor-pointer text-sm font-bold leading-[3rem]">
+          {consultor ? `Regras próprias de ${consultor.name}` : 'Histórico de versões'} ({historico.length})
+        </summary>
         <div className="mt-2 space-y-4">
-          {cfg.data.history.map((v) => (
+          {consultor && historico.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma regra própria ainda: ele segue a regra geral.</p>}
+          {historico.map((v) => (
             <Versao key={v.version} v={v} atual={v.version === atual.version} />
           ))}
         </div>

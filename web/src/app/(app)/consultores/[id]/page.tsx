@@ -130,7 +130,7 @@ export default function ConsultorDetalhePage() {
         <ResumoDiaEquipe consultantId={id} dia={dia} />
       </section>
 
-      <GanhosConsultor consultantId={id} />
+      <GanhosConsultor consultantId={id} nome={c.name} />
 
       {editando && <ConsultorDialog aberto consultor={c} onFechar={() => setEditando(false)} />}
 

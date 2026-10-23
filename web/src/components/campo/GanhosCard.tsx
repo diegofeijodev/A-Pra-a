@@ -48,6 +48,7 @@ export function GanhosCard() {
           ))}
         </ul>
         <p className="mt-2 text-sm text-muted-foreground">Fonte: {g.data.source}.</p>
+        {g.data.rule && <p className="mt-1 text-sm text-muted-foreground">Vale para você: {g.data.rule.label}.</p>}
       </details>
 
       <div className="rounded-md border border-border p-3">
@@ -58,6 +59,21 @@ export function GanhosCard() {
             : unconfirmed.text}
         </p>
       </div>
+
+      {g.data.month && (
+        <div className="rounded-md border border-border p-3" aria-label="Meta do mês">
+          <p className="tag text-muted-foreground">Meta do mês · {g.data.month.label}</p>
+          <p className="text-base font-bold">{g.data.month.text}</p>
+          <details>
+            <summary className="min-h-12 cursor-pointer text-sm font-bold leading-[3rem]">Ver a conta do mês</summary>
+            <ul className="list-disc space-y-1 pl-5 text-sm">
+              {g.data.month.conta.map((l) => (
+                <li key={l}>{l}</li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      )}
 
       <div>
         <p className="tag text-muted-foreground">Semana · {rotuloSemana(week.from, week.to)}</p>

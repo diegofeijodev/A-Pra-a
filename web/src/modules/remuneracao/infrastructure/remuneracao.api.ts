@@ -8,6 +8,7 @@ import {
   fechamentoSchema,
   ganhosCampoSchema,
   lancamentoSchema,
+  regrasConsultorSchema,
   simulacaoSchema,
   versaoSchema,
   type ConfigResposta,
@@ -16,6 +17,7 @@ import {
   type GanhosCampo,
   type Lancamento,
   type RegraRemuneracao,
+  type RegrasConsultor,
   type Simulacao,
   type VersaoRegra,
 } from '../domain/remuneracao';
@@ -65,4 +67,15 @@ export async function estornarAjuste(id: string, body: { reason: string; client_
 export async function campoGanhos(): Promise<GanhosCampo> {
   const { data } = await campoApi.get('/v1/campo/earnings');
   return ganhosCampoSchema.parse(data);
+}
+
+/** L13 (§45.4): regra própria do consultor — só admin, só com `features.per_consultant_enabled`. */
+export async function getRegrasConsultor(consultantId: string): Promise<RegrasConsultor> {
+  const { data } = await api.get(`${BASE}/consultant-rules`, { params: { consultant_id: consultantId } });
+  return regrasConsultorSchema.parse(data);
+}
+
+export async function criarRegraConsultor(body: { consultant_id: string; valid_from: string; reason?: string; config: RegraRemuneracao }): Promise<VersaoRegra> {
+  const { data } = await api.post(`${BASE}/consultant-rules`, body);
+  return versaoSchema.parse(data);
 }

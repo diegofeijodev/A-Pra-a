@@ -5,7 +5,8 @@
  */
 import { z } from 'zod';
 
-export type PeriodoFaixa = 'day' | 'week';
+/** `month` (L11, contrato §43): só com `features.monthly_enabled` no servidor; uma versão mensal salva é sempre lida. */
+export type PeriodoFaixa = 'day' | 'week' | 'month';
 export type Combinacao = 'max' | 'sum' | 'tier_only';
 export type CondicaoPiso = 'none' | 'journey_open' | 'min_visits';
 export type ContagemVisita = 'checkin' | 'checkout';
@@ -32,7 +33,7 @@ const chavesNovasSchema = z.object({
 
 export const regraSchema = z.object({
   unit_cents: z.number().int(),
-  tiers_period: z.enum(['day', 'week']),
+  tiers_period: z.enum(['day', 'week', 'month']),
   tiers: z.array(faixaSchema),
   combine: z.enum(['max', 'sum', 'tier_only']),
   cap_cents: z.number().int().nullable(),
@@ -72,8 +73,51 @@ export const versaoSchema = z.object({
   /** Item 15 (contrato §28.5): a versão 1 da instalação ("vale desde o começo"). Servidor antigo não manda. */
   is_initial: z.boolean().optional(),
   installed_at: z.string().optional(),
+  /** L13 (§45.4): só nas regras próprias de consultor. */
+  consultant_id: z.string().optional(),
 });
 export type VersaoRegra = z.infer<typeof versaoSchema>;
+
+/** L13 (§45.4): a regra que valeu ("Regra própria de Ana · versão 7" | "Regra geral · versão 3"). */
+export const regraAplicadaSchema = z.object({
+  scope: z.enum(['consultant', 'global']),
+  version: z.number().int(),
+  valid_from: z.string(),
+  label: z.string(),
+  config_effective: regraSchema.optional(),
+});
+export type RegraAplicada = z.infer<typeof regraAplicadaSchema>;
+
+/** L11 (§43.5): a parte do mês, com a conta e o Pix em que entra. */
+export const mesSchema = z.object({
+  month: z.string(),
+  label: z.string(),
+  from: z.string(),
+  to: z.string(),
+  rule_version: z.number().int().nullable(),
+  signups: z.number().int(),
+  tier: faixaSchema.nullable(),
+  amount_cents: z.number().int(),
+  next_tier: z.object({ min_signups: z.number().int(), amount_cents: z.number().int(), faltam: z.number().int() }).nullable(),
+  ended: z.boolean(),
+  work_week: z.string(),
+  pix_date: z.string(),
+  pix_label: z.string(),
+  text: z.string(),
+  conta: z.array(z.string()),
+});
+export type MesGanho = z.infer<typeof mesSchema>;
+
+export const regrasConsultorSchema = z.object({
+  consultant_id: z.string(),
+  name: z.string(),
+  today: z.string(),
+  current: regraAplicadaSchema,
+  own: z.array(versaoSchema),
+  global_current: versaoSchema,
+  min_valid_from: z.string(),
+});
+export type RegrasConsultor = z.infer<typeof regrasConsultorSchema>;
 
 /** Sentinela "vale desde sempre" gravada na versão 1 (nunca muda no banco; a tela traduz). */
 export const VIGENCIA_INICIAL = '1970-01-01';
@@ -110,7 +154,15 @@ export const configRespostaSchema = z.object({
   default_config: regraSchema,
   /** Presets que só preenchem o formulário (contrato §32.2); servidor antigo não manda. */
   presets: z.object({ completo: regraSchema, chefe: regraSchema }).optional(),
-  features: z.object({ routes_enabled: z.boolean(), declared_signups_enabled: z.boolean(), breaks_enabled: z.boolean().optional() }).optional(),
+  features: z
+    .object({
+      routes_enabled: z.boolean(),
+      declared_signups_enabled: z.boolean(),
+      breaks_enabled: z.boolean().optional(),
+      monthly_enabled: z.boolean().optional(),
+      per_consultant_enabled: z.boolean().optional(),
+    })
+    .optional(),
 });
 export type ConfigResposta = z.infer<typeof configRespostaSchema>;
 
@@ -125,6 +177,8 @@ export const simulacaoSchema = z.object({
       conta: z.array(z.string()),
     })
     .optional(),
+  month: z.object({ total_cents: z.number().int(), conta: z.array(z.string()) }).optional(),
+  rule: regraAplicadaSchema.optional(),
 });
 export type Simulacao = z.infer<typeof simulacaoSchema>;
 
@@ -172,8 +226,20 @@ export const extratoSchema = z.object({
       closed_mode: z.enum(['manual', 'auto']).nullable(),
       week_part_cents: z.number().int(),
       extras_cents: z.number().int(),
-      days: z.array(diaGanhoSchema.extend({ visits: z.number().int(), journey_open: z.boolean(), rule_version: z.number().int().nullable(), future: z.boolean(), conta: z.array(z.string()) })),
+      days: z.array(
+        diaGanhoSchema.extend({
+          visits: z.number().int(),
+          journey_open: z.boolean(),
+          rule_version: z.number().int().nullable(),
+          future: z.boolean(),
+          conta: z.array(z.string()),
+          rule_scope: z.literal('consultant').optional(),
+        }),
+      ),
       conta: z.array(z.string()),
+      month: mesSchema.optional(),
+      month_part_cents: z.number().int().optional(),
+      rule: regraAplicadaSchema.optional(),
     }),
   ),
   ledger: z.array(lancamentoSchema).optional(),
@@ -200,6 +266,8 @@ export const ganhosCampoSchema = z.object({
   unconfirmed: z.object({ count: z.number().int(), text: z.string() }),
   pix: z.object({ date: z.string(), week_to: z.string(), text: z.string() }),
   previous_weeks: z.array(z.object({ from: z.string(), to: z.string(), total_cents: z.number().int(), status: z.enum(['open', 'closed']) })),
+  month: mesSchema.optional(),
+  rule: regraAplicadaSchema.optional(),
 });
 export type GanhosCampo = z.infer<typeof ganhosCampoSchema>;
 
@@ -251,9 +319,41 @@ export function proximoInicioDeSemana(hoje: string, weekStartWeekday: number): s
   return somaDias(hoje, (weekStartWeekday - diaDaSemana(hoje) + 7) % 7);
 }
 
-/** Início sugerido para uma nova versão: hoje, ou o próximo início de semana se a faixa for semanal. */
+/** Primeiro dia 1 (≥ hoje): com bônus mensal a vigência só começa nele. */
+export function proximoDia1(hoje: string): string {
+  if (hoje.slice(8, 10) === '01') return hoje;
+  const [a, m] = [Number(hoje.slice(0, 4)), Number(hoje.slice(5, 7))];
+  return m === 12 ? `${a + 1}-01-01` : `${a}-${String(m + 1).padStart(2, '0')}-01`;
+}
+
+/** Início sugerido para uma nova versão: hoje, o próximo início de semana (faixa semanal) ou o próximo dia 1 (mensal). */
 export function sugerirInicio(hoje: string, regra: Pick<RegraRemuneracao, 'tiers_period' | 'week_start_weekday'>): string {
+  if (regra.tiers_period === 'month') return proximoDia1(hoje);
   return regra.tiers_period === 'week' ? proximoInicioDeSemana(hoje, regra.week_start_weekday) : hoje;
+}
+
+const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+
+/**
+ * L11 (§43, aceite K5): a data REAL do Pix do bônus de um mês = o 1º dia do Pix depois da semana que contém o último dia
+ * do mês. Ex.: outubro de 2026, semana de segunda, Pix na segunda → "seg 02/11".
+ */
+export function pixDoMes(mes: string, weekStartWeekday: number, payoutWeekday: number): string {
+  const [a, m] = [Number(mes.slice(0, 4)), Number(mes.slice(5, 7))];
+  const ultimo = new Date(Date.UTC(a, m, 0)).toISOString().slice(0, 10);
+  const inicio = somaDias(ultimo, -((diaDaSemana(ultimo) - weekStartWeekday + 7) % 7));
+  const fim = somaDias(inicio, 6);
+  for (let i = 1; i <= 7; i++) {
+    const d = somaDias(fim, i);
+    if (diaDaSemana(d) === payoutWeekday) return d;
+  }
+  return somaDias(fim, 1);
+}
+
+/** "O bônus do mês é pago no primeiro Pix depois do fim do mês (outubro → seg 02/11), junto com a semana." */
+export function ajudaPixMensal(mes: string, regra: Pick<RegraRemuneracao, 'week_start_weekday' | 'payout_weekday'>): string {
+  const pix = pixDoMes(mes, regra.week_start_weekday, regra.payout_weekday);
+  return `O bônus do mês é pago no primeiro Pix depois do fim do mês (${MESES[Number(mes.slice(5, 7)) - 1]} → ${rotuloDia(pix)}), junto com a semana que contém o último dia.`;
 }
 
 // ── formulário ────────────────────────────────────────────────────────────
@@ -404,7 +504,7 @@ const cadastros = (n: number) => `${n} ${n === 1 ? 'cadastro' : 'cadastros'}`;
 /** A regra em palavras (para quem lê a tela sem decifrar campos). */
 export function resumoRegra(r: RegraRemuneracao): string[] {
   const linhas: string[] = [];
-  const periodo = r.tiers_period === 'day' ? 'no dia' : 'na semana';
+  const periodo = r.tiers_period === 'day' ? 'no dia' : r.tiers_period === 'month' ? 'no mês' : 'na semana';
   const declarado = r.signup_source === 'declared';
   const cumulativo = r.tiers_mode === 'cumulative';
   if (r.combine === 'tier_only') linhas.push('O valor por cadastro não é usado: só vale a faixa atingida.');
@@ -423,6 +523,7 @@ export function resumoRegra(r: RegraRemuneracao): string[] {
     linhas.push('Não há faixas.');
   }
   if (r.cap_cents !== null) linhas.push(`Teto ${r.tiers_period === 'day' ? 'por dia' : 'por semana'}: ${brl(r.cap_cents)}.`);
+  if (r.tiers_period === 'month' && r.tiers.length) linhas.push('O bônus do mês sai no primeiro Pix depois do fim do mês (com a semana que contém o último dia).');
   if (r.floor_cents > 0) {
     const cond =
       r.floor_condition === 'none'
@@ -457,6 +558,8 @@ export interface ParamsSimulacao {
   route_assigned?: boolean;
   /** Simulação da SEMANA (contrato §32.3): um item por dia, a partir do 1º dia da semana. */
   days?: Array<{ signups: string; route_assigned: boolean }>;
+  /** L11 §43.5: "Simular o mês" (só com regra mensal). */
+  month_signups?: string;
 }
 
 export interface CorpoSimulacao {
@@ -466,6 +569,7 @@ export interface CorpoSimulacao {
   journey_open: boolean;
   route_assigned?: boolean;
   days?: Array<{ signups: number; route_assigned: boolean; journey_open: boolean }>;
+  month_signups?: number;
 }
 
 /** Corpo do `POST …/simulate`; `null` enquanto o formulário ou os números não forem válidos. */
@@ -484,6 +588,11 @@ export function corpoSimulacao(f: FormRegra, p: ParamsSimulacao): CorpoSimulacao
       dias.push({ signups: x, route_assigned: d.route_assigned, journey_open: p.journey_open });
     }
     corpo.days = dias;
+  }
+  if (regra.regra.tiers_period === 'month' && p.month_signups !== undefined) {
+    const m = inteiro(p.month_signups || '0');
+    if (m === null || m > 30000) return null;
+    corpo.month_signups = m;
   }
   return corpo;
 }
