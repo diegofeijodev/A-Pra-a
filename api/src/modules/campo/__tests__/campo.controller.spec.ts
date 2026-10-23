@@ -36,7 +36,8 @@ describe('CampoController.me — features', () => {
     const off = new CampoController(auth as never, {} as never, {} as never, {} as never, {} as never);
     const on = new CampoController(auth as never, {} as never, {} as never, {} as never, {} as never, true);
     // Lote A da Lovable (§33.1): + day_summary e map_pins; lote B (§35.6/§37.6): + checklist e breaks (aditivos, desligados por padrão).
-    const novas = { day_summary: false, map_pins: false, checklist: false, breaks: false };
+    // Lote C (§38.1): + vouchers (aditivo, desligado por padrão).
+    const novas = { day_summary: false, map_pins: false, checklist: false, breaks: false, vouchers: false };
     expect((await off.me(C)).features).toEqual({ company_signup: false, earnings: false, payouts: false, visit_flow: false, declared_signups: false, ...novas });
     expect((await on.me(C)).features).toEqual({ company_signup: true, earnings: false, payouts: false, visit_flow: false, declared_signups: false, ...novas });
     expect(await off.me(C)).not.toHaveProperty('checklist_config');
@@ -62,5 +63,24 @@ describe('CampoController.me — features', () => {
       new CampoController(auth as never, {} as never, {} as never, {} as never, {} as never, false, undefined, undefined, undefined, f);
     expect((await mk({ dashboard: true, day_summary: true, map_pins: false }).me(C)).features).toMatchObject({ day_summary: true, map_pins: false });
     expect((await mk({ dashboard: false, day_summary: false, map_pins: true }).me(C)).features).toMatchObject({ day_summary: false, map_pins: true });
+  });
+});
+
+describe('CampoController.me — lote C (§38.1)', () => {
+  const auth = { me: jest.fn().mockResolvedValue({ consultant: { id: 'c1' }, channels: [] }) };
+  const vouchers = { config: jest.fn().mockResolvedValue({ max_por_empresa: 1, discount_type: 'PERCENT', percent_off: 100, amount_off_cents: null, single_use: true, validade_dias: 30, min_job_hours: null, motivo_reprovacao: 'obrigatorio', voucher_sync_min: 30 }) };
+  const mk = (flags: { segments: boolean; vouchers: boolean; voucher_coupons: boolean }) =>
+    new CampoController(auth as never, {} as never, {} as never, {} as never, {} as never, false, undefined, undefined, undefined, undefined, undefined, undefined, undefined, flags, vouchers as never);
+  it('desligada: features.vouchers false e sem voucher_config (nenhuma leitura)', async () => {
+    vouchers.config.mockClear();
+    const r = await mk({ segments: false, vouchers: false, voucher_coupons: false }).me(C);
+    expect(r.features.vouchers).toBe(false);
+    expect(r).not.toHaveProperty('voucher_config');
+    expect(vouchers.config).not.toHaveBeenCalled();
+  });
+  it('ligada: o desconto e a validade para a tela sem sinal', async () => {
+    const r = await mk({ segments: false, vouchers: true, voucher_coupons: true }).me(C);
+    expect(r.features.vouchers).toBe(true);
+    expect(r.voucher_config).toEqual({ discount_type: 'PERCENT', percent_off: 100, amount_off_cents: null, single_use: true, validade_dias: 30, min_job_hours: null, coupons: true });
   });
 });

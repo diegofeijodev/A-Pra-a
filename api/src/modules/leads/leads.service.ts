@@ -440,6 +440,13 @@ export class LeadsService {
         message: 'Este estabelecimento tem um cadastro declarado por um consultor e não pode ser apagado. Arquive-o em vez de apagar.',
       });
     }
+    // Pedido de cupom aponta para o estabelecimento (FK RESTRICT, contrato §38.9).
+    if (await this.prisma.field_vouchers.count({ where: { lead_id: id } })) {
+      throw new ConflictException({
+        code: 'HAS_VOUCHER',
+        message: 'Este estabelecimento tem um pedido de cupom da 1ª contratação e não pode ser apagado. Arquive-o em vez de apagar.',
+      });
+    }
     await this.prisma.leads.delete({ where: { id } });
     return { ok: true };
   }

@@ -33,6 +33,8 @@ import {
   type FiltroListaCadastros,
   type LinkReemitido,
 } from './freela-registrations';
+import { cupomSchema, listaContratantesSchema, listaCuponsSchema, type ContratanteCrm } from './freela-coupons';
+import type { CorpoCupomFreela, CupomFreela } from '../../domain/voucher-rules';
 
 /** Mesma frase em todo lugar que fala de conexão com o Freela ausente. */
 export const FREELA_NOT_CONFIGURED_MESSAGE =
@@ -305,6 +307,32 @@ export class FreelaClient {
     );
     const nextCursor = (r.meta as { nextCursor?: unknown } | undefined)?.nextCursor;
     return this.validar(listaCadastrosSchema, { data: r.data, nextCursor: typeof nextCursor === 'string' ? nextCursor : null });
+  }
+
+  // ── cupons da 1ª contratação (§38) ──────────────────────────
+
+  /** `POST /v1/admin/coupons`. Código repetido = `400 COUPON_CODE_TAKEN` (chega como `FreelaHttpError`). */
+  async createCoupon(corpo: CorpoCupomFreela): Promise<CupomFreela> {
+    const r = await this.request('POST', '/v1/admin/coupons', corpo);
+    return this.validar(cupomSchema, r.data);
+  }
+
+  /** `GET /v1/admin/coupons` — TODOS os cupons do Freela (sem filtro nem paginação). */
+  async listCoupons(): Promise<CupomFreela[]> {
+    const r = await this.request('GET', '/v1/admin/coupons');
+    return this.validar(listaCuponsSchema, r.data);
+  }
+
+  /** `PATCH /v1/admin/coupons/:id` (o Praça só desativa). */
+  async updateCoupon(id: string, corpo: { active: boolean }): Promise<CupomFreela> {
+    const r = await this.request('PATCH', `/v1/admin/coupons/${encodeURIComponent(id)}`, corpo);
+    return this.validar(cupomSchema, r.data);
+  }
+
+  /** `GET /v1/admin/crm/contractors/search?q=` — só por nome (mínimo 2), até 12, com o Em Casa. */
+  async searchContractors(q: string): Promise<ContratanteCrm[]> {
+    const r = await this.request('GET', `/v1/admin/crm/contractors/search?q=${encodeURIComponent(q)}`);
+    return this.validar(listaContratantesSchema, r.data);
   }
 
   /** A mensagem do Freela: `error.message`, `message` ou o status HTTP. */

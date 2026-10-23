@@ -72,6 +72,19 @@ export interface EntradaPainel {
   leadsMapeados: number;
   leadsSemLocalizacao: number;
   cfg: ConfigPainel;
+  /** Cupons da 1ª contratação (§38.8): AUSENTE/`null` = módulo desligado (cartão "Não ligado", como hoje). */
+  cupons?: ResumoCupons | null;
+  /** O cupom real no Freela está ligado (a conta cita os criados). */
+  cuponsNoFreela?: boolean;
+}
+
+/** Pedidos de cupom feitos no período e a situação de cada um agora. */
+export interface ResumoCupons {
+  requested: number;
+  pending: number;
+  approved: number;
+  rejected: number;
+  coupons_created: number;
 }
 
 export interface PainelCalculado {
@@ -88,7 +101,7 @@ export interface PainelCalculado {
     avg_gap_min: number | null;
     avg_duration_min: number | null;
     time_headline: PainelTempo;
-    vouchers: null;
+    vouchers: ResumoCupons | null;
     pracas_open: number;
     consultants_active: number;
     leads_mapped: number;
@@ -177,7 +190,7 @@ export function montarPainel(e: EntradaPainel): PainelCalculado {
       avg_gap_min: gap,
       avg_duration_min: duracao,
       time_headline: tempoGrande,
-      vouchers: null,
+      vouchers: e.cupons ?? null,
       pracas_open: e.pracasAbertas,
       consultants_active: ativos,
       leads_mapped: e.leadsMapeados,
@@ -200,7 +213,7 @@ export function montarPainel(e: EntradaPainel): PainelCalculado {
           ? `Média de ${plural(gaps.length, 'intervalo', 'intervalos')} entre chegadas seguidas do mesmo consultor no mesmo dia (acima de ${e.cfg.painel_gap_max_min} min fica de fora)${gap == null ? '' : ` = ${gap} min`}. Dentro do local (chegada → conclusão): ${duracao == null ? '—' : `${duracao} min`}.`
           : `Média de chegada → conclusão de ${plural(duracoes.length, 'visita', 'visitas')}${duracao == null ? '' : ` = ${duracao} min`}. Entre chegadas seguidas: ${gap == null ? '—' : `${gap} min`}.`,
       signups: `Soma dos cadastros de cada consultor em cada dia do período = ${S}. "Cadastrou agora" nas visitas: ${declaradasAgora}${e.syncLigado ? '' : '; confirmação pelo Freela ainda não ligada neste servidor'}.`,
-      vouchers: 'Não ligado neste servidor.',
+      vouchers: e.cupons ? contaCupons(e.cupons, e.cuponsNoFreela === true) : 'Não ligado neste servidor.',
       pracas_open: `${plural(e.pracasAbertas, 'praça com início', 'praças com início')} até hoje · ${plural(ativos, 'consultor ativo', 'consultores ativos')}.`,
       leads_mapped: `${plural(e.leadsMapeados, 'estabelecimento', 'estabelecimentos')} com localização exata (ponto ou endereço) · ${e.leadsSemLocalizacao.toLocaleString('pt-BR')} sem localização exata.`,
     },
@@ -210,9 +223,17 @@ export function montarPainel(e: EntradaPainel): PainelCalculado {
       positivation: textoFonteCadastros(e.fonteCadastros, e.syncLigado),
       time: 'Horários de chegada e de conclusão das visitas (Brasília). Definição da Lovable, com o nome corrigido.',
       signups: textoFonteCadastros(e.fonteCadastros, e.syncLigado),
-      vouchers: 'Cupons da 1ª contratação (módulo ainda não ligado).',
+      vouchers: e.cupons
+        ? 'Pedidos de cupom da 1ª contratação feitos no período (dia de Brasília); a situação de cada um é a de agora.'
+        : 'Cupons da 1ª contratação (módulo ainda não ligado).',
       pracas_open: 'Datas de início das praças; cadastro dos consultores.',
       leads_mapped: 'Estabelecimentos não arquivados, fora os de teste.',
     },
   };
+}
+
+/** "3 pedidos no período: 1 aprovado, 1 esperando aprovação, 1 reprovado; 1 cupom criado no Freela." (as parcelas somam os pedidos). */
+function contaCupons(c: ResumoCupons, noFreela: boolean): string {
+  const base = `${plural(c.requested, 'pedido', 'pedidos')} no período: ${plural(c.approved, 'aprovado', 'aprovados')}, ${c.pending.toLocaleString('pt-BR')} esperando aprovação, ${plural(c.rejected, 'reprovado', 'reprovados')}`;
+  return noFreela ? `${base}; ${plural(c.coupons_created, 'cupom criado', 'cupons criados')} no Freela.` : `${base}.`;
 }

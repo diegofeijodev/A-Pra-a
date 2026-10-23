@@ -22,7 +22,8 @@ import { AllowPendingPassword, CampoRoute } from '../../common/decorators/campo-
 import { CurrentConsultant } from '../../common/decorators/current-consultant.decorator';
 import { ModoCampoService } from '../rotas/modo-campo.service';
 import { RotasConfigService } from '../rotas/rotas-config.service';
-import { LOVABLE_A_FLAGS, LOVABLE_B_FLAGS, type FlagsLovableA, type FlagsLovableB } from '../rotas/rotas.tokens';
+import { LOVABLE_A_FLAGS, LOVABLE_B_FLAGS, LOVABLE_C_FLAGS, type FlagsLovableA, type FlagsLovableB, type FlagsLovableC } from '../rotas/rotas.tokens';
+import { VouchersService } from './vouchers/vouchers.service';
 import { CampoAuthService } from './campo-auth.service';
 import { COMPANY_SIGNUP_LIGADO } from './company-signup.tokens';
 import { BreaksService } from './breaks.service';
@@ -55,6 +56,8 @@ export class CampoController {
     @Optional() @Inject(LOVABLE_B_FLAGS) private readonly lovB?: FlagsLovableB,
     @Optional() private readonly configs?: RotasConfigService,
     @Optional() private readonly breaks?: BreaksService,
+    @Optional() @Inject(LOVABLE_C_FLAGS) private readonly lovC?: FlagsLovableC,
+    @Optional() private readonly vouchers?: VouchersService,
   ) {}
 
   @AllowPendingPassword()
@@ -69,6 +72,8 @@ export class CampoController {
     // Lote B (contrato §35.6/§37.6): a lista do checklist e o intervalo para a tela funcionar sem sinal; só com a flag ligada.
     const ck = this.lovB?.checklist && this.configs ? await this.configs.checklist() : null;
     const iv = this.lovB?.breaks && this.configs ? await this.configs.intervalo() : null;
+    // Lote C (contrato §38.1): o desconto e a validade para a tela de pedir escrever a frase sem sinal; só com a flag ligada.
+    const vc = this.lovC?.vouchers && this.vouchers ? await this.vouchers.config() : null;
     return {
       ...(await this.auth.me(c.id)),
       visit_flow,
@@ -94,6 +99,19 @@ export class CampoController {
           }
         : {}),
       ...(iv ? { breaks_config: { intervalo_ativo: iv.intervalo_ativo, intervalo_lembrete_min: iv.intervalo_lembrete_min } } : {}),
+      ...(vc
+        ? {
+            voucher_config: {
+              discount_type: vc.discount_type,
+              percent_off: vc.discount_type === 'PERCENT' ? vc.percent_off : null,
+              amount_off_cents: vc.discount_type === 'FIXED' ? vc.amount_off_cents : null,
+              single_use: vc.single_use,
+              validade_dias: vc.validade_dias,
+              min_job_hours: vc.min_job_hours,
+              coupons: this.lovC?.voucher_coupons ?? false,
+            },
+          }
+        : {}),
       features: {
         company_signup: this.signupLigado,
         earnings: this.earnings?.ligado ?? false,
@@ -106,6 +124,8 @@ export class CampoController {
         // Lote B (contrato §35.6, §37.6): checklist da visita e intervalo.
         checklist: this.lovB?.checklist ?? false,
         breaks: this.lovB?.breaks ?? false,
+        // Lote C (contrato §38.1): pedido de cupom da 1ª contratação.
+        vouchers: this.lovC?.vouchers ?? false,
       },
     };
   }

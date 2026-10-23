@@ -357,3 +357,51 @@ describe('FreelaClient — cadastro assistido (§26)', () => {
     await expect(new FreelaClient().listRegistrations('fc')).rejects.toBeInstanceOf(BadGatewayException);
   });
 });
+
+describe('FreelaClient — cupons e busca de contratante (§38.7)', () => {
+  beforeEach(configurar);
+  const CUPOM = {
+    id: 'c1', code: 'PRACA-ABCDEFGHIJ', discountType: 'PERCENT', percentOff: 100, amountOffInCents: null, contractorUserId: 'u1',
+    singleUse: true, active: true, expiresAt: '2026-11-22T02:59:59.000Z', redeemedAt: null, redeemedVacancyId: null, minJobHours: null,
+    createdAt: '2026-10-22T12:00:00.000Z', updatedAt: '2026-10-22T12:00:00.000Z',
+  };
+
+  it('createCoupon: POST /v1/admin/coupons com o corpo, resposta { data } validada com zod', async () => {
+    fetchMock.mockResolvedValueOnce(LOGIN_OK).mockResolvedValueOnce(resp(201, { data: CUPOM }));
+    const c = await new FreelaClient().createCoupon({ code: 'PRACA-ABCDEFGHIJ', discountType: 'PERCENT', percentOff: 100, contractorUserId: 'u1', singleUse: true });
+    expect(c).toEqual({ id: 'c1', code: 'PRACA-ABCDEFGHIJ', discountType: 'PERCENT', percentOff: 100, amountOffInCents: null, contractorUserId: 'u1', singleUse: true, active: true, expiresAt: '2026-11-22T02:59:59.000Z', redeemedAt: null });
+    const [url, init] = fetchMock.mock.calls[1]!;
+    expect(url).toBe(`${BASE}/v1/admin/coupons`);
+    expect((init as RequestInit).method).toBe('POST');
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({ code: 'PRACA-ABCDEFGHIJ', discountType: 'PERCENT', percentOff: 100, contractorUserId: 'u1', singleUse: true });
+  });
+
+  it('código repetido = FreelaHttpError 400 com freelaError.code COUPON_CODE_TAKEN', async () => {
+    fetchMock.mockResolvedValueOnce(LOGIN_OK).mockResolvedValueOnce(resp(400, { error: { code: 'COUPON_CODE_TAKEN', message: 'Código já existe.' } }));
+    const e = await new FreelaClient().createCoupon({ code: 'X', discountType: 'PERCENT', percentOff: 100, contractorUserId: 'u1', singleUse: true }).catch((x) => x);
+    expect(e).toBeInstanceOf(FreelaHttpError);
+    expect(e).toMatchObject({ freelaStatus: 400, freelaError: { code: 'COUPON_CODE_TAKEN' } });
+  });
+
+  it('resposta fora do formato = FREELA_ERROR de mensagem fixa', async () => {
+    fetchMock.mockResolvedValueOnce(LOGIN_OK).mockResolvedValueOnce(resp(201, { data: { id: 1 } }));
+    await expect(new FreelaClient().createCoupon({ code: 'X', discountType: 'PERCENT', percentOff: 100, contractorUserId: 'u1', singleUse: true })).rejects.toMatchObject({
+      response: { code: 'FREELA_ERROR', message: 'O Freela respondeu fora do formato esperado.' },
+    });
+  });
+
+  it('listCoupons, updateCoupon e searchContractors', async () => {
+    fetchMock
+      .mockResolvedValueOnce(LOGIN_OK)
+      .mockResolvedValueOnce(resp(200, { data: [CUPOM] }))
+      .mockResolvedValueOnce(resp(200, { data: { ...CUPOM, active: false } }))
+      .mockResolvedValueOnce(resp(200, { data: [{ userId: 'u1', name: 'Bom Pão', city: null, module: 'bars-restaurants' }] }));
+    const client = new FreelaClient();
+    expect((await client.listCoupons())[0]!.code).toBe('PRACA-ABCDEFGHIJ');
+    expect((await client.updateCoupon('c1', { active: false })).active).toBe(false);
+    expect(await client.searchContractors('Bom Pão & Cia')).toEqual([{ userId: 'u1', name: 'Bom Pão', city: null, module: 'bars-restaurants' }]);
+    expect(fetchMock.mock.calls[2]![0]).toBe(`${BASE}/v1/admin/coupons/c1`);
+    expect((fetchMock.mock.calls[2]![1] as RequestInit).method).toBe('PATCH');
+    expect(fetchMock.mock.calls[3]![0]).toBe(`${BASE}/v1/admin/crm/contractors/search?q=Bom%20P%C3%A3o%20%26%20Cia`);
+  });
+});

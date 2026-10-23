@@ -309,6 +309,10 @@ export class ConsultoresService {
     if (ganhos + fechamentos + declaracoes > 0) {
       throw new ConflictException({ code: 'HAS_EARNINGS', message: 'Este consultor tem ganhos lançados e não pode ser apagado. Desative o acesso em vez de apagar.' });
     }
+    // Pedido de cupom é um fato (FK Restrict + trigger, contrato §38.9): quem pediu é desativado, não apagado.
+    if (await this.prisma.field_vouchers.count({ where: { consultant_id: id } })) {
+      throw new ConflictException({ code: 'HAS_VOUCHER', message: 'Este consultor pediu cupons da 1ª contratação e não pode ser apagado. Desative o acesso em vez de apagar.' });
+    }
     const fotos = await this.prisma.field_visits.findMany({
       where: { consultant_id: id },
       select: { photo_key: true },

@@ -12,7 +12,7 @@ import { CONFIG_MODO_DESLIGADO, contaNaMeta } from '../../../domain/modo-campo-r
 import { resumoDia } from '../../../domain/resumo-dia-rules';
 import { ModoCampoService } from '../../rotas/modo-campo.service';
 import { RotasConfigService } from '../../rotas/rotas-config.service';
-import { LOVABLE_B_FLAGS, ROTAS_LIGADAS, type FlagsLovableB } from '../../rotas/rotas.tokens';
+import { LOVABLE_B_FLAGS, LOVABLE_C_FLAGS, ROTAS_LIGADAS, type FlagsLovableB, type FlagsLovableC } from '../../rotas/rotas.tokens';
 import { SIGNUP_SYNC_OPCOES, type OpcoesSignupSync } from '../signup-sync.tokens';
 import { CadastrosDoDiaService } from './cadastros-do-dia.service';
 
@@ -31,6 +31,7 @@ export class ResumoDiaService {
     @Optional() private readonly modo?: ModoCampoService,
     @Optional() @Inject(SIGNUP_SYNC_OPCOES) private readonly sync?: OpcoesSignupSync,
     @Optional() @Inject(LOVABLE_B_FLAGS) private readonly lovB?: FlagsLovableB,
+    @Optional() @Inject(LOVABLE_C_FLAGS) private readonly lovC?: FlagsLovableC,
   ) {}
 
   /** Só o PRÓPRIO consultor (id do token); até 35 dias para trás, nunca no futuro. */
@@ -89,7 +90,8 @@ export class ResumoDiaService {
       cadastros: cad.totais.get(c.id) ?? 0,
       fonte: cad.fontePorDia.get(dia) ?? 'freela_confirmed',
       syncLigado: this.sync?.ligado ?? false,
-      cuponsLigados: false,
+      // Lote C (§38.8): com os cupons ligados, a frase de cadastros volta a citar a oferta do cupom.
+      cuponsLigados: this.lovC?.vouchers ?? false,
       cfg,
     });
     return { day: dia, consultant_id: c.id, consultant_name: c.name, calculated_at: agora.toISOString(), ...r };

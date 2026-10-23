@@ -63,6 +63,7 @@ function fakePrisma() {
     field_earnings_ledger: { count: jest.fn().mockResolvedValue(0) },
     field_declared_signups: { count: jest.fn().mockResolvedValue(0) },
     field_payout_periods: { count: jest.fn().mockResolvedValue(0) },
+    field_vouchers: { count: jest.fn().mockResolvedValue(0) },
   };
 }
 
@@ -189,6 +190,15 @@ describe('ConsultoresService.update / resetPassword / remove', () => {
     const { s, freela } = montar(p);
 
     await expect(s.remove(CONS)).rejects.toMatchObject({ response: { code: 'HAS_EARNINGS' } });
+    expect(freela.desativarAntesDeApagar).not.toHaveBeenCalled();
+    expect(p.field_consultants.delete).not.toHaveBeenCalled();
+  });
+
+  it('consultor que pediu cupom não é apagado (409 HAS_VOUCHER) e nada é desligado', async () => {
+    const p = fakePrisma();
+    p.field_vouchers.count.mockResolvedValue(1);
+    const { s, freela } = montar(p);
+    await expect(s.remove(CONS)).rejects.toMatchObject({ response: { code: 'HAS_VOUCHER' } });
     expect(freela.desativarAntesDeApagar).not.toHaveBeenCalled();
     expect(p.field_consultants.delete).not.toHaveBeenCalled();
   });

@@ -9,6 +9,7 @@ import { validarPeriodo } from '../../../domain/heat-grid';
 import { montarPainel } from '../../../domain/painel-rules';
 import { RotasConfigService } from '../../rotas/rotas-config.service';
 import { SIGNUP_SYNC_OPCOES, type OpcoesSignupSync } from '../signup-sync.tokens';
+import { VouchersService } from '../vouchers/vouchers.service';
 import { CadastrosDoDiaService } from './cadastros-do-dia.service';
 import type { PainelQueryDto } from './painel.dto';
 
@@ -21,6 +22,7 @@ export class PainelService {
     private readonly configs: RotasConfigService,
     private readonly cadastros: CadastrosDoDiaService,
     @Optional() @Inject(SIGNUP_SYNC_OPCOES) private readonly sync?: OpcoesSignupSync,
+    @Optional() private readonly vouchers?: VouchersService,
   ) {}
 
   async painel(q: PainelQueryDto, agora = new Date()) {
@@ -67,6 +69,8 @@ export class PainelService {
       this.prisma.leads.count({ where: leadsBase }),
       this.configs.painel(),
     ]);
+    // Cupons (§38.8): só com a flag; desligada, nenhuma consulta e o cartão "Não ligado" de hoje.
+    const cupons = this.vouchers?.ligado ? await this.vouchers.resumoPainel(from, to, q.praca_id) : null;
     const naRota = new Set(paradas.map((p) => p.visit_id).filter((id): id is string => !!id));
     const planejadas = paradas.filter((p) => p.kind === 'planejada' && p.status !== 'descartada');
     const calculado = montarPainel({
@@ -92,6 +96,7 @@ export class PainelService {
       leadsMapeados: exatos,
       leadsSemLocalizacao: Math.max(0, todos - exatos),
       cfg,
+      ...(cupons ? { cupons, cuponsNoFreela: this.vouchers?.cuponsNoFreela ?? false } : {}),
     });
     return {
       from,

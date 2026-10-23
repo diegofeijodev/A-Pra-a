@@ -47,6 +47,12 @@ import { SignupsCampoController, SignupsEquipeController } from './signups.contr
 import { SignupsLeituraService } from './signups-leitura.service';
 import { VisitsService } from './visits.service';
 import { BreaksService } from './breaks.service';
+import { VoucherCouponsService } from './vouchers/voucher-coupons.service';
+import { VouchersCampoController, VouchersEquipeController } from './vouchers/vouchers.controller';
+import { VouchersLigadoGuard } from './vouchers/vouchers.guard';
+import { PrismaVouchersRepository, VOUCHERS_REPOSITORY } from './vouchers/vouchers.repository';
+import { VouchersService } from './vouchers/vouchers.service';
+import { voucherIssuerProvider } from './vouchers/vouchers.tokens';
 
 /**
  * Consultores de campo — spec 2026-10-08, contrato §20.
@@ -68,6 +74,9 @@ import { BreaksService } from './breaks.service';
     ResumoDiaCampoController,
     PinosEquipeController,
     PinosCampoController,
+    // Lote C (contrato §38): `/v1/consultores/vouchers` antes do `:id` de ConsultoresController.
+    VouchersEquipeController,
+    VouchersCampoController,
     PayoutsCampoController,
     EarningsCampoController,
     SignupsCampoController,
@@ -111,6 +120,11 @@ import { BreaksService } from './breaks.service';
     DashboardLigadoGuard,
     DaySummaryLigadoGuard,
     MapPinsLigadoGuard,
+    VouchersService,
+    VoucherCouponsService,
+    VouchersLigadoGuard,
+    voucherIssuerProvider,
+    { provide: VOUCHERS_REPOSITORY, useClass: PrismaVouchersRepository },
     { provide: PAYOUTS_REPOSITORY, useClass: PrismaPayoutsRepository },
     { provide: EARNINGS_REPOSITORY, useClass: PrismaEarningsRepository },
     { provide: EARNINGS_INPUTS, useClass: PrismaEarningsInputs },
@@ -118,6 +132,6 @@ import { BreaksService } from './breaks.service';
     // largada; reler pelo mesmo schema dá o PHOTO_STORAGE já resolvido.
     { provide: PHOTO_STORAGE, useFactory: () => criarPhotoStorage(validateEnv(process.env)) },
   ],
-  exports: [CampoFreelaService],
+  exports: [CampoFreelaService, VoucherCouponsService],
 })
 export class CampoModule {}
