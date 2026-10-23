@@ -89,6 +89,8 @@ export function GanhosConsultor({ consultantId, nome }: { consultantId: string; 
   const fechar = useFecharSemana();
   const estornar = useEstornarAjuste();
   const [ajuste, setAjuste] = useState(false);
+  // A regra própria só monta quando o admin abre a seção (não busca a regra nem roda o simulador à toa).
+  const [regraAberta, setRegraAberta] = useState(false);
 
   if (q.isError && remuneracaoDesligada(q.error)) return null;
   if (q.isPending) return <p className="mt-6 text-sm text-muted-foreground">Carregando os ganhos…</p>;
@@ -244,9 +246,9 @@ export function GanhosConsultor({ consultantId, nome }: { consultantId: string; 
       )}
       {ajuste && <AjusteDialog consultantId={consultantId} onFechar={() => setAjuste(false)} />}
       {regraPropriaOn && (
-        <details className="card-surface p-4">
+        <details className="card-surface p-4" onToggle={(e) => setRegraAberta(e.currentTarget.open)}>
           <summary className="min-h-12 cursor-pointer text-sm font-bold leading-[3rem]">Regra de pagamento deste consultor</summary>
-          <RemuneracaoConfig consultor={{ id: consultantId, name: nome ?? c?.name ?? 'o consultor' }} />
+          {regraAberta && <RemuneracaoConfig consultor={{ id: consultantId, name: nome ?? c?.name ?? 'o consultor' }} />}
         </details>
       )}
     </section>

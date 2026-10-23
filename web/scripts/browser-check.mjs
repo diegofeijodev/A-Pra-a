@@ -997,10 +997,15 @@ console.log('-- Campo: GPS negado --');
     check('Mês: a ajuda mostra a data real do Pix (mês → dia do Pix)', /\(\S+ → (seg|ter|qua|qui|sex|sáb|dom) \d{2}\/\d{2}\)/.test(await page.locator('body').innerText()));
     check('Mês: "o maior dos dois" fica desligado e o teto também', (await page.locator('#rem-combine option[value="max"]').isDisabled()) && (await page.locator('#rem-cap').isDisabled()));
     await page.getByLabel('Simular o mês').check();
-    await page.getByText('o bônus do mês é').first().waitFor({ timeout: 15000 });
+    // Espera o RESULTADO do simulador (a ajuda do período também diz "O bônus do mês é pago…").
+    await page.getByText(/no mês, o bônus do mês é/).first().waitFor({ timeout: 15000 });
     check('Simular o mês: calcula pela mesma função do servidor, com a conta', (await corpo(page)).includes('no mês, o bônus do mês é') && (await corpo(page)).includes('bônus do mês: r$'));
     await page.getByLabel('Simular o mês').uncheck();
+    // Voltar para "Dia" refaz a simulação (com pausa de 400 ms): espera a resposta antes de sair da página (senão o POST é abortado).
+    const simDia = page.waitForResponse((r) => r.url().includes('/v1/consultores/earnings/simulate'), { timeout: 15000 });
     await page.locator('#rem-period').selectOption('day');
+    await simDia;
+    await page.waitForLoadState('networkidle');
     check('Mês: só preenche o formulário, nenhuma versão nova', (await api('GET', '/v1/consultores/earnings/config')).history.length === versoesAntesF1);
   }
   if (remFeat.per_consultant_enabled && consultorId) {
@@ -1011,7 +1016,9 @@ console.log('-- Campo: GPS negado --');
     await resumo.first().click();
     await page.getByText('Hoje vale:').first().waitFor({ timeout: 15000 });
     check('Consultor: "Hoje vale: Regra geral · versão N" (sem regra própria)', /hoje vale: regra geral · versão \d+\./.test(await corpo(page)));
-    check('Consultor: o calendário fica com a regra geral (sem os campos da semana)', (await page.locator('#rem-wstart').count()) === 0 && (await page.getByRole('button', { name: 'Salvar regra própria' }).count()) === 1);
+    check('Consultor: o calendário fica com a regra geral (sem os campos da semana)', (await page.locator('#rem-wstart').count()) === 0 && (await page.getByRole('button', { name: 'Salvar regra própria' }).count()) === 1);    // O simulador da regra própria roda sozinho ao abrir: espera a resposta antes de sair da página (senão o POST é abortado).
+    await page.getByText('o consultor ganha').first().waitFor({ timeout: 15000 });
+    check('Consultor: o simulador da regra própria responde pela mesma função do servidor', (await corpo(page)).includes('num dia, o consultor ganha'));
   }
 
   // ── Restante da Lovable, lote A (contrato §33/§34): links e telas só com as flags; desligadas, nada é sondado (sem 404) ──
