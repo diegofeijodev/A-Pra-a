@@ -27,7 +27,6 @@ export function controllersDoApp(): Classe[] {
   // O `ConfigModule.forRoot({ validate })` do AppModule valida o ambiente no import: o mínimo para importar sem banco.
   process.env.DATABASE_URL ??= 'postgresql://x:y@localhost:5437/x';
   process.env.JWT_SECRET ??= 'segredo-de-teste-com-tamanho-suficiente-1234567890';
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { AppModule } = require('../../app.module') as { AppModule: Classe };
   const vistos = new Set<unknown>();
   const ctrls = new Set<Classe>();

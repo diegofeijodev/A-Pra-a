@@ -157,7 +157,7 @@ describe('gestor (§42.3)', () => {
   it('o corpo que o web do gestor manda (sem Pix, modo e banco) passa; endereço ele muda', async () => {
     const p = fakePrisma();
     const s = montar(p, { consultant_profile: true, team_gestor: true });
-    const { pix_key: _a, pix_key_type: _b, visit_flow: _c, ...semProibidos } = EDICAO_WEB;
+    const semProibidos = Object.fromEntries(Object.entries(EDICAO_WEB).filter(([k]) => !['pix_key', 'pix_key_type', 'visit_flow'].includes(k)));
     await s.update(CONS, await upd({ ...semProibidos, address_city: 'Contagem' }), GESTOR);
     expect(p.field_consultants.update.mock.calls[0][0].data).toMatchObject({ name: 'Ana Souza', address_city: 'Contagem' });
     expect(p.field_consultants.update.mock.calls[0][0].data).not.toHaveProperty('pix_key');

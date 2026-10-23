@@ -200,7 +200,7 @@ describe('controllers — quem acessa o quê', () => {
   it('escrita da equipe e da configuração é só admin; leitura não', () => {
     const marca = (C: any, m: string) => Reflect.getMetadata(ADMIN_ONLY_KEY, C.prototype[m]);
     // Lote E §42.3: montar/ordenar/reotimizar passaram a gestor ou admin (a configuração segue só admin).
-    for (const m of ['build', 'order', 'reoptimize']) expect(Reflect.getMetadata(PERMISSAO_KEY, (RotasEquipeController.prototype as any)[m])).toBe('gestor');
+    for (const m of ['build', 'order', 'reoptimize'] as const) expect(Reflect.getMetadata(PERMISSAO_KEY, RotasEquipeController.prototype[m])).toBe('gestor');
     for (const m of ['list', 'candidates', 'get']) expect(marca(RotasEquipeController, m)).toBeUndefined();
     expect(marca(RotasConfigController, 'put')).toBe(true);
     expect(marca(RotasConfigController, 'get')).toBeUndefined();

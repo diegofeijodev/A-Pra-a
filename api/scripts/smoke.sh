@@ -1949,7 +1949,9 @@ CRIA_CAMPO=$(curl -s -o /tmp/praca-smoke-campo.json -w '%{http_code}' -X POST $A
 check "diego cria consultor = 201" "201" "$CRIA_CAMPO"
 CONS_ID=$(jq -r .consultant.id /tmp/praca-smoke-campo.json)
 SENHA_TEMP=$(jq -r .temp_password /tmp/praca-smoke-campo.json)
-check "senha provisória de 10 caracteres" "10" "${#SENHA_TEMP}"
+# Lote E §41.2: a provisória passou a cumprir a política mais forte permitida (12, com maiúscula, minúscula e número), com ou sem a flag.
+check "senha provisória de 12 caracteres, com maiúscula, minúscula e número" "12|true" \
+  "${#SENHA_TEMP}|$(echo "$SENHA_TEMP" | grep -qE '[A-Z]' && echo "$SENHA_TEMP" | grep -qE '[a-z]' && echo "$SENHA_TEMP" | grep -qE '[0-9]' && echo true || echo false)"
 check "consultor não vaza password_hash" "false" "$(jq '.consultant | has("password_hash")' /tmp/praca-smoke-campo.json)"
 check "sem Freela configurado: código pendente com o motivo" "true" \
   "$(jq '.consultant.freela_code == null and (.consultant.freela_sync_error | startswith("Conexão com o Freela não configurada"))' /tmp/praca-smoke-campo.json)"
@@ -2161,6 +2163,30 @@ check "shoppings = MALLS_DISABLED; busca kind shoppings = MALLS_DISABLED (nada g
 check "candidatos com scope (flag desligada) = 404" "404" "$(curl -s -o /dev/null -w '%{http_code}' "$API/v1/routes/candidates?praca_id=$PRACA_SEED&scope=geral" -H "$HD")"
 check "busca sem kind: área continua obrigatória com a mesma frase" "400|area_id: area_id must be a string" \
   "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' -X POST $API/v1/place-searches -H "$J" -H "$HD" -d "{\"praca_id\":\"$PRACA_SEED\",\"types\":[\"bar\"]}")|$(jq -r .error.message /tmp/praca-smoke-l.json)"
+
+echo "── Restante da Lovable, lote E (§41/§42), flags desligadas: nada muda ──"
+# Com PASSWORD_POLICY_ENABLED, FIELD_CONSULTANT_PROFILE_ENABLED, FIELD_CONTACT_EMAIL_ENABLED e TEAM_GESTOR_ENABLED desligadas
+# (padrão) nada novo vai no wire e as permissões são as de hoje. Ligadas: `scripts/smoke-lovable-e.sh` (não roda junto).
+check "/me: password_policy e contact_email desligados" "false|false" "$(echo "$ME_FLAG" | jq -r '"\(.features.password_policy)|\(.features.contact_email)"')"
+check "config: features do lote E desligadas" "false|false|false|false" \
+  "$(curl -s $API/v1/consultores/settings/config -H "$HD" | jq -r '"\(.features.password_policy)|\(.features.consultant_profile)|\(.features.contact_email)|\(.features.team_gestor)"')"
+check "regra de senha: GET 200 enabled false (público); PUT = PASSWORD_POLICY_DISABLED" "200|false|404|PASSWORD_POLICY_DISABLED" \
+  "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' $API/v1/password-policy)|$(jq -r .enabled /tmp/praca-smoke-l.json)|$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' -X PUT $API/v1/password-policy -H "$J" -H "$HD" -d '{"min_length":10}')|$(jq -r .error.code /tmp/praca-smoke-l.json)"
+check "UserView sem is_gestor (login e /me)" "false|false" \
+  "$(curl -s -X POST $API/v1/auth/login -H "$J" -d '{"email":"rebeca@praca.local","password":"praca123"}' | jq '.user | has("is_gestor")')|$(curl -s $API/v1/auth/me -H "$HN" | jq '.user | has("is_gestor")')"
+check "is_gestor no PATCH de pessoa = TEAM_GESTOR_DISABLED; null é ignorado" "422|TEAM_GESTOR_DISABLED|200" \
+  "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' -X PATCH $API/v1/users/$REBECA_ID -H "$J" -H "$HD" -d '{"is_gestor":true}')|$(jq -r .error.code /tmp/praca-smoke-l.json)|$(curl -s -o /dev/null -w '%{http_code}' -X PATCH $API/v1/users/$REBECA_ID -H "$J" -H "$HD" -d '{"is_gestor":null}')"
+# Mesmo com a coluna marcada à mão, a flag desligada faz a Rebeca continuar equipe: 403 com a frase de hoje nas rotas do gestor.
+docker exec praca-postgres psql -U praca -d praca -qtAc "update users set is_gestor = true where id = '$REBECA_ID'" > /dev/null 2>&1
+check "gestor com a flag desligada = 403 de hoje (área, consultor, busca, roteiro)" "Só administradores podem fazer isso.|FORBIDDEN|FORBIDDEN|FORBIDDEN" \
+  "$(curl -s -X POST $API/v1/areas -H "$J" -H "$HN" -d "{\"praca_id\":\"$PRACA_SEED\",\"name\":\"x\",\"lat\":-19.9,\"lng\":-43.9,\"radius_m\":800}" | jq -r .error.message)|$(curl -s -X POST $API/v1/consultores -H "$J" -H "$HN" -d '{}' | jq -r .error.code)|$(curl -s "$API/v1/place-searches?praca_id=$PRACA_SEED" -H "$HN" | jq -r .error.code)|$(curl -s -X POST $API/v1/routes -H "$J" -H "$HN" -d '{}' | jq -r .error.code)"
+docker exec praca-postgres psql -U praca -d praca -qtAc "update users set is_gestor = false where id = '$REBECA_ID'" > /dev/null 2>&1
+check "consultor: visão sem endereço/banco; endereço no PATCH = CONSULTANT_PROFILE_DISABLED; null ignorado" "false|false|422|CONSULTANT_PROFILE_DISABLED|200" \
+  "$(curl -s $API/v1/consultores/$CONS_ID -H "$HD" | jq -r '"\(has("address_city"))|\(has("bank_account_masked"))"')|$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' -X PATCH $API/v1/consultores/$CONS_ID -H "$J" -H "$HD" -d '{"address_city":"BH"}')|$(jq -r .error.code /tmp/praca-smoke-l.json)|$(curl -s -o /dev/null -w '%{http_code}' -X PATCH $API/v1/consultores/$CONS_ID -H "$J" -H "$HD" -d '{"address_city":null,"bank_name":null}')"
+check "contato_campos com email = 400 com a frase de hoje" "400|contato_campos: valor fora do permitido." \
+  "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' -X PUT $API/v1/consultores/settings/config -H "$J" -H "$HD" -d '{"contato_campos":["nome","email"]}')|$(jq -r .error.message /tmp/praca-smoke-l.json)"
+check "Clientes > Lista = MAP_PINS_DISABLED" "404|MAP_PINS_DISABLED" \
+  "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' $API/v1/consultores/map/list -H "$HD")|$(jq -r .error.code /tmp/praca-smoke-l.json)"
 
 check "CRM: UM evento de visita do consultor, com a etapa nova" "1|3" \
   "$(echo "$LEAD_DEPOIS" | jq -r --arg a "Consultor: Consultor $SUF" '[.events[] | select(.kind=="visit" and .author_label==$a)] | "\(length)|\(.[0].stage_to)"')"
