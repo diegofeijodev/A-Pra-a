@@ -10,6 +10,7 @@ import type { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { AuthUser } from '../../common/auth/auth-user';
 import { PrismaService } from '../../common/database/prisma.service';
+import { LOVABLE_E_FLAGS, type FlagsLovableE } from '../../common/flags/lovable-e.flags';
 import { isUuid } from '../../common/ids/uuid';
 import { digits } from '../../common/phone/phone';
 import { isDateString, todaySp } from '../../common/time/dates';
@@ -118,6 +119,7 @@ export class ConsultoresService {
     @Inject(PHOTO_STORAGE) private readonly fotos: PhotoStorage,
     @Optional() private readonly signups?: SignupsLeituraService,
     @Optional() private readonly modo?: ModoCampoService,
+    @Optional() @Inject(LOVABLE_E_FLAGS) private readonly lovE?: FlagsLovableE,
   ) {}
 
   /** Fluxo da visita que vale para o consultor agora (contrato §31.1); sem o serviço, `completo`. */
@@ -351,7 +353,8 @@ export class ConsultoresService {
     return {
       day,
       journeys: jornadas.map((j) => ({ ...journeyView(j), points: j.points.map(pointView) })),
-      visits: visitas.map((v) => visitView(v, hoje)),
+      // Lote E §41.4: o detalhe da equipe vê o e-mail de quem atendeu completo (como o telefone do §30.3), só com a flag.
+      visits: visitas.map((v) => visitView(v, hoje, undefined, this.lovE?.contact_email ? { contact_email: true } : {})),
     };
   }
 

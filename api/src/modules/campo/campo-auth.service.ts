@@ -1,8 +1,9 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../common/database/prisma.service';
 import { CAMPO_AUDIENCE, type CampoTokenPayload } from '../../common/guards/campo-auth.guard';
+import { PasswordPolicyService } from '../password-policy/password-policy.service';
 import { lerCanais } from './campo-canais';
 import { COM_PRACA } from './campo-prisma';
 import { signupUrl } from './campo-links';
@@ -55,6 +56,7 @@ export class CampoAuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    @Optional() private readonly senhas?: PasswordPolicyService,
   ) {}
 
   async login(email: string, password: string): Promise<CampoLoginView> {
@@ -84,6 +86,8 @@ export class CampoAuthService {
     if (dto.new_password === dto.current_password) {
       throw new BadRequestException({ code: 'SAME_PASSWORD', message: 'A senha nova precisa ser diferente da atual.' });
     }
+    // Lote E §41.2: a regra vale só para a senha NOVA (nunca a atual nem o login), e só com a flag.
+    await this.senhas?.exigir(dto.new_password);
     const atualizado = await this.prisma.field_consultants.update({
       where: { id },
       data: {

@@ -264,6 +264,12 @@ export class AnswersDto {
   @MaxLength(30)
   contact_phone?: string | null;
 
+  /** Lote E §41.4: e-mail de quem atendeu; validado no serviço. `null`/ausente = ignorado; valor com a flag desligada = `422 CONTACT_EMAIL_DISABLED`. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  contact_email?: string | null;
+
   /** Contrato §31.5: resultado do fluxo simples; só aceito em visita `simples` (senão `422 FLOW_MODE_MISMATCH`). */
   @IsOptional()
   @IsIn([...RESULTADOS_SIMPLES])

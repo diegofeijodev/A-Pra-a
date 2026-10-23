@@ -5,7 +5,6 @@
  * distância, carimbo de hora, completude do questionário e regra de estágio
  * testáveis sem subir a API.
  */
-import { randomInt } from 'node:crypto';
 import { isUuid } from '../common/ids/uuid';
 import { MOTIVO_RECUSA_COM_TEXTO, CHAVES_MOTIVO_RECUSA, rotuloMotivoRecusa } from './catalog/refusal';
 import { grupoConfig, inteiroEntre } from './config-grupo';
@@ -121,6 +120,8 @@ export interface RespostasVisita {
   refusal_note?: string | null;
   followup_time?: string | null;
   contact_phone?: string | null;
+  /** Lote E §41.4: e-mail de quem atendeu; só existe no wire com `FIELD_CONTACT_EMAIL_ENABLED`. */
+  contact_email?: string | null;
   /** Modo do chefe §31 — só o fluxo `simples` preenche; ausente = `null`. */
   result?: string | null;
   distance_note?: string | null;
@@ -263,6 +264,26 @@ export function mascararTelefoneContato(d: string | null | undefined): string | 
   return null;
 }
 
+/**
+ * Lote E §41.4: e-mail de quem atendeu — aparado, minúsculo, `""` = sem e-mail; `local@dominio.tld` sem espaço, até 120.
+ * O erro nunca repete o valor (dado pessoal de terceiro).
+ */
+export function normalizarEmailContato(bruto: string | null | undefined): { ok: true; valor: string | null } | { ok: false } {
+  if (bruto == null) return { ok: true, valor: null };
+  const e = bruto.trim().toLowerCase();
+  if (e === '') return { ok: true, valor: null };
+  if (e.length > 120 || !/^[^\s@]+@[^\s@]+\.[^\s@.]+$/.test(e) || /\.\./.test(e)) return { ok: false };
+  return { ok: true, valor: e };
+}
+
+/** `m***@dominio.com` (a 1ª letra + o domínio inteiro); `null` sem e-mail. */
+export function mascararEmailContato(e: string | null | undefined): string | null {
+  if (!e) return null;
+  const i = e.indexOf('@');
+  if (i < 1) return null;
+  return `${e[0]}***${e.slice(i)}`;
+}
+
 /** A visita é conversa presencial: 1 ou 2 → 3; de 3 em diante mantém (5 é do bloco C). */
 export const estagioDepoisDaVisita = (stage: number): number => (stage === 1 || stage === 2 ? 3 : stage);
 
@@ -345,11 +366,5 @@ export function situacaoHoje(jornadasDeHoje: { ended_at: Date | null }[]): Situa
   return jornadasDeHoje.length > 0 ? 'encerrou' : 'nao_iniciou';
 }
 
-const ALFABETO_SENHA = 'abcdefghjkmnpqrstuvwxyz23456789';
-
-/** Senha provisória de 10 caracteres, sem os ambíguos (0/o, 1/l/i). */
-export function gerarSenhaProvisoria(sorteio: (max: number) => number = randomInt): string {
-  let s = '';
-  for (let i = 0; i < 10; i += 1) s += ALFABETO_SENHA[sorteio(ALFABETO_SENHA.length)];
-  return s;
-}
+/** Senha provisória (lote E, contrato §41.2): mora em `senha-rules.ts`; reexportada aqui para os chamadores de sempre. */
+export { gerarSenhaProvisoria } from './senha-rules';

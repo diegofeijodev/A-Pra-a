@@ -32,7 +32,8 @@ export const ROTULO_RESULTADO: Record<ResultadoSimples, string> = {
 
 /** Resultados em que faz sentido exigir contato (o "fechado" nunca: não há com quem falar). */
 export const RESULTADOS_COM_CONTATO = ['cadastrou', 'ja_usa', 'retorno', 'sem_interesse'] as const;
-export const CAMPOS_CONTATO = ['nome', 'cargo', 'telefone'] as const;
+/** Lote E §41.4: `email` entra no fim da ordem canônica; só vale com `FIELD_CONTACT_EMAIL_ENABLED` (a leitura o tira com a flag desligada). */
+export const CAMPOS_CONTATO = ['nome', 'cargo', 'telefone', 'email'] as const;
 export type CampoContato = (typeof CAMPOS_CONTATO)[number];
 export const JUSTIFICATIVAS_DISTANCIA = ['nao', 'opcional', 'obrigatoria'] as const;
 export type JustificativaDistancia = (typeof JUSTIFICATIVAS_DISTANCIA)[number];
@@ -239,6 +240,7 @@ export function faltandoSimples(
     if (cfg.contato_campos.includes('nome') && vazio(r.interlocutor_name)) f.push('nome de quem atendeu');
     if (cfg.contato_campos.includes('cargo') && !r.interlocutor_role) f.push('cargo de quem atendeu');
     if (cfg.contato_campos.includes('telefone') && vazio(r.contact_phone)) f.push('telefone de quem atendeu');
+    if (cfg.contato_campos.includes('email') && vazio(r.contact_email)) f.push('e-mail de quem atendeu');
   }
   if (ctx.far_from_place && cfg.justificativa_distancia === 'obrigatoria' && vazio(r.distance_note)) {
     f.push('motivo de a visita ter sido longe do local');

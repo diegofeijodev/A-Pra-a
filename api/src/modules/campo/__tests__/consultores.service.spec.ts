@@ -101,7 +101,8 @@ describe('ConsultoresService.create', () => {
       pix_key: '52998224725',
       created_by: DIEGO,
     });
-    expect(r.temp_password).toMatch(/^[a-z2-9]{10}$/);
+    // Lote E §41.2: 12 caracteres com maiúscula, minúscula e número (cumpre a política mais forte permitida).
+    expect(r.temp_password).toMatch(/^[A-HJKMNP-Za-hjkmnp-z2-9]{12}$/);
     expect(await bcrypt.compare(r.temp_password, data.password_hash as string)).toBe(true);
     expect(freela.sync).toHaveBeenCalledWith(CONS);
     expect(r.consultant).not.toHaveProperty('password_hash');

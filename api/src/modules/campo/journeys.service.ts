@@ -14,6 +14,7 @@ import type { PontosDto, PosicaoDto, StartJourneyDto } from './dto/campo.dto';
 import { RotasCampoService } from '../rotas/rotas-campo.service';
 import { RotasConfigService } from '../rotas/rotas-config.service';
 import { LOVABLE_B_FLAGS, type FlagsLovableB } from '../rotas/rotas.tokens';
+import { LOVABLE_E_FLAGS, type FlagsLovableE } from '../../common/flags/lovable-e.flags';
 import { violouUnico } from './prisma-errors';
 import { SignupsLeituraService, type Contagem } from './signups-leitura.service';
 
@@ -62,6 +63,7 @@ export class JourneysService {
     @Optional() private readonly signups?: SignupsLeituraService,
     @Optional() private readonly modo?: ModoCampoService,
     @Optional() @Inject(LOVABLE_B_FLAGS) private readonly lovB?: FlagsLovableB,
+    @Optional() @Inject(LOVABLE_E_FLAGS) private readonly lovE?: FlagsLovableE,
   ) {}
 
   /** Meta do dia do consultor. A leitura do Hoje nunca falha por causa dela. */
@@ -117,7 +119,7 @@ export class JourneysService {
     ]);
     // Modo do chefe §31: com a flag desligada nenhuma visita é `simples`, então o padrão basta (e nada é lido a mais).
     const modoCfg = this.modo?.ligado ? await this.modo.config() : CONFIG_MODO_DESLIGADO;
-    const views = visitas.map((v) => visitView(v, hoje, modoCfg, { checklist: this.lovB?.checklist === true }));
+    const views = visitas.map((v) => visitView(v, hoje, modoCfg, { checklist: this.lovB?.checklist === true, contact_email: this.lovE?.contact_email === true }));
     // Lote B §37.6: intervalos do dia (só com a flag; desligada, nenhuma consulta nova e nenhuma chave nova).
     const pausas = this.intervaloLigado
       ? await this.prisma.field_journey_breaks.findMany({ where: { consultant_id: c.id, journey: { day: hoje } }, orderBy: { started_at: 'asc' } })

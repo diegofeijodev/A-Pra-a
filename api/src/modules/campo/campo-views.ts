@@ -145,13 +145,16 @@ export function respostasDe(v: RespostasVisita): RespostasVisita {
   };
 }
 
-/** Opções do lote B: com o checklist desligado a projeção é a de hoje, byte a byte. */
+/** Opções dos lotes B e E: com as flags desligadas a projeção é a de hoje, byte a byte. */
 export interface OpcoesView {
   checklist?: boolean;
+  /** Lote E §41.4: `answers.contact_email` só com `FIELD_CONTACT_EMAIL_ENABLED` (completo: o consultor dono e o detalhe da equipe). */
+  contact_email?: boolean;
 }
 
 export function visitView(v: VisitRow, hoje: string, modo: ConfigModo = CONFIG_MODO_PADRAO, opcoes: OpcoesView = {}): VisitView {
   const answers = respostasDe(v);
+  if (opcoes.contact_email) answers.contact_email = (v as { contact_email?: string | null }).contact_email ?? null;
   const foto = opcoes.checklist ? lerFotoChecklist(v.checklist) : null;
   const fechada = !!v.checkout_at || v.auto_closed;
   const view: VisitView = {

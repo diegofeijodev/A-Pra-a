@@ -10,6 +10,7 @@ import { PrismaModule } from './common/database/prisma.module';
 import { CampoAuthGuard } from './common/guards/campo-auth.guard';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { HealthModule } from './common/health/health.module';
+import { LovableEFlagsModule } from './common/flags/lovable-e.flags';
 import { ActionsModule } from './modules/actions/actions.module';
 import { AreasModule } from './modules/areas/areas.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -25,6 +26,7 @@ import { LeadsModule } from './modules/leads/leads.module';
 import { MessagesModule } from './modules/messages/messages.module';
 import { MidiaModule } from './modules/midia/midia.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { PasswordPolicyModule } from './modules/password-policy/password-policy.module';
 import { PlacesModule } from './modules/places/places.module';
 import { PracasModule } from './modules/pracas/pracas.module';
 import { RotasModule } from './modules/rotas/rotas.module';
@@ -37,6 +39,9 @@ import { UsersModule } from './modules/users/users.module';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
     ScheduleModule.forRoot(),
     PrismaModule,
+    // Lote E da Lovable (contrato §41/§42): flags transversais (guarda global, pessoas, campo).
+    LovableEFlagsModule,
+    PasswordPolicyModule,
     HealthModule,
     AuthModule,
     UsersModule,

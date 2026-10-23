@@ -4,12 +4,14 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { AuthUser } from '../../common/auth/auth-user';
 import { PrismaService } from '../../common/database/prisma.service';
 import { isUuid } from '../../common/ids/uuid';
 import { AuthService } from '../auth/auth.service';
+import { PasswordPolicyService } from '../password-policy/password-policy.service';
 import { CreateUserDto, SetPasswordDto, UpdateMeDto, UpdateUserDto } from './dto/users.dto';
 
 @Injectable()
@@ -17,6 +19,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auth: AuthService,
+    @Optional() private readonly senhas?: PasswordPolicyService,
   ) {}
 
   list() {
@@ -30,6 +33,8 @@ export class UsersService {
     if (await this.prisma.users.findUnique({ where: { email } })) {
       throw new ConflictException({ code: 'EMAIL_IN_USE', message: 'Já existe uma conta com este e-mail.' });
     }
+    // Lote E §41.2: a senha inicial definida pelo admin é senha NOVA (só com a flag).
+    await this.senhas?.exigir(dto.password);
     const user = await this.prisma.users.create({
       data: {
         email,
@@ -94,6 +99,7 @@ export class UsersService {
       });
     }
     await this.findOrFail(id);
+    await this.senhas?.exigir(dto.password);
     await this.prisma.users.update({
       where: { id },
       data: { password_hash: await bcrypt.hash(dto.password, 10) },

@@ -18,6 +18,7 @@ import {
 import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { CampoConsultant } from '../../common/auth/campo-consultant';
+import { LOVABLE_E_FLAGS, type FlagsLovableE } from '../../common/flags/lovable-e.flags';
 import { AllowPendingPassword, CampoRoute } from '../../common/decorators/campo-route.decorator';
 import { CurrentConsultant } from '../../common/decorators/current-consultant.decorator';
 import { ModoCampoService } from '../rotas/modo-campo.service';
@@ -68,6 +69,7 @@ export class CampoController {
     @Optional() @Inject(LOVABLE_C_FLAGS) private readonly lovC?: FlagsLovableC,
     @Optional() private readonly vouchers?: VouchersService,
     @Optional() @Inject(LOVABLE_D_FLAGS) private readonly lovD?: FlagsLovableD,
+    @Optional() @Inject(LOVABLE_E_FLAGS) private readonly lovE?: FlagsLovableE,
   ) {}
 
   @AllowPendingPassword()
@@ -138,6 +140,9 @@ export class CampoController {
         vouchers: this.lovC?.vouchers ?? false,
         // Lote D (contrato §39.7): "Próximos dias" (as rotas futuras do próprio consultor).
         route_plans: this.lovD?.route_plans ?? false,
+        // Lote E (contrato §41.1): a regra da senha nova (a tela lê `GET /v1/password-policy`) e o e-mail de quem atendeu.
+        password_policy: this.lovE?.password_policy ?? false,
+        contact_email: this.lovE?.contact_email ?? false,
       },
     };
   }

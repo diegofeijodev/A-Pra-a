@@ -178,3 +178,27 @@ describe('RotasConfigService — checklist da visita (lote B, §35.2)', () => {
     }
   });
 });
+
+describe('Lote E §41.4 — email em contato_campos', () => {
+  const flags = (on: boolean) => ({ password_policy: false, consultant_profile: false, contact_email: on, team_gestor: false });
+  it('desligada: PUT com email = 400 com a mensagem de hoje; gravado antes, sai na leitura (o resto da lista vale)', async () => {
+    const p = fakePrisma();
+    const s = new RotasConfigService(p as unknown as PrismaService, flags(false));
+    const e = await falha(() => s.atualizar({ contato_campos: ['nome', 'email'] }, ADMIN, AGORA));
+    expect(e).toMatchObject({ response: { code: 'VALIDATION_ERROR', message: 'contato_campos: valor fora do permitido.' } });
+    expect(p.app_settings.upsert).not.toHaveBeenCalled();
+    p.app_settings.findUnique.mockResolvedValue({ field_config: { contato_campos: ['nome', 'email'] } });
+    expect((await s.modo()).contato_campos).toEqual(['nome']);
+    expect((await s.view()).contato_campos).toEqual(['nome']);
+    // Sem o provedor (testes antigos): o mesmo que desligada.
+    expect((await new RotasConfigService(p as unknown as PrismaService).modo()).contato_campos).toEqual(['nome']);
+  });
+  it('ligada: grava e lê o email no fim da ordem canônica', async () => {
+    const p = fakePrisma();
+    const s = new RotasConfigService(p as unknown as PrismaService, flags(true));
+    await s.atualizar({ contato_campos: ['email', 'telefone'] }, ADMIN, AGORA);
+    expect(p.app_settings.upsert.mock.calls[0][0].update.field_config.contato_campos).toEqual(['telefone', 'email']);
+    p.app_settings.findUnique.mockResolvedValue({ field_config: { contato_campos: ['telefone', 'email'] } });
+    expect((await s.modo()).contato_campos).toEqual(['telefone', 'email']);
+  });
+});

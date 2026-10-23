@@ -1,5 +1,6 @@
 import { validateEnv } from '../config/env.validation';
 import { lerFlagsLovableD, velocidadeCarroKmh } from '../../modules/rotas/rotas.tokens';
+import { lerFlagsLovableE } from '../flags/lovable-e.flags';
 
 const BASE = { DATABASE_URL: 'postgresql://praca:praca@localhost:5437/praca', JWT_SECRET: 'x'.repeat(16) };
 
@@ -114,6 +115,27 @@ describe('env — restante da Lovable, lote D (§39/§40)', () => {
       lerFlagsLovableD({ ...BASE, FIELD_ROUTES_ENABLED: t, FIELD_ROUTE_PLANS_ENABLED: t, FIELD_SEGMENTS_ENABLED: t, FIELD_MALLS_ENABLED: t }),
     ).toEqual({ route_plans: true, malls: true });
     expect(lerFlagsLovableD({ ...BASE, FIELD_SEGMENTS_ENABLED: t, FIELD_MALLS_ENABLED: t })).toEqual({ route_plans: false, malls: false });
+  });
+});
+
+describe('env — restante da Lovable, lote E (§41/§42)', () => {
+  const E = ['PASSWORD_POLICY_ENABLED', 'FIELD_CONSULTANT_PROFILE_ENABLED', 'FIELD_CONTACT_EMAIL_ENABLED', 'TEAM_GESTOR_ENABLED'] as const;
+  it('senha, cadastro do consultor, e-mail do contato e gestor: desligados por padrão e aceitam true', () => {
+    for (const k of E) {
+      expect(validateEnv(BASE)[k]).toBe('false');
+      expect(validateEnv({ ...BASE, [k]: 'true' })[k]).toBe('true');
+    }
+    expect(lerFlagsLovableE({ ...BASE })).toEqual({ password_policy: false, consultant_profile: false, contact_email: false, team_gestor: false });
+  });
+  it('cada flag liga só o seu módulo', () => {
+    expect(lerFlagsLovableE({ ...BASE, PASSWORD_POLICY_ENABLED: 'true' })).toEqual({ password_policy: true, consultant_profile: false, contact_email: false, team_gestor: false });
+    expect(lerFlagsLovableE({ ...BASE, TEAM_GESTOR_ENABLED: 'true' })).toEqual({ password_policy: false, consultant_profile: false, contact_email: false, team_gestor: true });
+    expect(lerFlagsLovableE({ ...BASE, FIELD_CONSULTANT_PROFILE_ENABLED: 'true', FIELD_CONTACT_EMAIL_ENABLED: 'true' })).toEqual({
+      password_policy: false,
+      consultant_profile: true,
+      contact_email: true,
+      team_gestor: false,
+    });
   });
 });
 

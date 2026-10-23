@@ -30,6 +30,8 @@ export interface RetornoLinha extends ClasseRetorno {
   followup_date: string;
   followup_time: string | null;
   contact_phone: string | null;
+  /** Lote E §41.4: só lido com `comEmail` (flag ligada); senão `undefined`. */
+  contact_email?: string | null;
   visited_at: Date;
   interlocutor_name: string | null;
   interest: string | null;
@@ -48,7 +50,7 @@ export interface RetornosLidos {
 
 export async function lerRetornosPendentes(
   prisma: PrismaService,
-  filtro: { hoje: string; consultantId?: string; pracaId?: string },
+  filtro: { hoje: string; consultantId?: string; pracaId?: string; comEmail?: boolean },
 ): Promise<RetornosLidos> {
   const candidatas = await prisma.field_visits.findMany({
     where: {
@@ -72,6 +74,8 @@ export async function lerRetornosPendentes(
       followup_date: true,
       followup_time: true,
       contact_phone: true,
+      // Lote E §41.4: a coluna só entra na consulta com a flag ligada (desligada, a consulta é a de hoje).
+      ...(filtro.comEmail ? { contact_email: true } : {}),
       followup_what: true,
       interlocutor_name: true,
       interest: true,
@@ -109,6 +113,7 @@ export async function lerRetornosPendentes(
         followup_date: data,
         followup_time: v.followup_time,
         contact_phone: v.contact_phone,
+        ...(filtro.comEmail ? { contact_email: (v as { contact_email?: string | null }).contact_email ?? null } : {}),
         visited_at: v.checkin_at,
         interlocutor_name: v.interlocutor_name,
         interest: v.interest,

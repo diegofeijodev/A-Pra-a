@@ -11,6 +11,7 @@ import type { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { CampoConsultant } from '../../common/auth/campo-consultant';
 import { PrismaService } from '../../common/database/prisma.service';
+import { LOVABLE_E_FLAGS, type FlagsLovableE } from '../../common/flags/lovable-e.flags';
 import { isUuid } from '../../common/ids/uuid';
 import { DeclaredSignupsService } from './declared/declared-signups.service';
 import { todaySp } from '../../common/time/dates';
@@ -21,6 +22,7 @@ import {
   marcaLonge,
   normalizarRecusa,
   normalizarRetorno,
+  normalizarEmailContato,
   normalizarTelefoneContato,
   resumoVisita,
   ROTULO_CARGO,
@@ -78,6 +80,12 @@ const fluxoDiferente = () =>
     message: 'Este envio é de outro modo de visita. Atualize o aplicativo e abra a visita de novo.',
   });
 const texto = (s: string | null | undefined): string | null => (s == null ? null : s.trim() || null);
+const emailDesligado = () =>
+  new UnprocessableEntityException({
+    code: 'CONTACT_EMAIL_DISABLED',
+    message: 'O e-mail de quem atendeu não está ligado neste servidor. Atualize o aplicativo e abra a visita de novo.',
+  });
+
 const checklistDesligado = () =>
   new UnprocessableEntityException({
     code: 'CHECKLIST_DISABLED',
@@ -96,7 +104,13 @@ export class VisitsService {
     @Optional() private readonly declared?: DeclaredSignupsService,
     @Optional() private readonly configs?: RotasConfigService,
     @Optional() @Inject(LOVABLE_B_FLAGS) private readonly lovB?: FlagsLovableB,
+    @Optional() @Inject(LOVABLE_E_FLAGS) private readonly lovE?: FlagsLovableE,
   ) {}
+
+  /** Lote E §41.4: e-mail de quem atendeu. Desligado = nada novo no wire (nem grava, nem mostra). */
+  private get emailLigado(): boolean {
+    return this.lovE?.contact_email === true;
+  }
 
   /** Lote B §35: checklist da visita. Desligado = nada novo no wire (nem foto, nem cobrança). */
   private get checklistLigado(): boolean {
@@ -294,6 +308,8 @@ export class VisitsService {
     if (dto.result != null && flow !== 'simples') throw fluxoDiferente();
     // Lote B §35.4: `checklist: null` (ou ausente) é ignorado; valor com a flag desligada é recusado sem gravar nada.
     if (dto.checklist != null && !this.checklistLigado) throw checklistDesligado();
+    // Lote E §41.4: mesma política — `null`/ausente ignorado; valor com a flag desligada recusado sem gravar nada.
+    if (dto.contact_email != null && !this.emailLigado) throw emailDesligado();
     const data: Prisma.field_visitsUpdateInput = {};
     if (dto.interlocutor_name !== undefined) data.interlocutor_name = texto(dto.interlocutor_name);
     if (dto.interlocutor_role !== undefined) data.interlocutor_role = dto.interlocutor_role;
@@ -325,6 +341,13 @@ export class VisitsService {
           message: 'contact_phone: informe o DDD e o número, com 10 ou 11 dígitos.',
         });
       data.contact_phone = tel.valor;
+    }
+    if (dto.contact_email !== undefined && this.emailLigado) {
+      const em = normalizarEmailContato(dto.contact_email);
+      // A mensagem NÃO repete o e-mail (dado pessoal de terceiro) e nada disso vai para log.
+      if (!em.ok)
+        throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'contact_email: confira o e-mail (falta o @ ou o domínio).' });
+      data.contact_email = em.valor;
     }
     // O que vale depois deste PATCH parcial para cada campo (o enviado, senão o que já estava gravado).
     const efetivo = <K extends keyof typeof v>(k: K): (typeof v)[K] => ((data as Record<string, unknown>)[k as string] !== undefined ? ((data as Record<string, unknown>)[k as string] as (typeof v)[K]) : v[k]);
@@ -535,7 +558,7 @@ export class VisitsService {
   }
 
   private opcoesView() {
-    return { checklist: this.checklistLigado };
+    return { checklist: this.checklistLigado, contact_email: this.emailLigado };
   }
 
   private async daMesmaPessoa(v: VisitRow & { consultant_id: string }, c: CampoConsultant, agora: Date): Promise<VisitView> {

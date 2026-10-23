@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { CampoConsultant } from '../../common/auth/campo-consultant';
 import { PrismaService } from '../../common/database/prisma.service';
+import { LOVABLE_E_FLAGS, type FlagsLovableE } from '../../common/flags/lovable-e.flags';
 import { todaySp } from '../../common/time/dates';
-import { mascararTelefoneContato } from '../../domain/campo-rules';
+import { mascararEmailContato, mascararTelefoneContato } from '../../domain/campo-rules';
 import { LIMITE_FILA, lerRetornosPendentes, type RetornoLinha } from './retornos-query';
 
 export interface FollowupView {
@@ -21,6 +22,9 @@ export interface FollowupView {
   /** `(11) 9****-4321`; o número completo só vai ao consultor dono (`contact_phone`). */
   contact_phone_masked: string | null;
   contact_phone?: string | null;
+  /** Lote E §41.4 (só com a flag): `m***@dominio.com`; o completo só ao consultor dono (`contact_email`). */
+  contact_email_masked?: string | null;
+  contact_email?: string | null;
   due: 'hoje' | 'atrasado';
   days_late: number;
   visited_at: string;
@@ -51,6 +55,9 @@ const view = (r: RetornoLinha, completo = false): FollowupView => ({
   followup_time: r.followup_time,
   contact_phone_masked: mascararTelefoneContato(r.contact_phone),
   ...(completo ? { contact_phone: r.contact_phone } : {}),
+  ...(r.contact_email !== undefined
+    ? { contact_email_masked: mascararEmailContato(r.contact_email), ...(completo ? { contact_email: r.contact_email } : {}) }
+    : {}),
   due: r.due,
   days_late: r.days_late,
   visited_at: r.visited_at.toISOString(),
@@ -61,20 +68,27 @@ const view = (r: RetornoLinha, completo = false): FollowupView => ({
 /** Fila "Retornos de hoje / atrasados" (contrato §25.4): equipe (por praça) e consultor (só os dele). */
 @Injectable()
 export class FollowupsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() @Inject(LOVABLE_E_FLAGS) private readonly lovE?: FlagsLovableE,
+  ) {}
+
+  private get comEmail(): boolean {
+    return this.lovE?.contact_email === true;
+  }
 
   async equipe(pracaId: string | undefined, agora = new Date()): Promise<FollowupsResponse> {
     if (pracaId) {
       const praca = await this.prisma.pracas.findUnique({ where: { id: pracaId }, select: { id: true } });
       if (!praca) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Praça não encontrada.' });
     }
-    return this.montar(await lerRetornosPendentes(this.prisma, { hoje: todaySp(agora), pracaId }), todaySp(agora), false);
+    return this.montar(await lerRetornosPendentes(this.prisma, { hoje: todaySp(agora), pracaId, comEmail: this.comEmail }), todaySp(agora), false);
   }
 
   /** O consultor só enxerga retornos das próprias visitas — o filtro é do token, nunca do pedido. */
   async doConsultor(c: CampoConsultant, agora = new Date()): Promise<FollowupsResponse> {
     const hoje = todaySp(agora);
-    return this.montar(await lerRetornosPendentes(this.prisma, { hoje, consultantId: c.id }), hoje, true);
+    return this.montar(await lerRetornosPendentes(this.prisma, { hoje, consultantId: c.id, comEmail: this.comEmail }), hoje, true);
   }
 
   private montar(l: Awaited<ReturnType<typeof lerRetornosPendentes>>, day: string, completo: boolean): FollowupsResponse {

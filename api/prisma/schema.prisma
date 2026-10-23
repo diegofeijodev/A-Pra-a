@@ -17,6 +17,8 @@ model users {
   color           String   @default("#ECA826")
   phone           String   @default("")
   is_admin        Boolean  @default(false)
+  // Perfil gestor (lote E, contrato §42): só vale com TEAM_GESTOR_ENABLED; lido do banco a cada request pelo guard.
+  is_gestor       Boolean  @default(false)
   active          Boolean  @default(true)
   theme           String   @default("dark")
   active_praca_id String?  @db.Uuid
@@ -323,6 +325,8 @@ model app_settings {
   field_config      Json    @default("{}")
   // Segmentos editáveis da busca (lote C, contrato §36): { segments, atualizado_por, atualizado_em }; nulo = padrão do código.
   place_segments    Json?
+  // Regra de senha nova (lote E, contrato §41.2): { min_length, require_upper, require_digit }; nulo = a da Lovable.
+  password_policy   Json?
 }
 
 model blocklist {
@@ -612,6 +616,18 @@ model field_consultants {
   freela_synced_at     DateTime?
   // Exceção por consultor do fluxo da visita (contrato §31.3): simples | completo; nulo = seguir o padrão.
   visit_flow           String?
+  // Cadastro do consultor (lote E, contrato §41.3): endereço e banco, todos nulos; a conta completa só para o admin, nunca em log nem no pagamento.
+  address_cep          String?
+  address_street       String?
+  address_number       String?
+  address_complement   String?
+  address_district     String?
+  address_city         String?
+  address_state        String?
+  bank_name            String?
+  bank_branch          String?
+  bank_account         String?
+  bank_account_type    String?
   created_by           String    @db.Uuid
   created_at           DateTime  @default(now())
   updated_at           DateTime  @updatedAt
@@ -742,6 +758,8 @@ model field_visits {
   refusal_note      String?
   followup_time     String? // HH:mm (Brasília)
   contact_phone     String? // só dígitos (10–11); nunca em log
+  // Lote E (contrato §41.4): e-mail de quem atendeu (≤ 120, minúsculo); nunca em lead_events, resumo ou log.
+  contact_email     String?
   // Modo do chefe S1 (contrato §31): fluxo gravado na abertura da visita (simples | completo), o resultado
   // escolhido no fluxo simples (cadastrou | ja_usa | retorno | sem_interesse | fechado) e a justificativa de distância.
   flow              String                  @default("completo")

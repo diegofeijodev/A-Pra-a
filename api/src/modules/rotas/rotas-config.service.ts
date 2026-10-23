@@ -1,8 +1,9 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Optional } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { AuthUser } from '../../common/auth/auth-user';
 import { PrismaService } from '../../common/database/prisma.service';
+import { LOVABLE_E_FLAGS, type FlagsLovableE } from '../../common/flags/lovable-e.flags';
 import {
   aplicarConfigAlertas,
   CHAVES_CONFIG_ALERTAS,
@@ -61,7 +62,16 @@ const pick = <T extends object>(obj: T, so: Record<string, unknown>): Partial<T>
 /** Parâmetros de negócio do roteiro em `app_settings.field_config` (contrato §23.1). */
 @Injectable()
 export class RotasConfigService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() @Inject(LOVABLE_E_FLAGS) private readonly lovE?: FlagsLovableE,
+  ) {}
+
+  /** Lote E §41.4: `email` em `contato_campos` só vale com `FIELD_CONTACT_EMAIL_ENABLED`; desligada, sai na leitura (o resto da lista vale). */
+  private modoLido(raw: Record<string, unknown>): ConfigModo {
+    const m = lerConfigModo(raw);
+    return this.lovE?.contact_email ? m : { ...m, contato_campos: m.contato_campos.filter((c) => c !== 'email') };
+  }
 
   private async bruto(): Promise<Record<string, unknown>> {
     const s = await this.prisma.app_settings.findUnique({ where: { id: 1 }, select: { field_config: true } });
@@ -86,7 +96,7 @@ export class RotasConfigService {
 
   /** Fluxo da visita e parâmetros do modo do chefe (contrato §31.3). */
   async modo(): Promise<ConfigModo> {
-    return lerConfigModo(await this.bruto());
+    return this.modoLido(await this.bruto());
   }
 
   /** Raio do check-in (contrato §23.1, L0). Sem flag: vale sempre (padrão 200 m = o de hoje). */
@@ -130,7 +140,7 @@ export class RotasConfigService {
       ...lerConfigRota(raw),
       ...lerConfigAlertas(raw),
       ...lerConfigCadastro(raw),
-      ...lerConfigModo(raw),
+      ...this.modoLido(raw),
       ...novos,
       presets: PRESETS_MODO,
       atualizado_por: typeof raw.atualizado_por === 'string' ? raw.atualizado_por : null,
@@ -174,6 +184,10 @@ export class RotasConfigService {
     if (!a.ok) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: a.erro });
     const c = aplicarConfigCadastro(lerConfigCadastro(raw), doCadastro);
     if (!c.ok) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: c.erro });
+    // Lote E §41.4: desligada, `email` em `contato_campos` é recusado com a MESMA mensagem de hoje (valor fora do permitido).
+    if (!this.lovE?.contact_email && Array.isArray(doModo.contato_campos) && (doModo.contato_campos as unknown[]).includes('email')) {
+      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'contato_campos: valor fora do permitido.' });
+    }
     const m = aplicarConfigModo(lerConfigModo(raw), doModo);
     if (!m.ok) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: m.erro });
     // Preserva as chaves de outras fases que já estejam no JSON. As do modo só entram quando o PUT as traz:

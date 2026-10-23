@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthUser } from '../../common/auth/auth-user';
 import { AdminOnly } from '../../common/decorators/admin-only.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { LOVABLE_E_FLAGS, type FlagsLovableE } from '../../common/flags/lovable-e.flags';
 import { CandidatosQueryDto, ConfigRotaDto, MontarRotaDto, OrdenarRotaDto, ReotimizarEquipeDto, RotasQueryDto } from './dto/rotas.dto';
 import { RotasConfigService } from './rotas-config.service';
 import { RotasEquipeService } from './rotas-equipe.service';
@@ -73,6 +74,7 @@ export class RotasConfigController {
     @Optional() @Inject(LOVABLE_B_FLAGS) private readonly flagsB?: FlagsLovableB,
     @Optional() @Inject(LOVABLE_C_FLAGS) private readonly flagsC?: FlagsLovableC,
     @Optional() @Inject(LOVABLE_D_FLAGS) private readonly flagsD?: FlagsLovableD,
+    @Optional() @Inject(LOVABLE_E_FLAGS) private readonly flagsE?: FlagsLovableE,
   ) {}
 
   /** `features` (contrato §33.1): o web mostra os links novos sem sondar rota desligada. Só no GET. */
@@ -94,6 +96,11 @@ export class RotasConfigController {
         // Lote D (contrato §39, §40).
         route_plans: this.flagsD?.route_plans ?? false,
         malls: this.flagsD?.malls ?? false,
+        // Lote E (contrato §41.1, §42.1).
+        password_policy: this.flagsE?.password_policy ?? false,
+        consultant_profile: this.flagsE?.consultant_profile ?? false,
+        contact_email: this.flagsE?.contact_email ?? false,
+        team_gestor: this.flagsE?.team_gestor ?? false,
       },
     };
   }

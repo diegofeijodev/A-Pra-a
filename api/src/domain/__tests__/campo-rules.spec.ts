@@ -199,10 +199,13 @@ describe('situação de hoje e senha provisória', () => {
     expect(situacaoHoje([{ ended_at: new Date() }, { ended_at: null }])).toBe('em_jornada');
   });
 
-  it('senha provisória: 10 caracteres sem ambíguos', () => {
-    expect(gerarSenhaProvisoria(() => 0)).toBe('aaaaaaaaaa');
+  // Lote E §41.2: passou de 10 minúsculas/números para 12 com maiúscula, minúscula e número (a política mais forte permitida).
+  it('senha provisória: 12 caracteres sem ambíguos, com maiúscula, minúscula e número', () => {
     const senha = gerarSenhaProvisoria();
-    expect(senha).toMatch(/^[abcdefghjkmnpqrstuvwxyz23456789]{10}$/);
+    expect(senha).toMatch(/^[ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789]{12}$/);
+    expect(senha).toMatch(/[A-Z]/);
+    expect(senha).toMatch(/[a-z]/);
+    expect(senha).toMatch(/[0-9]/);
   });
 });
 

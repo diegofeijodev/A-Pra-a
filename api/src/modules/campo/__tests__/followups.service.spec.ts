@@ -116,3 +116,23 @@ describe('P0 §30 — hora e telefone mascarado na fila', () => {
     expect(p.field_visits.groupBy.mock.calls[0][0].where).toMatchObject({ outcome: { not: 'fechado' } });
   });
 });
+
+describe('Lote E §41.4 — e-mail de quem atendeu na fila', () => {
+  const comEmail = (on: boolean) => ({ password_policy: false, consultant_profile: false, contact_email: on, team_gestor: false });
+  it('flag desligada: a consulta é a de hoje (sem a coluna) e nenhuma chave nova', async () => {
+    const p = fake([visita(1, { contact_email: 'maria@padaria.com' })]);
+    const r = await new FollowupsService(p as unknown as PrismaService, comEmail(false)).equipe(undefined, AGORA);
+    expect(p.field_visits.findMany.mock.calls[0][0].select).not.toHaveProperty('contact_email');
+    expect(r.items[0]).not.toHaveProperty('contact_email_masked');
+    expect(r.items[0]).not.toHaveProperty('contact_email');
+  });
+  it('ligada: a equipe só vê a máscara; o consultor dono vê o completo', async () => {
+    const p = fake([visita(1, { contact_email: 'maria@padaria.com' })]);
+    const eq = await new FollowupsService(p as unknown as PrismaService, comEmail(true)).equipe(undefined, AGORA);
+    expect(eq.items[0]).toMatchObject({ contact_email_masked: 'm***@padaria.com' });
+    expect(eq.items[0]).not.toHaveProperty('contact_email');
+    const p2 = fake([visita(1, { contact_email: 'maria@padaria.com' })]);
+    const dono = await new FollowupsService(p2 as unknown as PrismaService, comEmail(true)).doConsultor(A, AGORA);
+    expect(dono.items[0]).toMatchObject({ contact_email_masked: 'm***@padaria.com', contact_email: 'maria@padaria.com' });
+  });
+});

@@ -98,6 +98,11 @@ const envBase = z.object({
   // FIELD_SEGMENTS_ENABLED e FIELD_ROUTE_PLANS_ENABLED. Desligadas = rotas 404 e busca, candidatos, cadência e roteiro iguais aos de hoje.
   FIELD_ROUTE_PLANS_ENABLED: z.string().default('false'),
   FIELD_MALLS_ENABLED: z.string().default('false'),
+  // Restante da Lovable, lote E (contrato §41/§42). Desligadas = senhas, cadastro, visita e permissões iguais aos de hoje.
+  PASSWORD_POLICY_ENABLED: z.string().default('false'),
+  FIELD_CONSULTANT_PROFILE_ENABLED: z.string().default('false'),
+  FIELD_CONTACT_EMAIL_ENABLED: z.string().default('false'),
+  TEAM_GESTOR_ENABLED: z.string().default('false'),
 
   SWAGGER_ENABLED: z.string().optional(),
 
