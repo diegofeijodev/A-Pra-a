@@ -1,4 +1,5 @@
 import { MAX_ELEMENTOS_OVERPASS, montarQueryOverpass, normalizarOverpass, type LugarNormalizado } from '../../../domain/places-rules';
+import { montarQuerySegmentos, normalizarOverpassSegmentos, seletorRaio } from '../../../domain/segmentos-rules';
 import {
   BuscaCancelada,
   ProviderError,
@@ -42,7 +43,9 @@ export class OverpassProvider implements PlacesProvider {
   }
 
   async buscar(p: BuscaParams): Promise<LugarNormalizado[]> {
-    const query = montarQueryOverpass(p.centro, p.raio_m, p.types);
+    const query = p.segmentos
+      ? montarQuerySegmentos(p.segmentos, seletorRaio(p.centro, p.raio_m))
+      : montarQueryOverpass(p.centro, p.raio_m, p.types);
     const esperas = this.cfg.esperasMs ?? ESPERAS_PADRAO;
     const tentativas = esperas.length + 1;
 
@@ -52,7 +55,7 @@ export class OverpassProvider implements PlacesProvider {
       if (r.tipo === 'ok') {
         const elementos = (r.json as { elements?: unknown[] }).elements;
         if (Array.isArray(elementos) && elementos.length >= MAX_ELEMENTOS_OVERPASS) p.onParcial?.();
-        const lugares = normalizarOverpass(r.json);
+        const lugares = p.segmentos ? normalizarOverpassSegmentos(r.json, p.segmentos) : normalizarOverpass(r.json);
         p.onProgress?.(lugares.length);
         return lugares;
       }

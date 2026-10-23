@@ -6,6 +6,7 @@ import {
   Logger,
   NotFoundException,
   OnApplicationBootstrap,
+  Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -31,9 +32,11 @@ import {
   type TipoLugar,
   MAX_RESULTADOS,
 } from '../../domain/places-rules';
+import { hashSegmentos, lerFotoSegmentos, type Segmento } from '../../domain/segmentos-rules';
 import { violouUnico } from '../campo/prisma-errors';
 import { ImportsService } from '../imports/imports.service';
 import { AddPlaceLeadsDto, StartPlaceSearchDto } from './dto/places.dto';
+import { PlacesSegmentsService } from './places-segments.service';
 import { PLACES_LIMITS, PLACES_PROVIDERS, type PlacesLimits } from './places.tokens';
 import { BuscaCancelada, ProviderError, type PlacesProvider } from './providers/places-provider';
 
@@ -127,6 +130,8 @@ type RunRow = {
   created_at: Date;
   started_at: Date | null;
   finished_at: Date | null;
+  /** Foto dos segmentos (§36.6); ausente/nulo = tipos fixos de hoje. */
+  segments_snapshot?: unknown;
 };
 
 type CandidateRow = {
@@ -168,6 +173,7 @@ export class PlacesSearchService implements OnApplicationBootstrap {
     private readonly imports: ImportsService,
     @Inject(PLACES_PROVIDERS) private readonly providers: Record<FonteLugar, PlacesProvider>,
     @Inject(PLACES_LIMITS) private readonly limits: PlacesLimits,
+    @Optional() private readonly segmentos?: PlacesSegmentsService,
   ) {}
 
   /** Execução interrompida por reinício não termina nunca: vira erro legível. */
@@ -205,9 +211,20 @@ export class PlacesSearchService implements OnApplicationBootstrap {
       });
     }
 
+    // Segmentos editáveis (§36): os tipos são os segmentos ativos e a busca fotografa as definições. Desligada = hoje.
+    let foto: Segmento[] | null = null;
+    let types = this.segmentos?.ligado ? [] : [...dto.types].sort();
+    if (this.segmentos?.ligado) ({ types, foto } = await this.segmentos.fotoDaBusca(dto.types));
+
     // A geometria é a da área AGORA: editar a área depois gera outra chave.
-    const types = [...dto.types].sort();
-    const cacheKey = chaveCache({ lat: area.lat, lng: area.lng, radius_m: area.radius_m, types, source });
+    const cacheKey = chaveCache({
+      lat: area.lat,
+      lng: area.lng,
+      radius_m: area.radius_m,
+      types,
+      source,
+      ...(foto ? { segmentos_hash: hashSegmentos(foto) } : {}),
+    });
 
     // Mesma busca já na fila ou rodando: devolve a que existe (duplo clique não paga duas vezes).
     const emAndamento = await this.prisma.place_import_runs.findFirst({
@@ -238,6 +255,7 @@ export class PlacesSearchService implements OnApplicationBootstrap {
         radius_m: area.radius_m,
         cache_key: cacheKey,
         requested_by: user.id,
+        ...(foto ? { segments_snapshot: foto as unknown as Prisma.InputJsonValue } : {}),
       },
     });
     this.enfileirar(row.id);
@@ -430,10 +448,12 @@ export class PlacesSearchService implements OnApplicationBootstrap {
       const provider = this.providers[run.source as FonteLugar];
       const limite = await this.limiteDaBusca(run);
       let parcial = false;
+      const segmentos = lerFotoSegmentos(run.segments_snapshot);
       const lugares = await provider.buscar({
         centro: { lat: run.lat, lng: run.lng },
         raio_m: run.radius_m,
         types: run.types as TipoLugar[],
+        ...(segmentos ? { segmentos } : {}),
         limite,
         signal,
         onParcial: () => {
@@ -631,7 +651,7 @@ export class PlacesSearchService implements OnApplicationBootstrap {
 function paraLugar(r: CandidateRow): LugarNormalizado {
   return {
     name: r.name,
-    category: r.category as TipoLugar,
+    category: r.category,
     address: r.address,
     lat: r.lat,
     lng: r.lng,

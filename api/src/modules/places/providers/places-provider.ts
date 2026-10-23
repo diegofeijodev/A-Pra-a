@@ -1,11 +1,17 @@
 import type { Coordenada } from '../../../domain/campo-rules';
 import type { FonteLugar, LugarNormalizado, TipoLugar } from '../../../domain/places-rules';
+import type { Segmento } from '../../../domain/segmentos-rules';
 
 /** Pedido a um provedor de estabelecimentos. */
 export interface BuscaParams {
   centro: Coordenada;
   raio_m: number;
   types: readonly TipoLugar[];
+  /**
+   * Foto dos segmentos pedidos (§36, `FIELD_SEGMENTS_ENABLED`). Presente = a consulta, a categoria e os termos saem dos
+   * segmentos; ausente = os tipos fixos de hoje, byte a byte.
+   */
+  segmentos?: readonly Segmento[];
   /** Quantos lugares, no máximo, o provedor pode trazer (teto de custo/lista). */
   limite: number;
   signal: AbortSignal;

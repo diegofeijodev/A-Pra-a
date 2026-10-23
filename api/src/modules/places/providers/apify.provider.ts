@@ -1,4 +1,5 @@
 import { normalizarApify, type LugarNormalizado, type TipoLugar } from '../../../domain/places-rules';
+import { normalizarApifySegmentos, termosApify } from '../../../domain/segmentos-rules';
 import { BuscaCancelada, ProviderError, type BuscaParams, type FetchFn, type PlacesProvider } from './places-provider';
 
 export interface ApifyConfig {
@@ -41,7 +42,7 @@ export class ApifyProvider implements PlacesProvider {
     }
     const base = this.cfg.baseUrl ?? 'https://api.apify.com';
     const url = `${base}/v2/acts/${encodeURIComponent(this.cfg.actorId)}/run-sync-get-dataset-items`;
-    const termos = p.types.map((t) => TERMO[t]);
+    const termos = p.segmentos ? termosApify(p.segmentos) : p.types.map((t) => TERMO[t]);
     const input = {
       searchStringsArray: termos,
       customGeolocation: { type: 'Circle', coordinates: [p.centro.lng, p.centro.lat], radiusKm: p.raio_m / 1000 },
@@ -69,7 +70,8 @@ export class ApifyProvider implements PlacesProvider {
           `apify HTTP ${resp.status}`,
         );
       }
-      const itens = normalizarApify(await resp.json());
+      const json = await resp.json();
+      const itens = p.segmentos ? normalizarApifySegmentos(json, p.segmentos) : normalizarApify(json);
       const lugares = itens.slice(0, p.limite);
       p.onProgress?.(lugares.length);
       return lugares;

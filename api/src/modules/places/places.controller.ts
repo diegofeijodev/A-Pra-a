@@ -1,11 +1,12 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Put, Query, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { AuthUser } from '../../common/auth/auth-user';
 import { AdminOnly } from '../../common/decorators/admin-only.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { AddPlaceLeadsDto, PlaceSearchQueryDto, StartPlaceSearchDto } from './dto/places.dto';
+import { AddPlaceLeadsDto, PlaceSearchQueryDto, PutSegmentsDto, StartPlaceSearchDto } from './dto/places.dto';
 import { PlacesSearchService } from './places-search.service';
+import { PlacesSegmentsService } from './places-segments.service';
 
 /**
  * Pesquisa automática de estabelecimentos (§22). Tudo é só de admin e fechado
@@ -16,7 +17,10 @@ import { PlacesSearchService } from './places-search.service';
 @AdminOnly()
 @Controller('v1/place-searches')
 export class PlacesController {
-  constructor(private readonly searches: PlacesSearchService) {}
+  constructor(
+    private readonly searches: PlacesSearchService,
+    private readonly segments: PlacesSegmentsService,
+  ) {}
 
   @Post()
   async start(
@@ -30,10 +34,21 @@ export class PlacesController {
     return run;
   }
 
-  // Estática antes de ':id' (a ordem importa).
+  // Estáticas antes de ':id' (a ordem importa).
   @Get('sources')
   sources() {
     return this.searches.sources();
+  }
+
+  /** Segmentos editáveis (§36.6): `404 SEGMENTS_DISABLED` com a flag desligada. */
+  @Get('segments')
+  segmentos() {
+    return this.segments.view();
+  }
+
+  @Put('segments')
+  salvarSegmentos(@CurrentUser() user: AuthUser, @Body() dto: PutSegmentsDto) {
+    return this.segments.salvar(dto.segments, user);
   }
 
   @Get()

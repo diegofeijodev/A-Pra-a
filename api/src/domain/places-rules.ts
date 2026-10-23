@@ -39,7 +39,8 @@ export const ROTULO_TIPO: Record<TipoLugar, string> = {
 
 export interface LugarNormalizado {
   name: string;
-  category: TipoLugar;
+  /** Um dos 5 tipos de hoje; com os segmentos editáveis ligados (§36), o `slug` do segmento. */
+  category: string;
   address: string;
   lat: number;
   lng: number;
@@ -102,7 +103,17 @@ interface ElementoOverpass {
   tags?: Tags;
 }
 
-export function normalizarOverpass(resposta: unknown): LugarNormalizado[] {
+/** Categoria de hoje (§22.1): `amenity`, senão `shop`. */
+const categoriaOsm = (t: Tags): string | undefined => CATEGORIA_OSM[t['amenity'] ?? ''] ?? CATEGORIA_OSM[t['shop'] ?? ''];
+
+/**
+ * Resposta do Overpass → lugares. `classificar` decide a categoria (ausente = a regra de hoje); `null`/`undefined` = ignora o
+ * elemento. Os segmentos editáveis (§36) passam o classificador deles.
+ */
+export function normalizarOverpass(
+  resposta: unknown,
+  classificar: (tags: Record<string, string | undefined>) => string | null | undefined = categoriaOsm,
+): LugarNormalizado[] {
   const elementos = (resposta as { elements?: unknown } | null)?.elements;
   if (!Array.isArray(elementos)) return [];
   const saida: LugarNormalizado[] = [];
@@ -111,7 +122,7 @@ export function normalizarOverpass(resposta: unknown): LugarNormalizado[] {
     const lng = e.lon ?? e.center?.lon;
     if (!e.type || e.id === undefined || typeof lat !== 'number' || typeof lng !== 'number') continue;
     const t = e.tags ?? {};
-    const categoria = CATEGORIA_OSM[t['amenity'] ?? ''] ?? CATEGORIA_OSM[t['shop'] ?? ''];
+    const categoria = classificar(t);
     if (!categoria) continue;
     saida.push({
       name: (t['name'] ?? '').trim(),
@@ -144,7 +155,7 @@ interface ItemApify {
   temporarilyClosed?: boolean;
 }
 
-function categoriaApify(nome: string | undefined): TipoLugar {
+export function categoriaApify(nome: string | undefined): TipoLugar {
   const n = norm(nome);
   if (n.includes('padaria') || n.includes('confeitaria')) return 'padaria';
   if (n.includes('lanchonete') || n.includes('fastfood') || n.includes('hamburguer')) return 'lanchonete';
@@ -153,7 +164,8 @@ function categoriaApify(nome: string | undefined): TipoLugar {
   return 'restaurante';
 }
 
-export function normalizarApify(itens: unknown): LugarNormalizado[] {
+/** `classificar` = a categoria a partir da categoria do Google (ausente = a regra de hoje; os segmentos do §36 passam a deles). */
+export function normalizarApify(itens: unknown, classificar: (categoryName: string | undefined) => string = categoriaApify): LugarNormalizado[] {
   if (!Array.isArray(itens)) return [];
   const saida: LugarNormalizado[] = [];
   for (const i of itens as ItemApify[]) {
@@ -162,7 +174,7 @@ export function normalizarApify(itens: unknown): LugarNormalizado[] {
     if (typeof lat !== 'number' || typeof lng !== 'number' || !i.placeId) continue;
     saida.push({
       name: (i.title ?? '').trim(),
-      category: categoriaApify(i.categoryName),
+      category: classificar(i.categoryName),
       address: (i.address ?? '').trim(),
       lat,
       lng,
@@ -277,8 +289,11 @@ export function chaveCache(p: {
   radius_m: number;
   types: readonly string[];
   source: string;
+  /** Hash da foto dos segmentos (§36.6): só com a flag ligada; ausente = a fórmula de hoje, byte a byte. */
+  segmentos_hash?: string;
 }): string {
-  const canonico = JSON.stringify([p.source, p.lat, p.lng, p.radius_m, [...p.types].sort()]);
+  const base = [p.source, p.lat, p.lng, p.radius_m, [...p.types].sort()];
+  const canonico = JSON.stringify(p.segmentos_hash === undefined ? base : [...base, p.segmentos_hash]);
   return createHash('sha256').update(canonico).digest('hex').slice(0, 40);
 }
 

@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import type { Env } from '../../common/config/env.validation';
 import type { FonteLugar } from '../../domain/places-rules';
 import { ImportsModule } from '../imports/imports.module';
+import { RotasModule } from '../rotas/rotas.module';
+import { PlacesSegmentsService } from './places-segments.service';
 import { PlacesController } from './places.controller';
 import { PlacesSearchService } from './places-search.service';
 import { PLACES_LIMITS, PLACES_PROVIDERS, type PlacesLimits } from './places.tokens';
@@ -11,10 +13,11 @@ import { OverpassProvider } from './providers/overpass.provider';
 import { dormir, type PlacesProvider } from './providers/places-provider';
 
 @Module({
-  imports: [ImportsModule],
+  imports: [ImportsModule, RotasModule],
   controllers: [PlacesController],
   providers: [
     PlacesSearchService,
+    PlacesSegmentsService,
     {
       provide: PLACES_PROVIDERS,
       inject: [ConfigService],
