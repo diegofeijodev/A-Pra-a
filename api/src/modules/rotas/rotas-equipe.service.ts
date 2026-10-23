@@ -3,6 +3,8 @@ import type { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { AuthUser } from '../../common/auth/auth-user';
 import { PrismaService } from '../../common/database/prisma.service';
+import { PracasDoConsultorService } from '../../common/pracas/pracas-do-consultor.service';
+import { pracaUnicaDosLeads } from '../../domain/multi-praca-rules';
 import { isUuid } from '../../common/ids/uuid';
 import { todaySp } from '../../common/time/dates';
 import { pontoNaArea } from '../../domain/area-rules';
@@ -53,6 +55,7 @@ export class RotasEquipeService {
     @Inject(ROTAS_LIGADAS) private readonly ligado: boolean,
     @Optional() private readonly modo?: ModoCampoService,
     @Optional() @Inject(LOVABLE_D_FLAGS) private readonly flagsD?: FlagsLovableD,
+    @Optional() private readonly pracas?: PracasDoConsultorService,
   ) {}
 
   /** Parâmetros do modo do chefe para a conta de meta (§31.6); sem a flag, o padrão (todas as visitas são `completo`). */
@@ -183,15 +186,23 @@ export class RotasEquipeService {
       select: { id: true, name: true, address: true, phone: true, lat: true, lng: true, praca_id: true, archived: true },
     });
     // Inexistente e de outra praça respondem igual: não revela leads de outras praças.
-    if (leads.length !== ids.length || leads.some((l) => l.praca_id !== consultor.praca_id)) {
-      throw invalido('lead_ids: um ou mais estabelecimentos não existem ou não pertencem à praça do consultor.');
+    const foraDaPraca = () => invalido('lead_ids: um ou mais estabelecimentos não existem ou não pertencem à praça do consultor.');
+    // Lote F2 §44.7: com a flag, todos numa MESMA praça do conjunto, que vira a praça do roteiro.
+    let pracaRota = consultor.praca_id;
+    if (this.pracas?.ligado) {
+      if (leads.length !== ids.length) throw foraDaPraca();
+      const r = pracaUnicaDosLeads(leads.map((l) => l.praca_id ?? ''), await this.pracas.conjunto(consultor.id, consultor.praca_id));
+      if (!r.ok) throw r.erro === 'MISTURADAS' ? invalido('lead_ids: os estabelecimentos precisam ser de uma praça só.') : foraDaPraca();
+      pracaRota = r.praca_id;
+    } else if (leads.length !== ids.length || leads.some((l) => l.praca_id !== consultor.praca_id)) {
+      throw foraDaPraca();
     }
     const ruins = leads.filter((l) => l.archived || l.lat == null || l.lng == null);
     if (ruins.length > 0) {
       throw invalido(`lead_ids: sem localização ou arquivado: ${ruins.slice(0, 5).map((l) => l.name).join(', ')}.`);
     }
     const area = dto.area_id
-      ? await this.prisma.field_areas.findFirst({ where: { id: dto.area_id, praca_id: consultor.praca_id } })
+      ? await this.prisma.field_areas.findFirst({ where: { id: dto.area_id, praca_id: pracaRota } })
       : null;
     if (dto.area_id && !area) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Área não encontrada.' });
 
@@ -211,6 +222,12 @@ export class RotasEquipeService {
       where: { consultant_id: consultor.id, day: dto.day, status: 'ativa' },
       include: { stops: true },
     });
+    // Lote F2 §44.7: o roteiro do dia já existe em OUTRA praça (um por dia): sem parada visitada, passa para a nova.
+    const mudaPraca = !!this.pracas?.ligado && !!existente && existente.praca_id !== pracaRota;
+    if (mudaPraca && existente!.stops.some((s) => s.status === 'visitada')) {
+      const p = await this.prisma.pracas.findUnique({ where: { id: existente!.praca_id }, select: { name: true } });
+      throw invalido(`lead_ids: o roteiro de ${dto.day.slice(8, 10)}/${dto.day.slice(5, 7)} já tem visitas em ${p?.name ?? 'outra praça'}.`);
+    }
     // Modo de deslocamento (§30.4): ausente mantém o do roteiro existente (ou a pé num novo). A velocidade de
     // carro é fotografada no roteiro; trocar o modo (ou escolher carro num roteiro sem foto) regrava a do env.
     const modo = dto.travel_mode ?? existente?.travel_mode ?? 'a_pe';
@@ -248,8 +265,9 @@ export class RotasEquipeService {
     if (existente) {
       rotaId = existente.id;
       await this.prisma.$transaction(
-        (tx) =>
-          gravarPlano(tx, {
+        async (tx) => {
+          if (mudaPraca) await tx.field_routes.update({ where: { id: existente.id }, data: { praca_id: pracaRota } });
+          return gravarPlano(tx, {
             route: existente,
             stops: stopsAtuais,
             plano,
@@ -263,7 +281,8 @@ export class RotasEquipeService {
             modo: trocouModo || (modo === 'carro' && !snapAtual?.velocidade_carro_kmh) ? { travel_mode: modo, velocidade_carro_kmh: kmhCarro } : undefined,
             start: dto.start,
             areaId: area ? area.id : undefined,
-          }),
+          });
+        },
         { timeout: 15_000 },
       );
     } else {
@@ -274,7 +293,7 @@ export class RotasEquipeService {
             data: {
               id: rotaId,
               consultant_id: consultor.id,
-              praca_id: consultor.praca_id,
+              praca_id: pracaRota,
               area_id: area?.id ?? null,
               day: dto.day,
               source: 'equipe',

@@ -13,6 +13,8 @@ import * as bcrypt from 'bcryptjs';
 import { AuthUser } from '../../common/auth/auth-user';
 import { PrismaService } from '../../common/database/prisma.service';
 import { LOVABLE_E_FLAGS, type FlagsLovableE } from '../../common/flags/lovable-e.flags';
+import { PracasDoConsultorService, type PracaDoConjunto } from '../../common/pracas/pracas-do-consultor.service';
+import { conjuntoNovo } from '../../domain/multi-praca-rules';
 import { isUuid } from '../../common/ids/uuid';
 import { digits } from '../../common/phone/phone';
 import { isDateString, todaySp } from '../../common/time/dates';
@@ -39,7 +41,7 @@ import {
   type PointView,
   type VisitView,
 } from './campo-views';
-import { ChannelsDto, CreateConsultorDto, UpdateConsultorDto } from './dto/consultores.dto';
+import { ChannelsDto, CreateConsultorDto, PracasDoConsultorDto, UpdateConsultorDto } from './dto/consultores.dto';
 import { ModoCampoService } from '../rotas/modo-campo.service';
 import { lerFotoOuFalha, PHOTO_STORAGE, type FotoLida, type PhotoStorage } from './photo-storage';
 import { colunaUnicaDoConsultor, violouUnico } from './prisma-errors';
@@ -81,6 +83,9 @@ export interface ConsultorView {
   bank_account_type?: string | null;
   bank_account_masked?: string | null;
   bank_account?: string | null;
+  // Lote F2 §44.7 (só com FIELD_MULTI_PRACA_ENABLED): o conjunto de praças (a principal primeiro) e os ids dele.
+  pracas?: PracaDoConjunto[];
+  praca_ids?: string[];
 }
 
 export interface ConsultorListItem extends ConsultorView {
@@ -155,7 +160,14 @@ export class ConsultoresService {
     @Optional() private readonly signups?: SignupsLeituraService,
     @Optional() private readonly modo?: ModoCampoService,
     @Optional() @Inject(LOVABLE_E_FLAGS) private readonly lovE?: FlagsLovableE,
+    @Optional() private readonly pracas?: PracasDoConsultorService,
   ) {}
+
+  /** Lote F2 §44.7: o conjunto no `ConsultorView` (só com a flag; desligada, nada lido e nenhuma chave nova). */
+  private comPracas<T extends ConsultorView>(view: T, conjunto: PracaDoConjunto[] | undefined): T {
+    if (!this.pracas?.ligado || !conjunto) return view;
+    return { ...view, pracas: conjunto, praca_ids: conjunto.map((p) => p.id) };
+  }
 
   private get perfilLigado(): boolean {
     return this.lovE?.consultant_profile === true;
@@ -239,13 +251,15 @@ export class ConsultoresService {
 
     const efetivos = new Map<string, string>();
     for (const c of consultores) efetivos.set(c.id, await this.fluxoEfetivo(c));
+    // Lote F2 §44.7: os conjuntos numa leitura só (desligada: nenhuma consulta).
+    const conjuntos = this.pracas ? await this.pracas.conjuntos(consultores) : new Map<string, PracaDoConjunto[]>();
     return consultores.map((c) => {
       const js = jornadas.filter((j) => j.consultant_id === c.id);
       const vs = visitas.filter((v) => v.consultant_id === c.id);
       const pontos = js.map((j) => ultimoPorJornada.get(j.id)).filter((d): d is Date => d instanceof Date);
       const ultimo = pontos.length ? new Date(Math.max(...pontos.map((d) => d.getTime()))) : null;
       return {
-        ...this.projetar(toConsultorView(c, efetivos.get(c.id)), c, quem),
+        ...this.comPracas(this.projetar(toConsultorView(c, efetivos.get(c.id)), c, quem), conjuntos.get(c.id)),
         today: {
           status: situacaoHoje(js),
           visits: vs.length,
@@ -264,7 +278,38 @@ export class ConsultoresService {
 
   async get(id: string, quem?: AuthUser): Promise<ConsultorView> {
     const c = await this.findOrFail(id);
-    return this.projetar(toConsultorView(c, await this.fluxoEfetivo(c)), c, quem);
+    const view = this.projetar(toConsultorView(c, await this.fluxoEfetivo(c)), c, quem);
+    return this.pracas?.ligado ? this.comPracas(view, await this.pracas.conjuntoComNomes(c.id, c.praca_id)) : view;
+  }
+
+  /**
+   * Lote F2 §44.7 (só admin; a marca está no controller): grava o conjunto INTEIRO de praças do consultor. A principal fica
+   * sempre e nunca é gravada na junção; grava só a diferença, com quem mudou. Desligada = 404 MULTI_PRACA_DISABLED.
+   */
+  async salvarPracas(id: string, dto: PracasDoConsultorDto, quem: AuthUser): Promise<ConsultorView> {
+    if (!this.pracas?.ligado) {
+      throw new NotFoundException({ code: 'MULTI_PRACA_DISABLED', message: 'Várias praças por consultor não estão ligadas neste servidor.' });
+    }
+    const c = await this.findOrFail(id);
+    const r = conjuntoNovo(c.praca_id, dto.praca_ids, c.praca.name);
+    if (!r.ok) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: r.erro });
+    const existentes = r.extras.length ? await this.prisma.pracas.count({ where: { id: { in: r.extras } } }) : 0;
+    if (existentes !== r.extras.length) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Praça não encontrada.' });
+    const atuais = (await this.prisma.field_consultant_pracas.findMany({ where: { consultant_id: id }, select: { praca_id: true } })).map((x) => x.praca_id);
+    const sair = atuais.filter((p) => !r.extras.includes(p));
+    const entrar = r.extras.filter((p) => !atuais.includes(p));
+    const ops: Prisma.PrismaPromise<unknown>[] = [];
+    if (sair.length) ops.push(this.prisma.field_consultant_pracas.deleteMany({ where: { consultant_id: id, praca_id: { in: sair } } }));
+    if (entrar.length) {
+      ops.push(
+        this.prisma.field_consultant_pracas.createMany({
+          data: entrar.map((praca_id) => ({ consultant_id: id, praca_id, created_by: quem.id })),
+          skipDuplicates: true,
+        }),
+      );
+    }
+    if (ops.length) await this.prisma.$transaction(ops);
+    return this.get(id, quem);
   }
 
   async create(

@@ -23,7 +23,7 @@ import { FollowupsService } from './followups.service';
 import { PracaOpcionalQueryDto } from './dto/atencao.dto';
 import { HeatmapQueryDto } from './dto/heatmap.dto';
 import { HeatmapService } from './heatmap.service';
-import { ChannelsDto, CreateConsultorDto, UpdateConsultorDto } from './dto/consultores.dto';
+import { ChannelsDto, CreateConsultorDto, PracasDoConsultorDto, UpdateConsultorDto } from './dto/consultores.dto';
 
 /**
  * Telas da equipe sobre os consultores de campo (`/v1/consultores`, §20.4).
@@ -105,6 +105,13 @@ export class ConsultoresController {
   @Patch(':id')
   update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateConsultorDto) {
     return this.consultores.update(id, dto, user);
+  }
+
+  /** Lote F2 (contrato §44.7): as praças em que o consultor atua — SÓ admin (não está na tabela do gestor, §42.3). */
+  @AdminOnly()
+  @Put(':id/pracas')
+  setPracas(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: PracasDoConsultorDto) {
+    return this.consultores.salvarPracas(id, dto, user);
   }
 
   @GestorOuAdmin()

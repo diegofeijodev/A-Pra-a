@@ -146,6 +146,24 @@ export class PracasService {
         message: 'Esta praça tem consultores de campo. Mude-os de praça ou apague-os antes.',
       });
     }
+    // Lote F2 (contrato §44.7): a junção e a praça da jornada também são FK Restrict. As contagens valem com a flag desligada
+    // (tabela vazia e coluna nula = nada muda); sem elas o Prisma estouraria P2003 (500).
+    const [noConjunto, jornadas] = await Promise.all([
+      this.prisma.field_consultant_pracas.count({ where: { praca_id: id } }),
+      this.prisma.field_journeys.count({ where: { praca_id: id } }),
+    ]);
+    if (noConjunto > 0) {
+      throw new ConflictException({
+        code: 'PRACA_HAS_CONSULTANTS',
+        message: 'Esta praça está nas praças em que consultores de campo atuam. Tire-a do cadastro deles antes.',
+      });
+    }
+    if (jornadas > 0) {
+      throw new ConflictException({
+        code: 'PRACA_HAS_JOURNEYS',
+        message: 'Esta praça tem dias de trabalho de consultores registrados nela e guarda esse histórico.',
+      });
+    }
     await this.prisma.$transaction([
       this.prisma.users.updateMany({ where: { active_praca_id: id }, data: { active_praca_id: null } }),
       this.prisma.pracas.delete({ where: { id } }),

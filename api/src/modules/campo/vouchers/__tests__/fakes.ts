@@ -35,7 +35,8 @@ export class RepoFalso implements VouchersRepository {
   vouchers = new Map<string, VoucherRow>();
   eventosGravados: EventoVoucherRow[] = [];
   leads = new Map<string, LeadDoPedido>();
-  visitas: { id: string; client_id: string; consultant_id: string; lead_id: string }[] = [];
+  /** Lote F2: `journey_praca_id` = a praça da jornada da visita (ausente = como antes, sem `journey` na resposta). */
+  visitas: { id: string; client_id: string; consultant_id: string; lead_id: string; journey_praca_id?: string | null }[] = [];
   pracas = new Map<string, { city: string; cobertura_uf: string | null; cobertura_cidade: string | null }>();
   consultores = new Map<string, string>();
   cadastros = new Map<string, string>();
@@ -134,7 +135,8 @@ export class RepoFalso implements VouchersRepository {
     const v = this.visitas.find(
       (x) => x.consultant_id === consultantId && (x.id === ref || x.client_id === ref),
     );
-    return v ? { id: v.id, lead_id: v.lead_id } : null;
+    if (!v) return null;
+    return v.journey_praca_id !== undefined ? { id: v.id, lead_id: v.lead_id, journey: { praca_id: v.journey_praca_id } } : { id: v.id, lead_id: v.lead_id };
   }
   async lead(id: string) {
     return this.leads.get(id) ?? null;

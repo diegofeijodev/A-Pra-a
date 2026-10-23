@@ -1,5 +1,6 @@
 import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
+import { PracasDoConsultorService } from '../../common/pracas/pracas-do-consultor.service';
 import { minutesSp, todaySp, weekdayOf } from '../../common/time/dates';
 import {
   calcularAlertas,
@@ -64,6 +65,7 @@ export class AtencaoService {
     @Optional() private readonly modo?: ModoCampoService,
     @Optional() private readonly declared?: DeclaredSignupsService,
     @Optional() @Inject(LOVABLE_B_FLAGS) private readonly lovB?: FlagsLovableB,
+    @Optional() private readonly pracas?: PracasDoConsultorService,
   ) {}
 
   async painel(pracaId: string | undefined, agora = new Date()): Promise<AtencaoView> {
@@ -84,7 +86,8 @@ export class AtencaoService {
     const [config, alertas] = await Promise.all([this.configs.config(), this.configs.alertas()]);
 
     const consultores = await this.prisma.field_consultants.findMany({
-      where: { active: true, ...(pracaId ? { praca_id: pracaId } : {}) },
+      // Lote F2 §44.7: com a flag, quem tem a praça no CONJUNTO (a meta e o dia são do consultor inteiro).
+      where: { active: true, ...(pracaId ? (this.pracas ? this.pracas.ondeAtua(pracaId) : { praca_id: pracaId }) : {}) },
       include: COM_PRACA,
       orderBy: [{ name: 'asc' }, { id: 'asc' }],
     });

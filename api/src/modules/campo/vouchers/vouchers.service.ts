@@ -13,7 +13,9 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { AuthUser } from '../../../common/auth/auth-user';
-import { CampoConsultant } from '../../../common/auth/campo-consultant';
+import { CampoConsultant, principalDe } from '../../../common/auth/campo-consultant';
+import { PracasDoConsultorService } from '../../../common/pracas/pracas-do-consultor.service';
+import { pracaDaJornada } from '../../../domain/multi-praca-rules';
 import { isUuid } from '../../../common/ids/uuid';
 import { addDays } from '../../../common/time/dates';
 import {
@@ -104,6 +106,7 @@ export class VouchersService {
     private readonly cupons: VoucherCouponsService,
     @Inject(VOUCHER_COUPON_ISSUER) private readonly issuer: VoucherCouponIssuer,
     @Optional() @Inject(LOVABLE_C_FLAGS) private readonly flags?: FlagsLovableC,
+    @Optional() private readonly pracas?: PracasDoConsultorService,
   ) {}
 
   get ligado(): boolean {
@@ -169,6 +172,8 @@ export class VouchersService {
       });
     let leadId = leadDoCorpo;
     let visitId: string | null = null;
+    // Lote F2 §44.4: com `visit_ref`, a praça é a da jornada DA VISITA (a fila reenvia depois do `end` dela); só `lead_id`, a ativa.
+    let pracaId = c.praca_id;
     if (ref) {
       if (!isUuid(ref)) throw estabelecimentoNaoEncontrado();
       const visita = await this.repo.visitaDoConsultor(c.id, ref);
@@ -181,11 +186,12 @@ export class VouchersService {
       }
       leadId = visita.lead_id;
       visitId = visita.id;
+      if (this.pracas?.ligado) pracaId = pracaDaJornada(visita.journey?.praca_id, principalDe(c));
     }
     if (!leadId || !isUuid(leadId)) throw estabelecimentoNaoEncontrado();
     const lead = await this.repo.lead(leadId);
-    if (!lead || lead.praca_id !== c.praca_id) throw estabelecimentoNaoEncontrado();
-    const praca = await this.repo.praca(c.praca_id);
+    if (!lead || lead.praca_id !== pracaId) throw estabelecimentoNaoEncontrado();
+    const praca = await this.repo.praca(pracaId);
     const cfg = await this.config();
     const city =
       lead.city.trim() || praca?.cobertura_cidade?.trim() || praca?.city?.trim() || dto.city?.trim() || '';
@@ -215,7 +221,7 @@ export class VouchersService {
           {
             client_id: dto.client_id,
             consultant_id: c.id,
-            praca_id: c.praca_id,
+            praca_id: pracaId,
             lead_id: lead.id,
             visit_id: visitId,
             company_name: lead.name,

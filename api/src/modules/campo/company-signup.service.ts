@@ -9,9 +9,11 @@
  * - o corpo enviado ao Freela só depende do DTO + dados determinísticos (um reenvio com corpo
  *   diferente é 422 lá), e nunca há reemissão automática (o Freela limita a 3 em 24 h).
  */
-import { HttpException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { HttpException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
-import { CampoConsultant } from '../../common/auth/campo-consultant';
+import { CampoConsultant, principalDe } from '../../common/auth/campo-consultant';
+import { PracasDoConsultorService } from '../../common/pracas/pracas-do-consultor.service';
+import { pracaDaJornada } from '../../domain/multi-praca-rules';
 import { PrismaService } from '../../common/database/prisma.service';
 import { isUuid } from '../../common/ids/uuid';
 import {
@@ -106,7 +108,13 @@ export class CompanySignupService {
     private readonly prisma: PrismaService,
     private readonly client: FreelaClient,
     @Inject(COMPANY_SIGNUP_LIGADO) private readonly ligado: boolean,
+    @Optional() private readonly pracas?: PracasDoConsultorService,
   ) {}
+
+  /** Lote F2 §44.4: rota com `:ref` = a praça da jornada DA VISITA (a fila reenvia depois do `end`); desligada, a de hoje. */
+  private pracaDaVisita(c: CampoConsultant, v: { journey?: { praca_id: string | null } | null }): string {
+    return this.pracas?.ligado ? pracaDaJornada(v.journey?.praca_id, principalDe(c)) : c.praca_id;
+  }
 
   /** Flag desligada: a rota "não existe". */
   private exigirLigado(): void {
@@ -127,6 +135,7 @@ export class CompanySignupService {
         far_from_place: true,
         interlocutor_name: true,
         lead: { select: { name: true, phone: true, cnpj: true, address: true, city: true, decisor: true } },
+        journey: { select: { praca_id: true } },
       },
     });
     if (!v) throw naoAchado();
@@ -149,7 +158,7 @@ export class CompanySignupService {
         orderBy: { created_at: 'desc' },
         include: COM_VISITA,
       }),
-      this.praca(c.praca_id),
+      this.praca(this.pracaDaVisita(c, v)),
     ]);
     const decisor = v.lead.decisor && v.lead.decisor !== '—' ? v.lead.decisor : '';
     return {
@@ -202,7 +211,7 @@ export class CompanySignupService {
     if (linha?.freela_user_id) return signupView(linha, { created: false });
 
     const freelaId = await this.codigoNoFreela(c.id);
-    const praca = await this.praca(c.praca_id);
+    const praca = await this.praca(this.pracaDaVisita(c, visita));
     const checkin = visita.far_from_place ? null : { lat: visita.checkin_lat, lng: visita.checkin_lng };
     const corpo = corpoDoFreela(dto, { cidade: praca?.cobertura_cidade ?? null, uf: praca?.cobertura_uf ?? null }, checkin);
     if (!corpo) {

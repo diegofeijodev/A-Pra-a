@@ -139,7 +139,8 @@ export interface VouchersLeitura {
   ultimaLeitura(): Promise<Date | null>;
   nomesDosConsultores(ids: string[]): Promise<Map<string, string>>;
   // contexto do pedido (fora da tabela de cupons)
-  visitaDoConsultor(consultantId: string, ref: string): Promise<{ id: string; lead_id: string } | null>;
+  /** Lote F2 §44.4: com a praça da jornada da visita (nula = a principal). */
+  visitaDoConsultor(consultantId: string, ref: string): Promise<{ id: string; lead_id: string; journey?: { praca_id: string | null } } | null>;
   lead(id: string): Promise<LeadDoPedido | null>;
   praca(
     id: string,
@@ -287,7 +288,7 @@ function leitura(db: Cliente): VouchersLeitura {
     async visitaDoConsultor(consultantId, ref) {
       return db.field_visits.findFirst({
         where: { consultant_id: consultantId, OR: [{ id: ref }, { client_id: ref }] },
-        select: { id: true, lead_id: true },
+        select: { id: true, lead_id: true, journey: { select: { praca_id: true } } },
       });
     },
     async lead(id) {

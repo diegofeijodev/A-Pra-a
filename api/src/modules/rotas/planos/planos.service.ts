@@ -10,6 +10,7 @@ import {
 import type { Prisma } from '@prisma/client';
 import { AuthUser } from '../../../common/auth/auth-user';
 import { PrismaService } from '../../../common/database/prisma.service';
+import { PracasDoConsultorService } from '../../../common/pracas/pracas-do-consultor.service';
 import { isUuid } from '../../../common/ids/uuid';
 import { addDays, daysBetween, todaySp } from '../../../common/time/dates';
 import { pontoNaArea } from '../../../domain/area-rules';
@@ -124,6 +125,7 @@ export class PlanosService {
     private readonly rotas: RotasEquipeService,
     @Optional() @Inject(LOVABLE_D_FLAGS) private readonly flags?: FlagsLovableD,
     @Optional() private readonly modo?: ModoCampoService,
+    @Optional() private readonly pracas?: PracasDoConsultorService,
   ) {}
 
   get ligado(): boolean {
@@ -529,7 +531,9 @@ export class PlanosService {
       select: { id: true, name: true, praca_id: true },
     });
     if (!consultor) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Consultor não encontrado.' });
-    if (consultor.praca_id !== p.praca_id) throw invalido('consultant_id: o consultor é de outra praça.');
+    // Lote F2 §44.7: com a flag, vale o conjunto do consultor (desligada, só a principal: o conjunto é `[principal]`).
+    const atua = this.pracas ? await this.pracas.conjunto(consultor.id, consultor.praca_id) : [consultor.praca_id];
+    if (!atua.includes(p.praca_id)) throw invalido('consultant_id: o consultor é de outra praça.');
 
     const existente = await this.prisma.field_routes.findFirst({
       where: { consultant_id: consultor.id, day: dto.day, status: 'ativa' },

@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/database/prisma.service';
+import { PracasDoConsultorService } from '../../common/pracas/pracas-do-consultor.service';
 import { todaySp } from '../../common/time/dates';
 import {
   CELULA_PADRAO_M,
@@ -91,7 +92,10 @@ const celulaSql = (t: TamanhoCelula, lat: string, lng: string) =>
  */
 @Injectable()
 export class HeatmapService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly pracas?: PracasDoConsultorService,
+  ) {}
 
   async heatmap(q: HeatmapQueryDto, agora = new Date()): Promise<HeatmapView> {
     const layer: CamadaCalor = q.layer ?? 'visitas';
@@ -108,7 +112,11 @@ export class HeatmapService {
     const praca = await this.prisma.pracas.findUnique({ where: { id: q.praca_id }, select: { id: true, lat: true, lon: true } });
     if (!praca) throw naoAchada('Praça não encontrada.');
     if (q.consultant_id) {
-      const c = await this.prisma.field_consultants.findFirst({ where: { id: q.consultant_id, praca_id: praca.id }, select: { id: true } });
+      // Lote F2 §44.7: com a flag, quem tem a praça no conjunto (desligada, o filtro de hoje).
+      const c = await this.prisma.field_consultants.findFirst({
+        where: { id: q.consultant_id, ...(this.pracas ? this.pracas.ondeAtua(praca.id) : { praca_id: praca.id }) },
+        select: { id: true },
+      });
       if (!c) throw naoAchada('Consultor não encontrado.');
     }
     const area = q.area_id
@@ -198,7 +206,7 @@ export class HeatmapService {
         FROM field_points p
         JOIN field_journeys jn ON jn.id = p.journey_id
         JOIN field_consultants c ON c.id = jn.consultant_id
-        WHERE jn.day BETWEEN ${f.from} AND ${f.to} AND c.praca_id = ${f.praca}::uuid
+        WHERE jn.day BETWEEN ${f.from} AND ${f.to} AND ${pracaDaPassagem(f)}
           ${f.consultor ? sql`AND jn.consultant_id = ${f.consultor}::uuid` : empty}
           ${filtroGeo(f, 'p.lat', 'p.lng')}
         GROUP BY 1, 2 ORDER BY n DESC, 1, 2 LIMIT ${limite}`);
@@ -256,7 +264,7 @@ export class HeatmapService {
       FROM field_points p
       JOIN field_journeys jn ON jn.id = p.journey_id
       JOIN field_consultants c ON c.id = jn.consultant_id
-      WHERE jn.day BETWEEN ${f.from} AND ${f.to} AND c.praca_id = ${f.praca}::uuid
+      WHERE jn.day BETWEEN ${f.from} AND ${f.to} AND ${pracaDaPassagem(f)}
         ${f.consultor ? sql`AND jn.consultant_id = ${f.consultor}::uuid` : empty}
         ${filtroGeo(f, 'p.lat', 'p.lng')}`);
     return { points: r?.points ?? 0, minutes: minutosAproximados(r?.tracks ?? 0) };
@@ -269,6 +277,12 @@ export class HeatmapService {
     return resumoCobertura(r?.total ?? 0, r?.visited ?? 0);
   }
 }
+
+/**
+ * Lote F2 (contrato §44.7): a passagem é da praça da JORNADA (nula = a principal do consultor). Com a flag desligada nenhuma
+ * jornada tem praça gravada e a conta é a de hoje (`c.praca_id`).
+ */
+const pracaDaPassagem = (f: Filtro) => sql`COALESCE(jn.praca_id, c.praca_id) = ${f.praca}::uuid`;
 
 /** Leads que entram na cobertura (contrato §24.2): da praça, ativos, com coordenada de precisão conhecida. */
 const leadsDaCobertura = (f: Filtro) => sql`l.praca_id = ${f.praca}::uuid AND NOT l.archived AND NOT l.is_test

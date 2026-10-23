@@ -124,3 +124,11 @@ export class ChannelsDto {
   @Length(1, 80, { each: true })
   channels!: string[];
 }
+
+/** Lote F2 (contrato §44.7): o conjunto INTEIRO de praças do consultor (a principal fica sempre; 1 a 20, conferido no domínio). */
+export class PracasDoConsultorDto {
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsUUID('all', { each: true })
+  praca_ids!: string[];
+}

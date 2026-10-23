@@ -4,6 +4,7 @@
  */
 import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../../../common/database/prisma.service';
+import { PracasDoConsultorService } from '../../../common/pracas/pracas-do-consultor.service';
 import { todaySp } from '../../../common/time/dates';
 import { validarPeriodo } from '../../../domain/heat-grid';
 import { montarPainel } from '../../../domain/painel-rules';
@@ -23,6 +24,7 @@ export class PainelService {
     private readonly cadastros: CadastrosDoDiaService,
     @Optional() @Inject(SIGNUP_SYNC_OPCOES) private readonly sync?: OpcoesSignupSync,
     @Optional() private readonly vouchers?: VouchersService,
+    @Optional() private readonly pracas?: PracasDoConsultorService,
   ) {}
 
   async painel(q: PainelQueryDto, agora = new Date()) {
@@ -35,17 +37,26 @@ export class PainelService {
       if (!praca) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Praça não encontrada.' });
     }
     const daPraca = q.praca_id ? { praca_id: q.praca_id } : {};
+    // Lote F2 §44.7: com a flag, os consultores cujo CONJUNTO tem a praça; as visitas e as paradas, só as feitas NELA.
+    const multi = !!q.praca_id && this.pracas?.ligado === true;
     const consultores = await this.prisma.field_consultants.findMany({
-      where: daPraca,
+      where: q.praca_id && this.pracas ? this.pracas.ondeAtua(q.praca_id) : daPraca,
       select: { id: true, name: true, praca_id: true, active: true },
       orderBy: [{ name: 'asc' }, { id: 'asc' }],
     });
     const ids = consultores.map((c) => c.id);
+    // Cadastros (insumos da remuneração, por consultor): listados pela PRINCIPAL, como ganhos e Pix (§44.7) — sem dobrar entre praças.
+    const idsCadastros = multi ? consultores.filter((c) => c.praca_id === q.praca_id).map((c) => c.id) : ids;
     const leadsBase = { archived: false, is_test: false, ...daPraca };
 
     const [visitas, paradas, cad, pracas, exatos, todos, cfg] = await Promise.all([
       this.prisma.field_visits.findMany({
-        where: { consultant_id: { in: ids }, checkout_at: { not: null }, journey: { day: { gte: from, lte: to } } },
+        where: {
+          consultant_id: { in: ids },
+          checkout_at: { not: null },
+          journey: { day: { gte: from, lte: to } },
+          ...(multi ? { AND: [this.pracas!.visitasNaPraca(q.praca_id!)] } : {}),
+        },
         select: {
           id: true,
           consultant_id: true,
@@ -60,10 +71,10 @@ export class PainelService {
         },
       }),
       this.prisma.field_route_stops.findMany({
-        where: { day: { gte: from, lte: to }, route: { status: 'ativa', consultant_id: { in: ids } } },
+        where: { day: { gte: from, lte: to }, route: { status: 'ativa', consultant_id: { in: ids }, ...(multi ? { praca_id: q.praca_id } : {}) } },
         select: { kind: true, status: true, visit_id: true },
       }),
-      this.cadastros.periodo(ids, from, to),
+      this.cadastros.periodo(idsCadastros, from, to),
       this.prisma.pracas.findMany({ where: q.praca_id ? { id: q.praca_id } : {}, select: { start_date: true } }),
       this.prisma.leads.count({ where: { ...leadsBase, lat: { not: null }, lng: { not: null }, location_precision: { in: PRECISAO_EXATA } } }),
       this.prisma.leads.count({ where: leadsBase }),

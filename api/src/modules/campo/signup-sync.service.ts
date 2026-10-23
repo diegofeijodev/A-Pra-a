@@ -9,9 +9,10 @@
  * - erro gravado em `field_signup_sync_state` é sempre sanitizado (sem corpo, telefone, URL ou token);
  * - rodar duas vezes o mesmo conteúdo não duplica nada (UNIQUE + escrita única + `stage < 5`).
  */
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/database/prisma.service';
+import { PracasDoConsultorService } from '../../common/pracas/pracas-do-consultor.service';
 import { todaySp } from '../../common/time/dates';
 import { somenteDigitos } from '../../domain/company-signup-rules';
 import {
@@ -76,6 +77,7 @@ export class SignupSyncService {
     private readonly prisma: PrismaService,
     private readonly freela: FreelaClient,
     private readonly config: RotasConfigService,
+    @Optional() private readonly pracas?: PracasDoConsultorService,
   ) {}
 
   /** Uma rodada: todos os consultores com código no Freela (inclusive inativos). */
@@ -110,6 +112,8 @@ export class SignupSyncService {
     const maxPaginas = opcoes.maxPaginas ?? MAX_PAGINAS_POR_CONSULTOR;
     let itens = 0;
     try {
+      // Lote F2 §44.7: o lead é procurado em TODO o conjunto (desligada, `[principal]`: nenhuma consulta a mais).
+      const conjunto = this.pracas ? await this.pracas.conjunto(c.id, c.praca_id) : [c.praca_id];
       const estado = await this.prisma.field_signup_sync_state.findUnique({ where: { consultant_id: c.id } });
       const maisAntigo = await this.prisma.field_signups.findFirst({
         where: { consultant_id: c.id, [CAMPO_DA_REGRA[regra]]: null },
@@ -134,7 +138,7 @@ export class SignupSyncService {
           ...(cursor ? { cursor } : {}),
         });
         for (const item of p.data) {
-          const criado = await this.processarItem(c, item, regra, agora);
+          const criado = await this.processarItem(c, item, regra, agora, conjunto);
           if (criado) {
             itens++;
             if (!maiorCriacao || criado > maiorCriacao) maiorCriacao = criado;
@@ -178,7 +182,13 @@ export class SignupSyncService {
   }
 
   /** Devolve o `createdAt` do item (para o watermark) ou null se o item é inutilizável. */
-  private async processarItem(c: ConsultorSync, item: CadastroListado, regra: RegraConfirmacao, agora: Date): Promise<Date | null> {
+  private async processarItem(
+    c: ConsultorSync,
+    item: CadastroListado,
+    regra: RegraConfirmacao,
+    agora: Date,
+    conjunto: string[] = [c.praca_id],
+  ): Promise<Date | null> {
     const criado = toDate(item.createdAt);
     if (!criado) return null;
     const novos: Eventos = {
@@ -215,7 +225,7 @@ export class SignupSyncService {
       let leadId = atual?.lead_id ?? cadastro?.lead_id ?? null;
       let leadAmbiguo = false;
       if (!leadId) {
-        const achados = await this.leadsCandidatos(tx, c.praca_id, item);
+        const achados = await this.leadsCandidatos(tx, conjunto, item);
         if (achados.length === 1) leadId = achados[0]!;
         else if (achados.length > 1) leadAmbiguo = true;
       }
@@ -284,14 +294,15 @@ export class SignupSyncService {
     return criado;
   }
 
-  private async leadsCandidatos(tx: Prisma.TransactionClient, pracaId: string, item: CadastroListado): Promise<string[]> {
+  /** Casamento único por telefone/CNPJ (2 = ambíguo); no conjunto de praças do consultor (desligada, só a principal). */
+  private async leadsCandidatos(tx: Prisma.TransactionClient, pracas: string[], item: CadastroListado): Promise<string[]> {
     const key = phoneKey(item.phone);
     const cnpjs = variantesCnpj(item.cnpj);
     const ou: Prisma.leadsWhereInput[] = [];
     if (somenteDigitos(item.phone).length >= 10 && key.length === 9) ou.push({ phone_key: key });
     if (cnpjs.length) ou.push({ cnpj: { in: cnpjs } });
     if (!ou.length) return [];
-    const r = await tx.leads.findMany({ where: { praca_id: pracaId, OR: ou }, select: { id: true }, take: 2 });
+    const r = await tx.leads.findMany({ where: { praca_id: pracas.length === 1 ? pracas[0] : { in: pracas }, OR: ou }, select: { id: true }, take: 2 });
     return r.map((l) => l.id);
   }
 }
