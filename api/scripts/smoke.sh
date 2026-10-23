@@ -2234,6 +2234,18 @@ else
     "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' "$API/v1/consultores/earnings/consultant-rules?consultant_id=$CONS_ID" -H "$HD")|$(jq -r .error.code /tmp/praca-smoke-l.json)"
 fi
 
+echo "── Restante da Lovable, lote F2 (§44), flag desligada: nada muda ──"
+# Com FIELD_MULTI_PRACA_ENABLED desligada (padrão) o guard lê o consultor como hoje, o início só aceita a principal e nada novo vai
+# no wire além de features.multi_praca = false. Ligada: `scripts/smoke-lovable-f2.sh` (não roda junto). A jornada J1 está aberta.
+check "/me e config: multi_praca desligado, sem o conjunto nem a praça ativa" "false|false|false|false" \
+  "$(curl -s $API/v1/campo/me -H "$HC" | jq -r '"\(.features.multi_praca)|\(has("pracas"))|\(has("active_praca_id"))"')|$(curl -s $API/v1/consultores/settings/config -H "$HD" | jq -r .features.multi_praca)"
+check "today e o reenvio do início: JourneyView sem praca_id (o reenvio vem antes da praça)" "false|201|$JORNADA_ID|false" \
+  "$(curl -s $API/v1/campo/today -H "$HC" | jq '.journey | has("praca_id")')|$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' -X POST $API/v1/campo/journeys/start -H "$J" -H "$HC" -d "{\"client_id\":\"$J1\",\"praca_id\":\"$(uuid)\",$POS_CAMPO}")|$(jq -r .id /tmp/praca-smoke-l.json)|$(jq 'has("praca_id")' /tmp/praca-smoke-l.json)"
+check "início com outra praça = 422 MULTI_PRACA_DISABLED; com a principal ou null = a regra de hoje (JOURNEY_ALREADY_OPEN)" "422|MULTI_PRACA_DISABLED|JOURNEY_ALREADY_OPEN|JOURNEY_ALREADY_OPEN" \
+  "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' -X POST $API/v1/campo/journeys/start -H "$J" -H "$HC" -d "{\"client_id\":\"$(uuid)\",\"praca_id\":\"$(uuid)\",$POS_CAMPO}")|$(jq -r .error.code /tmp/praca-smoke-l.json)|$(curl -s -X POST $API/v1/campo/journeys/start -H "$J" -H "$HC" -d "{\"client_id\":\"$(uuid)\",\"praca_id\":\"$PRACA_SEED\",$POS_CAMPO}" | jq -r .error.code)|$(curl -s -X POST $API/v1/campo/journeys/start -H "$J" -H "$HC" -d "{\"client_id\":\"$(uuid)\",\"praca_id\":null,$POS_CAMPO}" | jq -r .error.code)"
+check "praças do consultor = 404 MULTI_PRACA_DISABLED; ConsultorView sem o conjunto; nenhuma jornada com praça gravada" "404|MULTI_PRACA_DISABLED|false|0" \
+  "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' -X PUT $API/v1/consultores/$CONS_ID/pracas -H "$J" -H "$HD" -d "{\"praca_ids\":[\"$PRACA_SEED\"]}")|$(jq -r .error.code /tmp/praca-smoke-l.json)|$(curl -s $API/v1/consultores/$CONS_ID -H "$HD" | jq 'has("pracas") or has("praca_ids")')|$(docker exec praca-postgres psql -U praca -d praca -qtAc "select count(*) from field_journeys where praca_id is not null and consultant_id = '$CONS_ID'" 2>/dev/null | tr -d '[:space:]' || echo 0)"
+
 echo "── Campo: P0 §30 (fechado, recusa, retorno com hora, contato) ──"
 V3=$(uuid)
 VISITA_3=$(checkin "$V3" "$LAT" "lead_id=$LEAD_CAMPO" /tmp/praca-smoke-fachada.jpg)
