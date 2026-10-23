@@ -78,7 +78,10 @@ describe('migrações do lote C', () => {
     const nomes = readdirSync(join(RAIZ, 'prisma/migrations'))
       .filter((n) => /^\d{14}_/.test(n))
       .sort();
-    expect(nomes.slice(-2)).toEqual([
+    // Logo depois da última do lote B, nesta ordem (lotes seguintes acrescentam migrações depois destas).
+    const iB = nomes.indexOf('20261029100000_lovable_l4_intervalo');
+    expect(iB).toBeGreaterThanOrEqual(0);
+    expect(nomes.slice(iB + 1, iB + 3)).toEqual([
       '20261030100000_lovable_l5_segmentos',
       '20261031100000_lovable_l6_cupons',
     ]);
