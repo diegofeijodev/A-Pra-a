@@ -26,7 +26,6 @@ const PRACA = '00000000-0000-4000-8000-0000000000aa';
 const AREA = '00000000-0000-4000-8000-0000000000cc';
 const MALL = '33333333-3333-4333-8333-333333333333';
 const ADMIN: AuthUser = { id: '00000000-0000-4000-8000-0000000000ee', email: 'a@a.com', name: 'A', is_admin: true };
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const FIXTURE = require('./fixtures/overpass-shoppings-bh.json') as { elements: unknown[] };
 
 const pipe = new ValidationPipe({

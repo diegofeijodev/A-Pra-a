@@ -232,7 +232,6 @@ describe('resposta do Overpass → shoppings', () => {
 });
 
 describe('fixture do dry-run em BH (Overpass público, 22/10; recorte sem contato)', () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const fx = require('../../modules/places/__tests__/fixtures/overpass-shoppings-bh.json') as unknown;
   const r = normalizarShoppings(fx);
   const por = (nome: string) => r.filter((s) => s.lugar.name === nome);
