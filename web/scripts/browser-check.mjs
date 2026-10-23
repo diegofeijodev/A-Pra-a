@@ -297,11 +297,19 @@ try {
   await page.locator('#email').fill(EMAIL);
   await page.locator('#senha').fill(SENHA);
   check('formulário de entrada preenchido', (await page.locator('#email').inputValue()) === EMAIL);
+  // Lote E (UX §3.1): com FIELD_DASHBOARD_ENABLED a página inicial da equipe é o Início (o painel); desligado, /hoje, como sempre.
+  const inicioPainel = !!(await api('GET', '/v1/consultores/settings/config')).features?.dashboard;
   await page.getByRole('button', { name: 'Entrar', exact: true }).click();
-  await page.waitForURL('**/hoje', { timeout: 20000 });
+  await page.waitForURL(inicioPainel ? '**/consultores/painel' : '**/hoje', { timeout: 20000 });
   await espera(1500);
   const tokenDoNavegador = await page.evaluate(() => JSON.parse(localStorage.getItem('authUser')).access_token);
-  check('login leva para /hoje com sessão guardada', page.url().includes('/hoje') && tokenDoNavegador.length > 20);
+  if (inicioPainel) {
+    check('login leva ao Início (o painel) com sessão guardada', page.url().includes('/consultores/painel') && tokenDoNavegador.length > 20);
+    await page.goto(`${BASE}/hoje`, { waitUntil: 'networkidle' });
+    await espera(1000);
+  } else {
+    check('login leva para /hoje com sessão guardada', page.url().includes('/hoje') && tokenDoNavegador.length > 20);
+  }
   token = tokenDoNavegador;
 
   // ── 2. Hoje ───────────────────────────────────────────────────
@@ -666,7 +674,8 @@ try {
     await api('PATCH', `/v1/consultores/${consultorId}`, { visit_flow: 'completo' });
     check('fluxo simples é o padrão: o consultor do roteiro completo ganha a exceção "completo"', (await api('GET', `/v1/consultores/${consultorId}`)).visit_flow_effective === 'completo');
   }
-  check('equipe cria o consultor e recebe a senha provisória', criado.temp_password?.length === 10);
+  // Lote E §41.2: a senha provisória passou a 12 caracteres (a política mais forte permitida), com ou sem a flag.
+  check('equipe cria o consultor e recebe a senha provisória (12 caracteres)', criado.temp_password?.length === 12);
 
   const manifesto = await (await fetch(`${BASE}/campo/manifest.webmanifest`)).json();
   check('manifest do atalho "Praça Campo" abre em /campo', manifesto.name === 'Praça Campo' && manifesto.start_url === '/campo');
@@ -680,6 +689,15 @@ try {
   await cel.getByRole('button', { name: 'Entrar', exact: true }).click();
   await cel.waitForURL('**/campo/senha', { timeout: 20000 });
   check('senha provisória leva à troca obrigatória', cel.url().endsWith('/campo/senha'));
+  // Lote E §41.2: com a regra ligada, ela aparece ANTES do erro (marcada ao vivo); desligada, a tela é a de hoje.
+  const politicaSenha = await (await fetch(`${API}/v1/password-policy`)).json();
+  if (politicaSenha.enabled) {
+    await cel.getByText('Uma letra maiúscula').waitFor({ timeout: 20000 });
+    await cel.locator('#nova').fill('fraca');
+    check('L9: a regra da senha nova aparece marcada ao vivo (✕ maiúscula com "fraca")', (await cel.locator('#regra-senha li', { hasText: 'Uma letra maiúscula' }).innerText()).includes('✕'));
+  } else {
+    check('L9 desligado: a troca de senha sem a lista da regra', (await cel.getByText('Uma letra maiúscula').count()) === 0);
+  }
   await cel.locator('#atual').fill(criado.temp_password);
   await cel.locator('#nova').fill(CAMPO_SENHA_NOVA);
   await cel.locator('#confirma').fill(CAMPO_SENHA_NOVA);
@@ -917,7 +935,7 @@ console.log('-- Campo: GPS negado --');
   await page.getByRole('button', { name: 'Gerar', exact: true }).click();
   await page.getByTestId('senha-provisoria').waitFor({ timeout: 15000 });
   const novaSenha = (await page.getByTestId('senha-provisoria').innerText()).trim();
-  check('nova senha provisória aparece uma vez (10 caracteres)', novaSenha.length === 10);
+  check('nova senha provisória aparece uma vez (12 caracteres)', novaSenha.length === 12);
   await page.getByRole('button', { name: 'Fechar', exact: true }).click();
   // A sessão do celular cai (token_version subiu): o próximo pedido toma 401 e leva a /campo/entrar.
   // Esse 401 é ESPERADO — só nesta janela e só em /v1/campo/ (ver `esperado401` no vigia).
@@ -995,7 +1013,8 @@ console.log('-- Campo: GPS negado --');
   // ── Lote C (contrato §36/§38): só leitura e presença; NADA cria pedido de cupom (o pedido é um fato: não sai pela API) ──
   console.log('-- Equipe: lote C da Lovable (segmentos da busca e cupons) --');
   await page.goto(`${BASE}/consultores`, { waitUntil: 'networkidle' });
-  check('Consultores: link "Cupons" só com os cupons ligados', ((await page.getByRole('link', { name: 'Cupons', exact: true }).count()) === 1) === !!lov.vouchers);
+  // O link do topo de /consultores (o menu agrupado do lote E também tem "Cupons": a conta é só no conteúdo da página).
+  check('Consultores: link "Cupons" só com os cupons ligados', ((await page.locator('main').getByRole('link', { name: 'Cupons', exact: true }).count()) === 1) === !!lov.vouchers);
   await page.goto(`${BASE}/consultores/cupons`, { waitUntil: 'networkidle' });
   if (lov.vouchers) {
     await page.getByText('Cupons da 1ª contratação').first().waitFor({ timeout: 20000 });
@@ -1063,6 +1082,78 @@ console.log('-- Campo: GPS negado --');
     await page.getByRole('tab', { name: 'Dia de cada consultor' }).click();
     await page.getByText('Chegada ao local').first().waitFor({ timeout: 20000 });
     check('Rotas: "Dia de cada consultor" continua o roteiro do dia de hoje', (await page.getByText('Chegada ao local').count()) >= 1);
+  }
+
+  // ── Lote E (contrato §34.6, §41, §42; UX §2.1, §3.3, §3.8, §3.9): menu, Clientes, Segurança, Pessoas, ficha do consultor ──
+  console.log('-- Equipe: lote E da Lovable (menu agrupado, Clientes, senha, cadastro, gestor) --');
+  const agrupado = !!(lov.dashboard || lov.map_pins || lov.vouchers || lov.route_plans || lov.team_gestor);
+  await page.goto(`${BASE}/funil`, { waitUntil: 'networkidle' });
+  await page.getByRole('link', { name: 'Funil', exact: true }).first().waitFor({ timeout: 20000 });
+  if (agrupado) await page.getByRole('group', { name: 'Operação de campo' }).first().waitFor({ timeout: 20000 });
+  check(
+    agrupado ? 'Menu agrupado: Operação de campo, Comercial e Administração' : 'Menu de hoje: plano, sem grupos (módulos novos desligados)',
+    agrupado
+      ? (await page.getByRole('group', { name: 'Comercial' }).count()) >= 1 && (await page.getByRole('group', { name: 'Administração' }).count()) >= 1
+      : (await page.getByRole('group', { name: 'Operação de campo' }).count()) === 0 && (await page.getByRole('link', { name: 'Praça', exact: true }).count()) >= 1,
+  );
+  check('Menu: "Início" só com o painel ligado', ((await page.getByRole('link', { name: 'Início', exact: true }).count()) >= 1) === !!lov.dashboard);
+  if (lov.map_pins) {
+    await page.goto(`${BASE}/consultores/clientes`, { waitUntil: 'networkidle' });
+    await page.getByRole('tab', { name: 'Lista' }).waitFor({ timeout: 20000 });
+    await page.getByTestId('lista-conta').or(page.getByText('Nenhum estabelecimento com esses filtros')).first().waitFor({ timeout: 20000 });
+    check('Clientes > Lista: abre em Lista, "A visitar" escondido, com a conta', (await page.getByRole('button', { name: /^A visitar/ }).getAttribute('aria-pressed')) === 'false');
+    await page.getByRole('tab', { name: 'Mapa', exact: true }).click();
+    await page.waitForURL('**/consultores/clientes?modo=mapa', { timeout: 20000 });
+    // Só o mapa tem "Etapa do funil" e o Leaflet; espera ele carregar inteiro (sair antes cancela os pedaços do mapa).
+    await page.getByRole('button', { name: 'Etapa do funil' }).waitFor({ timeout: 20000 });
+    await page.locator('.leaflet-container').waitFor({ timeout: 30000 });
+    await page.waitForLoadState('networkidle');
+    check('Clientes > Mapa: o mapa por situação na mesma página', new URL(page.url()).searchParams.get('modo') === 'mapa' && (await page.getByRole('tab', { name: 'Mapa', exact: true }).getAttribute('aria-selected')) === 'true');
+  }
+  await page.goto(`${BASE}/configuracoes`, { waitUntil: 'networkidle' });
+  await page.getByText('Pessoas').first().waitFor({ timeout: 20000 });
+  if (lov.password_policy) await page.getByText('Segurança', { exact: true }).waitFor({ timeout: 20000 });
+  check('Configurações: "Segurança" (regra da senha nova) só com a regra ligada', ((await page.getByText('Segurança', { exact: true }).count()) === 1) === !!lov.password_policy);
+  if (lov.team_gestor) await page.getByText('ⓘ O que cada perfil pode fazer').waitFor({ timeout: 20000 });
+  check('Pessoas: perfil Admin / Gestor / Equipe só com o gestor ligado', ((await page.getByLabel(/^Perfil de /).count()) > 0) === !!lov.team_gestor);
+  await page.goto(`${BASE}/consultores`, { waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'Novo consultor' }).click();
+  await page.getByText('Novo consultor', { exact: true }).last().waitFor({ timeout: 20000 });
+  check('Novo consultor: "Endereço" e "Banco" (recolhidos) só com o cadastro ligado', ((await page.getByText('Endereço (opcional)').count()) === 1) === !!lov.consultant_profile);
+  await page.keyboard.press('Escape');
+
+  // Gestor (§42): só com a flag. A Rebeca do seed vira gestora pela API e volta a equipe no `finally`.
+  if (lov.team_gestor) {
+    console.log('-- Equipe: entrando como gestor --');
+    const rebeca = (await api('GET', '/v1/users')).find((u) => u.email === 'rebeca@praca.local');
+    const gestorCtx = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'pt-BR', timezoneId: 'America/Sao_Paulo' });
+    try {
+      await api('PATCH', `/v1/users/${rebeca.id}`, { is_gestor: true });
+      const g = await gestorCtx.newPage();
+      vigiar(g, 'gestor');
+      await g.goto(`${BASE}/entrar`, { waitUntil: 'networkidle' });
+      await g.locator('#email').fill('rebeca@praca.local');
+      await g.locator('#senha').fill('praca123');
+      await g.getByRole('button', { name: 'Entrar', exact: true }).click();
+      await g.waitForURL(lov.dashboard ? '**/consultores/painel' : '**/hoje', { timeout: 20000 });
+      check('gestor: entra na página inicial da equipe', true);
+      await g.getByRole('link', { name: 'Buscar estabelecimentos', exact: true }).first().waitFor({ timeout: 20000 });
+      check('gestor: o menu tem "Buscar estabelecimentos" (só mapa aberto)', true);
+      await g.goto(`${BASE}/consultores`, { waitUntil: 'networkidle' });
+      await g.getByRole('button', { name: 'Novo consultor' }).waitFor({ timeout: 20000 });
+      check('gestor: cria consultor ("Novo consultor")', true);
+      await g.goto(`${BASE}/consultores/roteiros`, { waitUntil: 'networkidle' });
+      await g.getByText('Chegada ao local').first().waitFor({ timeout: 20000 });
+      check('gestor: monta roteiro (botão no lugar de "Só administradores montam roteiros")', (await g.getByText('Só administradores montam roteiros.').count()) === 0);
+      await g.goto(`${BASE}/prospeccao`, { waitUntil: 'networkidle' });
+      await g.getByText('2. O que buscar').first().waitFor({ timeout: 20000 });
+      check('gestor: abre a busca de estabelecimentos', (await g.getByText('Só administradores podem buscar estabelecimentos').count()) === 0);
+      const comoGestor = await (await fetch(`${API}/v1/consultores/settings/config`, { method: 'PUT', headers: { Authorization: `Bearer ${await g.evaluate(() => JSON.parse(localStorage.getItem('authUser')).access_token)}`, 'Content-Type': 'application/json' }, body: '{}' })).status;
+      check('gestor: configuração continua só do admin (PUT settings/config = 403)', comoGestor === 403);
+    } finally {
+      await tentar('gestor volta a ser equipe', () => api('PATCH', `/v1/users/${rebeca.id}`, { is_gestor: false }));
+      await gestorCtx.close();
+    }
   }
 } catch (e) {
   ko('roteiro do campo interrompido', String(e).slice(0, 300));
@@ -1152,6 +1243,18 @@ try {
       await cs.getByRole('button', { name: 'Ir para hoje' }).click();
       await cs.getByRole('button', { name: 'Encerrar o dia' }).waitFor({ timeout: 20000 });
     }
+
+    // Lote E (UX §2.2): "Lista | Mapa" nas paradas só com o mapa ligado; o mapa lê os pinos dele (precisa de sinal).
+    await cs.goto(`${BASE}/campo?v=roteiro`, { waitUntil: 'networkidle' });
+    await cs.getByText('Paradas que faltam').waitFor({ timeout: 20000 });
+    check('simples: "Lista | Mapa" nas paradas só com o mapa ligado', ((await cs.getByRole('tab', { name: 'Mapa', exact: true }).count()) === 1) === (meS.features?.map_pins === true));
+    if (meS.features?.map_pins) {
+      await cs.getByRole('tab', { name: 'Mapa', exact: true }).click();
+      await cs.locator('.leaflet-container').or(cs.getByText('Nenhum estabelecimento seu com localização ainda')).first().waitFor({ timeout: 20000 });
+      check('simples: o mapa do consultor abre no celular (pinos dele ou o aviso)', true);
+    }
+    await cs.getByRole('button', { name: 'Voltar', exact: true }).click();
+    await cs.getByRole('button', { name: 'Encerrar o dia' }).waitFor({ timeout: 20000 });
 
     const jpegS = await cs.evaluate(
       () =>
@@ -1277,6 +1380,15 @@ try {
     await cs.locator('#r-nome').fill('Rui Simples');
     await cs.getByRole('radio', { name: 'Gerente', exact: true }).click();
     await cs.locator('#r-fone').fill('31988887777');
+    // Lote E §41.4: e-mail de quem atendeu (opcional) só com a flag; errado mostra o aviso e não é gravado.
+    check('simples: "E-mail de quem atendeu" só com o e-mail ligado', ((await cs.locator('#r-email').count()) === 1) === (meS.features?.contact_email === true));
+    if (meS.features?.contact_email) {
+      await cs.locator('#r-email').fill('rui-sem-arroba');
+      await cs.locator('#r-email').blur();
+      await cs.getByText('Confira o e-mail: falta o @ ou o domínio.').waitFor({ timeout: 10000 });
+      check('L9: e-mail errado mostra o aviso ao sair do campo', true);
+      await cs.locator('#r-email').fill('Rui@Simples.com');
+    }
     const concluir2 = cs.getByRole('button', { name: 'Concluir: Quer retorno' });
     await concluir2.waitFor({ timeout: 10000 });
     check('simples: "Quer retorno" com dia e contato libera o Concluir', !(await concluir2.isDisabled()));
@@ -1291,6 +1403,9 @@ try {
       'simples: retorno gravado com a data de amanhã e o contato',
       !!f2?.checkout_at && f2.answers.result === 'retorno' && f2.answers.followup_date === amanha.toISOString().slice(0, 10) && f2.answers.interlocutor_name === 'Rui Simples',
     );
+    if (meS.features?.contact_email) {
+      check('L9: e-mail de quem atendeu gravado (aparado, minúsculo)', f2?.answers.contact_email === 'rui@simples.com');
+    }
     if (f2) {
       const leadS2 = await api('GET', `/v1/leads/${f2.lead_id}`);
       check('simples: CRM com evento de visita e o próximo passo do retorno', (leadS2.events ?? []).some((e) => e.kind === 'visit') && leadS2.next_step?.date === amanha.toISOString().slice(0, 10));
