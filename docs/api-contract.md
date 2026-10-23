@@ -4764,6 +4764,8 @@ preso à conta da empresa (`COUPON_NOT_OWNED` para outra), então o código pode
 
 ### 38.4 Equipe (sem `@CampoRoute()`; leitura: equipe; escrita: **só admin**; estáticas antes de `:id`)
 
+`contractor-candidates` também é **só admin** (é leitura, mas chama o Freela em nome do Praça e só serve ao vínculo).
+
 | Método | Rota | Corpo / query | Resposta |
 |---|---|---|---|
 | `GET` | `/v1/consultores/vouchers` | `situacao?`, `status?`, `praca_id?`, `consultant_id?`, `from?`, `to?` (dia do pedido, Brasília), `q?` (nome do estabelecimento) | `{ items: VoucherView[], counts: { [situacao]: n, todos: n }, coupons_enabled, freela_configured }` (até 500, mais novos primeiro; `counts` sem o filtro de `situacao`) |
