@@ -23,6 +23,7 @@ DIEGO=$(curl -s -X POST $API/v1/auth/login -H "$J" -d '{"email":"diego@praca.loc
 HD="Authorization: Bearer $(echo "$DIEGO" | jq -r .access_token)"
 PRACA_SEED="00000000-0000-4000-8000-0000000000aa"
 HOJE=$(TZ=America/Sao_Paulo date +%F)
+# Resolução de segundo (como o aparelho manda em rajada): toda consulta que ordena por horário desempata pelo criado por último.
 agora(){ date -u +%Y-%m-%dT%H:%M:%S.000Z; }
 LAT=-19.9245; LNG=-43.9352
 pos(){ echo "\"at\":\"$(agora)\",\"lat\":$LAT,\"lng\":$LNG,\"accuracy\":12"; }
@@ -113,7 +114,7 @@ check "resumo do dia: intervalo registrado e tempo trabalhado = dia − interval
 curl -s -o /dev/null -X POST $API/v1/campo/journeys/current/breaks/start -H "$J" -H "$HC" -d "{\"client_id\":\"$(uuid)\",\"at\":\"$(agora)\"}"
 curl -s -o /dev/null -X POST $API/v1/campo/journeys/current/end -H "$J" -H "$HC" -d "{$(pos)}"
 check "fim da jornada encerra o intervalo aberto (journey_end)" "journey_end|3" \
-  "$($PSQL "select end_reason from field_journey_breaks where consultant_id='$CONS' order by started_at desc limit 1" | tr -d '[:space:]')|$($PSQL "select count(*) from field_journey_breaks where consultant_id='$CONS'" | tr -d '[:space:]')"
+  "$($PSQL "select end_reason from field_journey_breaks where consultant_id='$CONS' order by started_at desc, created_at desc limit 1" | tr -d '[:space:]')|$($PSQL "select count(*) from field_journey_breaks where consultant_id='$CONS'" | tr -d '[:space:]')"
 
 echo "── diária com tempo trabalhado mínimo (§37.6) ──"
 EC=$(curl -s $API/v1/consultores/earnings/config -H "$HD")
