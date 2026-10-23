@@ -991,6 +991,38 @@ console.log('-- Campo: GPS negado --');
   } else {
     check('Mapa por situação desligado: avisa, sem chamar a rota', (await corpo(page)).includes('ainda não está ligado neste servidor'));
   }
+
+  // ── Lote C (contrato §36/§38): só leitura e presença; NADA cria pedido de cupom (o pedido é um fato: não sai pela API) ──
+  console.log('-- Equipe: lote C da Lovable (segmentos da busca e cupons) --');
+  await page.goto(`${BASE}/consultores`, { waitUntil: 'networkidle' });
+  check('Consultores: link "Cupons" só com os cupons ligados', ((await page.getByRole('link', { name: 'Cupons', exact: true }).count()) === 1) === !!lov.vouchers);
+  await page.goto(`${BASE}/consultores/cupons`, { waitUntil: 'networkidle' });
+  if (lov.vouchers) {
+    await page.getByText('Cupons da 1ª contratação').first().waitFor({ timeout: 20000 });
+    const lc = await api('GET', '/v1/consultores/vouchers');
+    check('Cupons: a tela abre com as situações e a contagem do servidor', (await page.getByRole('tab', { name: /^Pedidos \d+$/ }).count()) === 1 && typeof lc.counts.todos === 'number');
+    check('Cupons: sem pedido, o estado vazio explica de onde vêm', lc.counts.todos > 0 || (await corpo(page)).includes('os consultores pedem o cupom na visita'));
+    check('Cupons: "Regras do cupom" para o admin', (await page.getByText('Regras do cupom').count()) === 1);
+  } else {
+    check('Cupons desligados: avisa, sem chamar a rota', (await corpo(page)).includes('ainda não está ligado neste servidor'));
+  }
+  if (lov.dashboard) {
+    await page.goto(`${BASE}/consultores/painel`, { waitUntil: 'networkidle' });
+    await page.getByText('Visitas concluídas').first().waitFor({ timeout: 20000 });
+    check('Painel: cartão "Cupons" com número só com os cupons ligados ("Não ligado" sem eles)', (await corpo(page)).includes('não ligado neste servidor') === !lov.vouchers);
+  }
+  await page.goto(`${BASE}/configuracoes`, { waitUntil: 'networkidle' });
+  await page.getByText('Configurações').first().waitFor({ timeout: 20000 });
+  check('Configurações: "Segmentos da busca" só com os segmentos ligados', ((await page.getByText('Segmentos da busca de estabelecimentos').count()) === 1) === !!lov.segments);
+  if (lov.segments) {
+    await page.getByText('Segmentos da busca de estabelecimentos').click();
+    await page.getByText(/Busca no mapa: Restaurante ou Lanchonete com cozinha pizza/).first().waitFor({ timeout: 20000 });
+    check('Segmentos: os 10 padrão descritos em português (sem etiqueta crua)', (await page.getByText(/^Busca no mapa: /).count()) >= 10);
+  }
+  await page.goto(`${BASE}/prospeccao`, { waitUntil: 'networkidle' });
+  await page.getByText('2. O que buscar').first().waitFor({ timeout: 20000 });
+  const chips = await page.locator('fieldset', { hasText: '2. O que buscar' }).locator('button[aria-pressed]').count();
+  check(`Buscar estabelecimentos: ${lov.segments ? '10 segmentos (Lovable + nossos)' : 'os 5 tipos de hoje'} (${chips})`, chips === (lov.segments ? 10 : 5));
 } catch (e) {
   ko('roteiro do campo interrompido', String(e).slice(0, 300));
 } finally {
@@ -1119,6 +1151,23 @@ try {
     }
     await cs.getByRole('radio', { name: 'Sem interesse', exact: true }).click();
     await cs.getByRole('radio', { name: 'Preço', exact: true }).click();
+    // Lote C (§38, UX §3.2): "Pedir cupom" opcional na tela de resultado; abre a visão própria e volta SEM enviar (nada é gravado).
+    if (meS.features?.vouchers) {
+      const pedir = cs.getByRole('button', { name: 'Pedir cupom da 1ª contratação' });
+      await pedir.waitFor({ timeout: 10000 });
+      check('C: "Pedir cupom da 1ª contratação" aparece em "Sem interesse"', await pedir.isVisible());
+      if (meS.features?.checklist) check('C: atalho "Pedir cupom" na etapa "Oferecer o cupom" do roteiro', (await cs.getByRole('button', { name: /Pedir cupom$/ }).count()) === 1);
+      await pedir.click();
+      await cs.waitForURL(/\/campo\?v=pedir-cupom&ref=/, { timeout: 15000 });
+      await cs.getByText('Falta escolher o ramo.').waitFor({ timeout: 10000 });
+      check('C: a visão de pedir mostra o desconto e não deixa enviar sem o ramo', (await corpo(cs)).includes('de desconto') && (await cs.getByRole('button', { name: 'Enviar pedido do cupom' }).isDisabled()));
+      await cs.getByRole('button', { name: '← Voltar para a visita' }).click();
+      await cs.waitForURL(/\/campo\?v=visita&ref=/, { timeout: 15000 });
+      await cs.getByRole('button', { name: 'Concluir: Sem interesse, Preço' }).waitFor({ timeout: 10000 });
+      check('C: voltar não envia nada (nenhum pedido no servidor)', (await api('GET', `/v1/consultores/vouchers?consultant_id=${consultorSimplesId}`)).counts.todos === 0);
+    } else {
+      check('sem FIELD_VOUCHERS_ENABLED: nenhum botão de cupom', (await cs.getByRole('button', { name: /Pedir cupom/ }).count()) === 0);
+    }
     const concluir1 = cs.getByRole('button', { name: 'Concluir: Sem interesse, Preço' });
     await concluir1.waitFor({ timeout: 10000 });
     check('simples: resultado em 1 chip + motivo libera "Concluir: Sem interesse, Preço"', !(await concluir1.isDisabled()));
@@ -1162,7 +1211,14 @@ try {
     const refS2 = await chegar(LUGAR_S2);
     const v2 = (await diaS()).visits.find((v) => v.client_id === refS2);
     if (v2) leadsSimples.push(v2.lead_id);
+    if (meS.features?.vouchers) {
+      // "Já usa o Freela" não tem 1ª contratação: o botão some (aceite C9). Depois volta para "Quer retorno".
+      await cs.getByRole('radio', { name: 'Já usa o Freela', exact: true }).click();
+      await espera(300);
+      check('C: em "Já usa o Freela" o "Pedir cupom" some', (await cs.getByRole('button', { name: 'Pedir cupom da 1ª contratação' }).count()) === 0);
+    }
     await cs.getByRole('radio', { name: 'Quer retorno', exact: true }).click();
+    if (meS.features?.vouchers) check('C: em "Quer retorno" o "Pedir cupom" aparece', (await cs.getByRole('button', { name: 'Pedir cupom da 1ª contratação' }).count()) === 1);
     await cs.getByRole('radio', { name: 'Amanhã', exact: true }).click();
     await cs.locator('#r-nome').fill('Rui Simples');
     await cs.getByRole('radio', { name: 'Gerente', exact: true }).click();
