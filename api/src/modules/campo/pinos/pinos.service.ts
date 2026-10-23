@@ -10,11 +10,14 @@ import { PrismaService } from '../../../common/database/prisma.service';
 import { isUuid } from '../../../common/ids/uuid';
 import { todaySp } from '../../../common/time/dates';
 import { validarBbox, type Bbox } from '../../../domain/heat-grid';
-import { categoriaDaVisita, categoriaDoLead, classificarTelefone, legenda, META_CATEGORIA, rotuloEtapa, type ModoPinos } from '../../../domain/pin-rules';
-import type { PinosCampoQueryDto, PinosQueryDto } from './pinos.dto';
+import { CATEGORIAS_PINO, categoriaDaVisita, categoriaDoLead, classificarTelefone, legenda, META_CATEGORIA, rotuloEtapa, type CategoriaPino, type ModoPinos } from '../../../domain/pin-rules';
+import type { PinosCampoQueryDto, PinosListaQueryDto, PinosQueryDto } from './pinos.dto';
 
 const { sql, join, empty } = Prisma;
 export const LIMITE_PADRAO_PINOS = 2000;
+/** Lista (§34.6): página padrão e o teto lido de uma vez (como o mapa, que para em 10.000). */
+export const LIMITE_PADRAO_LISTA = 200;
+export const TETO_LISTA = 10_000;
 
 interface Escopo {
   pracaIds: string[];
@@ -73,6 +76,59 @@ export class PinosService {
     const p = await this.prisma.pracas.findUnique({ where: { id: c.praca_id }, select: { id: true, name: true } });
     const pracas = p ? [p] : [];
     return this.montar({ pracaIds: pracas.map((x) => x.id), consultor: c.id }, pracas, q.mode ?? 'resultado', q, null);
+  }
+
+  /**
+   * Clientes > Lista (§34.6): a forma equivalente do mapa, COM os sem localização. A situação sai da MESMA `categoriaDoLead`
+   * (no domínio, nunca num CASE do SQL): por isso a página é montada aqui, sobre o filtro inteiro (até 10.000), em ordem de nome.
+   */
+  async lista(q: PinosListaQueryDto, agora = new Date()) {
+    const pracas = await this.pracasDoFiltro(q.praca_id, agora);
+    const codes = this.codigos(q.codes);
+    const limite = q.limit ?? LIMITE_PADRAO_LISTA;
+    const vazio = { pracas, counts: Object.fromEntries(CATEGORIAS_PINO.map((c) => [c, 0])), total: 0, without_location: 0, items: [], next_cursor: null };
+    if (pracas.length === 0) return { ...vazio, conta: this.contaLista(0, 0) };
+    const termo = q.q ? `%${q.q.trim().replace(/[\\%_]/g, (m) => `\\${m}`)}%` : null;
+    const linhas = await this.prisma.$queryRaw<
+      (InsumoPino & { id: string; name: string; address: string; city: string; praca_id: string; phone: string; lat: number | null; lng: number | null; dia: string | null; consultor: string | null })[]
+    >(sql`
+      SELECT l.id::text AS id, l.name, l.address, l.city, l.praca_id::text AS praca_id, l.phone, l.lat, l.lng, l.stage,
+        ${DECLARADO} AS decl, (u.tem IS NOT NULL) AS tem_visita, u.outcome, u.result, u.freela_status, u.needs_followup, u.refusal_reason,
+        u.dia, u.consultor
+      FROM leads l
+      LEFT JOIN LATERAL (
+        SELECT true AS tem, v.outcome, v.result, v.freela_status, v.needs_followup, v.refusal_reason, j.day AS dia, c.name AS consultor
+        FROM field_visits v JOIN field_journeys j ON j.id = v.journey_id JOIN field_consultants c ON c.id = v.consultant_id
+        WHERE v.lead_id = l.id AND v.checkout_at IS NOT NULL
+        ORDER BY v.checkout_at DESC, v.id DESC LIMIT 1
+      ) u ON true
+      WHERE l.archived = false AND l.is_test = false AND ${daPraca({ pracaIds: pracas.map((p) => p.id) })}
+        ${termo ? sql`AND (l.name ILIKE ${termo} OR l.address ILIKE ${termo} OR l.city ILIKE ${termo})` : empty}
+      ORDER BY l.name, l.id LIMIT ${TETO_LISTA}`);
+    return montarLista({ pracas, linhas, codes, limite, cursor: q.cursor ?? null, conta: (t, s) => this.contaLista(t, s) });
+  }
+
+  private codigos(texto: string | undefined): CategoriaPino[] | null {
+    if (texto === undefined) return null;
+    const lista = texto.split(',').map((x) => x.trim()).filter(Boolean);
+    const ruim = lista.find((c) => !(CATEGORIAS_PINO as readonly string[]).includes(c));
+    if (ruim !== undefined || lista.length === 0) {
+      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: `codes: use ${CATEGORIAS_PINO.join(', ')}.` });
+    }
+    return lista as CategoriaPino[];
+  }
+
+  private contaLista(total: number, sem: number): string {
+    return `${total.toLocaleString('pt-BR')} estabelecimentos no filtro (${sem.toLocaleString('pt-BR')} sem localização exata, que não aparecem no mapa). Situação = última visita concluída; cadastro declarado (não anulado) ou etapa 5 a 7 do funil = Cadastrou; sem visita concluída = A visitar. Fora os arquivados e os de teste.`;
+  }
+
+  private async pracasDoFiltro(pracaId: string | undefined, agora: Date): Promise<{ id: string; name: string }[]> {
+    if (pracaId) {
+      const p = await this.prisma.pracas.findUnique({ where: { id: pracaId }, select: { id: true, name: true } });
+      if (!p) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Praça não encontrada.' });
+      return [p];
+    }
+    return this.prisma.pracas.findMany({ where: { start_date: { lte: todaySp(agora) } }, select: { id: true, name: true }, orderBy: { name: 'asc' } });
   }
 
   /** Balão do pino (§34.2): sem telefone inteiro — só a máscara e o tipo. */
@@ -158,6 +214,50 @@ export class PinosService {
         : 'Situação = última visita concluída; cadastro declarado (não anulado) ou etapa 5 a 7 do funil = Cadastrou; sem visita concluída = A visitar.';
     return `${total.toLocaleString('pt-BR')} estabelecimentos com localização no mapa + ${sem.toLocaleString('pt-BR')} sem localização (não aparecem). ${criterio} Fora os arquivados e os de teste.`;
   }
+}
+
+/** Parte pura da Lista (§34.6): contagem do filtro inteiro (antes de `codes`), filtro, página por cursor. */
+export function montarLista(p: {
+  pracas: { id: string; name: string }[];
+  linhas: (InsumoPino & { id: string; name: string; address: string; city: string; praca_id: string; phone: string; lat: number | null; lng: number | null; dia: string | null; consultor: string | null })[];
+  codes: CategoriaPino[] | null;
+  limite: number;
+  cursor: string | null;
+  conta: (total: number, sem: number) => string;
+}) {
+  const counts = Object.fromEntries(CATEGORIAS_PINO.map((c) => [c, 0])) as Record<CategoriaPino, number>;
+  let sem = 0;
+  const comCodigo = p.linhas.map((l) => {
+    const code = codigoDoPino(l, 'resultado') as CategoriaPino;
+    counts[code] += 1;
+    if (l.lat == null || l.lng == null) sem += 1;
+    return { l, code };
+  });
+  const filtradas = p.codes ? comCodigo.filter((x) => p.codes!.includes(x.code)) : comCodigo;
+  const inicio = p.cursor ? filtradas.findIndex((x) => x.l.id === p.cursor) + 1 : 0;
+  const pagina = filtradas.slice(inicio, inicio + p.limite);
+  const total = p.linhas.length;
+  return {
+    pracas: p.pracas,
+    counts,
+    total,
+    without_location: sem,
+    items: pagina.map(({ l, code }) => ({
+      id: l.id,
+      name: l.name,
+      address: l.address,
+      city: l.city,
+      praca_id: l.praca_id,
+      code,
+      label: META_CATEGORIA[code].label,
+      color: META_CATEGORIA[code].color,
+      has_location: l.lat != null && l.lng != null,
+      phone: classificarTelefone(l.phone),
+      last_visit: l.dia ? { day: l.dia, consultant_name: l.consultor ?? '' } : null,
+    })),
+    next_cursor: inicio + p.limite < filtradas.length && pagina.length > 0 ? pagina[pagina.length - 1]!.l.id : null,
+    conta: p.conta(total, sem),
+  };
 }
 
 /** Parte pura da resposta (testável sem banco): legenda do filtro inteiro + página com cursor. */
