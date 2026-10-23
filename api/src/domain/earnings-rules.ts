@@ -157,7 +157,11 @@ export const LIMITES_REGRA_NOVOS = {
  *    para o admin preencher; `declared_daily_cap = 30` é a meta diária do nosso campo (`meta_diaria`), uma
  *    salvaguarda nossa, não da Lovable.
  */
-export const PRESET_COMPLETO: RegraNormalizada = { ...REGRA_PADRAO, tiers: REGRA_PADRAO.tiers.map((t) => ({ ...t })), ...CHAVES_NOVAS_PADRAO };
+export const PRESET_COMPLETO: RegraNormalizada = {
+  ...REGRA_PADRAO,
+  tiers: REGRA_PADRAO.tiers.map((t) => ({ ...t })),
+  ...CHAVES_NOVAS_PADRAO,
+};
 export const PRESET_CHEFE: RegraNormalizada = {
   ...REGRA_PADRAO,
   unit_cents: 0,
@@ -214,8 +218,7 @@ const ehInt = (v: unknown, min: number, max: number): v is number =>
 const oneOf = <T extends string>(lista: readonly T[], v: unknown): v is T =>
   typeof v === 'string' && (lista as readonly string[]).includes(v);
 
-export type ResultadoValidacao =
-  { ok: true; regra: RegraBruta } | { ok: false; campo: string; erro: string };
+export type ResultadoValidacao = { ok: true; regra: RegraBruta } | { ok: false; campo: string; erro: string };
 
 /**
  * Valida a configuração COMPLETA. Chave desconhecida ou ausente = erro com o nome do campo.
@@ -239,30 +242,62 @@ export function validarRegra(raw: unknown, opcoes: { mensal?: boolean } = {}): R
   const nv = (k: keyof ChavesNovas): unknown => (o[k] === null ? undefined : o[k]);
   if (nv('signup_source') !== undefined && !oneOf(FONTES_CADASTRO, nv('signup_source')))
     return falha('signup_source', 'use freela_confirmed ou declared.');
-  if (nv('daily_base_cents') !== undefined && !ehInt(nv('daily_base_cents'), N.daily_base_cents.min, N.daily_base_cents.max))
-    return falha('daily_base_cents', `inteiro em centavos de ${N.daily_base_cents.min} a ${N.daily_base_cents.max} (0 = sem diária).`);
+  if (
+    nv('daily_base_cents') !== undefined &&
+    !ehInt(nv('daily_base_cents'), N.daily_base_cents.min, N.daily_base_cents.max)
+  )
+    return falha(
+      'daily_base_cents',
+      `inteiro em centavos de ${N.daily_base_cents.min} a ${N.daily_base_cents.max} (0 = sem diária).`,
+    );
   if (nv('daily_base_condition') !== undefined && !oneOf(CONDICOES_DIARIA, nv('daily_base_condition')))
     return falha('daily_base_condition', 'use none, journey_open, min_visits ou route_assigned.');
-  if (nv('daily_base_min_visits') !== undefined && !ehInt(nv('daily_base_min_visits'), N.daily_base_min_visits.min, N.daily_base_min_visits.max))
+  if (
+    nv('daily_base_min_visits') !== undefined &&
+    !ehInt(nv('daily_base_min_visits'), N.daily_base_min_visits.min, N.daily_base_min_visits.max)
+  )
     return falha('daily_base_min_visits', 'inteiro de 0 a 1000.');
-  if (nv('daily_base_requires_journey') !== undefined && typeof nv('daily_base_requires_journey') !== 'boolean')
+  if (
+    nv('daily_base_requires_journey') !== undefined &&
+    typeof nv('daily_base_requires_journey') !== 'boolean'
+  )
     return falha('daily_base_requires_journey', 'use true ou false.');
   if (nv('tiers_mode') !== undefined && !oneOf(MODOS_FAIXA, nv('tiers_mode')))
     return falha('tiers_mode', 'use highest ou cumulative.');
-  if (nv('declared_daily_cap') !== undefined && !ehInt(nv('declared_daily_cap'), N.declared_daily_cap.min, N.declared_daily_cap.max))
-    return falha('declared_daily_cap', `inteiro de ${N.declared_daily_cap.min} a ${N.declared_daily_cap.max} ou null (sem limite).`);
-  if (nv('declared_confirm_days') !== undefined && !ehInt(nv('declared_confirm_days'), N.declared_confirm_days.min, N.declared_confirm_days.max))
-    return falha('declared_confirm_days', `inteiro de ${N.declared_confirm_days.min} a ${N.declared_confirm_days.max} ou null (desligado).`);
+  if (
+    nv('declared_daily_cap') !== undefined &&
+    !ehInt(nv('declared_daily_cap'), N.declared_daily_cap.min, N.declared_daily_cap.max)
+  )
+    return falha(
+      'declared_daily_cap',
+      `inteiro de ${N.declared_daily_cap.min} a ${N.declared_daily_cap.max} ou null (sem limite).`,
+    );
+  if (
+    nv('declared_confirm_days') !== undefined &&
+    !ehInt(nv('declared_confirm_days'), N.declared_confirm_days.min, N.declared_confirm_days.max)
+  )
+    return falha(
+      'declared_confirm_days',
+      `inteiro de ${N.declared_confirm_days.min} a ${N.declared_confirm_days.max} ou null (desligado).`,
+    );
   if (
     nv('daily_base_min_worked_minutes') !== undefined &&
-    !ehInt(nv('daily_base_min_worked_minutes'), N.daily_base_min_worked_minutes.min, N.daily_base_min_worked_minutes.max)
+    !ehInt(
+      nv('daily_base_min_worked_minutes'),
+      N.daily_base_min_worked_minutes.min,
+      N.daily_base_min_worked_minutes.max,
+    )
   )
-    return falha('daily_base_min_worked_minutes', `inteiro em minutos de ${N.daily_base_min_worked_minutes.min} a ${N.daily_base_min_worked_minutes.max} ou null (sem exigência).`);
+    return falha(
+      'daily_base_min_worked_minutes',
+      `inteiro em minutos de ${N.daily_base_min_worked_minutes.min} a ${N.daily_base_min_worked_minutes.max} ou null (sem exigência).`,
+    );
   const cumulativo = nv('tiers_mode') === 'cumulative';
   if (!ehInt(o.unit_cents, L.unit_cents.min, L.unit_cents.max))
     return falha('unit_cents', `inteiro em centavos de ${L.unit_cents.min} a ${L.unit_cents.max}.`);
   if (opcoes.mensal) {
-    if (!oneOf(PERIODOS_FAIXA_MENSAL, o.tiers_period)) return falha('tiers_period', 'use day, week ou month.');
+    if (!oneOf(PERIODOS_FAIXA_MENSAL, o.tiers_period))
+      return falha('tiers_period', 'use day, week ou month.');
   } else if (!oneOf(PERIODOS_FAIXA, o.tiers_period)) return falha('tiers_period', 'use day ou week.');
   if (!Array.isArray(o.tiers) || o.tiers.length > L.tiers_max)
     return falha('tiers', `lista de até ${L.tiers_max} faixas.`);
@@ -300,8 +335,12 @@ export function validarRegra(raw: unknown, opcoes: { mensal?: boolean } = {}): R
     return falha('cap_cents', 'inteiro em centavos ou null (sem teto).');
   // L11 §43.2: o bônus mensal soma (ou é só a faixa) e não tem teto.
   if (o.tiers_period === 'month' && o.combine === 'max')
-    return falha('combine', 'com bônus mensal use sum ou tier_only (o maior entre dias de semanas diferentes não tem sentido).');
-  if (o.tiers_period === 'month' && o.cap_cents !== null) return falha('cap_cents', 'o bônus mensal não tem teto: use null.');
+    return falha(
+      'combine',
+      'com bônus mensal use sum ou tier_only (o maior entre dias de semanas diferentes não tem sentido).',
+    );
+  if (o.tiers_period === 'month' && o.cap_cents !== null)
+    return falha('cap_cents', 'o bônus mensal não tem teto: use null.');
   if (!ehInt(o.floor_cents, L.floor_cents.min, L.floor_cents.max))
     return falha(
       'floor_cents',
@@ -323,10 +362,20 @@ export function validarRegra(raw: unknown, opcoes: { mensal?: boolean } = {}): R
     return falha('late_grace_days', `inteiro de ${L.late_grace_days.min} a ${L.late_grace_days.max}.`);
   if (o.cap_cents !== null && o.cap_cents < o.floor_cents)
     return falha('cap_cents', 'o teto não pode ser menor que o piso.');
-  if (nv('daily_base_condition') === 'min_visits' && ((nv('daily_base_cents') as number | undefined) ?? 0) > 0 && !((nv('daily_base_min_visits') as number | undefined) ?? 0))
+  if (
+    nv('daily_base_condition') === 'min_visits' &&
+    ((nv('daily_base_cents') as number | undefined) ?? 0) > 0 &&
+    !((nv('daily_base_min_visits') as number | undefined) ?? 0)
+  )
     return falha('daily_base_min_visits', 'com a condição min_visits informe ao menos 1 visita.');
-  if (nv('declared_confirm_days') !== undefined && (nv('declared_confirm_days') as number) >= o.late_grace_days)
-    return falha('declared_confirm_days', 'precisa ser menor que late_grace_days, senão a anulação cairia fora do prazo e nada seria lançado.');
+  if (
+    nv('declared_confirm_days') !== undefined &&
+    (nv('declared_confirm_days') as number) >= o.late_grace_days
+  )
+    return falha(
+      'declared_confirm_days',
+      'precisa ser menor que late_grace_days, senão a anulação cairia fora do prazo e nada seria lançado.',
+    );
   const novas: Partial<ChavesNovas> = {};
   for (const k of CHAVES_REGRA_NOVAS) {
     const v = nv(k);
@@ -427,7 +476,11 @@ export function validarVigencia(p: {
  * Alinhamento da vigência: com faixa/teto semanal (na nova ou na de antes) começa no 1º dia da semana; com bônus mensal,
  * no dia 1 do mês. `antes` = a regra que valeria no `valid_from` sem a nova (a geral ou, no L13, a resolvida do consultor).
  */
-export function conferirAlinhamento(valid_from: string, nova: RegraBruta, antes: RegraBruta | null): ErroVigencia | null {
+export function conferirAlinhamento(
+  valid_from: string,
+  nova: RegraBruta,
+  antes: RegraBruta | null,
+): ErroVigencia | null {
   const semanal = nova.tiers_period === 'week' || antes?.tiers_period === 'week';
   if (semanal && valid_from !== inicioDaSemana(valid_from, nova.week_start_weekday)) {
     return {
@@ -443,7 +496,8 @@ export function conferirAlinhamento(valid_from: string, nova: RegraBruta, antes:
     return {
       code: 'VALIDATION_ERROR',
       campo: 'valid_from',
-      message: 'valid_from: com bônus mensal (nesta regra ou na vigente) a regra precisa começar no dia 1 do mês.',
+      message:
+        'valid_from: com bônus mensal (nesta regra ou na vigente) a regra precisa começar no dia 1 do mês.',
     };
   }
   return null;
@@ -451,14 +505,28 @@ export function conferirAlinhamento(valid_from: string, nova: RegraBruta, antes:
 
 // ── mês (L11, contrato §43) ───────────────────────────────────────────────
 
-export const NOMES_MES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+export const NOMES_MES = [
+  'janeiro',
+  'fevereiro',
+  'março',
+  'abril',
+  'maio',
+  'junho',
+  'julho',
+  'agosto',
+  'setembro',
+  'outubro',
+  'novembro',
+  'dezembro',
+];
 /** "2026-10-23" → "2026-10" */
 export const mesDoDia = (dia: string): string => dia.slice(0, 7);
 /** "2026-10" → "outubro" */
 export const nomeDoMes = (mes: string): string => NOMES_MES[Number(mes.slice(5, 7)) - 1] ?? mes;
 export const ultimoDiaDoMes = (mes: string): string => monthRange(`${mes}-01`).to;
 /** Início da semana que contém o último dia do mês: a semana que leva o bônus do mês (`work_week`). */
-export const semanaDoMes = (mes: string, weekStartWeekday: number): string => inicioDaSemana(ultimoDiaDoMes(mes), weekStartWeekday);
+export const semanaDoMes = (mes: string, weekStartWeekday: number): string =>
+  inicioDaSemana(ultimoDiaDoMes(mes), weekStartWeekday);
 /** O mês cujo último dia cai na semana `from`…`from+6` (no máximo um), ou null. */
 export function mesQueTerminaNaSemana(from: string): string | null {
   for (let i = 0; i < 7; i++) {
@@ -522,7 +590,9 @@ export function calcularMes(p: {
       `Metas do mês atingidas (todas somam): ${atingidas.map((t) => `${plural(t.min_signups, 'cadastro', 'cadastros')} = ${brl(t.amount_cents)}`).join('; ')}. Soma das metas: ${brl(cents)}.`,
     );
   } else if (faixa) {
-    conta.push(`Faixa do mês atingida: ${plural(faixa.min_signups, 'cadastro', 'cadastros')} = ${brl(faixa.amount_cents)}.`);
+    conta.push(
+      `Faixa do mês atingida: ${plural(faixa.min_signups, 'cadastro', 'cadastros')} = ${brl(faixa.amount_cents)}.`,
+    );
   } else {
     conta.push(encerrado ? 'Nenhuma faixa do mês atingida.' : 'Nenhuma faixa do mês atingida ainda.');
   }
@@ -531,7 +601,9 @@ export function calcularMes(p: {
       `Faltam ${rotuloCadastro(regra, prox.faltam)} para a ${cumulativo ? 'meta' : 'faixa'} do mês de ${brl(prox.amount_cents)} (${plural(prox.min_signups, 'cadastro', 'cadastros')}).`,
     );
   // Versão 0 = simulação de uma regra ainda não salva (não há número para citar).
-  conta.push(`Bônus do mês: ${brl(cents)}${encerrado ? '' : ' até agora'} (${v.version > 0 ? `regra versão ${v.version}, vigente no dia 1` : 'regra em edição, não salva'}).`);
+  conta.push(
+    `Bônus do mês: ${brl(cents)}${encerrado ? '' : ' até agora'} (${v.version > 0 ? `regra versão ${v.version}, vigente no dia 1` : 'regra em edição, não salva'}).`,
+  );
   return {
     mes: p.mes,
     from,
@@ -612,7 +684,8 @@ export function faixasAtingidas(tiers: readonly Faixa[], n: number): Faixa[] {
 
 /** Valor da(s) faixa(s) para `n` cadastros: a maior (`highest`) ou a soma de todas (`cumulative`). */
 export function valorDasFaixas(regra: RegraNormalizada, n: number): number {
-  if (regra.tiers_mode === 'cumulative') return faixasAtingidas(regra.tiers, n).reduce((a, t) => a + t.amount_cents, 0);
+  if (regra.tiers_mode === 'cumulative')
+    return faixasAtingidas(regra.tiers, n).reduce((a, t) => a + t.amount_cents, 0);
   return faixaAtingida(regra.tiers, n)?.amount_cents ?? 0;
 }
 
@@ -662,7 +735,9 @@ function condicaoDiariaTexto(r: RegraNormalizada): string {
   if (r.daily_base_requires_journey && r.daily_base_condition !== 'journey_open')
     partes.push('jornada iniciada no dia');
   if (r.daily_base_min_worked_minutes != null)
-    partes.push(`ao menos ${horasMin(r.daily_base_min_worked_minutes)} trabalhados (jornada menos intervalo)`);
+    partes.push(
+      `ao menos ${horasMin(r.daily_base_min_worked_minutes)} trabalhados (jornada menos intervalo)`,
+    );
   return partes.join(' e ');
 }
 
@@ -674,7 +749,10 @@ function diariaVale(r: RegraNormalizada, e: EntradaDia): { vale: boolean; motivo
   if (r.daily_base_condition === 'route_assigned' && !e.route_assigned)
     return { vale: false, motivo: 'não havia rota da equipe atribuída no dia' };
   if (r.daily_base_condition === 'min_visits' && e.visits < r.daily_base_min_visits)
-    return { vale: false, motivo: `foram ${plural(e.visits, 'visita', 'visitas')} e o mínimo é ${r.daily_base_min_visits}` };
+    return {
+      vale: false,
+      motivo: `foram ${plural(e.visits, 'visita', 'visitas')} e o mínimo é ${r.daily_base_min_visits}`,
+    };
   if ((r.daily_base_condition === 'journey_open' || r.daily_base_requires_journey) && !e.journey_open)
     return { vale: false, motivo: 'não houve jornada iniciada no dia' };
   if (r.daily_base_min_worked_minutes != null && (e.worked_minutes ?? 0) < r.daily_base_min_worked_minutes)
@@ -719,9 +797,7 @@ export function calcularDia(
 
   const conta: string[] = [];
   if (regra.combine === 'tier_only') {
-    conta.push(
-      `${rotuloCadastro(regra, n)}; nesta regra só vale a faixa, não o valor por cadastro.`,
-    );
+    conta.push(`${rotuloCadastro(regra, n)}; nesta regra só vale a faixa, não o valor por cadastro.`);
   } else {
     conta.push(`${rotuloCadastro(regra, n)} × ${brl(regra.unit_cents)} = ${brl(porCadastro)}.`);
   }
@@ -747,7 +823,9 @@ export function calcularDia(
     }
     if (faixa && regra.combine === 'max' && porCadastro > 0) conta.push(`Vale o maior: ${brl(nucleo)}.`);
     if (faixa && regra.combine !== 'max' && porCadastro > 0)
-      conta.push(`Soma do valor por cadastro com a ${cumulativo ? 'soma das metas' : 'faixa'}: ${brl(nucleo)}.`);
+      conta.push(
+        `Soma do valor por cadastro com a ${cumulativo ? 'soma das metas' : 'faixa'}: ${brl(nucleo)}.`,
+      );
     if (prox)
       conta.push(
         `Faltam ${rotuloCadastro(regra, prox.faltam)} para a ${cumulativo ? 'meta' : 'faixa'} de ${brl(prox.amount_cents)} (${plural(prox.min_signups, 'cadastro', 'cadastros')}).`,
@@ -836,7 +914,8 @@ export function calcularSemana(p: {
   mes?: ResultadoMes | null;
 }): ResultadoSemana {
   const mes = p.mes ?? null;
-  if (mes && mes.work_week !== p.from) throw new Error(`O bônus de ${mes.mes} entra na semana ${mes.work_week}, não em ${p.from}.`);
+  if (mes && mes.work_week !== p.from)
+    throw new Error(`O bônus de ${mes.mes} entra na semana ${mes.work_week}, não em ${p.from}.`);
   const vSemana = versaoVigente(p.versoes, p.from);
   const days: ResultadoDia[] = eachDay(p.from, p.to).map((dia) => {
     const v = versaoVigente(p.versoes, dia);
@@ -923,10 +1002,20 @@ export function calcularSemana(p: {
  * A frase do mês para a tela (contrato §43.5): "Meta de outubro: 42 cadastros confirmados → faixa 40 = R$ 300,00, entra no
  * Pix de seg 02/11." ou, em andamento, "Meta do mês (outubro): 28 de 40 cadastros confirmados. Faltam 12 para R$ 300,00 (Pix…)".
  */
-export function fraseDoMes(m: ResultadoMes, o: { fonte: FonteCadastro; cumulativo: boolean; pixLabel: string }): string {
-  const [um, varios] = o.fonte === 'declared' ? ['cadastro declarado', 'cadastros declarados'] : ['cadastro confirmado', 'cadastros confirmados'];
+export function fraseDoMes(
+  m: ResultadoMes,
+  o: { fonte: FonteCadastro; cumulativo: boolean; pixLabel: string },
+): string {
+  const [um, varios] =
+    o.fonte === 'declared'
+      ? ['cadastro declarado', 'cadastros declarados']
+      : ['cadastro confirmado', 'cadastros confirmados'];
   const nome = nomeDoMes(m.mes);
-  const faixa = m.faixa ? (o.cumulativo ? `metas atingidas = ${brl(m.month_part_cents)}` : `faixa ${m.faixa.min_signups} = ${brl(m.month_part_cents)}`) : null;
+  const faixa = m.faixa
+    ? o.cumulativo
+      ? `metas atingidas = ${brl(m.month_part_cents)}`
+      : `faixa ${m.faixa.min_signups} = ${brl(m.month_part_cents)}`
+    : null;
   if (m.encerrado)
     return faixa
       ? `Meta de ${nome}: ${plural(m.signups, um, varios)} → ${faixa}, entra no Pix de ${o.pixLabel}.`

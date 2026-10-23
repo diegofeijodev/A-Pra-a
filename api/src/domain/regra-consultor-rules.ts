@@ -15,13 +15,21 @@ import {
 } from './earnings-rules';
 
 /** Chaves que movem a máquina da semana para TODOS: na regra do consultor têm de ser as da geral. */
-export const CHAVES_CALENDARIO = ['week_start_weekday', 'payout_weekday', 'autoclose_hour', 'late_grace_days'] as const satisfies readonly (keyof RegraRemuneracao)[];
+export const CHAVES_CALENDARIO = [
+  'week_start_weekday',
+  'payout_weekday',
+  'autoclose_hour',
+  'late_grace_days',
+] as const satisfies readonly (keyof RegraRemuneracao)[];
 
 /**
  * Lista "efetiva" de UM consultor para `versaoVigente`/`calcularSemana`: as versões gerais que começaram ANTES da 1ª
  * própria e todas as próprias (que, por começarem depois, vencem a partir delas). Sem própria = a MESMA lista geral.
  */
-export function versoesDoConsultor<T extends { version: number; valid_from: string }>(geral: readonly T[], proprias: readonly T[]): readonly T[] {
+export function versoesDoConsultor<T extends { version: number; valid_from: string }>(
+  geral: readonly T[],
+  proprias: readonly T[],
+): readonly T[] {
   if (!proprias.length) return geral;
   const primeira = proprias.reduce((m, v) => (v.valid_from < m ? v.valid_from : m), proprias[0]!.valid_from);
   return [...geral.filter((v) => v.valid_from < primeira), ...proprias];
@@ -68,7 +76,12 @@ export function validarRegraDoConsultor(p: {
       message: `valid_from: o consultor começou na semana de ${diaMes(p.primeiraSemana)}/${p.primeiraSemana.slice(0, 4)}; a regra não pode começar antes.`,
     };
   const geral = versaoVigente(p.geral, p.valid_from);
-  if (!geral) return { code: 'VALIDATION_ERROR', campo: 'valid_from', message: 'valid_from: nenhuma regra geral vale nesse dia.' };
+  if (!geral)
+    return {
+      code: 'VALIDATION_ERROR',
+      campo: 'valid_from',
+      message: 'valid_from: nenhuma regra geral vale nesse dia.',
+    };
   for (const k of CHAVES_CALENDARIO) {
     if (p.nova[k] !== geral.config[k])
       return {

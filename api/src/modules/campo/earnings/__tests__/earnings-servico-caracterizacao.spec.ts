@@ -10,7 +10,12 @@ import type { RotasConfigService } from '../../../rotas/rotas-config.service';
 import { EarningsService } from '../earnings.service';
 import { A, AGORA, B, FakeInputs, FakeRepo } from './fakes';
 
-const ADMIN: AuthUser = { id: 'dddddddd-0000-4000-8000-000000000001', email: 'a@x.com', name: 'Diego', is_admin: true };
+const ADMIN: AuthUser = {
+  id: 'dddddddd-0000-4000-8000-000000000001',
+  email: 'a@x.com',
+  name: 'Diego',
+  is_admin: true,
+};
 const ATOR = { id: ADMIN.id, name: ADMIN.name };
 const SEMANA_ANT = '2026-10-19';
 const SEMANA_ATUAL = '2026-10-26';
@@ -23,7 +28,8 @@ function limpo<T>(x: T): unknown {
   const fixos = new Set([A, B, ADMIN.id]);
   return JSON.parse(
     JSON.stringify(x, (k, v) => {
-      if ((k === 'id' || k === 'reverses_id' || k === 'reverses') && typeof v === 'string' && !fixos.has(v)) return '<id>';
+      if ((k === 'id' || k === 'reverses_id' || k === 'reverses') && typeof v === 'string' && !fixos.has(v))
+        return '<id>';
       if ((k === 'created_at' || k === 'installed_at') && v !== '2026-10-01T00:00:00.000Z') return '<agora>';
       return v;
     }),
@@ -34,8 +40,14 @@ function montar(opts: { autoClose?: boolean; regra?: RegraBruta } = {}) {
   const repo = new FakeRepo();
   if (opts.regra) (repo.versions[0] as { config: RegraBruta }).config = opts.regra;
   const inputs = new FakeInputs();
-  const config = { cadastro: async () => ({ confirmation_rule: 'activated' as const }) } as unknown as RotasConfigService;
-  const s = new EarningsService(repo, inputs, config, { ligado: true, autoClose: opts.autoClose ?? false, janelaNaoConfirmadosDias: 45 });
+  const config = {
+    cadastro: async () => ({ confirmation_rule: 'activated' as const }),
+  } as unknown as RotasConfigService;
+  const s = new EarningsService(repo, inputs, config, {
+    ligado: true,
+    autoClose: opts.autoClose ?? false,
+    janelaNaoConfirmadosDias: 45,
+  });
   // Movimento de duas semanas, dos dois consultores: dias com 0, 4, 9, 10, 12 e 20 cadastros, visitas e jornada.
   inputs.set(A, '2026-10-19', { signups: 4, visits_checkin: 6, visits_checkout: 5, journey: true });
   inputs.set(A, '2026-10-20', { signups: 20, visits_checkin: 25, visits_checkout: 24, journey: true });
@@ -88,9 +100,15 @@ describe.each([
     inputs.set(A, '2026-10-21', { signups: 11 });
     expect(limpo(await s.equipe({ week: SEMANA_ATUAL, consultant_id: A }, AGORA))).toMatchSnapshot();
     expect(limpo(await s.reconciliar({}, ATOR, AGORA))).toMatchSnapshot();
-    const aj = await s.ajustar({ consultant_id: A, amount_cents: -1500, reason: 'Desconto combinado', client_id: CID(1) }, ADMIN, AGORA);
+    const aj = await s.ajustar(
+      { consultant_id: A, amount_cents: -1500, reason: 'Desconto combinado', client_id: CID(1) },
+      ADMIN,
+      AGORA,
+    );
     expect(limpo(aj)).toMatchSnapshot();
-    expect(limpo(await s.estornar(aj.id, { reason: 'Lançado errado', client_id: CID(2) }, ADMIN, AGORA))).toMatchSnapshot();
+    expect(
+      limpo(await s.estornar(aj.id, { reason: 'Lançado errado', client_id: CID(2) }, ADMIN, AGORA)),
+    ).toMatchSnapshot();
     expect(limpo(repo.ledger)).toMatchSnapshot();
     expect(limpo(await s.equipe({ week: SEMANA_ATUAL, consultant_id: A }, AGORA))).toMatchSnapshot();
     expect(limpo(await s.doConsultor({ id: A } as never, AGORA))).toMatchSnapshot();
@@ -109,9 +127,17 @@ describe.each([
 
   it('simulador (dia e semana) e configuração', async () => {
     const { s } = montar({ regra });
-    expect(await s.simular({ signups_confirmed: 12, visits: 3, journey_open: true }, AGORA)).toMatchSnapshot();
     expect(
-      await s.simular({ signups_confirmed: 0, days: [{ signups: 4 }, { signups: 20, journey_open: true }, { signups: 0 }, { signups: 9 }] }, AGORA),
+      await s.simular({ signups_confirmed: 12, visits: 3, journey_open: true }, AGORA),
+    ).toMatchSnapshot();
+    expect(
+      await s.simular(
+        {
+          signups_confirmed: 0,
+          days: [{ signups: 4 }, { signups: 20, journey_open: true }, { signups: 0 }, { signups: 9 }],
+        },
+        AGORA,
+      ),
     ).toMatchSnapshot();
     expect(limpo(await s.lerConfig(AGORA))).toMatchSnapshot();
   });
