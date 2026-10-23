@@ -3143,6 +3143,7 @@ Toda leitura/escrita filtra por `id` **e** `praca_id`: busca de outra praça é 
   `422 SOURCE_UNAVAILABLE` ("A fonte Apify não está ligada neste servidor.").
 - `types`: 1 a 5 valores distintos de §22.1 (`400 VALIDATION_ERROR`). `area_id` precisa ser da
   praça e estar `active` (`404` / `409 AREA_INACTIVE`).
+- (L8, §40.3) `kind` opcional: ausente ou `lugares` = tudo acima; `shoppings`/`lojas` só com `FIELD_MALLS_ENABLED` (senão `404 MALLS_DISABLED`).
 - Cache: chave = hash de `lat`, `lng`, `radius_m` **da área no momento do pedido**, tipos
   ordenados e fonte. Só reaproveita busca `done` com `finished_at` < 7 dias. `refresh: true`
   ignora o cache. Mudar o centro/raio da área gera chave nova.
@@ -3369,6 +3370,9 @@ Leitura: equipe. Escrita: **admin**.
 | POST | `/v1/routes/:id/reoptimize` | `{lat?, lng?}` | `RouteView`. Refaz as pendentes respeitando as fixas, a partir da posição (padrão: última visitada ou o ponto de partida) |
 
 `CandidateView`: `{ id, name, address, lat, lng, stage, source, category?, in_area }`.
+
+(L8, §40.6) `GET /v1/routes/candidates` aceita `scope = geral | shoppings | shopping:<lead_id>` só com `FIELD_MALLS_ENABLED` (senão `404 MALLS_DISABLED`); ausente = o resultado de hoje.
+(L7, §39) Publicar uma rota de um plano usa este mesmo `POST /v1/routes` por dentro (`POST /v1/route-plans/:id/items/:itemId/assign`).
 
 - **Fixa** = âncora: a parada mantém a posição na sequência; o resto é reordenado **dentro de cada trecho entre duas fixas** (o trecho é o que está entre elas na ordem atual).
   Visitadas ficam sempre à frente, na ordem em que aconteceram.
@@ -4871,3 +4875,195 @@ offline); motivo obrigatório ao reprovar (configurável); configuração em rot
 `coupon_expires_at`, `contractor_name`, `field_voucher_events.client_id` e o evento `coupon_retried`. **Fora (L10):** gestor; a equipe ainda não pede cupom pela tela.
 
 **Ordem de subida (L5 e L6):** `migrate deploy` → **API** → **web**. Com as flags desligadas o web novo não manda nada novo.
+
+## 39. Divisão de uma área em N rotas e "Minhas rotas" (restante da Lovable, fase L7) — `/v1/route-plans`, `GET /v1/campo/routes`
+
+Origem: arquitetura item 11 e UX §3.4; Lovable `src/lib/rotas.ts` (`gerarRotas`, `tempoPrevistoMin`), `routes/_authenticated/rotas.tsx` (aba "Clientes": gerar, gerações salvas,
+atribuir representante e data) e `inicio.tsx` ("Minhas rotas"). Um **plano** é um rascunho sem dono nem dia: divide os estabelecimentos de uma área em rotas de até N paradas.
+Publicar uma rota do plano = montar o roteiro do dia de um consultor pelo **mesmo serviço** do `POST /v1/routes` (§23.4). O "Montar roteiro" (vizinho mais próximo + 2-opt) não muda
+e continua sendo o roteiro diário; `field_routes` e os seus índices parciais não mudam.
+
+### 39.1 Trava: `FIELD_ROUTE_PLANS_ENABLED` (padrão `false`; só vale com `FIELD_ROUTES_ENABLED`)
+
+| Estado | Efeito |
+|---|---|
+| Desligada | todas as rotas deste capítulo → `404 ROUTE_PLANS_DISABLED`; `features.route_plans = false` no `GET /v1/consultores/settings/config` e no `GET /v1/campo/me`; nenhuma consulta nova nas rotas existentes |
+| Ligada | `features.route_plans = true`; a tela Rotas ganha "Dividir em rotas" e o consultor, "Próximos dias" |
+
+### 39.2 Configuração — `GET/PUT /v1/route-plans/config` (leitura: equipe; escrita: só admin; gravada em `field_config.divisao`)
+
+PUT parcial; `null` = ausente; chave desconhecida ou fora da faixa → `400 VALIDATION_ERROR`. Resposta: o objeto completo com os padrões.
+
+| Chave | Padrão | Validação | Significado (origem) |
+|---|---|---|---|
+| `por_rota` | 20 | inteiro 1–100 | paradas por rota (Lovable, campo "Clientes por rota") |
+| `modelo_tempo` | `lovable` | `lovable` \| `roteiro` | `lovable`: capacidade e tempo pela conta da Lovable; `roteiro`: pelo nosso relógio (§23.1: janela, almoço, `minutos_por_visita`, velocidade × desvio) |
+| `minutos_por_cliente` | 20 | inteiro 1–120 | Lovable `MIN_POR_CLIENTE` |
+| `intervalo_min` | 60 | inteiro 0–240 | Lovable `MIN_INTERVALO` |
+| `limite_min` | 600 | inteiro 60–1440 | Lovable `LIMITE_ROTA_MIN` (teto de 10 h) |
+| `travel_mode` | `carro` | `carro` \| `a_pe` | modo padrão (o botão principal da Lovable é "carro/moto") |
+| `kmh_carro` / `kmh_pe` | 25 / 5 | inteiros 5–80 / 1–15 | velocidades da conta da Lovable, em **linha reta** (`VELOCIDADE_KMH`/`VELOCIDADE_PE_KMH`) |
+
+Conta da Lovable: `paradas × minutos_por_cliente + intervalo_min + round(km em linha reta ÷ km/h × 60)` (20 paradas a 0 km = 460 min; 10 = 260 min).
+
+### 39.3 Divisão (`domain/divisao-rotas-rules.ts`, `dividirPorVarredura`)
+
+Os pontos são ordenados por id; depois pelo ângulo em volta do centroide (empate = id) e agrupados de forma gulosa: um ponto entra na rota atual se, reordenada pelo vizinho mais
+próximo a partir do ponto mais ao norte-oeste, ela continua com até `por_rota` paradas **e** cabe no tempo (`lovable`: conta da Lovable ≤ `limite_min`; `roteiro`: todas as paradas
+planejadas no relógio do §23, sem reserva). Ponto que sozinho não cabe vira uma rota só dele (como na Lovable). Mesma entrada = mesma saída, em qualquer ordem. Nomes `Rota 01`, `Rota 02`…;
+cores da Lovable em ciclo (8).
+
+### 39.4 Elegíveis
+
+Sem `lead_ids`: os estabelecimentos da praça na área pedida (ou em todas as áreas **ativas**) com as regras dos candidatos do §23.4 (não arquivado, não teste, `stage ≤ estagio_maximo_rota`,
+sem cadastro declarado, `location_precision` `point`/`address`) **e fora de roteiro publicado** (nenhuma parada `pendente`/`visitada`/`adiada` de hoje em diante), até 2.000 (`truncated`).
+Com `lead_ids` (1–2.000): cada um da praça, não arquivado e com coordenada (senão `400 VALIDATION_ERROR`). Com `FIELD_MALLS_ENABLED` e `field_config.shopping.fora_da_rota_geral`
+(§40.2), o plano `geral` deixa de fora shoppings e lojas de dentro de shopping.
+
+### 39.5 Rotas (leitura: equipe; escrita: **só admin**; token de consultor → `401`; estáticas antes de `:id`)
+
+| Método | Rota | Corpo / query | Resposta |
+|---|---|---|---|
+| GET | `/v1/route-plans/config` | — | `ConfigDivisao` (§39.2) |
+| PUT | `/v1/route-plans/config` | parcial | `ConfigDivisao` |
+| GET | `/v1/route-plans?praca_id=&kind=` | `praca_id` obrigatório; `kind` padrão `geral` | `PlanSummary[]` não arquivados, mais novos primeiro (até 50) |
+| POST | `/v1/route-plans` | `{praca_id, area_id?, kind?, parent_lead_id?, lead_ids?, por_rota?, travel_mode?, modelo_tempo?}` | `201 PlanView`. Determinístico. Ausentes = `field_config.divisao`. Nenhum elegível → `422 PLAN_NO_LEADS` |
+| GET | `/v1/route-plans/:id` | — | `PlanView` (também arquivado) |
+| POST | `/v1/route-plans/:id/items/:itemId/assign` | `{consultant_id, day, confirm_replace?}` | `200 { item: PlanItemView, route: RouteView, dropped: n }` |
+| POST | `/v1/route-plans/:id/archive` | — | `200 PlanView` (idempotente) |
+
+`PlanSummary`: `{ id, praca_id, area_id, area_name, kind, parent_lead_id, travel_mode, modelo_tempo, items, assigned, leads, truncated, created_at, created_by, archived_at }`.
+
+`PlanView` = `PlanSummary` + `params` (a foto de `field_config.divisao` e do relógio usados) + `items: PlanItemView[]` (ordem `seq`):
+
+```json
+{ "id": "uuid", "seq": 1, "name": "Rota 01", "color": "#2563eb", "lead_ids": ["uuid"], "distance_m": 6100, "est_minutes": 381,
+  "stops": [{ "lead_id": "uuid", "name": "Bar do Zé", "address": "Rua X, 10 - Savassi", "lat": -19.93, "lng": -43.93 }],
+  "bairro_principal": "Savassi", "do_centro_m": 4200,
+  "conta_lovable": { "minutos": 381, "texto": "30 × 20 min + 1 h de intervalo + 6,1 km em linha reta ÷ 25 km/h (15 min) = …" },
+  "conta_roteiro": { "minutos": 412, "coube": true, "fora": 0, "texto": "30 × 8 min + 7,9 km de rua (linha reta × 1,3) ÷ 4,5 km/h (106 min) + almoço 1h = …" },
+  "assigned": { "route_id": "uuid", "consultant_id": "uuid", "consultant_name": "Ana", "day": "2026-10-23", "at": "ISO" } }
+```
+
+- `distance_m` = soma em **linha reta** (Lovable); `est_minutes` = a conta do modelo do plano. As duas contas vêm sempre: a da Lovable e a do nosso relógio (o que vale depois de
+  publicada). `bairro_principal` = o mais frequente entre os textos depois do último " - " do endereço (formato do mapa aberto); `null` se nenhum. `do_centro_m` = do centro da rota
+  ao centro da praça (`null` sem centro). `stops` leva nome, endereço e coordenada (sem telefone). Lead apagado depois some de `stops` (o `lead_ids` fica como foi gerado).
+
+### 39.6 Atribuir (publicar) — mesmo serviço do `POST /v1/routes`
+
+1. Plano arquivado → `409 PLAN_ARCHIVED`. Item já publicado para o **mesmo** consultor e dia → `200` com o roteiro de agora (idempotente, nada é refeito). Para outro consultor ou dia →
+   `409 ITEM_ALREADY_ASSIGNED`.
+2. Consultor de outra praça → `400 VALIDATION_ERROR` (como os leads de outra praça no §23.4).
+3. O consultor já tem roteiro **ativo** no dia e não veio `confirm_replace: true` → `409 ROUTE_EXISTS` ("Ana já tem roteiro em sex 23/10. Cada consultor tem um roteiro por dia.").
+   Com `confirm_replace`, o roteiro do dia é **substituído** pelo conjunto da rota (regra do §23.4: as visitadas ficam; o resto vira `descartada`; `version` + 1).
+4. Os estabelecimentos da rota que deixaram de poder entrar (arquivado, sem coordenada, apagado) saem antes (`dropped`); se não sobrar nenhum → `422 PLAN_ITEM_EMPTY`.
+5. Chama `RotasEquipeService.build` com `source = 'equipe'`, `travel_mode` do plano e `area_id` do plano: fotografa nome, endereço e coordenada, confere o dia (hoje em diante), o
+   consultor ativo e `409 LEAD_IN_OTHER_ROUTE` (índice parcial `field_route_stops_lead_day_unique`). O índice `field_routes_one_active_per_day` garante um roteiro por consultor/dia.
+6. Grava `assigned_route_id`, `assigned_consultant_id`, `assigned_day`, `assigned_at`, `assigned_by` no item (só se ainda estava livre). Atribuições do mesmo item são serializadas no
+   processo (a API roda em instância única).
+
+O relógio do roteiro (§23) refaz a ordem e os horários ao publicar: a ordem do plano é só a da tela. Publicar para hoje com a jornada já começada segue a regra do §23.4 (o roteiro de
+hoje é substituído só com `confirm_replace`). Arquivar nunca mexe nos roteiros publicados.
+
+### 39.7 "Minhas rotas" do consultor — `GET /v1/campo/routes?from=&to=` (`@CampoRoute()`, só as do próprio consultor)
+
+`from`/`to` `YYYY-MM-DD` (padrão: hoje e hoje + 30), `from ≤ to`, no máximo 62 dias (senão `400 VALIDATION_ERROR`). Resposta `{ from, to, routes: [RouteView & { plan: { plan_id, name, color } | null }] }`,
+por dia: os roteiros do consultor no intervalo (ativos e encerrados), só leitura. O `GET /v1/campo/route/today` e as ações do roteiro de hoje não mudam.
+
+### 39.8 Banco (migração aditiva `20261101100000_lovable_l7_planos`)
+
+`field_route_plans` (`kind` CHECK `geral|shoppings|shopping_interno`, `travel_mode` CHECK `carro|a_pe`, `modelo_tempo` CHECK `lovable|roteiro`, `params_snapshot`, `total_leads`, `truncated`,
+`archived_at`/`archived_by`; FK `praca_id` CASCADE, `parent_lead_id` SET NULL, `created_by` RESTRICT) e `field_route_plan_items` (`UNIQUE (plan_id, seq)`, `lead_ids uuid[]`, `assigned_route_id` FK
+`field_routes` SET NULL, `assigned_consultant_id` FK SET NULL). Arquiva em vez de apagar. Sem índice parcial novo; sem `DROP INDEX`.
+
+### 39.9 Variáveis
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `FIELD_ROUTE_PLANS_ENABLED` | `false` | liga a divisão em N rotas, a atribuição e "Próximos dias" (exige `FIELD_ROUTES_ENABLED`) |
+
+**Divergências anotadas:** velocidades da conta da Lovable como chaves (`kmh_carro`/`kmh_pe`); configuração em rota própria (o `PUT settings/config` não muda); `ITEM_ALREADY_ASSIGNED`,
+`PLAN_ITEM_EMPTY` e `dropped` (a arquitetura não diz o que fazer); a ordem é determinística (a da Lovable dependia da ordem do banco). **Fora:** "Desfazer" da atribuição (UX R3; a
+arquitetura não tem rota e desfazer apagaria um roteiro publicado — a equipe ajusta em "Dia de cada consultor").
+
+## 40. Shoppings (restante da Lovable, fase L8) — `kind` na busca, `/v1/consultores/shoppings`, planos `shoppings`/`shopping_interno`
+
+Origem: arquitetura item 6 e UX §3.7; Lovable `rotas.tsx` (aba Shoppings: mapear os da cidade, "grande" = ≥ 2.500 avaliações do Google, lojas a ≤ 300 m, rota dos shoppings e uma rota
+interna por shopping) e `0004_clientes_shopping_id.sql`. Sem Google: `shop=mall` do mapa aberto, com o polígono.
+
+### 40.1 Trava: `FIELD_MALLS_ENABLED` (padrão `false`; só vale com `FIELD_SEGMENTS_ENABLED` e `FIELD_ROUTE_PLANS_ENABLED`)
+
+| Estado | Efeito |
+|---|---|
+| Desligada | `POST /v1/place-searches` com `kind` ≠ `lugares` → `404 MALLS_DISABLED`; o `kind` ausente (ou `lugares`) valida, consulta e grava **como hoje**; `/v1/consultores/shoppings*` → `404 MALLS_DISABLED`; plano `shoppings`/`shopping_interno` → `404 MALLS_DISABLED`; `scope` nos candidatos do §23.4 → `404 MALLS_DISABLED`; a seleção automática do roteiro e a cadência sem filtro novo; `features.malls = false` |
+| Ligada | `features.malls = true`; Rotas ganha "Shoppings" |
+
+### 40.2 Configuração — `GET/PUT /v1/consultores/shoppings/config` (leitura: equipe; escrita: só admin; `field_config.shopping`)
+
+| Chave | Padrão | Validação | Significado |
+|---|---|---|---|
+| `criterio` | `area` | `area` \| `lojas` \| `area_ou_lojas` \| `area_e_lojas` \| `todos` | o que faz um shopping "grande" (decisão do orquestrador: área) |
+| `area_min_m2` | 20000 | inteiro 1.000–1.000.000 | área mínima do polígono no mapa aberto (dry-run em BH no progresso do lote D) |
+| `lojas_min` | 50 | inteiro 1–1.000 | mínimo de lojas mapeadas dentro (UX: 50) — o mapa aberto quase não tem lojas internas |
+| `raio_lojas_m` | 300 | inteiro 50–2.000 | lojas de shopping só como ponto: raio em volta (Lovable: 0,3 km) |
+| `fora_da_rota_geral` | `true` | boolean | shoppings e lojas de dentro ficam fora do plano `geral`, do `scope=geral` e da seleção automática (Lovable) |
+
+A marcação à mão (`large_override`) vale mais que o critério. Toda decisão vem com a conta escrita (`conta`).
+
+### 40.3 Busca (`POST /v1/place-searches`, só admin, acréscimos ao §22.3)
+
+| `kind` | Corpo | Consulta |
+|---|---|---|
+| `lugares` (ausente) | o de hoje | a de hoje (byte a byte) |
+| `shoppings` | `{praca_id, kind, area_id?, radius_m?}` — sem `types`; `radius_m` 1.000–30.000 (padrão 15.000); centro = a área (se vier) ou o centro da praça (sem centro → `422 PRACA_SEM_CENTRO`) | `nwr["shop"="mall"](around:…)` com `out geom`; área do polígono (§40.5); mesmo shopping mapeado duas vezes = um |
+| `lojas` | `{praca_id, kind, parent_lead_id, types}` — `types` como os segmentos ativos (§36.6); `parent_lead_id` = shopping da praça (senão `404`) | polígono: `way(id);map_to_area->.shop;` + as linhas dos segmentos com `(area.shop)`; sem resultado, ou shopping só como ponto: `around:raio_lojas_m` (menos confiável) |
+
+- `source` só `osm` em `shoppings`/`lojas` (`apify` → `400 VALIDATION_ERROR`). A chave do cache acrescenta `kind` e `parent_lead_id` só quando `kind` ≠ `lugares`.
+- `SearchRunView` ganha `kind` e `parent_lead_id` só quando `kind` ≠ `lugares`; `CandidateView` ganha `metrics` (`{geometry_kind, area_m2, levels}`) só nos achados de `shoppings`.
+- "Adicionar como leads" grava `leads.place_kind = 'shopping'` e as métricas (`lead_mall_metrics`) nos de `shoppings`, e `leads.parent_lead_id` nos de `lojas`. A busca de lojas por
+  polígono grava `pois_mapped` (quantas lojas o mapa aberto tem dentro) no shopping.
+- Lead de shopping fica **fora da inscrição automática** das cadências (com a flag ligada); as lojas de dentro entram como qualquer lead.
+
+### 40.4 Equipe — `/v1/consultores/shoppings` (leitura: equipe; escrita: só admin; estáticas antes de `:lead_id`)
+
+| Método | Rota | Corpo / query | Resposta |
+|---|---|---|---|
+| GET | `/v1/consultores/shoppings/config` | — | `ConfigShopping` |
+| PUT | `/v1/consultores/shoppings/config` | parcial | `ConfigShopping` |
+| GET | `/v1/consultores/shoppings?praca_id=` | — | `{ config, shoppings: ShoppingView[] }` (ordem: grandes primeiro, depois área) |
+| PATCH | `/v1/consultores/shoppings/:lead_id` | `{ large_override: true \| false \| null }` | `ShoppingView` (`null` = volta ao critério) |
+
+`ShoppingView`: `{ lead_id, name, address, lat, lng, geometry_kind, area_m2, levels, pois_mapped, large_override, is_large, por: 'manual'|'criterio', conta, stores, source_ref, measured_at }`
+(`stores` = lojas de dentro já cadastradas).
+
+### 40.5 Área e critério (`domain/shopping-rules.ts`)
+
+Shoelace numa projeção equirretangular local, anéis externos menos internos; relation com o contorno partido em vários ways é remontada ponta com ponta; o que não fecha não conta.
+Way aberto, relation só com nós ou nó = **ponto** (sem área; o critério de área diz "não grande"). `ehGrande` aplica o critério e escreve a conta ("Área no mapa aberto: 25.000 m²
+(mínimo 20.000 m²) → grande.").
+
+### 40.6 Roteiros
+
+- Planos (§39) `kind = shoppings` (os shoppings **grandes** da praça numa rota, até `limite_min`) e `kind = shopping_interno` (`parent_lead_id`; as lojas de dentro), atribuídos pelo mesmo §39.6.
+- `GET /v1/routes/candidates` ganha `scope = geral | shoppings | shopping:<lead_id>` (só com a flag): `geral` tira shoppings e lojas de dentro (se `fora_da_rota_geral`); `shoppings` = só os
+  shoppings; `shopping:<id>` = só as lojas daquele. **Ausente = o resultado de hoje.**
+- Seleção automática do roteiro (gerar ao iniciar e "Montar meu dia"), com a flag e `fora_da_rota_geral`: sem shoppings e lojas de dentro (Lovable). Desligada: igual a hoje.
+
+### 40.7 Banco (migração aditiva `20261102100000_lovable_l8_shoppings`)
+
+`leads.place_kind TEXT NULL CHECK (place_kind IN ('shopping'))`, `leads.parent_lead_id UUID NULL` (FK `leads` SET NULL) com índices `(parent_lead_id)` e `(praca_id, place_kind)`;
+`lead_mall_metrics` (`lead_id` PK/FK CASCADE, `source_ref`, `geometry_kind` CHECK `poligono|ponto`, `area_m2`, `levels`, `pois_mapped`, `measured_at`, `large_override`, `updated_by`,
+`updated_at`); `place_import_runs.kind TEXT NOT NULL DEFAULT 'lugares'` (CHECK `lugares|shoppings|lojas`) e `parent_lead_id UUID NULL`; `place_candidates.metrics JSONB NULL`. Nenhum lead
+existente muda (colunas nulas). Sem índice parcial novo; sem `DROP INDEX`.
+
+### 40.8 Variáveis
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `FIELD_MALLS_ENABLED` | `false` | liga a busca de shoppings e de lojas de dentro, a lista com o critério e os planos dos shoppings (exige `FIELD_SEGMENTS_ENABLED` e `FIELD_ROUTE_PLANS_ENABLED`) |
+
+**Divergências anotadas:** `lojas_min` 50 (UX; a arquitetura dizia 30); critério padrão por área com o dry-run de BH registrado (≥ 50 lojas pega 0 shoppings lá); a busca de shoppings
+usa o centro da praça ou de uma área (a Lovable usava a grade 3 × 3 do Google sobre a cidade); três passos explícitos na tela (a Lovable encadeava tudo num clique). **Fora:** tela do
+consultor agrupada por piso e o raio de chegada até o shopping (`raio_shopping_m`, mexe no check-in); Apify restrito ao polígono; "Adicionar loja ao shopping" à mão.
+
+**Ordem de subida (L7 e L8):** `migrate deploy` → **API** → **web**. Com as flags desligadas o web novo não manda nada novo.
