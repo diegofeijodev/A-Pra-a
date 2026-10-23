@@ -1,5 +1,6 @@
 /** Projeções do wire (contrato §20) — uma só para o consultor e para a equipe. */
 import { faltando, type RespostasVisita } from '../../domain/campo-rules';
+import { pracaDaJornada } from '../../domain/multi-praca-rules';
 import { lerFotoChecklist, pendenciasChecklist, viewDoChecklist } from '../../domain/checklist-rules';
 import { CONFIG_MODO_PADRAO, faltandoSimples, type ConfigModo } from '../../domain/modo-campo-rules';
 
@@ -14,6 +15,13 @@ export interface JourneyView {
   end_lat: number | null;
   end_lng: number | null;
   auto_closed: boolean;
+  /** Lote F2 (contrato §44.5), só com `FIELD_MULTI_PRACA_ENABLED`: a praça da jornada (a nula antiga sai como a principal). */
+  praca_id?: string;
+}
+
+/** Lote F2 §44.5: a `JourneyView` de hoje + `praca_id` (só chamada com a flag ligada; desligada, o wire não muda). */
+export function journeyViewComPraca(j: Parameters<typeof journeyView>[0] & { praca_id?: string | null }, principal: string): JourneyView {
+  return { ...journeyView(j), praca_id: pracaDaJornada(j.praca_id, principal) };
 }
 
 export function journeyView(j: {

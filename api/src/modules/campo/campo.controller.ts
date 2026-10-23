@@ -17,7 +17,8 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { CampoConsultant } from '../../common/auth/campo-consultant';
+import { CampoConsultant, principalDe } from '../../common/auth/campo-consultant';
+import { PracasDoConsultorService } from '../../common/pracas/pracas-do-consultor.service';
 import { LOVABLE_E_FLAGS, type FlagsLovableE } from '../../common/flags/lovable-e.flags';
 import { AllowPendingPassword, CampoRoute } from '../../common/decorators/campo-route.decorator';
 import { CurrentConsultant } from '../../common/decorators/current-consultant.decorator';
@@ -70,6 +71,7 @@ export class CampoController {
     @Optional() private readonly vouchers?: VouchersService,
     @Optional() @Inject(LOVABLE_D_FLAGS) private readonly lovD?: FlagsLovableD,
     @Optional() @Inject(LOVABLE_E_FLAGS) private readonly lovE?: FlagsLovableE,
+    @Optional() private readonly pracas?: PracasDoConsultorService,
   ) {}
 
   @AllowPendingPassword()
@@ -86,6 +88,11 @@ export class CampoController {
     const iv = this.lovB?.breaks && this.configs ? await this.configs.intervalo() : null;
     // Lote C (contrato §38.1): o desconto e a validade para a tela de pedir escrever a frase sem sinal; só com a flag ligada.
     const vc = this.lovC?.vouchers && this.vouchers ? await this.vouchers.config() : null;
+    // Lote F2 (contrato §44.6): o conjunto, a praça ativa e a do início sem escolha; só com a flag ligada.
+    const inicio = this.pracas?.ligado ? await this.journeys.pracasDoInicio(c) : null;
+    const mp = inicio && this.pracas
+      ? { pracas: await this.pracas.conjuntoComNomes(c.id, principalDe(c)), active_praca_id: c.praca_id, default_praca_id: inicio.padrao }
+      : null;
     return {
       ...(await this.auth.me(c.id)),
       visit_flow,
@@ -124,6 +131,7 @@ export class CampoController {
             },
           }
         : {}),
+      ...(mp ?? {}),
       features: {
         company_signup: this.signupLigado,
         earnings: this.earnings?.ligado ?? false,
@@ -143,6 +151,8 @@ export class CampoController {
         // Lote E (contrato §41.1): a regra da senha nova (a tela lê `GET /v1/password-policy`) e o e-mail de quem atendeu.
         password_policy: this.lovE?.password_policy ?? false,
         contact_email: this.lovE?.contact_email ?? false,
+        // Lote F2 (contrato §44.6): consultor em várias praças.
+        multi_praca: this.pracas?.ligado ?? false,
       },
     };
   }

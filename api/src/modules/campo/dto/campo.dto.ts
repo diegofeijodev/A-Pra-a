@@ -75,6 +75,14 @@ export class PosicaoDto {
 export class StartJourneyDto extends PosicaoDto {
   @IsUUID()
   client_id!: string;
+
+  /**
+   * Lote F2 (contrato §44.5): a praça do dia. `null`/ausente = o padrão (roteiro de hoje, senão a principal). Com
+   * `FIELD_MULTI_PRACA_ENABLED` desligada, só a principal é aceita (outra = 422 MULTI_PRACA_DISABLED).
+   */
+  @IsOptional()
+  @IsUUID()
+  praca_id?: string | null;
 }
 
 /** Lote B §37.4: início/fim do intervalo — `client_id` + hora real; a posição é opcional. */

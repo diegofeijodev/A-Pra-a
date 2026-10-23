@@ -1,6 +1,8 @@
-import { ConflictException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger, NotFoundException, Optional, UnprocessableEntityException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { CampoConsultant } from '../../common/auth/campo-consultant';
+import { CampoConsultant, principalDe } from '../../common/auth/campo-consultant';
+import { PracasDoConsultorService } from '../../common/pracas/pracas-do-consultor.service';
+import { pracaDoInicio } from '../../domain/multi-praca-rules';
 import { PrismaService } from '../../common/database/prisma.service';
 import { minutesSp, todaySp, weekdayOf } from '../../common/time/dates';
 import { ehDiaDeTrabalho, metaDoDia, type GoalView } from '../../domain/alerta-rules';
@@ -9,7 +11,7 @@ import { fimDaPausa, pausasEmMinutos, type PausaMin } from '../../domain/interva
 import { CONFIG_MODO_DESLIGADO, contaNaMeta } from '../../domain/modo-campo-rules';
 import { breakView, encerrarIntervaloAberto, type BreakView } from './breaks-views';
 import { ModoCampoService } from '../rotas/modo-campo.service';
-import { COM_LEAD, journeyView, visitView, type JourneyView, type VisitView } from './campo-views';
+import { COM_LEAD, journeyView, journeyViewComPraca, visitView, type JourneyView, type VisitView } from './campo-views';
 import type { PontosDto, PosicaoDto, StartJourneyDto } from './dto/campo.dto';
 import { RotasCampoService } from '../rotas/rotas-campo.service';
 import { RotasConfigService } from '../rotas/rotas-config.service';
@@ -64,7 +66,56 @@ export class JourneysService {
     @Optional() private readonly modo?: ModoCampoService,
     @Optional() @Inject(LOVABLE_B_FLAGS) private readonly lovB?: FlagsLovableB,
     @Optional() @Inject(LOVABLE_E_FLAGS) private readonly lovE?: FlagsLovableE,
+    @Optional() private readonly pracas?: PracasDoConsultorService,
   ) {}
+
+  /** Lote F2 §44: com a flag, a `JourneyView` leva a praça da jornada; desligada, a de hoje (byte a byte). */
+  private view(j: Parameters<typeof journeyView>[0] & { praca_id?: string | null }, c: CampoConsultant): JourneyView {
+    return this.pracas?.ligado ? journeyViewComPraca(j, principalDe(c)) : journeyView(j);
+  }
+
+  /** A praça do roteiro ATIVO de hoje (para o padrão do início, §44.5); só lida com a flag. */
+  private async pracaDoRoteiroDeHoje(consultantId: string, agora: Date): Promise<string | null> {
+    const r = await this.prisma.field_routes.findFirst({
+      where: { consultant_id: consultantId, day: todaySp(agora), status: 'ativa' },
+      select: { praca_id: true },
+    });
+    return r?.praca_id ?? null;
+  }
+
+  /**
+   * Lote F2 §44.5/§44.6: a praça que o início usaria sem escolha (roteiro de hoje no conjunto, senão a principal) e o conjunto.
+   * Só com a flag (desligada, `null`: nada lido).
+   */
+  async pracasDoInicio(c: CampoConsultant, agora = new Date()): Promise<{ conjunto: string[]; padrao: string } | null> {
+    if (!this.pracas?.ligado) return null;
+    const principal = principalDe(c);
+    const [conjunto, doRoteiro] = await Promise.all([this.pracas.conjunto(c.id, principal), this.pracaDoRoteiroDeHoje(c.id, agora)]);
+    const r = pracaDoInicio({ ligado: true, principal, conjunto, pedida: null, doRoteiro });
+    return { conjunto, padrao: r.ok && r.praca_id ? r.praca_id : principal };
+  }
+
+  /**
+   * Lote F2 §44.5: a praça do início. Desligada: ausente/`null`/igual à principal = `null` (nada gravado, como hoje); outra =
+   * 422. Ligada: a pedida no conjunto (senão 404), senão a do roteiro de hoje, senão a principal — sempre explícita.
+   */
+  private async escolherPraca(c: CampoConsultant, pedida: string | null | undefined, agora: Date): Promise<string | null> {
+    const principal = principalDe(c);
+    const ligado = this.pracas?.ligado === true;
+    const precisaLer = ligado && this.pracas;
+    const [conjunto, doRoteiro] = precisaLer
+      ? await Promise.all([this.pracas!.conjunto(c.id, principal), pedida ? Promise.resolve(null) : this.pracaDoRoteiroDeHoje(c.id, agora)])
+      : [[principal], null];
+    const r = pracaDoInicio({ ligado, principal, conjunto, pedida, doRoteiro });
+    if (r.ok) return r.praca_id;
+    if (r.erro === 'MULTI_PRACA_DISABLED') {
+      throw new UnprocessableEntityException({
+        code: 'MULTI_PRACA_DISABLED',
+        message: 'Várias praças por consultor não estão ligadas neste servidor. Atualize o aplicativo e inicie o dia de novo.',
+      });
+    }
+    throw new NotFoundException({ code: 'NOT_FOUND', message: 'Praça não encontrada entre as suas.' });
+  }
 
   /** Meta do dia do consultor. A leitura do Hoje nunca falha por causa dela. */
   private async metaDe(feitas: number, agora: Date, pausas?: PausaMin[]): Promise<TodayView['goal']> {
@@ -129,8 +180,8 @@ export class JourneysService {
       : {};
     return {
       day: hoje,
-      journey: aberta ? journeyView(aberta) : null,
-      journeys: jornadas.map(journeyView),
+      journey: aberta ? this.view(aberta, c) : null,
+      journeys: jornadas.map((j) => this.view(j, c)),
       open_visit: views.find((v) => !v.checkout_at && !v.auto_closed) ?? null,
       visits: views,
       counters: {
@@ -155,6 +206,8 @@ export class JourneysService {
   async start(c: CampoConsultant, dto: StartJourneyDto, agora = new Date()): Promise<JourneyView> {
     const mesma = await this.prisma.field_journeys.findUnique({ where: { client_id: dto.client_id } });
     if (mesma) return this.daMesmaPessoa(mesma, c);
+    // Lote F2 §44.5: DEPOIS do reenvio (a fila não pode perder o início por causa da praça).
+    const praca = await this.escolherPraca(c, dto.praca_id, agora);
 
     // A de ontem que ficou aberta (API fora à meia-noite) não pode travar o dia.
     await this.closeStale(agora, c.id);
@@ -178,6 +231,7 @@ export class JourneysService {
             start_lat: dto.lat,
             start_lng: dto.lng,
             start_accuracy: dto.accuracy,
+            ...(praca ? { praca_id: praca } : {}),
           },
         }),
         this.prisma.field_points.create({
@@ -200,9 +254,10 @@ export class JourneysService {
       if (ganhou) return this.daMesmaPessoa(ganhou, c);
       throw jaAberta();
     }
-    // Roteiro automático (contrato §23.3): depois do commit e sem nunca falhar o início da jornada.
-    await this.rotas?.gerarAoIniciar(c, { lat: dto.lat, lng: dto.lng }, agora);
-    return journeyView(await this.prisma.field_journeys.findUniqueOrThrow({ where: { id } }));
+    // Roteiro automático (contrato §23.3): depois do commit e sem nunca falhar o início da jornada. Lote F2 §44.5: na praça
+    // da jornada (o guard resolveu a principal: ainda não havia jornada aberta).
+    await this.rotas?.gerarAoIniciar(praca ? { ...c, praca_id: praca } : c, { lat: dto.lat, lng: dto.lng }, agora);
+    return this.view(await this.prisma.field_journeys.findUniqueOrThrow({ where: { id } }), c);
   }
 
   async addPoints(c: CampoConsultant, dto: PontosDto, agora = new Date()): Promise<{ accepted: number; duplicates: number }> {
@@ -247,7 +302,7 @@ export class JourneysService {
         orderBy: { ended_at: 'desc' },
       });
       if (ultima?.ended_at && agora.getTime() - ultima.ended_at.getTime() < PASSADO_MAXIMO_MS) {
-        return journeyView(ultima);
+        return this.view(ultima, c);
       }
       throw semJornada();
     }
@@ -285,7 +340,7 @@ export class JourneysService {
         });
       }
     });
-    return journeyView(await this.prisma.field_journeys.findUniqueOrThrow({ where: { id: aberta.id } }));
+    return this.view(await this.prisma.field_journeys.findUniqueOrThrow({ where: { id: aberta.id } }), c);
   }
 
   /**
@@ -342,10 +397,10 @@ export class JourneysService {
     return aberta;
   }
 
-  private daMesmaPessoa(j: Parameters<typeof journeyView>[0] & { consultant_id: string }, c: CampoConsultant): JourneyView {
+  private daMesmaPessoa(j: Parameters<typeof journeyView>[0] & { consultant_id: string; praca_id?: string | null }, c: CampoConsultant): JourneyView {
     if (j.consultant_id !== c.id) {
       throw new ConflictException({ code: 'CLIENT_ID_IN_USE', message: 'Identificador de envio já usado.' });
     }
-    return journeyView(j);
+    return this.view(j, c);
   }
 }

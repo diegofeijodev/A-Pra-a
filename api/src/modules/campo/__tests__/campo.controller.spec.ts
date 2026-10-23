@@ -38,10 +38,13 @@ describe('CampoController.me — features', () => {
     // Lote A da Lovable (§33.1): + day_summary e map_pins; lote B (§35.6/§37.6): + checklist e breaks (aditivos, desligados por padrão).
     // Lote C (§38.1): + vouchers (aditivo, desligado por padrão).
     // Lote E (§41.1): + password_policy e contact_email (aditivos, desligados por padrão).
-    const novas = { day_summary: false, map_pins: false, checklist: false, breaks: false, vouchers: false, route_plans: false, password_policy: false, contact_email: false };
+    // Lote F2 (§44.6): + multi_praca (aditivo, desligado por padrão; sem `pracas`/`active_praca_id`/`default_praca_id`).
+    const novas = { day_summary: false, map_pins: false, checklist: false, breaks: false, vouchers: false, route_plans: false, password_policy: false, contact_email: false, multi_praca: false };
     expect((await off.me(C)).features).toEqual({ company_signup: false, earnings: false, payouts: false, visit_flow: false, declared_signups: false, ...novas });
     expect((await on.me(C)).features).toEqual({ company_signup: true, earnings: false, payouts: false, visit_flow: false, declared_signups: false, ...novas });
     expect(await off.me(C)).not.toHaveProperty('checklist_config');
+    expect(await off.me(C)).not.toHaveProperty('pracas');
+    expect(await off.me(C)).not.toHaveProperty('active_praca_id');
   });
 
   it('earnings segue FIELD_EARNINGS_ENABLED (padrão desligada)', async () => {
