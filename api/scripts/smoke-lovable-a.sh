@@ -4,6 +4,7 @@
 #   FIELD_DASHBOARD_ENABLED=true FIELD_DAY_SUMMARY_ENABLED=true FIELD_MAP_PINS_ENABLED=true \
 #   FIELD_ROUTES_ENABLED=true FIELD_EARNINGS_ENABLED=true npm run start:smoke
 #   bash scripts/smoke-lovable-a.sh
+# Também roda com as flags dos lotes B, C e D ligadas juntas (o cartão de cupons é conferido pelo `features.vouchers` da própria API).
 API=${API:-http://localhost:3014}
 PASS=0; FAIL=0
 ok(){ PASS=$((PASS+1)); printf '  \033[32m✓\033[0m %s\n' "$1"; }
@@ -96,7 +97,13 @@ PN=$(curl -s "$API/v1/consultores/dashboard?praca_id=$PRACA_SEED" -H "$HD")
 check "painel de hoje: 3+ visitas, barras somam as visitas, 8 contas e 8 fontes" "true|true|8|8" \
   "$(echo "$PN" | jq -r '"\(.kpis.visits >= 3)|\(([.by_result[].n] | add) == .kpis.visits)|\(.conta | keys | length)|\(.fonte | keys | length)"')"
 check "o consultor de teste aparece no ranking com 3 visitas" "3" "$(echo "$PN" | jq --arg c "$CONS" '.ranking[] | select(.consultant_id==$c) | .visits')"
-check "cupom: não ligado (nunca 0)" "null|Não ligado neste servidor." "$(echo "$PN" | jq -r '"\(.kpis.vouchers)|\(.conta.vouchers)"')"
+if [ "$(echo "$CFG" | jq -r '.features.vouchers')" = "true" ]; then
+  # Cupons (lote C) ligados nesta API: o cartão traz o resumo dos pedidos, com a conta que soma as parcelas (detalhe no smoke-lovable-c).
+  check "cupom (cupons ligados): objeto, as parcelas somam os pedidos e a conta diz isso" "true|true|true" \
+    "$(echo "$PN" | jq -r '"\(.kpis.vouchers | type == "object")|\(.kpis.vouchers.requested == (.kpis.vouchers.approved + .kpis.vouchers.pending + .kpis.vouchers.rejected))|\(.conta.vouchers | test("pedidos? no período"))"')"
+else
+  check "cupom: não ligado (nunca 0)" "null|Não ligado neste servidor." "$(echo "$PN" | jq -r '"\(.kpis.vouchers)|\(.conta.vouchers)"')"
+fi
 check "período acima de 92 dias = 400" "400" "$(curl -s -o /dev/null -w '%{http_code}' "$API/v1/consultores/dashboard?from=2026-01-01&to=$HOJE" -H "$HD")"
 check "praça inexistente = 404" "404" "$(curl -s -o /dev/null -w '%{http_code}' "$API/v1/consultores/dashboard?praca_id=$(uuid)" -H "$HD")"
 
