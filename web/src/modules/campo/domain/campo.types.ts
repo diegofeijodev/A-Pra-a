@@ -5,6 +5,8 @@ import type { SignupPayload } from './cadastro-empresa';
 import type { MotivoPulo } from '@/modules/rotas/domain/rota.schema';
 import type { ConfigVisita, FluxoVisita } from './fluxo';
 import type { ChecklistConfigCampo, ChecklistVisitaView, MarcaChecklist } from './checklist';
+import type { ConfigCupomCampo } from '@/modules/cupons/domain/cupons';
+import type { PedidoCupomPayload } from '@/modules/cupons/infrastructure/cupons.api';
 
 
 export interface CampoConsultantMe {
@@ -45,6 +47,8 @@ export interface CampoMeResponse {
     /** Lote B (contrato §35.6, §37.6). */
     checklist?: boolean;
     breaks?: boolean;
+    /** Lote C (contrato §38.1): pedido de cupom da 1ª contratação. */
+    vouchers?: boolean;
   };
   /** Modo do chefe §31.4: o fluxo que vale agora para ele. Ausente em respostas antigas guardadas no aparelho = `completo`. */
   visit_flow?: FluxoVisita;
@@ -54,6 +58,8 @@ export interface CampoMeResponse {
   checklist_config?: ChecklistConfigCampo;
   /** Lote B §37.6: só com `FIELD_BREAKS_ENABLED`. */
   breaks_config?: { intervalo_ativo: boolean; intervalo_lembrete_min: number };
+  /** Lote C §38.1: só com `FIELD_VOUCHERS_ENABLED` — o desconto e a validade para a tela de pedir sem sinal. */
+  voucher_config?: ConfigCupomCampo;
 }
 
 /** Posição + hora real do aparelho. */
@@ -232,7 +238,9 @@ export type AcaoFila =
   | { kind: 'route_reoptimize'; payload: { client_id: string } & Posicao }
   // Intervalo (lote B, contrato §37.4): idempotentes por `client_id`.
   | { kind: 'break_start'; payload: IntervaloPayload }
-  | { kind: 'break_end'; payload: IntervaloPayload };
+  | { kind: 'break_end'; payload: IntervaloPayload }
+  // Pedido de cupom (lote C, contrato §38.3): idempotente por `payload.client_id`; `visit_ref` = a visita (o check-in sai antes).
+  | { kind: 'voucher'; visit_ref: string; payload: PedidoCupomPayload; place_name: string };
 
 export type ItemFila = AcaoFila & {
   /** Chave do IndexedDB (autoincremento) — é a ordem de envio. */

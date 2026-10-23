@@ -3,6 +3,7 @@
 import { AreasAtuacao } from '@/components/praca/AreasAtuacao';
 import { CanaisCampo } from '@/components/praca/CanaisCampo';
 import { RemuneracaoConfig } from '@/components/praca/RemuneracaoConfig';
+import { SegmentosBusca } from '@/components/praca/SegmentosBusca';
 import Link from 'next/link';
 import { useState } from 'react';
 import { fmtBR } from '@/lib/dates';
@@ -100,6 +101,7 @@ export default function ConfiguracoesPage() {
       <CanaisCampo />
       <RemuneracaoConfig />
       <AreasAtuacao praca={praca} />
+      <SegmentosAdmin />
       <DadosDaPraca praca={praca} />
       <VariaveisPadrao />
       <RoteiroModelo praca={praca} />
@@ -448,4 +450,10 @@ function Impressao({ praca }: { praca: PracaView }) {
       ))}
     </div>
   );
+}
+
+/** Segmentos da busca (lote C, contrato §36): só com a flag; escrita só de admin. */
+function SegmentosAdmin() {
+  const { user } = useAuth();
+  return <SegmentosBusca admin={!!user?.is_admin} />;
 }

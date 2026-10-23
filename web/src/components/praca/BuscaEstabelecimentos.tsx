@@ -43,9 +43,12 @@ import {
   selecaoPadrao,
   selecionarVisiveis,
   textoConfirmacao,
-  TIPOS,
+  MAX_TIPOS_SEGMENTOS,
+  opcoesDeTipo,
   type ModoLista,
 } from '@/modules/places/domain/busca';
+import { useSegmentos } from '@/modules/places/application/use-places';
+import { useFeaturesLoteC } from '@/modules/cupons/application/use-cupons';
 import type { FonteLugar, TipoLugar } from '@/modules/places/infrastructure/places.api';
 import type { PracaView } from '@/modules/pracas/application/use-pracas';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
@@ -71,6 +74,11 @@ export function BuscaEstabelecimentos({ praca }: { praca: PracaView }) {
   const iniciar = useStartSearch();
   const cancelar = useCancelSearch(praca.id);
   const adicionar = useAddLeads(praca.id);
+  // Segmentos editáveis (§36): com a flag, os chips são os segmentos ativos (até 10 por busca); sem ela, os 5 de hoje.
+  const loteC = useFeaturesLoteC();
+  const { data: segs } = useSegmentos(admin && loteC.segments);
+  const opcoes = useMemo(() => opcoesDeTipo(loteC.segments ? segs?.segments : null), [loteC.segments, segs]);
+  const maxTipos = loteC.segments ? MAX_TIPOS_SEGMENTOS : opcoes.length;
 
   const ativas = useMemo(() => (areas ?? []).filter((a) => a.active), [areas]);
   const [areaId, setAreaId] = useState('');
@@ -129,7 +137,7 @@ export function BuscaEstabelecimentos({ praca }: { praca: PracaView }) {
     );
   };
   const alternarTipo = (t: TipoLugar) =>
-    setTipos((atual) => (atual.includes(t) ? atual.filter((x) => x !== t) : [...atual, t]));
+    setTipos((atual) => (atual.includes(t) ? atual.filter((x) => x !== t) : atual.length >= maxTipos ? atual : [...atual, t]));
 
   const confirmar = () => {
     if (!runId) return;
@@ -187,7 +195,7 @@ export function BuscaEstabelecimentos({ praca }: { praca: PracaView }) {
         <fieldset disabled={ocupada}>
           <legend className="text-sm font-semibold">2. O que buscar</legend>
           <div className="mt-2 flex flex-wrap gap-2">
-            {TIPOS.map((t) => {
+            {opcoes.map((t) => {
               const ligado = tipos.includes(t.id);
               return (
                 <button
@@ -205,6 +213,9 @@ export function BuscaEstabelecimentos({ praca }: { praca: PracaView }) {
             })}
           </div>
           {tipos.length === 0 && <p className="mt-2 text-xs text-destructive">Escolha pelo menos um tipo.</p>}
+          {loteC.segments && tipos.length >= maxTipos && (
+            <p className="mt-2 text-xs text-muted-foreground">No máximo {maxTipos} segmentos por busca.</p>
+          )}
         </fieldset>
 
         {apifyDisponivel && (

@@ -221,6 +221,18 @@ describe('descartar o envio parado na cabeça da fila', () => {
     ];
     expect(seqsParaDescartar(fila, fila[0])).toEqual([1, 2]);
   });
+  it('descartar check-in leva o pedido de cupom da mesma visita (lote C §38.3: sem a visita viraria 404)', () => {
+    const cupom = (seq: number, ref: string) =>
+      mk(seq, { kind: 'voucher', visit_ref: ref, place_name: 'P', payload: { client_id: `v${seq}`, visit_ref: ref, segment: 'Bar', freelas_per_week: 2 } });
+    const fila = [checkin(1, 'a', 8), cupom(2, 'a'), cupom(3, 'b')];
+    expect(seqsParaDescartar(fila, fila[0])).toEqual([1, 2]);
+  });
+  it('pedido de cupom guardado ontem conta como item do dia anterior (pela hora em que foi guardado)', () => {
+    const ontem = Date.parse('2026-10-08T15:00:00.000Z');
+    const c = { ...mk(1, { kind: 'voucher', visit_ref: 'a', place_name: 'P', payload: { client_id: 'v', visit_ref: 'a', segment: 'Bar', freelas_per_week: 0 } }), criado_em: ontem };
+    expect(itensDeDiaAnterior([c], '2026-10-09')).toHaveLength(1);
+    expect(itensDeDiaAnterior([c], '2026-10-08')).toHaveLength(0);
+  });
   it('descartar start remove só ele', () => {
     const fila = [start(1, 8), checkin(2, 'a')];
     expect(seqsParaDescartar(fila, fila[0])).toEqual([1]);

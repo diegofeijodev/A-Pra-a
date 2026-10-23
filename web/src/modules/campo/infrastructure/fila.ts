@@ -1,4 +1,5 @@
 import type { ItemFila } from '../domain/campo.types';
+import { campoPedirCupom } from '@/modules/cupons/infrastructure/cupons.api';
 import {
   campoCheckin,
   campoCheckout,
@@ -57,6 +58,10 @@ export async function enviarItem(item: ItemFila): Promise<void> {
       return;
     case 'break_end':
       await campoEncerrarIntervalo(item.payload);
+      return;
+    case 'voucher':
+      // Só os campos do contrato (o `place_name` é da tela e fica no item, fora do corpo: `forbidNonWhitelisted`).
+      await campoPedirCupom(item.payload);
       return;
   }
 }

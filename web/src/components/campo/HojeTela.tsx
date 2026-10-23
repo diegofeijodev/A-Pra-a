@@ -12,6 +12,7 @@ import { useIntervalo } from '@/modules/campo/application/use-intervalo';
 import { PixCard } from '@/components/campo/PixCard';
 import { MetaCard } from '@/components/campo/MetaCard';
 import { RetornosCampo } from '@/components/campo/RetornosCampo';
+import { CuponsCampo } from '@/components/campo/CuponsCampo';
 import { ResumoDiaAtalhos } from '@/components/campo/ResumoDiaTela';
 import { RoteiroCard } from '@/components/campo/RoteiroCard';
 import { Button } from '@/components/ui/button';
@@ -195,6 +196,8 @@ export function HojeTela() {
       )}
 
       {!carregando && <RetornosCampo />}
+      {/* Lote C (§38): os cupons pedidos, só com a flag. */}
+      {!carregando && <CuponsCampo />}
 
       <div className="fixed inset-x-0 bottom-0 border-t border-border bg-background/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
         <div className="mx-auto flex max-w-md gap-3">

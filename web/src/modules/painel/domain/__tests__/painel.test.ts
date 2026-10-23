@@ -45,6 +45,9 @@ describe('painel do gestor (UX §3.1)', () => {
     expect(c.map((x) => x.titulo)).toEqual(['Visitas concluídas', 'Positivação', 'Tempo entre visitas', 'Visitas realizadas', 'Cadastros', 'Cupons', 'Praças abertas', 'Estabelecimentos mapeados']);
     expect(c.every((x) => x.conta && x.fonte)).toBe(true);
     expect(c.find((x) => x.id === 'vouchers')?.numero).toBe('—');
+    // Lote C (§38.8): com os cupons ligados o cartão mostra os aprovados (Lovable) e a conta vem do servidor.
+    const comCupons = painelSchema.parse({ ...PAINEL, kpis: { ...PAINEL.kpis, vouchers: { requested: 5, pending: 2, approved: 2, rejected: 1, coupons_created: 1 } } });
+    expect(cartoesDoPainel(comCupons).find((x) => x.id === 'vouchers')?.numero).toBe('2');
     expect(c.find((x) => x.id === 'leads_mapped')?.numero).toBe('3.406');
   });
   it('I2: sem rota planejada o número é "—" (a conta diz "Sem rota planejada no período")', () => {

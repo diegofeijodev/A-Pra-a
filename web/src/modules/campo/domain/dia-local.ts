@@ -105,7 +105,8 @@ export function montarDia(today: TodayView | null, fila: ItemFila[], opcoes: { f
         }
         break;
       case 'signup':
-        // Cadastro assistido não muda a visita (§26): só sai da fila.
+      case 'voucher':
+        // Cadastro assistido (§26) e pedido de cupom (§38) não mudam a visita: só saem da fila.
         break;
       case 'answers': {
         const v = achar(item.visit_ref);

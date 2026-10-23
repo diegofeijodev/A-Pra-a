@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { AvisoGps } from '@/components/campo/AvisoGps';
 import { CampoTopo } from '@/components/campo/CampoTopo';
 import { ChecklistVisita } from '@/components/campo/ChecklistVisita';
+import { LinhaPedirCupom } from '@/components/campo/PedirCupomTela';
 import { Cronometro } from '@/components/campo/Cronometro';
 import { FaixaFila } from '@/components/campo/FaixaFila';
 import { Questionario } from '@/components/campo/Questionario';
@@ -181,7 +182,13 @@ export function VisitaTela({ refVisita }: { refVisita: string }) {
       )}
 
       {ck.checklist && (
-        <ChecklistVisita checklist={ck.checklist} abertoInicial={ck.abertoInicial} desabilitado={fechada || ocupado} onMarcas={(m) => mudar({ ...atual, checklist: m })} />
+        <ChecklistVisita
+          checklist={ck.checklist}
+          abertoInicial={ck.abertoInicial}
+          desabilitado={fechada || ocupado}
+          onMarcas={(m) => mudar({ ...atual, checklist: m })}
+          aoPedirCupom={me.data?.features?.vouchers === true ? () => irPara({ v: 'pedir-cupom', ref: refVisita }) : undefined}
+        />
       )}
 
       <Questionario
@@ -190,6 +197,11 @@ export function VisitaTela({ refVisita }: { refVisita: string }) {
         desabilitado={fechada || ocupado}
         onMudar={mudar}
       />
+
+      {/* Lote C (§38, UX §3.2): opcional; some em "Já usa o Freela" e com o estabelecimento fechado (não há 1ª contratação). */}
+      {me.data?.features?.vouchers === true && !fechada && atual.freela_status !== 'ja_usa' && atual.outcome !== 'fechado' && (
+        <LinhaPedirCupom refVisita={refVisita} leadId={doServidor?.lead_id} desabilitado={ocupado} />
+      )}
 
       {cadastroLigado && (
         <section aria-label="Dar acesso ao Freela" className="card-surface space-y-3 p-4">

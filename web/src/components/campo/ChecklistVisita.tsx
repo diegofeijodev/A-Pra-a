@@ -13,11 +13,14 @@ export function ChecklistVisita({
   abertoInicial,
   desabilitado,
   onMarcas,
+  aoPedirCupom,
 }: {
   checklist: ChecklistTela;
   abertoInicial: boolean;
   desabilitado?: boolean;
   onMarcas: (m: MarcaChecklist[]) => void;
+  /** Lote C (§38, UX §3.2 entrada (b)): atalho "Pedir cupom" na etapa "Oferecer o cupom". Ausente = sem atalho. */
+  aoPedirCupom?: () => void;
 }) {
   const [aberto, setAberto] = useState(abertoInicial);
   const [anotando, setAnotando] = useState<string | null>(null);
@@ -61,6 +64,16 @@ export function ChecklistVisita({
                     {i + 1}. {e.text}
                   </span>
                 </button>
+                {aoPedirCupom && e.id === 'oferecer_cupom' && (
+                  <button
+                    type="button"
+                    disabled={desabilitado}
+                    onClick={aoPedirCupom}
+                    className="min-h-12 shrink-0 px-2 text-sm font-bold text-foreground underline underline-offset-4 disabled:opacity-50"
+                  >
+                    <span aria-hidden>🎟 </span>Pedir cupom
+                  </button>
+                )}
                 <button
                   type="button"
                   aria-expanded={anotando === e.id}

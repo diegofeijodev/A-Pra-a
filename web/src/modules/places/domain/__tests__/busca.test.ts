@@ -126,3 +126,12 @@ describe('textos', () => {
     expect(avisoPago(apify)).toBe('Esta busca usa créditos pagos. Até 300 lugares, estimativa de até US$ 2,10. Neste mês: 120 de 3000 lugares.');
   });
 });
+
+describe('segmentos editáveis (§36)', () => {
+  it('sem a flag, os 5 de hoje; com ela, os ativos com o rótulo deles', async () => {
+    const { opcoesDeTipo, TIPOS, MAX_TIPOS_SEGMENTOS } = await import('../busca');
+    expect(opcoesDeTipo(null)).toBe(TIPOS);
+    expect(opcoesDeTipo([{ slug: 'pizzaria', label: 'Pizzaria', active: true, priority: 20 }, { slug: 'motel', label: 'Motel', active: false, priority: 50 }])).toEqual([{ id: 'pizzaria', label: 'Pizzaria' }]);
+    expect(MAX_TIPOS_SEGMENTOS).toBe(10);
+  });
+});

@@ -12,6 +12,7 @@ import { hora, plural } from '@/modules/campo/domain/formatos';
 import { usePagamentos } from '@/modules/pagamentos/application/use-pagamentos';
 import { useAtencao, useConsultores } from '@/modules/consultores/application/use-consultores';
 import { useFeaturesLovable } from '@/modules/painel/application/use-painel';
+import { useFeaturesLoteC } from '@/modules/cupons/application/use-cupons';
 
 const SITUACAO = { em_jornada: 'em jornada agora', encerrou: 'encerrou', nao_iniciou: 'não começou' } as const;
 export default function ConsultoresPage() {
@@ -26,6 +27,8 @@ export default function ConsultoresPage() {
   const declaradosLigados = atencao?.declared_alerts !== undefined;
   // Lote A da Lovable (contrato §33.1): os links só aparecem com o módulo ligado, lido da configuração (200), sem sondar rota desligada.
   const lovable = useFeaturesLovable();
+  // Lote C (contrato §38.1): "Cupons" só com FIELD_VOUCHERS_ENABLED (mesma leitura, sem sondar a rota).
+  const loteC = useFeaturesLoteC();
   const [novo, setNovo] = useState(false);
   const metaDe = new Map((atencao?.consultants ?? []).map((c) => [c.consultant_id, c]));
 
@@ -47,6 +50,11 @@ export default function ConsultoresPage() {
           <Link href="/consultores/calor" className="text-sm text-primary hover:underline">
             Mapa de calor
           </Link>
+          {loteC.vouchers && (
+            <Link href="/consultores/cupons" className="text-sm text-primary hover:underline">
+              Cupons
+            </Link>
+          )}
           {pagamentosLigados && (
             <Link href="/consultores/pagamentos" className="text-sm text-primary hover:underline">
               Pagamentos

@@ -113,7 +113,7 @@ function instanteDoItem(i: ItemFila): number {
     const at = i.payload.points[0]?.at;
     return at ? Date.parse(at) : i.criado_em;
   }
-  if (i.kind === 'answers' || i.kind === 'signup') return i.criado_em;
+  if (i.kind === 'answers' || i.kind === 'signup' || i.kind === 'voucher') return i.criado_em;
   return Date.parse(i.payload.at);
 }
 
@@ -142,7 +142,7 @@ export function seqsParaDescartar(fila: ItemFila[], item: ItemFila): number[] {
   if (item.kind === 'checkin') {
     const ref = item.payload.client_id;
     for (const d of fila) {
-      if (d.consultant_id === item.consultant_id && (d.kind === 'answers' || d.kind === 'checkout' || d.kind === 'signup') && d.visit_ref === ref) seqs.push(d.seq as number);
+      if (d.consultant_id === item.consultant_id && (d.kind === 'answers' || d.kind === 'checkout' || d.kind === 'signup' || d.kind === 'voucher') && d.visit_ref === ref) seqs.push(d.seq as number);
     }
   }
   return seqs;

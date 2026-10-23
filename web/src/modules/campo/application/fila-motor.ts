@@ -71,7 +71,7 @@ export async function drenarCom(d: DepsMotor): Promise<ResultadoDrenagem> {
           const ref = cabeca.payload.client_id;
           // Relê a fila: respostas/checkout guardados durante o envio demorado também saem.
           for (const dep of await d.listar()) {
-            if (dep.consultant_id === consultor && (dep.kind === 'answers' || dep.kind === 'checkout' || dep.kind === 'signup') && dep.visit_ref === ref) {
+            if (dep.consultant_id === consultor && (dep.kind === 'answers' || dep.kind === 'checkout' || dep.kind === 'signup' || dep.kind === 'voucher') && dep.visit_ref === ref) {
               await d.remover(dep.seq as number);
             }
           }

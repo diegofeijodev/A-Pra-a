@@ -11,6 +11,7 @@ import { IntervaloFaixa } from '@/components/campo/IntervaloCampo';
 import { MetaCard } from '@/components/campo/MetaCard';
 import { PixCard } from '@/components/campo/PixCard';
 import { RetornosCampo } from '@/components/campo/RetornosCampo';
+import { CuponsCampo } from '@/components/campo/CuponsCampo';
 import { ResumoDiaAtalhos } from '@/components/campo/ResumoDiaTela';
 import { RoteiroCard } from '@/components/campo/RoteiroCard';
 import { ChegueiBotao } from '@/components/campo/simples/ChegueiBotao';
@@ -151,7 +152,13 @@ export function SimplesHojeTela() {
         </>
       )}
 
-      {aba === 'retornos' && <RetornosCampo />}
+      {aba === 'retornos' && (
+        <div className="space-y-5">
+          <RetornosCampo />
+          {/* Lote C (§38, UX §2.2): os cupons pedidos, só com a flag. */}
+          <CuponsCampo />
+        </div>
+      )}
       {aba === 'ganhos' && (
         <div className="space-y-4">
           <ResumoDiaAtalhos />

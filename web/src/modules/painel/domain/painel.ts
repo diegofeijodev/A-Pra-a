@@ -97,7 +97,11 @@ export const painelSchema = z.object({
     avg_gap_min: z.number().nullable(),
     avg_duration_min: z.number().nullable(),
     time_headline: z.enum(['intervalo', 'duracao']),
-    vouchers: z.null(),
+    // Lote C (§38.8): `null` com os cupons desligados; ligado, os pedidos do período e a situação de cada um agora.
+    vouchers: z.union([
+      z.null(),
+      z.object({ requested: z.number(), pending: z.number(), approved: z.number(), rejected: z.number(), coupons_created: z.number() }),
+    ]),
     pracas_open: z.number(),
     consultants_active: z.number(),
     leads_mapped: z.number(),
@@ -151,7 +155,7 @@ export function cartoesDoPainel(p: PainelView): Cartao[] {
     { id: 'time', titulo: k.time_headline === 'intervalo' ? 'Tempo entre visitas' : 'Tempo dentro do local', numero: tempo == null ? '—' : `${tempo} min`, conta: p.conta.time, fonte: p.fonte.time },
     { id: 'visits', titulo: 'Visitas realizadas', numero: n(k.visits), conta: p.conta.visits, fonte: p.fonte.visits },
     { id: 'signups', titulo: 'Cadastros', numero: n(k.signups), conta: p.conta.signups, fonte: p.fonte.signups },
-    { id: 'vouchers', titulo: 'Cupons', numero: '—', conta: p.conta.vouchers, fonte: p.fonte.vouchers },
+    { id: 'vouchers', titulo: 'Cupons', numero: k.vouchers == null ? '—' : n(k.vouchers.approved), conta: p.conta.vouchers, fonte: p.fonte.vouchers },
     { id: 'pracas_open', titulo: 'Praças abertas', numero: n(k.pracas_open), conta: p.conta.pracas_open, fonte: p.fonte.pracas_open },
     { id: 'leads_mapped', titulo: 'Estabelecimentos mapeados', numero: n(k.leads_mapped), conta: p.conta.leads_mapped, fonte: p.fonte.leads_mapped },
   ];

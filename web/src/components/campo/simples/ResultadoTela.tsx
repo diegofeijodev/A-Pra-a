@@ -7,6 +7,8 @@ import { CampoTopo } from '@/components/campo/CampoTopo';
 import { ChecklistVisita } from '@/components/campo/ChecklistVisita';
 import { Cronometro } from '@/components/campo/Cronometro';
 import { FaixaFila } from '@/components/campo/FaixaFila';
+import { LinhaPedirCupom } from '@/components/campo/PedirCupomTela';
+import { podePedirCupom } from '@/modules/cupons/domain/cupons';
 import { Chip, Grupo } from '@/components/campo/simples/Chip';
 import { MaisDetalhes, ContatoCampos } from '@/components/campo/simples/MaisDetalhes';
 import { Input } from '@/components/ui/input';
@@ -68,6 +70,7 @@ export function ResultadoTela({ refVisita }: { refVisita: string }) {
   const inicial: VisitAnswers = (rascunhoNaFila?.kind === 'answers' ? rascunhoNaFila.payload : null) ?? doServidor?.answers ?? RESPOSTAS_VAZIAS;
   const checkoutBloqueado = itens.find((i) => i.kind === 'checkout' && i.visit_ref === refVisita && i.bloqueio);
   const cadastroLigado = me.data?.features?.company_signup === true;
+  const cuponsLigados = me.data?.features?.vouchers === true;
 
   const [respostas, setRespostas] = useState<VisitAnswers | null>(null);
   const atual = respostas ?? inicial;
@@ -269,7 +272,13 @@ export function ResultadoTela({ refVisita }: { refVisita: string }) {
       )}
 
       {ck.checklist && (
-        <ChecklistVisita checklist={ck.checklist} abertoInicial={ck.abertoInicial} desabilitado={fechada} onMarcas={(m) => set({ checklist: m })} />
+        <ChecklistVisita
+          checklist={ck.checklist}
+          abertoInicial={ck.abertoInicial}
+          desabilitado={fechada}
+          onMarcas={(m) => set({ checklist: m })}
+          aoPedirCupom={cuponsLigados ? () => irPara({ v: 'pedir-cupom', ref: refVisita }) : undefined}
+        />
       )}
 
       <section id="como-foi" className="space-y-3">
@@ -363,6 +372,9 @@ export function ResultadoTela({ refVisita }: { refVisita: string }) {
           </section>
         )}
       </div>
+
+      {/* Lote C (§38, UX §3.2 entrada (a)): opcional, não soma toque até o "Concluir"; some em "Fechado" e "Já usa o Freela". */}
+      {cuponsLigados && podePedirCupom(resultado) && <LinhaPedirCupom refVisita={refVisita} leadId={doServidor?.lead_id} />}
 
       <MaisDetalhes valor={atual} canais={me.data?.channels ?? []} onMudar={set} desabilitado={fechada} contatoFora={contatoObrigatorio} />
 

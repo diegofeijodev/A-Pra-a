@@ -4,6 +4,7 @@ import { Suspense } from 'react';
 import { CadastroEmpresaTela } from '@/components/campo/CadastroEmpresaTela';
 import { HojeTela } from '@/components/campo/HojeTela';
 import { NovaVisitaTela } from '@/components/campo/NovaVisitaTela';
+import { PedirCupomTela } from '@/components/campo/PedirCupomTela';
 import { ParadaTela } from '@/components/campo/ParadaTela';
 import { QrTela } from '@/components/campo/QrTela';
 import { ResumoDiaTela } from '@/components/campo/ResumoDiaTela';
@@ -45,6 +46,8 @@ function Visao() {
       return <ParadaTela key={tela.id} id={tela.id} />;
     case 'resumo':
       return <ResumoDiaTela key={tela.dia ?? 'hoje'} dia={tela.dia} />;
+    case 'pedir-cupom':
+      return <PedirCupomTela key={tela.ref} refVisita={tela.ref} />;
     default:
       return simples ? <SimplesHojeTela /> : <HojeTela />;
   }

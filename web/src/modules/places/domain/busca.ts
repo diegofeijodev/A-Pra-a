@@ -10,6 +10,15 @@ export const TIPOS: { id: TipoLugar; label: string }[] = [
   { id: 'cafe', label: 'Cafés' },
 ];
 
+/** Máximo de segmentos por busca com os segmentos editáveis ligados (§36.6); desligada, os 5 de hoje. */
+export const MAX_TIPOS_SEGMENTOS = 10;
+
+/** Chips do "O que buscar": os segmentos ativos (com a flag) ou os 5 de hoje. */
+export function opcoesDeTipo(segmentos: { slug: string; label: string; active: boolean; priority: number }[] | null | undefined): { id: string; label: string }[] {
+  if (!segmentos) return TIPOS;
+  return segmentos.filter((s) => s.active).map((s) => ({ id: s.slug, label: s.label }));
+}
+
 /** Máximo de ids por chamada de "adicionar" (igual ao servidor). */
 export const MAX_ADICIONAR = 300;
 

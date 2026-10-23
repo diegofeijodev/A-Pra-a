@@ -7,6 +7,9 @@ import { emAndamento } from '../domain/busca';
 import {
   addLeads,
   cancelSearch,
+  getSegmentos,
+  putSegmentos,
+  type Segmento,
   getSearch,
   listCandidates,
   listSearches,
@@ -16,6 +19,23 @@ import {
 } from '../infrastructure/places.api';
 
 const POLL_MS = 2000;
+
+/** Segmentos editáveis (§36): só com a flag (a leitura é 404 sem ela, e a tela não sonda). */
+export function useSegmentos(ligado: boolean) {
+  return useQuery({ queryKey: ['place-segments'], queryFn: getSegmentos, enabled: ligado, staleTime: 60_000 });
+}
+
+export function useSalvarSegmentos() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (lista: Segmento[]) => putSegmentos(lista),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['place-segments'] });
+      toast.success('Segmentos salvos. Valem para as próximas buscas.');
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível salvar os segmentos.')),
+  });
+}
 
 export function useSources(enabled = true) {
   return useQuery({ queryKey: ['place-sources'], queryFn: listSources, enabled, staleTime: 60_000 });

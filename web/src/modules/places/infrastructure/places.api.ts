@@ -4,7 +4,40 @@ import { api } from '@/modules/shared/infrastructure/http';
 /** Pesquisa automática de estabelecimentos (§22 do contrato), validada na borda da rede. */
 
 export const TIPOS_LUGAR = ['bar', 'restaurante', 'lanchonete', 'padaria', 'cafe'] as const;
-export type TipoLugar = (typeof TIPOS_LUGAR)[number];
+/** Um dos 5 de hoje; com os segmentos editáveis ligados (§36), o `slug` de qualquer segmento ativo. */
+export type TipoLugar = string;
+
+/** Segmento editável (§36.2). */
+export const filtroSegmentoSchema = z.object({ key: z.string(), op: z.enum(['=', '~']), value: z.string() });
+export const segmentoSchema = z.object({
+  slug: z.string(),
+  label: z.string(),
+  filters: z.array(z.array(filtroSegmentoSchema)),
+  keywords: z.array(z.string()),
+  priority: z.number(),
+  active: z.boolean(),
+  apify_term: z.string().nullable().optional(),
+});
+export type Segmento = z.infer<typeof segmentoSchema>;
+export const segmentosSchema = z.object({
+  segments: z.array(segmentoSchema),
+  is_default: z.boolean(),
+  updated_at: z.string().nullable(),
+  updated_by: z.string().nullable(),
+});
+export type SegmentosView = z.infer<typeof segmentosSchema>;
+
+/** `GET /v1/place-searches/segments` (só com `features.segments`; desligada = 404, então a tela nem chama). */
+export async function getSegmentos(): Promise<SegmentosView> {
+  const { data } = await api.get('/v1/place-searches/segments');
+  return segmentosSchema.parse(data);
+}
+
+/** `PUT` com a lista INTEIRA (nunca apaga: só desativa). */
+export async function putSegmentos(segments: Segmento[]): Promise<SegmentosView> {
+  const { data } = await api.put('/v1/place-searches/segments', { segments });
+  return segmentosSchema.parse(data);
+}
 export type FonteLugar = 'osm' | 'apify';
 
 export const searchRunSchema = z.object({
