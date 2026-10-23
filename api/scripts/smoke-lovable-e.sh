@@ -142,11 +142,13 @@ echo "── perfil gestor (§42.3): a matriz pela API (admin · gestor · equip
 # a guarda decide ANTES da validação (403/401), e quem passa recebe 400/404 sem gravar nada. "≠403" = passou da guarda.
 passou(){ [ "$1" = "403" ] || [ "$1" = "401" ] && echo "$1" || echo "ok"; }
 linha(){ # $1 nome, $2 método, $3 caminho, $4 corpo, $5 esperado admin|gestor|equipe|consultor
-  local a g e c
-  a=$(passou "$(curl -s -o /dev/null -w '%{http_code}' -X "$2" "$API$3" -H "$J" -H "$HD" ${4:+-d "$4"})")
-  g=$(passou "$(curl -s -o /dev/null -w '%{http_code}' -X "$2" "$API$3" -H "$J" -H "$HG" ${4:+-d "$4"})")
-  e=$(passou "$(curl -s -o /dev/null -w '%{http_code}' -X "$2" "$API$3" -H "$J" -H "$HE" ${4:+-d "$4"})")
-  c=$(passou "$(curl -s -o /dev/null -w '%{http_code}' -X "$2" "$API$3" -H "$J" -H "$HC" ${4:+-d "$4"})")
+  # Sem corpo, sem Content-Type: o Fastify recusa JSON vazio (400) ANTES da guarda, e isso mascararia o 403.
+  local a g e c ct=()
+  [ -n "$4" ] && ct=(-H "$J" -d "$4")
+  a=$(passou "$(curl -s -o /dev/null -w '%{http_code}' -X "$2" "$API$3" -H "$HD" "${ct[@]}")")
+  g=$(passou "$(curl -s -o /dev/null -w '%{http_code}' -X "$2" "$API$3" -H "$HG" "${ct[@]}")")
+  e=$(passou "$(curl -s -o /dev/null -w '%{http_code}' -X "$2" "$API$3" -H "$HE" "${ct[@]}")")
+  c=$(passou "$(curl -s -o /dev/null -w '%{http_code}' -X "$2" "$API$3" -H "$HC" "${ct[@]}")")
   check "$1" "$5" "$a|$g|$e|$c"
 }
 NADA=$(uuid)

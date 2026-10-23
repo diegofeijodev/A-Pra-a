@@ -2273,7 +2273,8 @@ check "canais: admin troca aparando e sem repetir" "iFood|Indeed" \
 check "canais: volta à lista inicial (sem resíduo)" "4" \
   "$(curl -s -X PUT $API/v1/consultores/settings/channels -H "$J" -H "$HD" -d "$CANAIS_ORIGINAIS" | jq '.channels | length')"
 NOVA_TEMP=$(curl -s -X POST $API/v1/consultores/$CONS_ID/reset-password -H "$HD" | jq -r .temp_password)
-check "nova senha provisória" "10" "${#NOVA_TEMP}"
+# Lote E §41.2: 12 caracteres (a política mais forte permitida), com ou sem a flag.
+check "nova senha provisória (12 caracteres)" "12" "${#NOVA_TEMP}"
 check "nova senha derruba a sessão aberta" "UNAUTHORIZED" "$(curl -s $API/v1/campo/me -H "$HC" | jq -r .error.code)"
 check "tentar o código no Freela agora (sem conexão) mantém o motivo" "true" \
   "$(curl -s -X POST $API/v1/consultores/$CONS_ID/freela-sync -H "$HD" | jq '.freela_sync_error | startswith("Conexão com o Freela")')"
