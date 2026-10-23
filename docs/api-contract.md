@@ -2800,7 +2800,7 @@ de "apps e canais" do questionário (§20.4, `settings/channels`).
 | Método | Rota | Corpo | Resposta |
 |---|---|---|---|
 | GET | `/v1/campo/today` | — | `TodayView` |
-| POST | `/v1/campo/journeys/start` | `{client_id, at, lat, lng, accuracy}` | `201 JourneyView` |
+| POST | `/v1/campo/journeys/start` | `{client_id, at, lat, lng, accuracy}` (+ `praca_id?`, §44.5) | `201 JourneyView` |
 | POST | `/v1/campo/journeys/current/points` | `{points: [{client_id, at, lat, lng, accuracy}]}` (1–50) | `200 {accepted, duplicates}` |
 | POST | `/v1/campo/journeys/current/end` | `{at, lat, lng, accuracy}` | `200 JourneyView` |
 
@@ -5309,7 +5309,88 @@ delta iria para a semana seguinte (Pix de 09/11).
 **Para produção:** `migrate deploy` → API → web (o web antigo não lê `month` em `tiers_period`: suba o web antes de publicar uma regra mensal). Uma regra mensal fica **uma semana em sombra**
 (tela × conta à mão) antes de valer.
 
-## 44. (reservado ao L12, consultor em várias praças)
+## 44. Consultor em várias praças (restante da Lovable, fase L12)
+
+Origem: arquitetura item 13; UX §3.8 ("Praças em que atua" e "Praça no campo"); Lovable `praca_representantes` N:N (`0000:98-114`). **Princípio:** o isolamento continua sendo
+UMA praça por request e as consultas existentes não são reescritas — quem muda é a praça que o `CampoAuthGuard` põe em `request.campo.praca_id`.
+
+### 44.1 Trava: `FIELD_MULTI_PRACA_ENABLED` (padrão `false`)
+
+| Estado | Efeito |
+|---|---|
+| Desligada | conjunto ignorado (= só a principal); o guard lê o consultor como hoje (nenhuma consulta nova) e `request.campo` é idêntico; `POST /v1/campo/journeys/start` com `praca_id` não nulo e diferente da principal → `422 MULTI_PRACA_DISABLED` (ausente, `null` ou igual à principal = como hoje; a jornada não grava praça); `PUT /v1/consultores/:id/pracas` → `404 MULTI_PRACA_DISABLED`; nenhuma chave nova no wire além de `features.multi_praca: false` (`/v1/campo/me` e `GET settings/config`) |
+| Ligada | tudo abaixo |
+
+### 44.2 Banco (migração aditiva `20261108100000_lovable_l12_varias_pracas`)
+
+- `field_consultant_pracas (consultant_id, praca_id)` PK, `created_at`, `created_by` (FK `users` Restrict); `consultant_id` FK Cascade; `praca_id` FK Restrict; índice `(praca_id)`.
+  Guarda as praças **além** da principal (a principal nunca é gravada aqui).
+- `field_journeys.praca_id UUID NULL` (FK `pracas` Restrict, nunca `SET NULL`; índice `(praca_id, day)`): **nulo = a principal** do consultor (linhas antigas e flag desligada).
+  Com a flag ligada o início grava SEMPRE o id explícito, mesmo igual à principal — trocar a principal depois não reescreve as jornadas.
+- Nenhum índice parcial novo.
+
+### 44.3 Conjunto
+
+- Conjunto = a principal (`field_consultants.praca_id`) ∪ as linhas da junção, sem repetir; ordem: a principal primeiro, depois por nome.
+- Trocar a principal (`PATCH /v1/consultores/:id` com `praca_id`) não mexe na junção: a antiga sai do conjunto se não estiver marcada; a nova, se já estava marcada, aparece uma vez.
+
+### 44.4 Praça ativa no request (`CampoAuthGuard`, só com a flag)
+
+- Na MESMA leitura do consultor vêm a jornada aberta (no máximo uma, índice parcial) e a junção. `request.campo.praca_id` = a praça da jornada aberta (`praca_id ?? principal`)
+  **se ela ainda estiver no conjunto**; senão a principal. `request.campo.praca_principal_id` = a principal.
+- Toda leitura que filtra por `c.praca_id` passa a ver só a praça ativa: `GET places` (perto e busca), `places/similar`, `POST visits` (o lead do corpo e o lugar novo, que nasce na
+  praça ativa), `GET /v1/campo/map/pins`, `route/generate` e o roteiro automático do início (elegíveis e retornos), `POST /v1/campo/vouchers` só com `lead_id`.
+- **Exceção — a praça vem da jornada DA VISITA** (`journey.praca_id ?? principal`): `PATCH visits/:ref/answers` (com o checklist), `POST visits/:ref/checkout`,
+  `DELETE visits/:ref`, `GET visits/:ref/photo`, `GET/POST visits/:ref/company-signup` e `POST /v1/campo/vouchers` com `visit_ref`. A fila offline reenvia esses itens depois do
+  `end` daquela jornada (e até depois do início de outra, em outra praça). As quatro primeiras já acham a visita só pelo consultor (`consultant_id` + `ref`).
+- Por consultor, sem filtro de praça (de propósito; o dia dele inteiro): `/me`, `today`, `followups`, `journeys/current/points|end`, `journeys/current/breaks/start|end`,
+  `route/today|reoptimize|stops/*`, `GET /v1/campo/routes`, `day-summary`, `earnings`, `payouts`, `signups`, `company-signups/:id`, `GET /v1/campo/vouchers`.
+
+### 44.5 Início do dia — `POST /v1/campo/journeys/start`
+
+- O corpo ganha `praca_id?` (uuid; `null` = ausente).
+- Ligada: com `praca_id`, ele tem de estar no conjunto, senão `404 NOT_FOUND` ("Praça não encontrada entre as suas."); sem, vale a praça do roteiro ativo de hoje (se estiver no
+  conjunto) e, sem roteiro, a principal (*decisão do arquiteto*). O roteiro automático do início nasce nessa praça.
+- O reenvio do mesmo `client_id` devolve a mesma jornada ANTES de conferir a praça (fila).
+- `JourneyView.praca_id` (aditivo, só com a flag) = a praça da jornada (o nulo antigo sai como a principal).
+- Um roteiro por consultor e por dia continua valendo (índice `field_routes_one_active_per_day`): se a equipe publicou o dia dele em A e ele escolhe B, o roteiro de A continua
+  sendo o do dia (as paradas de A não aceitam check-in na jornada de B). O web não oferece a escolha quando há roteiro hoje.
+
+### 44.6 `/v1/campo/me` (aditivo, só com a flag)
+
+- `features.multi_praca: true`, `pracas: [{ id, name, principal }]` (o conjunto), `active_praca_id` (a praça ativa agora) e `default_praca_id` (a que o início usaria sem escolha).
+  `consultant.praca_id`/`praca_name` continuam sendo a principal.
+- O web mostra "Em qual praça você está hoje?" (chips) só com a flag, mais de uma praça no conjunto e sem roteiro hoje; com roteiro, a praça vem dele (0 toques). O cabeçalho
+  mostra a praça ativa.
+
+### 44.7 Equipe
+
+- `PUT /v1/consultores/:id/pracas` `{ praca_ids: uuid[] }` (**só admin**, `@AdminOnly()`; gestor e equipe `403`; token de campo `401`): o conjunto INTEIRO, 1 a 20 sem repetir,
+  contendo a principal (senão `400 VALIDATION_ERROR` "praca_ids: a praça principal (X) fica sempre no conjunto."); praça inexistente → `404 NOT_FOUND`. Grava só a diferença (com
+  `created_by`) e responde `ConsultorView`. Vale para a próxima jornada (a aberta muda na hora só se a praça dela saiu do conjunto: aí o request seguinte já vê a principal).
+- `ConsultorView` (detalhe e lista) ganha `pracas: [{ id, name, principal }]` e `praca_ids` (só com a flag).
+- `POST /v1/routes` (e a publicação dos planos, que chama o mesmo serviço): os leads têm de estar TODOS numa mesma praça do conjunto, que vira `route.praca_id` (a área, se veio, tem
+  de ser dessa praça). Fora do conjunto → `400` com a frase de hoje; de praças diferentes → `400 VALIDATION_ERROR` "lead_ids: os estabelecimentos precisam ser de uma praça só.".
+  Roteiro já existente no dia em outra praça: sem parada visitada, ele passa para a nova; com parada visitada → `400` "lead_ids: o roteiro de dd/mm já tem visitas em <praça>.".
+- Planos (`POST /v1/route-plans/:id/items/:itemId/assign`): aceita o consultor cujo conjunto contém a praça do plano.
+- `GET /v1/consultores/attention?praca_id=` e `GET /v1/consultores/dashboard?praca_id=`: consultores cujo **conjunto** contém a praça. O painel conta só as visitas daquela praça
+  (`journey.praca_id ?? principal`) e só as paradas dos roteiros dela (`route.praca_id`). Sem `praca_id`, nada muda.
+- Mapa de calor: a camada passagem usa `COALESCE(journey.praca_id, consultor.praca_id)` (também com a flag desligada: o nulo dá a conta de hoje); o filtro por consultor aceita quem
+  tem a praça no conjunto. Visitas e cobertura já são pela praça do estabelecimento.
+- Pinos, Lista, cupons e shoppings já filtram pela praça do estabelecimento (o pedido de cupom grava a praça da visita): sem mudança.
+- Cadastro confirmado (F7, `signup-sync`): o lead é procurado por telefone/CNPJ em TODO o conjunto, ainda exigindo casamento único (2 ou mais = ambíguo).
+- `DELETE /v1/pracas/:id`: `409 PRACA_HAS_CONSULTANTS` também quando a praça está no conjunto de algum consultor, e `409 PRACA_HAS_JOURNEYS` quando há jornada gravada nela.
+  As duas contagens valem com a flag desligada (tabela vazia e coluna nula = nada muda).
+- Ganhos, Pix, cadastros confirmados, declarados e os alertas de Pix/declarados da Atenção: por consultor, listados pela **principal** (sem mudança).
+
+### 44.8 Variáveis
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `FIELD_MULTI_PRACA_ENABLED` | `false` | liga o consultor em várias praças (§44.4–§44.7) |
+
+**Ordem de subida:** `migrate deploy` → API → web. Desligar depois de usar: as jornadas gravadas continuam com a praça delas (relatórios e passagem), o conjunto deixa de valer e
+o consultor volta a ver só a principal.
 
 ## 45. Regra de pagamento por consultor (restante da Lovable, fase L13)
 
