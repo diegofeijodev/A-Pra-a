@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { NavegarLinks, ParadaAcoes } from '@/components/campo/ParadaAcoes';
-import { useDia } from '@/modules/campo/application/use-campo';
+import { useCampoMe, useDia } from '@/modules/campo/application/use-campo';
 import { irPara } from '@/modules/campo/application/use-tela';
 import { campoGerarRota } from '@/modules/campo/infrastructure/campo.api';
 import { hora } from '@/modules/campo/domain/formatos';
@@ -22,6 +22,18 @@ export function RoteiroCard({ fechadoContaNaMeta = false }: { fechadoContaNaMeta
   const { dia } = useDia(fechadoContaNaMeta);
   const qc = useQueryClient();
   const [gerando, setGerando] = useState(false);
+  // Lote D (§39.7): "Próximos dias" só com a flag (features do /me guardado no aparelho).
+  const proximos = useCampoMe().data?.features?.route_plans === true;
+  const botaoProximos = proximos ? (
+    <button
+      type="button"
+      onClick={() => irPara({ v: 'proximos' })}
+      className="flex h-12 w-full items-center justify-between rounded-md border border-border px-4 text-sm font-bold"
+    >
+      <span>Próximos dias</span>
+      <span aria-hidden>›</span>
+    </button>
+  ) : null;
 
   async function montarMeuDia() {
     setGerando(true);
@@ -54,6 +66,7 @@ export function RoteiroCard({ fechadoContaNaMeta = false }: { fechadoContaNaMeta
     return (
       <section className="card-surface space-y-2 p-4">
         <p className="text-sm">Sem roteiro para hoje. Você pode fazer visitas livres; peça à equipe para montar um.</p>
+        {botaoProximos}
         {rot.podeGerar && (
           <button type="button" disabled={gerando} onClick={() => void montarMeuDia()} className="h-12 w-full rounded-md border border-border text-sm font-bold">
             {gerando ? 'Montando…' : 'Montar meu dia'}
@@ -127,6 +140,7 @@ export function RoteiroCard({ fechadoContaNaMeta = false }: { fechadoContaNaMeta
         <span>Ver as {restantes} que faltam</span>
         <span aria-hidden>›</span>
       </button>
+      {botaoProximos}
     </div>
   );
 }

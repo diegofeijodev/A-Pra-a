@@ -6,6 +6,7 @@ import { HojeTela } from '@/components/campo/HojeTela';
 import { NovaVisitaTela } from '@/components/campo/NovaVisitaTela';
 import { PedirCupomTela } from '@/components/campo/PedirCupomTela';
 import { ParadaTela } from '@/components/campo/ParadaTela';
+import { ProximosDiasTela } from '@/components/campo/ProximosDiasTela';
 import { QrTela } from '@/components/campo/QrTela';
 import { ResumoDiaTela } from '@/components/campo/ResumoDiaTela';
 import { RoteiroTela } from '@/components/campo/RoteiroTela';
@@ -48,6 +49,8 @@ function Visao() {
       return <ResumoDiaTela key={tela.dia ?? 'hoje'} dia={tela.dia} />;
     case 'pedir-cupom':
       return <PedirCupomTela key={tela.ref} refVisita={tela.ref} />;
+    case 'proximos':
+      return <ProximosDiasTela />;
     default:
       return simples ? <SimplesHojeTela /> : <HojeTela />;
   }

@@ -49,6 +49,8 @@ export interface CampoMeResponse {
     breaks?: boolean;
     /** Lote C (contrato §38.1): pedido de cupom da 1ª contratação. */
     vouchers?: boolean;
+    /** Lote D (contrato §39.7): "Próximos dias" (as rotas futuras do próprio consultor). */
+    route_plans?: boolean;
   };
   /** Modo do chefe §31.4: o fluxo que vale agora para ele. Ausente em respostas antigas guardadas no aparelho = `completo`. */
   visit_flow?: FluxoVisita;

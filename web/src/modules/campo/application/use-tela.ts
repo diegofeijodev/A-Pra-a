@@ -20,7 +20,9 @@ export type Tela =
   /** "Resultado do seu dia" (contrato §33.5); sem `dia` = hoje. */
   | { v: 'resumo'; dia?: string }
   /** Pedir o cupom da 1ª contratação da visita `ref` (lote C, contrato §38.3). */
-  | { v: 'pedir-cupom'; ref: string };
+  | { v: 'pedir-cupom'; ref: string }
+  /** "Próximos dias": as rotas publicadas para ele (lote D, contrato §39.7); precisa de sinal. */
+  | { v: 'proximos' };
 
 export function telaDaUrl(params: URLSearchParams): Tela {
   const v = params.get('v');
@@ -34,6 +36,7 @@ export function telaDaUrl(params: URLSearchParams): Tela {
     if (ref) return { v: 'cadastro', ref };
   }
   if (v === 'roteiro') return { v: 'roteiro' };
+  if (v === 'proximos') return { v: 'proximos' };
   if (v === 'pedir-cupom') {
     const ref = params.get('ref');
     if (ref) return { v: 'pedir-cupom', ref };
@@ -59,6 +62,8 @@ export function urlDaTela(t: Tela): string {
       return t.parada ? `/campo?v=nova&parada=${encodeURIComponent(t.parada)}` : '/campo?v=nova';
     case 'roteiro':
       return '/campo?v=roteiro';
+    case 'proximos':
+      return '/campo?v=proximos';
     case 'resumo':
       return t.dia ? `/campo?v=resumo&dia=${encodeURIComponent(t.dia)}` : '/campo?v=resumo';
     case 'parada':
