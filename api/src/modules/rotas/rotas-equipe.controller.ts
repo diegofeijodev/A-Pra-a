@@ -4,6 +4,7 @@ import { AuthUser } from '../../common/auth/auth-user';
 import { AdminOnly, GestorOuAdmin } from '../../common/decorators/admin-only.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { LOVABLE_E_FLAGS, type FlagsLovableE } from '../../common/flags/lovable-e.flags';
+import { MULTI_PRACA_LIGADO } from '../../common/flags/multi-praca.flags';
 import { CandidatosQueryDto, ConfigRotaDto, MontarRotaDto, OrdenarRotaDto, ReotimizarEquipeDto, RotasQueryDto } from './dto/rotas.dto';
 import { RotasConfigService } from './rotas-config.service';
 import { RotasEquipeService } from './rotas-equipe.service';
@@ -75,6 +76,7 @@ export class RotasConfigController {
     @Optional() @Inject(LOVABLE_C_FLAGS) private readonly flagsC?: FlagsLovableC,
     @Optional() @Inject(LOVABLE_D_FLAGS) private readonly flagsD?: FlagsLovableD,
     @Optional() @Inject(LOVABLE_E_FLAGS) private readonly flagsE?: FlagsLovableE,
+    @Optional() @Inject(MULTI_PRACA_LIGADO) private readonly multiPraca?: boolean,
   ) {}
 
   /** `features` (contrato §33.1): o web mostra os links novos sem sondar rota desligada. Só no GET. */
@@ -101,6 +103,8 @@ export class RotasConfigController {
         consultant_profile: this.flagsE?.consultant_profile ?? false,
         contact_email: this.flagsE?.contact_email ?? false,
         team_gestor: this.flagsE?.team_gestor ?? false,
+        // Lote F2 (contrato §44.1): consultor em várias praças.
+        multi_praca: this.multiPraca === true,
       },
     };
   }

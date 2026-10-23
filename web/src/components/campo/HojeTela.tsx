@@ -15,6 +15,8 @@ import { RetornosCampo } from '@/components/campo/RetornosCampo';
 import { CuponsCampo } from '@/components/campo/CuponsCampo';
 import { ResumoDiaAtalhos } from '@/components/campo/ResumoDiaTela';
 import { RoteiroCard } from '@/components/campo/RoteiroCard';
+import { PracaDoDia, PracaDoRoteiro } from '@/components/campo/PracaDoDia';
+import { mostraEscolhaDePraca, nomeDaPracaAtiva, pracaDoCorpo, pracaMarcada } from '@/modules/campo/domain/praca-do-dia';
 import { Button } from '@/components/ui/button';
 import { useCampoSession } from '@/modules/campo/application/campo-session.store';
 import { useCampoMe, useDia } from '@/modules/campo/application/use-campo';
@@ -53,7 +55,9 @@ export function HojeTela() {
   }
 
   const iniciar = () =>
-    comPosicao((p) => enfileirar({ kind: 'start', payload: { client_id: crypto.randomUUID(), ...p } }, consultantId));
+    comPosicao((p) =>
+      enfileirar({ kind: 'start', payload: { client_id: crypto.randomUUID(), ...p, ...pracaDoCorpo(me.data, temRoteiroHoje, pracaEscolhida) } }, consultantId),
+    );
 
   const encerrar = () => {
     const texto = 'Encerrar a jornada de hoje? A localização para de ser registrada.';
@@ -69,6 +73,12 @@ export function HojeTela() {
   const emIntervalo = intervalo.ligado ? dia.intervaloAberto : null;
   const rot = useRoteiro();
   const proxima = rot.habilitado && rot.route ? proximaParada(rot.route.stops) : null;
+  // Lote F2 (§44.5, UX §3.8): a praça do dia — escolha só com a flag, 2+ praças e sem roteiro hoje.
+  const [pracaEscolhida, setPracaEscolhida] = useState<string | null>(null);
+  const temRoteiroHoje = rot.habilitado && !!rot.route;
+  const escolhePraca = mostraEscolhaDePraca(me.data, temRoteiroHoje);
+  const marcada = pracaMarcada(me.data, pracaEscolhida);
+  const nomeMarcada = me.data?.pracas?.find((x) => x.id === marcada)?.name ?? null;
 
   return (
     <main className="space-y-5">
@@ -92,6 +102,11 @@ export function HojeTela() {
             aberta, em cada check-in e checkout e no fim. Antes de iniciar e depois de encerrar, nada é
             registrado.
           </p>
+          {escolhePraca && me.data?.pracas ? (
+            <PracaDoDia pracas={me.data.pracas} marcada={marcada} onEscolher={setPracaEscolhida} />
+          ) : me.data?.features?.multi_praca && (me.data.pracas?.length ?? 0) > 1 && rot.route ? (
+            <PracaDoRoteiro nome={nomeDaPracaAtiva(me.data, rot.route.praca_id)} />
+          ) : null}
         </section>
       ) : (
         <>
@@ -206,7 +221,7 @@ export function HojeTela() {
           </button>
           {!dia.jornada ? (
             <Button onClick={() => void iniciar()} disabled={ocupado || carregando} className="h-14 flex-1 text-base">
-              {ocupado ? 'Pegando a localização…' : 'Iniciar jornada'}
+              {ocupado ? 'Pegando a localização…' : escolhePraca && nomeMarcada ? `Iniciar jornada em ${nomeMarcada}` : 'Iniciar jornada'}
             </Button>
           ) : (
             <Button variant="outline" onClick={encerrar} disabled={ocupado || !!dia.visitaAberta} className="h-14 flex-1 text-base">

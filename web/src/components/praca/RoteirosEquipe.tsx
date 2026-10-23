@@ -29,6 +29,7 @@ import { etaTexto } from '@/modules/rotas/domain/rota-local';
 import { MODOS_DESLOCAMENTO, rotuloMotivo, type ConfigRota, type ModoDeslocamento, type RouteView } from '@/modules/rotas/domain/rota.schema';
 import { todaySp } from '@/lib/dates';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
+import { atuaNaPraca } from '@/modules/consultores/domain/pracas';
 
 const ICONE: Record<string, string> = { visitada: '✓ feita', pendente: 'pendente', adiada: '⏭ para depois', pulada: '✕ pulada' };
 
@@ -338,7 +339,7 @@ export function RoteirosEquipe({ praca }: { praca: PracaView }) {
   const [confirmando, setConfirmando] = useState(false);
 
   const { data: consultores } = useConsultores();
-  const doPraca = (consultores ?? []).filter((c) => c.praca_id === praca.id && c.active);
+  const doPraca = (consultores ?? []).filter((c) => atuaNaPraca(c, praca.id) && c.active);
   const { data: areas } = useAreas(praca.id);
   const candidatos = useCandidatosRoteiro({ pracaId: praca.id, day, areaId: areaId || undefined });
   const rotas = useRotasDoDia(day, praca.id);

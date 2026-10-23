@@ -13,6 +13,7 @@ import { useConsultores } from '@/modules/consultores/application/use-consultore
 import { useArquivarPlano, useConfigDivisao, useCriarPlano, usePlano, usePlanos, usePrevia } from '@/modules/planos/application/use-planos';
 import { rotuloGeracao } from '@/modules/planos/domain/planos';
 import type { PracaView } from '@/modules/pracas/application/use-pracas';
+import { atuaNaPraca } from '@/modules/consultores/domain/pracas';
 
 const RotasMapa = dynamic(() => import('./RotasMapa'), { ssr: false });
 
@@ -45,7 +46,7 @@ export function DividirRotas({ praca }: { praca: PracaView }) {
   const [destaque, setDestaque] = useState<string | null>(null);
   const dark = user?.theme !== 'light';
   const { data: consultores } = useConsultores();
-  const doPraca = (consultores ?? []).filter((c) => c.praca_id === praca.id && c.active).map((c) => ({ id: c.id, name: c.name }));
+  const doPraca = (consultores ?? []).filter((c) => atuaNaPraca(c, praca.id) && c.active).map((c) => ({ id: c.id, name: c.name }));
   const resumo = planos.data?.find((p) => p.id === atual);
 
   function gerar(modo: 'carro' | 'a_pe') {

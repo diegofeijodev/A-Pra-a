@@ -27,7 +27,8 @@ export interface IntervaloLocal {
 }
 
 export interface DiaLocal {
-  jornada: { client_id: string; started_at: string; pendente: boolean } | null;
+  /** `praca_id` (lote F2 §44.5): a praça da jornada, do servidor ou do início na fila; ausente sem a flag. */
+  jornada: { client_id: string; started_at: string; pendente: boolean; praca_id?: string | null } | null;
   /** Intervalos do dia (só existe algo com o intervalo ligado no servidor). */
   intervalos: IntervaloLocal[];
   intervaloAberto: IntervaloLocal | null;
@@ -43,7 +44,12 @@ export interface DiaLocal {
  */
 export function montarDia(today: TodayView | null, fila: ItemFila[], opcoes: { fechadoContaNaMeta?: boolean } = {}): DiaLocal {
   let jornada: DiaLocal['jornada'] = today?.journey
-    ? { client_id: today.journey.client_id, started_at: today.journey.started_at, pendente: false }
+    ? {
+        client_id: today.journey.client_id,
+        started_at: today.journey.started_at,
+        pendente: false,
+        ...(today.journey.praca_id ? { praca_id: today.journey.praca_id } : {}),
+      }
     : null;
   const visitas: VisitaLocal[] = (today?.visits ?? []).map((v) => ({
     ref: v.client_id,
@@ -72,7 +78,12 @@ export function montarDia(today: TodayView | null, fila: ItemFila[], opcoes: { f
     switch (item.kind) {
       case 'start':
         if (jornada?.client_id !== item.payload.client_id) {
-          jornada = { client_id: item.payload.client_id, started_at: item.payload.at, pendente: true };
+          jornada = {
+            client_id: item.payload.client_id,
+            started_at: item.payload.at,
+            pendente: true,
+            ...(item.payload.praca_id ? { praca_id: item.payload.praca_id } : {}),
+          };
         }
         break;
       case 'end':

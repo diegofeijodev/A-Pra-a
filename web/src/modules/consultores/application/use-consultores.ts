@@ -16,6 +16,7 @@ import {
   getConsultor,
   listConsultores,
   putCanaisCampo,
+  putPracasConsultor,
   resetSenhaConsultor,
   updateConsultor,
   type CreateConsultorInput,
@@ -58,6 +59,19 @@ export function useUpdateConsultor(id: string) {
     mutationFn: (input: UpdateConsultorInput) => updateConsultor(id, input),
     onSuccess: invalidar,
     onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível salvar.')),
+  });
+}
+
+/** Lote F2 §44.7: as praças em que o consultor atua (só admin). */
+export function useSalvarPracasConsultor(id: string) {
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: (praca_ids: string[]) => putPracasConsultor(id, praca_ids),
+    onSuccess: () => {
+      invalidar();
+      toast.success('Praças salvas. Valem a partir do próximo início do dia dele.');
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível salvar as praças.')),
   });
 }
 

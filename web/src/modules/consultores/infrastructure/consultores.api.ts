@@ -50,6 +50,9 @@ export interface ConsultorView {
   bank_account_type?: string | null;
   bank_account_masked?: string | null;
   bank_account?: string | null;
+  /** Lote F2 §44.7 (só com FIELD_MULTI_PRACA_ENABLED): as praças em que atua (a principal primeiro) e os ids delas. */
+  pracas?: { id: string; name: string; principal: boolean }[];
+  praca_ids?: string[];
 }
 
 export const CAMPOS_ENDERECO = ['address_cep', 'address_street', 'address_number', 'address_complement', 'address_district', 'address_city', 'address_state'] as const;
@@ -98,6 +101,12 @@ export async function createConsultor(input: CreateConsultorInput & PerfilConsul
 
 export async function updateConsultor(id: string, input: UpdateConsultorInput): Promise<ConsultorView> {
   const { data } = await api.patch(`/v1/consultores/${id}`, input);
+  return data as ConsultorView;
+}
+
+/** Lote F2 §44.7: o conjunto INTEIRO de praças do consultor (só admin; a principal fica sempre). */
+export async function putPracasConsultor(id: string, praca_ids: string[]): Promise<ConsultorView> {
+  const { data } = await api.put(`/v1/consultores/${id}/pracas`, { praca_ids });
   return data as ConsultorView;
 }
 

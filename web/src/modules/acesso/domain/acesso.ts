@@ -17,6 +17,8 @@ export const featuresMenuSchema = z.object({
   consultant_profile: z.boolean().default(false),
   contact_email: z.boolean().default(false),
   team_gestor: z.boolean().default(false),
+  /** Lote F2 (contrato §44.1): consultor em várias praças (não mexe no menu). */
+  multi_praca: z.boolean().default(false),
 });
 export type FeaturesMenu = z.infer<typeof featuresMenuSchema>;
 export const SEM_FEATURES_MENU: FeaturesMenu = featuresMenuSchema.parse({});

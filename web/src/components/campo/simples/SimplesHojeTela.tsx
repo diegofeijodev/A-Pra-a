@@ -15,6 +15,8 @@ import { CuponsCampo } from '@/components/campo/CuponsCampo';
 import { ResumoDiaAtalhos } from '@/components/campo/ResumoDiaTela';
 import { RoteiroCard } from '@/components/campo/RoteiroCard';
 import { ChegueiBotao } from '@/components/campo/simples/ChegueiBotao';
+import { PracaDoDia, PracaDoRoteiro } from '@/components/campo/PracaDoDia';
+import { mostraEscolhaDePraca, nomeDaPracaAtiva, pracaDoCorpo, pracaMarcada } from '@/modules/campo/domain/praca-do-dia';
 import { Button } from '@/components/ui/button';
 import { useCampoSession } from '@/modules/campo/application/campo-session.store';
 import { useCampoMe, useDia } from '@/modules/campo/application/use-campo';
@@ -51,6 +53,12 @@ export function SimplesHojeTela() {
   const [gps, setGps] = useState<MotivoGps | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const intervalo = useIntervalo();
+  // Lote F2 (§44.5, UX §3.8): a praça do dia — escolha só com a flag, 2+ praças e sem roteiro hoje.
+  const [pracaEscolhida, setPracaEscolhida] = useState<string | null>(null);
+  const temRoteiroHoje = rot.habilitado && !!rot.route;
+  const escolhePraca = mostraEscolhaDePraca(me.data, temRoteiroHoje);
+  const marcada = pracaMarcada(me.data, pracaEscolhida);
+  const nomeMarcada = me.data?.pracas?.find((x) => x.id === marcada)?.name ?? null;
 
   async function comPosicao(acao: (p: Posicao) => Promise<void>) {
     setGps(null);
@@ -64,7 +72,10 @@ export function SimplesHojeTela() {
       setOcupado(false);
     }
   }
-  const iniciar = () => comPosicao((p) => enfileirar({ kind: 'start', payload: { client_id: crypto.randomUUID(), ...p } }, consultantId));
+  const iniciar = () =>
+    comPosicao((p) =>
+      enfileirar({ kind: 'start', payload: { client_id: crypto.randomUUID(), ...p, ...pracaDoCorpo(me.data, temRoteiroHoje, pracaEscolhida) } }, consultantId),
+    );
   const encerrar = () => {
     const feitas = dia.contadores.feitas;
     const meta = rot.route?.params.meta_diaria;
@@ -113,6 +124,11 @@ export function SimplesHojeTela() {
                 A localização só é registrada com o dia aberto: no início, a cada 5 minutos com esta tela aberta, em cada chegada e conclusão e no
                 fim. Antes de iniciar e depois de encerrar, nada é registrado.
               </p>
+              {escolhePraca && me.data?.pracas ? (
+                <PracaDoDia pracas={me.data.pracas} marcada={marcada} onEscolher={setPracaEscolhida} />
+              ) : me.data?.features?.multi_praca && (me.data.pracas?.length ?? 0) > 1 && rot.route ? (
+                <PracaDoRoteiro nome={nomeDaPracaAtiva(me.data, rot.route.praca_id)} />
+              ) : null}
             </section>
           ) : (
             <>
@@ -176,7 +192,7 @@ export function SimplesHojeTela() {
             </button>
             {carregando ? null : !dia.jornada ? (
               <Button onClick={() => void iniciar()} disabled={ocupado} className="h-14 flex-1 text-base">
-                {ocupado ? 'Pegando a localização…' : 'Iniciar o dia'}
+                {ocupado ? 'Pegando a localização…' : escolhePraca && nomeMarcada ? `Iniciar o dia em ${nomeMarcada}` : 'Iniciar o dia'}
               </Button>
             ) : emIntervalo ? (
               <Button onClick={() => void intervalo.voltar(emIntervalo)} className="h-14 flex-1 text-base">

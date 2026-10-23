@@ -33,6 +33,7 @@ import { useConsultores } from '@/modules/consultores/application/use-consultore
 import { useActivePraca, usePracas } from '@/modules/pracas/application/use-pracas';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 import type { VistaMapa } from './CalorMapa';
+import { atuaNaPraca } from '@/modules/consultores/domain/pracas';
 
 // O Leaflet só existe no navegador — o mapa entra por import dinâmico.
 const CalorMapa = dynamic(() => import('./CalorMapa'), { ssr: false });
@@ -55,7 +56,7 @@ export function MapaDeCalor() {
   const praca = pracas?.find((p) => p.id === f.praca) ?? ativa;
   const { data: consultores } = useConsultores();
   const { data: areas } = useAreas(praca?.id);
-  const consultoresDaPraca = useMemo(() => (consultores ?? []).filter((c) => c.praca_id === praca?.id), [consultores, praca?.id]);
+  const consultoresDaPraca = useMemo(() => (consultores ?? []).filter((c) => atuaNaPraca(c, praca?.id)), [consultores, praca?.id]);
   const consultor = consultoresDaPraca.some((c) => c.id === f.consultor) ? f.consultor : null;
 
   const [vista, setVista] = useState<VistaMapa | null>(null);

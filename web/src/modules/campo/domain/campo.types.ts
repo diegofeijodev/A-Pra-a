@@ -7,6 +7,7 @@ import type { ConfigVisita, FluxoVisita } from './fluxo';
 import type { ChecklistConfigCampo, ChecklistVisitaView, MarcaChecklist } from './checklist';
 import type { ConfigCupomCampo } from '@/modules/cupons/domain/cupons';
 import type { PedidoCupomPayload } from '@/modules/cupons/infrastructure/cupons.api';
+import type { PracaDoConjunto } from './praca-do-dia';
 
 
 export interface CampoConsultantMe {
@@ -54,6 +55,8 @@ export interface CampoMeResponse {
     /** Lote E (contrato §41.1): regra de senha nova e e-mail de quem atendeu. */
     password_policy?: boolean;
     contact_email?: boolean;
+    /** Lote F2 (contrato §44.6): consultor em várias praças. */
+    multi_praca?: boolean;
   };
   /** Modo do chefe §31.4: o fluxo que vale agora para ele. Ausente em respostas antigas guardadas no aparelho = `completo`. */
   visit_flow?: FluxoVisita;
@@ -65,6 +68,10 @@ export interface CampoMeResponse {
   breaks_config?: { intervalo_ativo: boolean; intervalo_lembrete_min: number };
   /** Lote C §38.1: só com `FIELD_VOUCHERS_ENABLED` — o desconto e a validade para a tela de pedir sem sinal. */
   voucher_config?: ConfigCupomCampo;
+  /** Lote F2 §44.6 (só com `FIELD_MULTI_PRACA_ENABLED`): o conjunto, a do início sem escolha e a ativa agora. */
+  pracas?: PracaDoConjunto[];
+  default_praca_id?: string;
+  active_praca_id?: string;
 }
 
 /** Posição + hora real do aparelho. */
@@ -86,6 +93,8 @@ export interface JourneyView {
   end_lat: number | null;
   end_lng: number | null;
   auto_closed: boolean;
+  /** Lote F2 §44.5 (só com a flag): a praça da jornada. */
+  praca_id?: string;
 }
 
 export interface PointView {
@@ -230,7 +239,7 @@ export interface CheckinPayload extends Posicao {
 
 /** O que a fila offline guarda (spec §9): cada ação com o `client_id` do aparelho e a hora real. */
 export type AcaoFila =
-  | { kind: 'start'; payload: { client_id: string } & Posicao }
+  | { kind: 'start'; payload: { client_id: string; praca_id?: string } & Posicao }
   | { kind: 'points'; payload: { points: ({ client_id: string } & Posicao)[] } }
   | { kind: 'checkin'; payload: CheckinPayload; foto: Blob }
   | { kind: 'answers'; visit_ref: string; payload: VisitAnswers }

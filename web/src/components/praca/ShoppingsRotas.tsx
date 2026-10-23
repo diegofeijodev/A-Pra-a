@@ -25,6 +25,7 @@ import { textoCriterio, type BuscaShopping, type PlanSummary, type Shopping } fr
 import { adicionarAchados, buscarShoppings, candidatosShopping, getBuscaShopping } from '@/modules/planos/infrastructure/planos.api';
 import type { PracaView } from '@/modules/pracas/application/use-pracas';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
+import { atuaNaPraca } from '@/modules/consultores/domain/pracas';
 
 const m2 = (x: number | null) => (x == null ? 'sem área (só um ponto no mapa)' : `${x.toLocaleString('pt-BR')} m²`);
 
@@ -236,7 +237,7 @@ export function ShoppingsRotas({ praca }: { praca: PracaView }) {
   const criar = useCriarPlano();
   const planosShop = usePlanos(praca.id, 'shoppings', true);
   const { data: consultores } = useConsultores();
-  const doPraca = (consultores ?? []).filter((c) => c.praca_id === praca.id && c.active).map((c) => ({ id: c.id, name: c.name }));
+  const doPraca = (consultores ?? []).filter((c) => atuaNaPraca(c, praca.id) && c.active).map((c) => ({ id: c.id, name: c.name }));
   const shoppings = lista.data?.shoppings ?? [];
   const grandes = shoppings.filter((s) => s.is_large);
 

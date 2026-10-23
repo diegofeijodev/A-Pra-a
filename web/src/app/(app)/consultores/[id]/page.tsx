@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react';
 import { QrDoFreela } from '@/components/campo/QrDoFreela';
 import { ConsultorDialog } from '@/components/praca/ConsultorDialog';
 import { GanhosConsultor } from '@/components/praca/GanhosConsultor';
+import { PracasDoConsultor } from '@/components/praca/PracasDoConsultor';
 import { ConsultorLinhaDoTempo } from '@/components/praca/ConsultorLinhaDoTempo';
 import { ResumoDiaEquipe } from '@/components/praca/ResumoDiaEquipe';
 import { Button } from '@/components/ui/button';
@@ -129,6 +130,9 @@ export default function ConsultorDetalhePage() {
         )}
         <ResumoDiaEquipe consultantId={id} dia={dia} />
       </section>
+
+      {/* Lote F2 (§44.7): as praças em que atua — só admin e só com a flag. */}
+      {user?.is_admin && features.multi_praca && <PracasDoConsultor consultor={c} />}
 
       <GanhosConsultor consultantId={id} nome={c.name} />
 
