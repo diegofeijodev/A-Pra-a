@@ -5255,3 +5255,119 @@ perfil, até de admin — aqui o gestor só redefine a de **consultor de campo**
 | `TEAM_GESTOR_ENABLED` | `false` | liga o perfil gestor (§42.3) |
 
 **Ordem de subida (L9 e L10):** `migrate deploy` → **API** → **web**. Com as flags desligadas o web novo não manda nada novo.
+
+## 43. Bônus por período mensal (restante da Lovable, fase L11)
+
+Origem: arquitetura item 10 e UX §3.9; decisão do orquestrador: **o bônus do mês é pago no 1º Pix depois do fim do mês** (o da semana que contém o último dia do mês). Na Lovable
+`regras_bonus.periodo` existe mas é ignorado no cálculo; aqui ele vale. Dinheiro em **centavos inteiros**; o razão continua só com INSERT.
+
+### 43.1 Trava: `FIELD_EARNINGS_MONTHLY_ENABLED` (padrão `false`; só vale com `FIELD_EARNINGS_ENABLED`)
+
+| Estado | Efeito |
+|---|---|
+| Desligada | `tiers_period: "month"` no `PUT /v1/consultores/earnings/config` ou no `POST …/simulate` → `409 MONTHLY_DISABLED` (antes era `400 VALIDATION_ERROR`); qualquer outro valor inválido continua `400` com a frase de hoje ("use day ou week."). Nada novo no wire. |
+| Ligada | `tiers_period` aceita `month`; `features.monthly_enabled = true` no `GET …/earnings/config`; projeção do mês nas leituras (§43.5). |
+
+**Desligar a flag não reescreve o passado:** uma versão mensal já publicada continua valendo no cálculo (senão o alvo cairia e o fechamento lançaria estornos); a trava só impede publicar outra.
+
+### 43.2 Regra (`tiers_period = "month"`)
+
+- As faixas (`tiers`, com `tiers_mode` `highest` ou `cumulative`) contam os cadastros do **mês civil de Brasília** (`YYYY-MM-01` a último dia), cada dia pela fonte e pelo limite da regra **daquele dia** (§32.1).
+- Restrições (`400 VALIDATION_ERROR`, a mensagem diz o campo): `combine` ∈ {`sum`, `tier_only`} (`max` contra dias espalhados em semanas diferentes não tem sentido); `cap_cents = null` (sem teto no mês).
+- **Vigência:** com bônus mensal na versão nova **ou** na vigente antes dela, `valid_from` tem de ser o **dia 1** de um mês (além da regra semanal do §28.2, quando houver faixa semanal). Os parâmetros do mês seguem a versão vigente no **dia 1**. Trocar de semanal para mensal pede um dia 1 que também seja o 1º dia da semana — ou um degrau por uma regra diária.
+- **Dia** com regra mensal: núcleo = `n × unit_cents` (0 em `tier_only`) → piso → **sem teto** → + diária (igual aos dias de uma regra semanal).
+- **Mês:** `parte do mês = faixa(N)` (a maior atingida ou a soma das metas), `N` = soma dos cadastros que pagam nos dias do mês até hoje. Mês ainda não terminado = "até agora".
+
+### 43.3 Razão
+
+Um lançamento `accrual` por mês e consultor: `work_scope = "month"`, `work_day = "YYYY-MM-01"`, `work_week` = início da semana que contém o **último dia do mês**, `payout_week` = essa
+semana se ainda estiver aberta (senão a 1ª aberta depois dela, pelo mecanismo do §28.4), `idempotency_key = "acc:month:YYYY-MM:<n>"`. É a mesma conta de sempre (`alvo − já lançado`):
+a parte do mês é um alvo a mais da semana que contém o último dia. Confirmação tardia (ou anulação de declaração) dentro de `late_grace_days` depois do fim dessa semana gera **delta**
+(`source = "late_confirmation"`); fora do prazo nada é lançado. `snapshot`: `rule` (a versão do dia 1), `scope: "month"`, `inputs: { month, signups_month }` e a `conta`.
+Migração aditiva `20261106100000_lovable_l11_mensal`: os CHECKs do razão passam a aceitar `month` (`work_scope ∈ {day, week, month, manual}`; `accrual` ⇔ escopo `day|week|month`;
+`work_day` não nulo ⇔ escopo `day|month`). O trigger de imutabilidade não muda.
+
+### 43.4 Exemplo (outubro de 2026, semana de segunda a domingo, Pix na segunda)
+
+Regra: R$ 10,00 por cadastro, `combine = sum`, faixa mensal 40 → R$ 300,00. Em outubro, 42 cadastros confirmados. Cada dia paga `n × R$ 10,00` (420,00 no mês, nas semanas de cada
+dia); o bônus do mês (R$ 300,00) entra na semana **26/10 a 01/11** (contém 31/10) e sai no **Pix de seg 02/11**. Se essa semana já estivesse fechada quando a 41ª confirmação chegou, o
+delta iria para a semana seguinte (Pix de 09/11).
+
+### 43.5 Leituras (acréscimos aditivos; só quando há regra mensal valendo)
+
+- `GET /v1/consultores/earnings`: na semana que contém o último dia de um mês com regra mensal, cada consultor ganha `month: MesView` e `month_part_cents`; a `conta` ganha as linhas do mês.
+- `GET /v1/campo/earnings`: `month: MesView` = a projeção do mês corrente (quando o dia 1 do mês corrente tem regra mensal).
+- `MesView`: `{ month: "2026-10", label: "outubro", from, to, rule_version, signups, tier: {min_signups, amount_cents} | null, amount_cents, next_tier: {min_signups, amount_cents, faltam} | null, ended, work_week, pix_date, pix_label, text, conta: string[] }`. `text`: "Meta de outubro: 42 cadastros confirmados → faixa 40 = R$ 300,00, entra no Pix de seg 02/11." ou "Meta do mês (outubro): 28 de 40 cadastros confirmados. Faltam 12 para R$ 300,00 (Pix de seg 02/11)."
+- `POST …/simulate` ganha `month_signups?` (inteiro 0–30.000): com regra mensal, a resposta ganha `month: { total_cents, conta }` (a parte do mês, pela mesma função do cálculo real).
+
+### 43.6 Variáveis
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `FIELD_EARNINGS_MONTHLY_ENABLED` | `false` | aceita `tiers_period = month` (exige `FIELD_EARNINGS_ENABLED`) |
+
+**Para produção:** `migrate deploy` → API → web (o web antigo não lê `month` em `tiers_period`: suba o web antes de publicar uma regra mensal). Uma regra mensal fica **uma semana em sombra**
+(tela × conta à mão) antes de valer.
+
+## 44. (reservado ao L12, consultor em várias praças)
+
+## 45. Regra de pagamento por consultor (restante da Lovable, fase L13)
+
+Origem: arquitetura item 16 ("Remuneração por representante", Lovable `0000:49-51, 67-75`: forma de remuneração, valores e bônus por pessoa). **Opção**, atrás de flag; a regra
+geral versionada (§28.2) continua a padrão.
+
+### 45.1 Trava: `FIELD_EARNINGS_PER_CONSULTANT_ENABLED` (padrão `false`; só vale com `FIELD_EARNINGS_ENABLED`)
+
+| Estado | Efeito |
+|---|---|
+| Desligada | As versões por consultor são **ignoradas** (nenhuma consulta a elas; todo consultor segue a regra geral). Rotas novas → `404 PER_CONSULTANT_DISABLED`; `consultant_id` não nulo no simulador → `422 PER_CONSULTANT_DISABLED` (`null`/ausente = ignorado). Não deve existir versão por consultor em produção com a flag desligada. |
+| Ligada | `features.per_consultant_enabled = true` no `GET …/earnings/config`; rotas do §45.4; leituras e fechamento resolvem a regra por consultor (§45.2). |
+
+### 45.2 Resolução (por dia; nunca as duas somadas)
+
+Para cada consultor e cada dia: vale a versão **do consultor** com maior `valid_from ≤ dia` (empate: maior `version`); se ele não tem nenhuma que já começou, vale a **regra geral**
+do dia. Parâmetros semanais seguem a versão resolvida no 1º dia da semana; os mensais (§43), a do dia 1. Consultor **sem** regra própria = cálculo, conta, razão e wire **byte a byte**
+iguais aos de hoje. Uma regra própria vale até haver outra do mesmo consultor (voltar à regra geral não está nesta fase: crie uma regra própria igual à geral).
+**O calendário é sempre o da regra geral:** `week_start_weekday`, `payout_weekday`, `autoclose_hour` e `late_grace_days` da versão do consultor têm de ser iguais aos da regra geral vigente
+no `valid_from` (`400 VALIDATION_ERROR` com o campo); semana, dia do Pix, fechamento automático e prazo tardio continuam os da geral.
+A numeração das versões é uma só (o razão guarda `rule_version`): a regra geral pode pular números ocupados por regras de consultor.
+
+### 45.3 Banco (migração aditiva `20261107100000_lovable_l13_regra_consultor`)
+
+`field_pay_rule_versions.consultant_id uuid NULL` (FK `field_consultants` **Restrict**; nulo = regra geral, todas as existentes) e índice `(consultant_id, valid_from, version)`. O trigger
+de imutabilidade continua (só INSERT). `DELETE /v1/consultores/:id` com regra própria → `409 HAS_EARNINGS` (desative em vez de apagar). Nenhum índice parcial novo.
+
+### 45.4 Rotas (leitura e escrita **só admin**; gestor e equipe → `403`; token de campo → `401`)
+
+| Método e rota | Corpo / query | Resposta |
+|---|---|---|
+| `GET /v1/consultores/earnings/consultant-rules?consultant_id=` | — | `{ consultant_id, name, today, current: RegraAplicada, own: Versão[] (as do consultor, mais novas primeiro), global_current: Versão, min_valid_from }` |
+| `POST /v1/consultores/earnings/consultant-rules` | `{ consultant_id, valid_from, reason?, config }` (mesmo `config` do `PUT …/config`) | `201 Versão` com `consultant_id` |
+
+`RegraAplicada`: `{ scope: "consultant" \| "global", version, valid_from, label, config_effective }`; `label` = "Regra própria de Ana · versão 7" ou "Regra geral · versão 3".
+**`valid_from` no passado:** aceito só em semana **ainda aberta** daquele consultor — tem de ser depois do fim da última semana fechada dele (`409 WEEK_CLOSED`, a mensagem diz a semana)
+e não antes do início da semana em que ele foi criado (`400`). Efeito: a leitura e o fechamento passam a calcular esses dias pela regra nova; semana aberta não tem lançamento no razão,
+então nada é recalculado nem estornado. O que já foi fechado só muda por ajuste manual com motivo (§28.4). A versão é gravada sob o mesmo lock do fechamento do consultor; se a regra dele
+mudar enquanto um fechamento está calculando, o fechamento responde `409 RULE_CHANGED` (tente de novo) em vez de fechar com a regra velha.
+Demais conferências do `PUT …/config`: `validarRegra`, `ROUTES_DISABLED`, `DECLARED_DISABLED`, `BREAKS_DISABLED`, `MONTHLY_DISABLED`, alinhamento semanal/mensal contra a regra
+**resolvida** do consultor. Consultor inexistente ou id malformado → `404 NOT_FOUND`.
+
+### 45.5 Leituras e fechamento (acréscimos só para quem tem regra própria)
+
+- `GET /v1/consultores/earnings`: a linha do consultor com regra própria ganha `rule: RegraAplicada` (a do dia mais recente já calculado da semana) e cada dia `rule_scope: "consultant"`
+  nos dias da regra dele; a `conta` do dia ganha a 1ª linha "Regra própria de Ana · versão 7.". Consultor sem regra própria: nada muda.
+- `GET /v1/campo/earnings`: com regra própria hoje, `rule_version`, `source` e `signup_source` são os da regra dele e entra `rule: RegraAplicada`.
+- `POST …/simulate` ganha `consultant_id?`: sem `config`, simula pela regra do consultor de hoje; a resposta ganha `rule: RegraAplicada`.
+- Fechamento: `field_payout_periods.rule_version` = a versão resolvida no 1º dia da semana; o `snapshot` do razão fotografa a regra que valeu e ganha `rule_scope: "consultant"`.
+- O relatório de declarados (§32.6) resolve `paid_by` e o limite diário pela regra do consultor. **Painel e resumo do dia (§33.3) contam pela fonte da regra GERAL** (é a medida comum da
+  equipe; o dinheiro segue a regra de cada um).
+
+### 45.6 Variáveis
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `FIELD_EARNINGS_PER_CONSULTANT_ENABLED` | `false` | liga a regra de pagamento por consultor (exige `FIELD_EARNINGS_ENABLED`) |
+
+**Desligar depois de usar** faz todos voltarem à regra geral: as semanas abertas passam a ser calculadas pela geral e as fechadas dentro do prazo tardio ganham delta (§28.4). Para
+desligar sem mexer em dinheiro, crie antes uma regra própria igual à geral, ou feche as semanas.
+**Ordem de subida:** `migrate deploy` → API → web.
