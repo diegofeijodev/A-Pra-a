@@ -188,6 +188,36 @@ describe('fim do intervalo', () => {
       response: { code: 'NO_OPEN_BREAK' },
     });
   });
+  it('empate no ended_at (check-in e fim manual no mesmo segundo): o último CRIADO decide, nunca a ordem física do banco', async () => {
+    // O smoke do lote B carimba com resolução de segundo: o check-in encerrou o 1º intervalo no mesmo segundo em que o 2º
+    // começou e terminou à mão. Sem desempate, o banco pode devolver o do check-in (ordem física) e o fim vira 200.
+    const MESMO = new Date('2026-10-22T15:30:00.000Z');
+    const linhas = [
+      { ...PAUSA, id: 'b1', ended_at: MESMO, end_reason: 'checkin', created_at: new Date('2026-10-22T15:00:00.000Z') },
+      { ...PAUSA, id: 'b2', ended_at: MESMO, end_reason: 'manual', started_at: MESMO, created_at: new Date('2026-10-22T15:29:59.500Z') },
+    ];
+    const p = fakePrisma();
+    // Simula o Postgres: ordena pelas chaves pedidas; empate total = ordem de inserção (o pior caso, o do check-in).
+    p.field_journey_breaks.findFirst.mockImplementation(async (args: { where: { ended_at: unknown }; orderBy: unknown }) => {
+      if (args.where.ended_at === null) return null;
+      const chaves = (Array.isArray(args.orderBy) ? args.orderBy : [args.orderBy]) as Record<string, 'asc' | 'desc'>[];
+      const ordenadas = [...linhas].sort((a, b) => {
+        for (const k of chaves) {
+          const [campo, dir] = Object.entries(k)[0]!;
+          const va = (a as Record<string, unknown>)[campo] as Date;
+          const vb = (b as Record<string, unknown>)[campo] as Date;
+          const d = va.getTime() - vb.getTime();
+          if (d !== 0) return dir === 'desc' ? -d : d;
+        }
+        return 0;
+      });
+      return ordenadas[0];
+    });
+    await expect(servico(p).end(C, corpo({ client_id: CID_FIM }), AGORA)).rejects.toMatchObject({
+      status: 409,
+      response: { code: 'NO_OPEN_BREAK' },
+    });
+  });
 });
 
 describe('encerramento automático', () => {

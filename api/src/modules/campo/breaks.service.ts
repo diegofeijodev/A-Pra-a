@@ -66,13 +66,14 @@ export class BreaksService {
     if (mesmo) return this.daMesmaPessoa(mesmo, c, agora);
     const aberto = await this.prisma.field_journey_breaks.findFirst({
       where: { consultant_id: c.id, ended_at: null },
-      orderBy: { started_at: 'desc' },
+      orderBy: [{ started_at: 'desc' }, { created_at: 'desc' }],
     });
     if (!aberto) {
       // Fila offline: o check-in (ou o fim da jornada, ou a meia-noite) já encerrou este intervalo — não é erro para o consultor.
       const ultimo = await this.prisma.field_journey_breaks.findFirst({
         where: { consultant_id: c.id, ended_at: { not: null } },
-        orderBy: { ended_at: 'desc' },
+        // Desempate pelo criado por último: o check-in pode encerrar um intervalo no mesmo instante em que outro termina à mão.
+        orderBy: [{ ended_at: 'desc' }, { created_at: 'desc' }, { id: 'desc' }],
       });
       if (ultimo?.ended_at && ultimo.end_reason !== 'manual' && agora.getTime() - ultimo.ended_at.getTime() < PASSADO_MAXIMO_MS) {
         return breakView(ultimo, agora);
