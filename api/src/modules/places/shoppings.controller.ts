@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthUser } from '../../common/auth/auth-user';
-import { AdminOnly } from '../../common/decorators/admin-only.decorator';
+import { AdminOnly, GestorOuAdmin } from '../../common/decorators/admin-only.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ConfigShoppingDto, MarcarShoppingDto, ShoppingsQueryDto, ShoppingsService } from './shoppings.service';
 
@@ -31,7 +31,7 @@ export class ShoppingsController {
     return this.shoppings.list(q);
   }
 
-  @AdminOnly()
+  @GestorOuAdmin()
   @Patch(':lead_id')
   marcar(@CurrentUser() user: AuthUser, @Param('lead_id') leadId: string, @Body() dto: MarcarShoppingDto) {
     return this.shoppings.marcar(leadId, dto, user);

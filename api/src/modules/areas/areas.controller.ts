@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthUser } from '../../common/auth/auth-user';
-import { AdminOnly } from '../../common/decorators/admin-only.decorator';
+import { GestorOuAdmin } from '../../common/decorators/admin-only.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AreasService } from './areas.service';
 import { AreasQueryDto, CreateAreaDto, UpdateAreaDto } from './dto/areas.dto';
@@ -21,13 +21,13 @@ export class AreasController {
     return this.areas.list(q.praca_id);
   }
 
-  @AdminOnly()
+  @GestorOuAdmin()
   @Post()
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateAreaDto) {
     return this.areas.create(dto, user);
   }
 
-  @AdminOnly()
+  @GestorOuAdmin()
   @Patch(':id')
   update(@Param('id') id: string, @Query() q: AreasQueryDto, @Body() dto: UpdateAreaDto) {
     return this.areas.update(id, q.praca_id, dto);

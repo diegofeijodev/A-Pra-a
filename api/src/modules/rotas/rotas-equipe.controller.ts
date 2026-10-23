@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, Inject, Optional, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthUser } from '../../common/auth/auth-user';
-import { AdminOnly } from '../../common/decorators/admin-only.decorator';
+import { AdminOnly, GestorOuAdmin } from '../../common/decorators/admin-only.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { LOVABLE_E_FLAGS, type FlagsLovableE } from '../../common/flags/lovable-e.flags';
 import { CandidatosQueryDto, ConfigRotaDto, MontarRotaDto, OrdenarRotaDto, ReotimizarEquipeDto, RotasQueryDto } from './dto/rotas.dto';
@@ -38,7 +38,7 @@ export class RotasEquipeController {
     return this.rotas.candidates(q);
   }
 
-  @AdminOnly()
+  @GestorOuAdmin()
   @Post()
   build(@CurrentUser() user: AuthUser, @Body() dto: MontarRotaDto) {
     return this.rotas.build(dto, user);
@@ -49,13 +49,13 @@ export class RotasEquipeController {
     return this.rotas.get(id);
   }
 
-  @AdminOnly()
+  @GestorOuAdmin()
   @Put(':id/order')
   order(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: OrdenarRotaDto) {
     return this.rotas.order(id, dto, user);
   }
 
-  @AdminOnly()
+  @GestorOuAdmin()
   @HttpCode(200)
   @Post(':id/reoptimize')
   reoptimize(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: ReotimizarEquipeDto) {

@@ -3,12 +3,15 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Inject,
   NotFoundException,
   Optional,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { AuthUser } from '../../common/auth/auth-user';
 import { PrismaService } from '../../common/database/prisma.service';
+import { LOVABLE_E_FLAGS, type FlagsLovableE } from '../../common/flags/lovable-e.flags';
 import { isUuid } from '../../common/ids/uuid';
 import { AuthService } from '../auth/auth.service';
 import { PasswordPolicyService } from '../password-policy/password-policy.service';
@@ -20,7 +23,17 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly auth: AuthService,
     @Optional() private readonly senhas?: PasswordPolicyService,
+    @Optional() @Inject(LOVABLE_E_FLAGS) private readonly flags?: FlagsLovableE,
   ) {}
+
+  /** Lote E §42.2: `is_gestor` só com a flag; desligada, `null`/ausente é ignorado e valor é recusado (nunca gravado mudo). */
+  private gestorDoCorpo(v: boolean | null | undefined): { is_gestor?: boolean } {
+    if (v == null) return {};
+    if (!this.flags?.team_gestor) {
+      throw new UnprocessableEntityException({ code: 'TEAM_GESTOR_DISABLED', message: 'O perfil gestor não está ligado neste servidor.' });
+    }
+    return { is_gestor: v };
+  }
 
   list() {
     return this.prisma.users
@@ -33,6 +46,7 @@ export class UsersService {
     if (await this.prisma.users.findUnique({ where: { email } })) {
       throw new ConflictException({ code: 'EMAIL_IN_USE', message: 'Já existe uma conta com este e-mail.' });
     }
+    const gestor = this.gestorDoCorpo(dto.is_gestor);
     // Lote E §41.2: a senha inicial definida pelo admin é senha NOVA (só com a flag).
     await this.senhas?.exigir(dto.password);
     const user = await this.prisma.users.create({
@@ -44,6 +58,7 @@ export class UsersService {
         color: dto.color,
         phone: dto.phone,
         is_admin: dto.is_admin,
+        ...gestor,
       },
     });
     return this.auth.toUserView(user);
@@ -71,6 +86,7 @@ export class UsersService {
   }
 
   async updateByAdmin(id: string, dto: UpdateUserDto, currentUserId: string) {
+    const gestor = this.gestorDoCorpo(dto.is_gestor);
     const target = await this.findOrFail(id);
     // `is_admin:false` some do target tão silenciosamente quanto `active:false`
     // — as duas formas de "sumir com o último admin" passam pela mesma guarda.
@@ -86,6 +102,7 @@ export class UsersService {
         is_admin: dto.is_admin,
         active: dto.active,
         sort: dto.sort,
+        ...gestor,
       },
     });
     return this.auth.toUserView(user);

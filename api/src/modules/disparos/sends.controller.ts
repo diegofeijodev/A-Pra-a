@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthUser } from '../../common/auth/auth-user';
-import { AdminOnly } from '../../common/decorators/admin-only.decorator';
+import { AdminOnly, Equipe } from '../../common/decorators/admin-only.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { DisparosService } from './disparos.service';
 import { MarkSendDto, ReplySendDto } from './dto/disparos.dto';
@@ -23,11 +23,13 @@ export class SendsController {
     return this.disparos.sendsCount();
   }
 
+  @Equipe()
   @Post(':id/mark')
   mark(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: MarkSendDto) {
     return this.disparos.mark(id, dto, user);
   }
 
+  @Equipe()
   @Post(':id/reply')
   reply(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: ReplySendDto) {
     return this.disparos.reply(id, dto, user);

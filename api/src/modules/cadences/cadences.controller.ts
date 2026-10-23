@@ -10,6 +10,7 @@ import {
   ExitEnrollmentDto,
   TestCadenceDto,
 } from './dto/cadences.dto';
+import { Equipe } from '../../common/decorators/admin-only.decorator';
 
 @ApiTags('Cadências')
 @ApiBearerAuth()
@@ -22,12 +23,14 @@ export class CadencesController {
     return this.cadences.list();
   }
 
+  @Equipe()
   @Post()
   create(@Body() dto: CadenceBodyDto) {
     return this.cadences.create(dto);
   }
 
   // Rota estática antes das de ':id' — a ordem importa (CLAUDE.md).
+  @Equipe()
   @Post('restore-seed')
   restoreSeed() {
     return this.cadences.restoreSeed();
@@ -43,6 +46,7 @@ export class CadencesController {
     return this.cadences.stats(id);
   }
 
+  @Equipe()
   @Put(':id')
   replace(@Param('id') id: string, @Body() dto: CadenceBodyDto) {
     return this.cadences.replace(id, dto);
@@ -50,21 +54,25 @@ export class CadencesController {
 
   // Sem `@AdminOnly()`: no protótipo qualquer pessoa do time apaga a cadência
   // que ela mesma montou. O histórico do que já foi enviado (`msg_sends`) fica.
+  @Equipe()
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.cadences.remove(id);
   }
 
+  @Equipe()
   @Post(':id/toggle-pause')
   togglePause(@Param('id') id: string) {
     return this.cadences.togglePause(id);
   }
 
+  @Equipe()
   @Post(':id/enroll')
   enroll(@Param('id') id: string, @Body() dto: EnrollLeadDto) {
     return this.cadences.enroll(id, dto);
   }
 
+  @Equipe()
   @Post(':id/test')
   test(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: TestCadenceDto) {
     return this.cadences.test(id, dto, user);
@@ -84,6 +92,7 @@ export class EnrollmentsController {
     return this.cadences.listEnrollments(query);
   }
 
+  @Equipe()
   @Post(':id/exit')
   exit(@Param('id') id: string, @Body() dto: ExitEnrollmentDto) {
     return this.cadences.exitEnrollment(id, dto);

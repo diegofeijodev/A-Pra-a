@@ -42,6 +42,11 @@ export class CreateUserDto {
   @IsOptional()
   @IsBoolean()
   is_admin?: boolean;
+
+  /** Lote E §42.2: perfil gestor; só com `TEAM_GESTOR_ENABLED` (desligada: `null`/ausente ignorado, valor = 422). */
+  @IsOptional()
+  @IsBoolean()
+  is_gestor?: boolean | null;
 }
 
 export class UpdateMeDto {
@@ -103,6 +108,11 @@ export class UpdateUserDto {
   @IsOptional()
   @IsInt()
   sort?: number;
+
+  /** Lote E §42.2 (ver `CreateUserDto.is_gestor`). */
+  @IsOptional()
+  @IsBoolean()
+  is_gestor?: boolean | null;
 }
 
 export class SetPasswordDto {

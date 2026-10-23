@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -177,6 +178,11 @@ const pracaNaoEncontrada = () => new NotFoundException({ code: 'NOT_FOUND', mess
  * externo nunca recebe duas requisições juntas. Todo acesso filtra por `id` E
  * `praca_id`.
  */
+/** Gestor efetivo (o guard já combinou a flag com a coluna): só o mapa aberto (§42.3). Admin nunca é limitado. */
+const soMapaAberto = (u?: AuthUser): boolean => !!u && !u.is_admin && u.is_gestor === true;
+const apifySoAdmin = () =>
+  new ForbiddenException({ code: 'FORBIDDEN', message: 'A busca paga (Google Maps pelo Apify) é só para administradores.' });
+
 @Injectable()
 export class PlacesSearchService implements OnApplicationBootstrap {
   private readonly log = new Logger(PlacesSearchService.name);
@@ -217,6 +223,8 @@ export class PlacesSearchService implements OnApplicationBootstrap {
 
   // ── pedido ──────────────────────────────────────────────────
   async start(dto: StartPlaceSearchDto, user: AuthUser): Promise<{ run: SearchRunView; nova: boolean }> {
+    // Lote E §42.3: o gestor só busca no mapa aberto (o Apify é pago: só admin).
+    if (soMapaAberto(user) && (dto.source ?? 'osm') !== 'osm') throw apifySoAdmin();
     // Lote D (§40.3): `kind` ausente (ou `lugares`) = tudo como hoje; os outros só com a flag dos shoppings.
     const kind = dto.kind ?? 'lugares';
     if (kind !== 'lugares') {
@@ -437,23 +445,24 @@ export class PlacesSearchService implements OnApplicationBootstrap {
     ];
   }
 
-  async list(pracaId: string): Promise<SearchRunView[]> {
+  async list(pracaId: string, user?: AuthUser): Promise<SearchRunView[]> {
     await this.assertPraca(pracaId);
     const rows = await this.prisma.place_import_runs.findMany({
       // Lote D (§40.3): a lista da busca de hoje só mostra as de `lugares` (as de shoppings têm a tela delas).
-      where: { praca_id: pracaId, ...(this.shoppingsLigado ? { kind: 'lugares' } : {}) },
+      // Lote E (§42.3): o gestor vê só as buscas do mapa aberto.
+      where: { praca_id: pracaId, ...(this.shoppingsLigado ? { kind: 'lugares' } : {}), ...(soMapaAberto(user) ? { source: 'osm' } : {}) },
       orderBy: { created_at: 'desc' },
       take: 20,
     });
     return rows.map((r) => toView(r, false));
   }
 
-  async get(id: string, pracaId: string): Promise<SearchRunView> {
-    return toView(await this.findOrFail(id, pracaId), false);
+  async get(id: string, pracaId: string, user?: AuthUser): Promise<SearchRunView> {
+    return toView(this.doGestor(await this.findOrFail(id, pracaId), user), false);
   }
 
-  async cancel(id: string, pracaId: string): Promise<SearchRunView> {
-    await this.findOrFail(id, pracaId);
+  async cancel(id: string, pracaId: string, user?: AuthUser): Promise<SearchRunView> {
+    this.doGestor(await this.findOrFail(id, pracaId), user);
     const { count } = await this.prisma.place_import_runs.updateMany({
       where: { id, praca_id: pracaId, status: { in: ['queued', 'running'] } },
       data: { status: 'cancelled', finished_at: new Date() },
@@ -466,8 +475,8 @@ export class PlacesSearchService implements OnApplicationBootstrap {
   }
 
   // ── revisão ─────────────────────────────────────────────────
-  async candidates(id: string, pracaId: string): Promise<CandidateView[]> {
-    const run = await this.findOrFail(id, pracaId);
+  async candidates(id: string, pracaId: string, user?: AuthUser): Promise<CandidateView[]> {
+    const run = this.doGestor(await this.findOrFail(id, pracaId), user);
     const rows = await this.prisma.place_candidates.findMany({
       where: { run_id: run.id },
       orderBy: [{ distance_m: 'asc' }, { name: 'asc' }],
@@ -487,7 +496,7 @@ export class PlacesSearchService implements OnApplicationBootstrap {
 
   /** "Adicionar N como leads": reserva os candidatos e cria os leads numa transação só. */
   async addLeads(id: string, dto: AddPlaceLeadsDto, user: AuthUser): Promise<AddLeadsView> {
-    const run = await this.findOrFail(id, dto.praca_id);
+    const run = this.doGestor(await this.findOrFail(id, dto.praca_id), user);
     if (run.status !== 'done') {
       throw new ConflictException({ code: 'RUN_NOT_READY', message: 'A pesquisa ainda não terminou.' });
     }
@@ -831,6 +840,12 @@ export class PlacesSearchService implements OnApplicationBootstrap {
     if (!isUuid(pracaId)) throw pracaNaoEncontrada();
     const praca = await this.prisma.pracas.findUnique({ where: { id: pracaId }, select: { id: true } });
     if (!praca) throw pracaNaoEncontrada();
+  }
+
+  /** Lote E §42.3: uma busca paga (Apify) não é do gestor — nem abrir, nem cancelar, nem adicionar. */
+  private doGestor<T extends { source: string }>(run: T, user?: AuthUser): T {
+    if (soMapaAberto(user) && run.source !== 'osm') throw apifySoAdmin();
+    return run;
   }
 
   private async findOrFail(id: string, pracaId: string): Promise<RunRow> {

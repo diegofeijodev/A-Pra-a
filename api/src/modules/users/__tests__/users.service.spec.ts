@@ -78,3 +78,36 @@ describe('UsersService.updateMe — active_praca_id', () => {
     expect(p.pracas.findUnique).not.toHaveBeenCalled();
   });
 });
+
+describe('Lote E §42.2 — perfil gestor nas pessoas', () => {
+  const flags = (on: boolean) => ({ password_policy: false, consultant_profile: false, contact_email: false, team_gestor: on });
+  const prismaFake = () => ({
+    users: {
+      findUnique: jest.fn().mockResolvedValue({ id: '00000000-0000-4000-8000-000000000001', is_admin: false, active: true }),
+      create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'n', ...data })),
+      update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'n', ...data })),
+      count: jest.fn().mockResolvedValue(1),
+    },
+  });
+  const auth = { toUserView: (u: unknown) => u } as never;
+  const ID = '00000000-0000-4000-8000-000000000001';
+  it('flag desligada: is_gestor null/ausente ignorado; valor = 422 TEAM_GESTOR_DISABLED sem gravar', async () => {
+    const p = prismaFake();
+    const s = new UsersService(p as never, auth, undefined, flags(false));
+    await s.updateByAdmin(ID, { name: 'X', is_gestor: null }, 'admin');
+    expect(p.users.update.mock.calls[0][0].data).not.toHaveProperty('is_gestor');
+    await expect(s.updateByAdmin(ID, { is_gestor: true }, 'admin')).rejects.toMatchObject({ status: 422, response: { code: 'TEAM_GESTOR_DISABLED' } });
+    p.users.findUnique.mockResolvedValue(null);
+    await expect(s.create({ email: 'g@x.com', password: 'abcdef', name: 'G', is_gestor: false })).rejects.toMatchObject({ status: 422 });
+    expect(p.users.create).not.toHaveBeenCalled();
+  });
+  it('ligada: o admin marca e desmarca o gestor', async () => {
+    const p = prismaFake();
+    const s = new UsersService(p as never, auth, undefined, flags(true));
+    await s.updateByAdmin(ID, { is_gestor: true, is_admin: false }, 'admin');
+    expect(p.users.update.mock.calls[0][0].data).toMatchObject({ is_gestor: true, is_admin: false });
+    p.users.findUnique.mockResolvedValue(null);
+    await s.create({ email: 'g@x.com', password: 'abcdef', name: 'G', is_gestor: true });
+    expect(p.users.create.mock.calls[0][0].data).toMatchObject({ is_gestor: true });
+  });
+});

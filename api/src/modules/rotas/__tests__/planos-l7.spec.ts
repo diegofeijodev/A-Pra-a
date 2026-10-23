@@ -7,7 +7,7 @@ import 'reflect-metadata';
 import { ConflictException } from '@nestjs/common';
 import type { AuthUser } from '../../../common/auth/auth-user';
 import type { PrismaService } from '../../../common/database/prisma.service';
-import { ADMIN_ONLY_KEY } from '../../../common/decorators/admin-only.decorator';
+import { ADMIN_ONLY_KEY, PERMISSAO_KEY } from '../../../common/decorators/admin-only.decorator';
 import { CAMPO_ROUTE_KEY } from '../../../common/decorators/campo-route.decorator';
 import { CONFIG_ROTA_PADRAO } from '../../../domain/rota-rules';
 import { MinhasRotasController, PlanosController } from '../planos/planos.controller';
@@ -358,7 +358,10 @@ describe('arquivar e Minhas rotas', () => {
     expect(Reflect.getMetadata(CAMPO_ROUTE_KEY, PlanosController)).toBeUndefined();
     expect(Reflect.getMetadata(CAMPO_ROUTE_KEY, MinhasRotasController)).toBe(true);
     const marca = (m: string) => Reflect.getMetadata(ADMIN_ONLY_KEY, (PlanosController.prototype as unknown as Record<string, object>)[m]!);
-    for (const m of ['salvarConfig', 'criar', 'atribuir', 'arquivar']) expect(marca(m)).toBe(true);
+    // Lote E §42.3: criar/atribuir/arquivar passaram a gestor ou admin; a configuração da divisão segue só admin.
+    const permissao = (m: string) => Reflect.getMetadata(PERMISSAO_KEY, (PlanosController.prototype as unknown as Record<string, object>)[m]!);
+    expect(marca('salvarConfig')).toBe(true);
+    for (const m of ['criar', 'atribuir', 'arquivar']) expect(permissao(m)).toBe('gestor');
     for (const m of ['config', 'list', 'get']) expect(marca(m)).toBeUndefined();
   });
 });

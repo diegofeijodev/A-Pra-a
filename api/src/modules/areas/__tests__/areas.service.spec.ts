@@ -4,7 +4,7 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import type { AuthUser } from '../../../common/auth/auth-user';
 import type { PrismaService } from '../../../common/database/prisma.service';
-import { ADMIN_ONLY_KEY } from '../../../common/decorators/admin-only.decorator';
+import { ADMIN_ONLY_KEY, PERMISSAO_KEY } from '../../../common/decorators/admin-only.decorator';
 import { AreasController } from '../areas.controller';
 import { AreasService } from '../areas.service';
 import { CreateAreaDto, UpdateAreaDto } from '../dto/areas.dto';
@@ -190,10 +190,13 @@ describe('AreasService.update — área de outra praça é 404', () => {
 
 describe('AreasController — permissões', () => {
   const marca = (m: keyof AreasController) => Reflect.getMetadata(ADMIN_ONLY_KEY, AreasController.prototype[m]);
-  it('escrita é @AdminOnly; leitura é da equipe', () => {
-    expect(marca('create')).toBe(true);
-    expect(marca('update')).toBe(true);
+  const permissao = (m: keyof AreasController) => Reflect.getMetadata(PERMISSAO_KEY, AreasController.prototype[m]);
+  // Lote E §42.3: a escrita passou de só admin para gestor ou admin (com a flag desligada, continua só admin: matriz do gestor).
+  it('escrita é @GestorOuAdmin; leitura é da equipe', () => {
+    expect(permissao('create')).toBe('gestor');
+    expect(permissao('update')).toBe('gestor');
     expect(marca('list')).toBeUndefined();
+    expect(permissao('list')).toBeUndefined();
   });
 });
 

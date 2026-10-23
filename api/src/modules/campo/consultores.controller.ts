@@ -15,7 +15,7 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { AuthUser } from '../../common/auth/auth-user';
-import { AdminOnly } from '../../common/decorators/admin-only.decorator';
+import { AdminOnly, GestorOuAdmin } from '../../common/decorators/admin-only.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AtencaoService } from './atencao.service';
 import { ConsultoresService } from './consultores.service';
@@ -46,7 +46,7 @@ export class ConsultoresController {
     return this.consultores.list(undefined, user);
   }
 
-  @AdminOnly()
+  @GestorOuAdmin()
   @Post()
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateConsultorDto) {
     return this.consultores.create(dto, user);
@@ -101,20 +101,20 @@ export class ConsultoresController {
     return this.consultores.day(id, day);
   }
 
-  @AdminOnly()
+  @GestorOuAdmin()
   @Patch(':id')
   update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateConsultorDto) {
     return this.consultores.update(id, dto, user);
   }
 
-  @AdminOnly()
+  @GestorOuAdmin()
   @HttpCode(200)
   @Post(':id/reset-password')
   resetPassword(@Param('id') id: string) {
     return this.consultores.resetPassword(id);
   }
 
-  @AdminOnly()
+  @GestorOuAdmin()
   @HttpCode(200)
   @Post(':id/freela-sync')
   freelaSync(@Param('id') id: string) {

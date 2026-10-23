@@ -4,7 +4,7 @@ import { validate } from 'class-validator';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import type { AuthUser } from '../../../common/auth/auth-user';
 import type { PrismaService } from '../../../common/database/prisma.service';
-import { ADMIN_ONLY_KEY } from '../../../common/decorators/admin-only.decorator';
+import { ADMIN_ONLY_KEY, PERMISSAO_KEY } from '../../../common/decorators/admin-only.decorator';
 import { CAMPO_ROUTE_KEY } from '../../../common/decorators/campo-route.decorator';
 import { CONFIG_ROTA_PADRAO } from '../../../domain/rota-rules';
 import { MontarRotaDto } from '../dto/rotas.dto';
@@ -199,7 +199,8 @@ describe('controllers — quem acessa o quê', () => {
   });
   it('escrita da equipe e da configuração é só admin; leitura não', () => {
     const marca = (C: any, m: string) => Reflect.getMetadata(ADMIN_ONLY_KEY, C.prototype[m]);
-    for (const m of ['build', 'order', 'reoptimize']) expect(marca(RotasEquipeController, m)).toBe(true);
+    // Lote E §42.3: montar/ordenar/reotimizar passaram a gestor ou admin (a configuração segue só admin).
+    for (const m of ['build', 'order', 'reoptimize']) expect(Reflect.getMetadata(PERMISSAO_KEY, (RotasEquipeController.prototype as any)[m])).toBe('gestor');
     for (const m of ['list', 'candidates', 'get']) expect(marca(RotasEquipeController, m)).toBeUndefined();
     expect(marca(RotasConfigController, 'put')).toBe(true);
     expect(marca(RotasConfigController, 'get')).toBeUndefined();

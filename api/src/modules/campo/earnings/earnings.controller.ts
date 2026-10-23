@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, Post, Put, Query, UseGuards } f
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthUser } from '../../../common/auth/auth-user';
 import { CampoConsultant } from '../../../common/auth/campo-consultant';
-import { AdminOnly } from '../../../common/decorators/admin-only.decorator';
+import { AdminOnly, Equipe } from '../../../common/decorators/admin-only.decorator';
 import { CampoRoute } from '../../../common/decorators/campo-route.decorator';
 import { CurrentConsultant } from '../../../common/decorators/current-consultant.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
@@ -34,6 +34,7 @@ export class EarningsEquipeController {
     return this.earnings.salvarConfig(dto, user);
   }
 
+  @Equipe()
   @HttpCode(200)
   @Post('simulate')
   simular(@Body() dto: SimularDto) {

@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthUser } from '../../common/auth/auth-user';
-import { AdminOnly } from '../../common/decorators/admin-only.decorator';
+import { AdminOnly, Equipe } from '../../common/decorators/admin-only.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { DisparosService } from './disparos.service';
 import { CreateDisparoDto, PreviewDisparoDto } from './dto/disparos.dto';
@@ -18,11 +18,13 @@ export class DisparosController {
   }
 
   // Rota estática antes das de ':id' — a ordem importa (CLAUDE.md).
+  @Equipe()
   @Post('preview')
   preview(@CurrentUser() user: AuthUser, @Body() dto: PreviewDisparoDto) {
     return this.disparos.preview(dto, user);
   }
 
+  @Equipe()
   @Post()
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateDisparoDto) {
     return this.disparos.create(dto, user);

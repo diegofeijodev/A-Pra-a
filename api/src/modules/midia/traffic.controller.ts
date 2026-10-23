@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { TrafficBodyDto, TrafficDayDto, TrafficQueryDto } from './dto/midia.dto';
 import { MidiaService } from './midia.service';
+import { Equipe } from '../../common/decorators/admin-only.decorator';
 
 @ApiTags('Tráfego pago')
 @ApiBearerAuth()
@@ -14,16 +15,19 @@ export class TrafficController {
     return this.midia.listTraffic(query.campanha_id);
   }
 
+  @Equipe()
   @Post()
   create(@Body() dto: TrafficBodyDto) {
     return this.midia.createTraffic(dto);
   }
 
+  @Equipe()
   @Put(':id')
   replace(@Param('id') id: string, @Body() dto: TrafficBodyDto) {
     return this.midia.replaceTraffic(id, dto);
   }
 
+  @Equipe()
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.midia.removeTraffic(id);
@@ -31,11 +35,13 @@ export class TrafficController {
 
   // Um lançamento por dia: mandar a mesma data duas vezes CORRIGE a linha, não
   // cria outra (`traffic_days` é único em entry_id + date).
+  @Equipe()
   @Put(':id/days')
   upsertDay(@Param('id') id: string, @Body() dto: TrafficDayDto) {
     return this.midia.upsertDay(id, dto);
   }
 
+  @Equipe()
   @Post(':id/pull-api')
   pullApi(@Param('id') id: string) {
     return this.midia.pullApi(id);

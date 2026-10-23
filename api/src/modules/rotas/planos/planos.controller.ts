@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, Post, Put, Query } from '@nestj
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthUser } from '../../../common/auth/auth-user';
 import { CampoConsultant } from '../../../common/auth/campo-consultant';
-import { AdminOnly } from '../../../common/decorators/admin-only.decorator';
+import { AdminOnly, GestorOuAdmin } from '../../../common/decorators/admin-only.decorator';
 import { CampoRoute } from '../../../common/decorators/campo-route.decorator';
 import { CurrentConsultant } from '../../../common/decorators/current-consultant.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
@@ -40,7 +40,7 @@ export class PlanosController {
     return this.planos.list(q);
   }
 
-  @AdminOnly()
+  @GestorOuAdmin()
   @Post()
   criar(@CurrentUser() user: AuthUser, @Body() dto: CriarPlanoDto) {
     return this.planos.criar(dto, user);
@@ -51,14 +51,14 @@ export class PlanosController {
     return this.planos.get(id);
   }
 
-  @AdminOnly()
+  @GestorOuAdmin()
   @HttpCode(200)
   @Post(':id/items/:itemId/assign')
   atribuir(@CurrentUser() user: AuthUser, @Param('id') id: string, @Param('itemId') itemId: string, @Body() dto: AtribuirItemDto) {
     return this.planos.atribuir(id, itemId, dto, user);
   }
 
-  @AdminOnly()
+  @GestorOuAdmin()
   @HttpCode(200)
   @Post(':id/archive')
   arquivar(@CurrentUser() user: AuthUser, @Param('id') id: string) {

@@ -1,7 +1,8 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Inject, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../common/database/prisma.service';
+import { LOVABLE_E_FLAGS, type FlagsLovableE } from '../../common/flags/lovable-e.flags';
 
 export interface UserView {
   id: string;
@@ -15,6 +16,8 @@ export interface UserView {
   theme: string;
   active_praca_id: string | null;
   sort: number;
+  /** Lote E §42.2: só com `TEAM_GESTOR_ENABLED` (aditivo); desligada, a chave não vem. */
+  is_gestor?: boolean;
 }
 
 @Injectable()
@@ -22,6 +25,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    @Optional() @Inject(LOVABLE_E_FLAGS) private readonly flags?: FlagsLovableE,
   ) {}
 
   // Compartilhado com o UsersModule: uma única projeção de `users` para fora,
@@ -38,6 +42,7 @@ export class AuthService {
     theme: string;
     active_praca_id: string | null;
     sort: number;
+    is_gestor?: boolean;
   }): UserView {
     return {
       id: user.id,
@@ -51,6 +56,7 @@ export class AuthService {
       theme: user.theme,
       active_praca_id: user.active_praca_id,
       sort: user.sort,
+      ...(this.flags?.team_gestor ? { is_gestor: user.is_gestor === true } : {}),
     };
   }
 

@@ -11,6 +11,7 @@ import {
   SuggestNameDto,
 } from './dto/midia.dto';
 import { MidiaService } from './midia.service';
+import { Equipe } from '../../common/decorators/admin-only.decorator';
 
 @ApiTags('Campanhas de mídia')
 @ApiBearerAuth()
@@ -23,12 +24,14 @@ export class CampanhasController {
     return this.midia.listCampanhas(query);
   }
 
+  @Equipe()
   @Post()
   create(@CurrentUser() user: AuthUser, @Body() dto: CampanhaBodyDto) {
     return this.midia.createCampanha(dto, user);
   }
 
   // Rotas estáticas ANTES das de ':id' — a ordem importa (CLAUDE.md).
+  @Equipe()
   @Post('suggest-name')
   suggestName(@Body() dto: SuggestNameDto) {
     return this.midia.suggestName(dto);
@@ -45,21 +48,25 @@ export class CampanhasController {
     return this.midia.getCampanha(id);
   }
 
+  @Equipe()
   @Put(':id')
   replace(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: CampanhaBodyDto) {
     return this.midia.replaceCampanha(id, dto, user);
   }
 
+  @Equipe()
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.midia.removeCampanha(id);
   }
 
+  @Equipe()
   @Post(':id/duplicate')
   duplicate(@Param('id') id: string, @Body() dto: DuplicateCampanhaDto) {
     return this.midia.duplicateCampanha(id, dto);
   }
 
+  @Equipe()
   @Post(':id/status')
   setStatus(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: CampanhaStatusDto) {
     return this.midia.setCampanhaStatus(id, dto, user);

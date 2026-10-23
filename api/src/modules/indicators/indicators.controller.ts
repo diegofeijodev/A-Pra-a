@@ -8,6 +8,7 @@ import {
   ReadingsQueryDto,
 } from './dto/indicators.dto';
 import { IndicatorsService } from './indicators.service';
+import { Equipe } from '../../common/decorators/admin-only.decorator';
 
 @ApiTags('Indicadores')
 @ApiBearerAuth()
@@ -41,11 +42,13 @@ export class IndicatorsController {
     return this.indicators.canais(query);
   }
 
+  @Equipe()
   @Post(':key/entries')
   putEntry(@Param('key') key: string, @Body() dto: IndicatorEntryDto) {
     return this.indicators.putEntry(key, dto);
   }
 
+  @Equipe()
   @Delete(':key/entries')
   removeEntry(@Param('key') key: string, @Query() query: EntryKeyQueryDto) {
     return this.indicators.removeEntry(key, query);

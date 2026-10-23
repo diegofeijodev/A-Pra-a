@@ -463,3 +463,34 @@ describe('PlacesController', () => {
     expect(chaves.map(String).join(',')).not.toMatch(/campo/i);
   });
 });
+
+describe('Lote E §42.3 — o gestor só no mapa aberto (o Apify é pago: só admin)', () => {
+  const GESTOR: AuthUser = { id: '00000000-0000-4000-8000-0000000000ef', email: 'g@a.com', name: 'G', is_admin: false, is_gestor: true };
+  const EQUIPE: AuthUser = { id: '00000000-0000-4000-8000-0000000000f0', email: 'e@a.com', name: 'E', is_admin: false };
+  it('gestor com source=apify = 403 antes de qualquer leitura; com osm (ou sem source) segue', async () => {
+    const { service, place_import_runs } = setup();
+    await expect(service.start({ praca_id: PRACA_A, area_id: AREA, types: ['bar'], source: 'apify' }, GESTOR)).rejects.toMatchObject({ status: 403, response: { code: 'FORBIDDEN' } });
+    expect(place_import_runs.create).not.toHaveBeenCalled();
+    await expect(service.start({ praca_id: PRACA_A, area_id: AREA, types: ['bar'] }, GESTOR)).resolves.toBeDefined();
+  });
+  it('a lista do gestor pede só as do mapa aberto; a do admin, todas (como hoje)', async () => {
+    const { service, place_import_runs } = setup();
+    await service.list(PRACA_A, GESTOR);
+    expect(place_import_runs.findMany.mock.calls[0][0].where).toMatchObject({ praca_id: PRACA_A, source: 'osm' });
+    await service.list(PRACA_A, ADMIN);
+    expect(place_import_runs.findMany.mock.calls[1][0].where).not.toHaveProperty('source');
+    await service.list(PRACA_A, EQUIPE);
+    expect(place_import_runs.findMany.mock.calls[2][0].where).not.toHaveProperty('source');
+  });
+  it('abrir, ver candidatos, cancelar ou adicionar de uma busca Apify = 403 para o gestor; do mapa aberto passa', async () => {
+    const apify = runRow({ source: 'apify', status: 'done', finished_at: new Date() });
+    const { service } = setup({ run: apify });
+    await expect(service.get(RUN, PRACA_A, GESTOR)).rejects.toMatchObject({ status: 403 });
+    await expect(service.candidates(RUN, PRACA_A, GESTOR)).rejects.toMatchObject({ status: 403 });
+    await expect(service.cancel(RUN, PRACA_A, GESTOR)).rejects.toMatchObject({ status: 403 });
+    await expect(service.addLeads(RUN, { praca_id: PRACA_A, candidate_ids: [] }, GESTOR)).rejects.toMatchObject({ status: 403 });
+    await expect(service.get(RUN, PRACA_A, ADMIN)).resolves.toMatchObject({ source: 'apify' });
+    const { service: s2 } = setup({ run: runRow({ status: 'done', finished_at: new Date() }) });
+    await expect(s2.get(RUN, PRACA_A, GESTOR)).resolves.toMatchObject({ source: 'osm' });
+  });
+});

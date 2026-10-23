@@ -27,6 +27,7 @@ import {
 } from './dto/freela.dto';
 import { FreelaCampaignsService } from './freela-campaigns.service';
 import { FreelaTemplatesService } from './freela-templates.service';
+import { Equipe } from '../../common/decorators/admin-only.decorator';
 
 @ApiTags('Freela')
 @ApiBearerAuth()
@@ -48,6 +49,7 @@ export class FreelaController {
     return this.campaigns.audienceOptions(query.audience);
   }
 
+  @Equipe()
   @Post('audience-preview')
   audiencePreview(@Body() dto: AudiencePreviewDto) {
     return this.campaigns.audiencePreview(dto);
@@ -59,6 +61,7 @@ export class FreelaController {
     return this.campaigns.list(query.praca_id);
   }
 
+  @Equipe()
   @Post('campaigns')
   createCampaign(@CurrentUser() user: AuthUser, @Body() dto: CreateFreelaCampaignDto) {
     return this.campaigns.create(dto, user);
@@ -69,16 +72,19 @@ export class FreelaController {
     return this.campaigns.detail(id);
   }
 
+  @Equipe()
   @Patch('campaigns/:id/start')
   start(@Param('id') id: string) {
     return this.campaigns.setState(id, 'start');
   }
 
+  @Equipe()
   @Patch('campaigns/:id/pause')
   pause(@Param('id') id: string) {
     return this.campaigns.setState(id, 'pause');
   }
 
+  @Equipe()
   @Patch('campaigns/:id/cancel')
   cancel(@Param('id') id: string) {
     return this.campaigns.setState(id, 'cancel');
@@ -91,6 +97,7 @@ export class FreelaController {
   }
 
   // Rota estática ANTES da de ':id' — a ordem importa (CLAUDE.md).
+  @Equipe()
   @Post('templates/upload')
   @ApiConsumes('multipart/form-data')
   async upload(@Req() req: FastifyRequest) {
@@ -98,6 +105,7 @@ export class FreelaController {
     return this.templates.uploadImage(file);
   }
 
+  @Equipe()
   @Post('templates')
   createTemplate(@CurrentUser() user: AuthUser, @Body() dto: CreateFreelaTemplateDto) {
     return this.templates.create(dto, user);
@@ -108,6 +116,7 @@ export class FreelaController {
     return this.templates.get(id);
   }
 
+  @Equipe()
   @Put('templates/:id')
   updateTemplate(
     @CurrentUser() user: AuthUser,
@@ -117,6 +126,7 @@ export class FreelaController {
     return this.templates.update(id, dto, user);
   }
 
+  @Equipe()
   @Patch('templates/:id/enabled')
   setEnabled(@Param('id') id: string, @Body() dto: SetEnabledDto) {
     return this.templates.setEnabled(id, dto.enabled);
