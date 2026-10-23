@@ -383,7 +383,8 @@ export class VisitsService {
     // Reenvio da fila (a resposta se perdeu): devolve o que já foi feito.
     if (v.checkout_at) return visitView(v, todaySp(agora), await this.cfgModo(), this.opcoesView());
     if (v.auto_closed) throw autoFechada();
-    const respostas = respostasDe(v);
+    // Lote E §41.4: o e-mail entra na conferência só com a flag (fora de `respostasDe`, que é o wire de hoje com ela desligada).
+    const respostas = this.emailLigado ? { ...respostasDe(v), contact_email: (v as { contact_email?: string | null }).contact_email ?? null } : respostasDe(v);
     // Contrato §31.2: o checkout segue o fluxo gravado na ABERTURA da visita, não a configuração de agora.
     const simples = v.flow === 'simples';
     const resultado: ResultadoSimples | null = simples && ehResultadoSimples(respostas.result) ? respostas.result : null;

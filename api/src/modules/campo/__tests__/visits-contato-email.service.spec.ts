@@ -201,6 +201,13 @@ describe('flag LIGADA', () => {
     expect(JSON.stringify(p.lead_events.create.mock.calls)).not.toContain('maria@padaria.com');
     expect(JSON.stringify(p.leads.update.mock.calls)).not.toContain('maria@padaria.com');
   });
+  it('com email em contato_campos e o e-mail GRAVADO na visita, o checkout conclui', async () => {
+    const cfg = { ...CONFIG_MODO_PADRAO, contato_campos: ['email' as const] };
+    const linha = { ...LINHA, flow: 'simples', result: 'cadastrou', freela_status: 'cadastrou_qr', needs_followup: false, contact_email: 'm@p.com' };
+    const p = fakePrisma(linha);
+    await expect(servico(p, true, cfg).checkout(C, CLIENT, POS, AGORA)).resolves.toMatchObject({ answers: { contact_email: 'm@p.com' } });
+    expect(p.field_visits.updateMany).toHaveBeenCalled();
+  });
   it('com email em contato_campos e o resultado exigindo contato, o checkout pede o e-mail', async () => {
     const cfg = { ...CONFIG_MODO_PADRAO, contato_campos: ['email' as const] };
     const linha = { ...LINHA, flow: 'simples', result: 'cadastrou', freela_status: 'cadastrou_qr', needs_followup: false };

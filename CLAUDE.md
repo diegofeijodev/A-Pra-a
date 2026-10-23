@@ -104,7 +104,7 @@ npm run start:dev | build | typecheck | lint | test | seed
 npm run start:smoke                # sobe sem watcher (ts-node --transpile-only), pra smoke
 npm run smoke                      # scripts/smoke.sh contra a API viva — 918 checagens, repetível sem resíduo
                                    # (menos sem o container `praca-postgres`: a limpeza final é por psql)
-npm test                           # jest maxWorkers 1 — 125 suítes, 1968 testes
+npm test                           # jest maxWorkers 1 — 125 suítes, 1969 testes
 npm run prisma:migrate:dev | prisma:generate | prisma:studio
 
 # web/

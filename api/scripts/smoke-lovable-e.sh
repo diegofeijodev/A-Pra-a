@@ -3,8 +3,8 @@
 # §34.6 Clientes > Lista). Conversa com a API viva (3014) e limpa o que cria (repetível sem resíduo). Roda SEPARADO do smoke.sh (que
 # cobre as flags desligadas). NUNCA fala com o Overpass público. Suba a API, em outro terminal, com as flags ligadas:
 #   OVERPASS_URL=http://127.0.0.1:9/api/interpreter FIELD_ROUTES_ENABLED=true FIELD_ROUTE_PLANS_ENABLED=true FIELD_SEGMENTS_ENABLED=true \
-#   FIELD_MALLS_ENABLED=true FIELD_MAP_PINS_ENABLED=true PASSWORD_POLICY_ENABLED=true FIELD_CONSULTANT_PROFILE_ENABLED=true \
-#   FIELD_CONTACT_EMAIL_ENABLED=true TEAM_GESTOR_ENABLED=true npm run start:smoke
+#   FIELD_MALLS_ENABLED=true FIELD_MAP_PINS_ENABLED=true FIELD_VISIT_FLOW_SELECT_ENABLED=true PASSWORD_POLICY_ENABLED=true \
+#   FIELD_CONSULTANT_PROFILE_ENABLED=true FIELD_CONTACT_EMAIL_ENABLED=true TEAM_GESTOR_ENABLED=true npm run start:smoke
 #   bash scripts/smoke-lovable-e.sh
 API=${API:-http://localhost:3014}
 PASS=0; FAIL=0
@@ -98,7 +98,7 @@ echo "── e-mail de quem atendeu (§41.4) ──"
 printf '\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xd9' > /tmp/praca-smoke-fachada-e.jpg
 curl -s -o /dev/null -X POST $API/v1/campo/journeys/start -H "$J" -H "$HC" -d "{\"client_id\":\"$(uuid)\",$(pos)}"
 V1=$(uuid)
-VIS=$(curl -s -X POST $API/v1/campo/visits -H "$HC" -F "client_id=$V1" -F "at=$(agora)" -F "lat=$LAT" -F "lng=$LNG" -F "accuracy=12" -F "confirm_new=true" --form-string "new_place={\"name\":\"LovE $SUF bar\",\"address\":\"Rua de Teste, 10\"}" -F "photo=@/tmp/praca-smoke-fachada-e.jpg;type=image/jpeg")
+VIS=$(curl -s -X POST $API/v1/campo/visits -H "$HC" -F "client_id=$V1" -F "at=$(agora)" -F "lat=$LAT" -F "lng=$LNG" -F "accuracy=12" -F "flow=completo" -F "confirm_new=true" --form-string "new_place={\"name\":\"LovE $SUF bar\",\"address\":\"Rua de Teste, 10\"}" -F "photo=@/tmp/praca-smoke-fachada-e.jpg;type=image/jpeg")
 check "check-in: answers traz contact_email explícito (null)" "true|null" "$(echo "$VIS" | jq -r '"\(.answers | has("contact_email"))|\(.answers.contact_email)"')"
 ANS=$(echo "$VIS" | jq -c .answers)
 check "rascunho com o eco do servidor (contact_email null) = 200" "200" "$(code -X PATCH $API/v1/campo/visits/$V1/answers -H "$J" -H "$HC" -d "$ANS")"
@@ -118,14 +118,26 @@ check "CRM, lead e pinos nunca levam o e-mail" "0" \
   "$( (curl -s $API/v1/leads/$LEAD1 -H "$HD"; $PSQL "select text from lead_events where lead_id='$LEAD1'") | grep -c 'padaria.com')"
 check "contato_campos aceita email (fim da ordem canônica)" "nome,email" \
   "$(curl -s -X PUT $API/v1/consultores/settings/config -H "$J" -H "$HD" -d '{"contato_campos":["email","nome"]}' | jq -r '.contato_campos | join(",")')"
+# Exigido: o checkout do simples cobra o e-mail que falta e aceita o GRAVADO (a conferência lê a coluna, não só o rascunho).
+checkin_s(){ curl -s -X POST $API/v1/campo/visits -H "$HC" -F "client_id=$1" -F "at=$(agora)" -F "lat=$LAT" -F "lng=$LNG" -F "accuracy=12" -F "flow=simples" -F "confirm_new=true" --form-string "new_place={\"name\":\"LovE $SUF $2\",\"address\":\"Rua de Teste, 20\"}" -F "photo=@/tmp/praca-smoke-fachada-e.jpg;type=image/jpeg"; }
+V2=$(uuid); VS2=$(checkin_s "$V2" "simples")
+if [ "$(echo "$VS2" | jq -r .flow)" = "simples" ]; then
+  curl -s -o /dev/null -X PATCH $API/v1/campo/visits/$V2/answers -H "$J" -H "$HC" -d '{"result":"cadastrou","interlocutor_name":"Rui"}'
+  check "e-mail exigido e vazio = 422 'e-mail de quem atendeu'" "ANSWERS_INCOMPLETE|true" \
+    "$(curl -s -X POST $API/v1/campo/visits/$V2/checkout -H "$J" -H "$HC" -d "{$(pos)}" | jq -r '"\(.error.code)|\(.error.message | contains("e-mail de quem atendeu"))"')"
+  curl -s -o /dev/null -X PATCH $API/v1/campo/visits/$V2/answers -H "$J" -H "$HC" -d '{"contact_email":"rui@simples.com"}'
+  check "e-mail exigido e gravado: o checkout conclui" "true" "$(curl -s -X POST $API/v1/campo/visits/$V2/checkout -H "$J" -H "$HC" -d "{$(pos)}" | jq '.checkout_at != null')"
+else
+  printf '  \033[33m!\033[0m FIELD_VISIT_FLOW_SELECT_ENABLED desligada: o e-mail exigido (só no fluxo simples) ficou de fora\n'
+fi
 $PSQL "update app_settings set field_config = field_config - 'contato_campos' where id = 1" > /dev/null 2>&1
 
 echo "── Clientes > Lista (§34.6) ──"
-LISTA=$(curl -s "$API/v1/consultores/map/list?praca_id=$PRACA_SEED&q=LovE%20$SUF" -H "$HD")
+LISTA=$(curl -s "$API/v1/consultores/map/list?praca_id=$PRACA_SEED&q=LovE%20$SUF%20bar" -H "$HD")
 check "a Lista acha o lugar da visita (com localização), com a situação e o telefone só mascarado" "1|true|retornar" \
   "$(echo "$LISTA" | jq -r '"\(.total)|\(.items[0].has_location)|\(.items[0].code)"')"
 check "contagem antes do filtro de situação; código desconhecido = 400" "1|0|400" \
-  "$(curl -s "$API/v1/consultores/map/list?praca_id=$PRACA_SEED&q=LovE%20$SUF&codes=fechado" -H "$HD" | jq -r '"\(.counts.retornar)|\(.items | length)"')|$(code "$API/v1/consultores/map/list?codes=xis" -H "$HD")"
+  "$(curl -s "$API/v1/consultores/map/list?praca_id=$PRACA_SEED&q=LovE%20$SUF%20bar&codes=fechado" -H "$HD" | jq -r '"\(.counts.retornar)|\(.items | length)"')|$(code "$API/v1/consultores/map/list?codes=xis" -H "$HD")"
 check "token de consultor na Lista = 401" "401" "$(code $API/v1/consultores/map/list -H "$HC")"
 
 echo "── perfil gestor (§42): pessoas ──"
