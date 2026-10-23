@@ -53,7 +53,14 @@ export type TipoEventoVoucher = (typeof TIPOS_EVENTO_VOUCHER)[number];
 export type FonteContratante = 'company_signup' | 'signup_sync' | 'manual';
 
 /** Cupom que já existe (ou existiu) no Freela para o contratante: bloqueia outro do Praça (`CONTRACTOR_ALREADY_HAS_COUPON`). */
-export const COUPON_STATUS_QUE_PRENDEM: readonly CouponStatus[] = ['aguardando_freela', 'criado', 'usado', 'vencido', 'desativado', 'erro'];
+export const COUPON_STATUS_QUE_PRENDEM: readonly CouponStatus[] = [
+  'aguardando_freela',
+  'criado',
+  'usado',
+  'vencido',
+  'desativado',
+  'erro',
+];
 /** Mostram o código ao consultor. */
 export const COUPON_STATUS_COM_CODIGO: readonly CouponStatus[] = ['criado', 'usado', 'vencido', 'desativado'];
 
@@ -76,7 +83,10 @@ export function situacaoDo(v: { status: string; coupon_status: string | null }):
 }
 
 /** Filtro de situação → condição sobre status/coupon_status (para a lista da equipe). */
-export function condicaoDaSituacao(s: Situacao): { status: StatusVoucher; coupon_status?: CouponStatus | null } {
+export function condicaoDaSituacao(s: Situacao): {
+  status: StatusVoucher;
+  coupon_status?: CouponStatus | null;
+} {
   switch (s) {
     case 'pedido':
       return { status: 'pendente' };
@@ -142,7 +152,12 @@ export const CONFIG_VOUCHER: GrupoConfig<ConfigVoucher> = grupoConfig<ConfigVouc
 );
 
 /** Chaves em que `null` é um valor (sem prazo, sem teto); nas demais, `null` no PUT = ausente (o web reenvia o que leu). */
-export const CHAVES_VOUCHER_ANULAVEIS = ['percent_off', 'amount_off_cents', 'validade_dias', 'min_job_hours'] as const;
+export const CHAVES_VOUCHER_ANULAVEIS = [
+  'percent_off',
+  'amount_off_cents',
+  'validade_dias',
+  'min_job_hours',
+] as const;
 
 /** Parâmetros fotografados na aprovação (`coupon_params`). */
 export interface ParamsCupom {
@@ -185,7 +200,8 @@ export function resumoDoCupom(p: ParamsCupom): string {
       ? `${p.percent_off ?? 0}% de desconto`
       : `R$ ${((p.amount_off_cents ?? 0) / 100).toFixed(2).replace('.', ',')} de desconto`;
   const usos = p.single_use ? 'vale 1 vez' : 'vale mais de uma vez';
-  const prazo = p.validade_dias == null ? 'sem prazo' : `${p.validade_dias} ${p.validade_dias === 1 ? 'dia' : 'dias'}`;
+  const prazo =
+    p.validade_dias == null ? 'sem prazo' : `${p.validade_dias} ${p.validade_dias === 1 ? 'dia' : 'dias'}`;
   const horas = p.min_job_hours == null ? '' : ` · vagas de ${p.min_job_hours}h ou mais`;
   return `${desconto} · ${usos} · ${prazo}${horas}`;
 }
@@ -200,9 +216,13 @@ export function codigoDoCupom(voucherId: string): string {
   const hex = voucherId.replace(/-/g, '').toLowerCase();
   if (!/^[0-9a-f]{32}$/.test(hex)) throw new Error('id do pedido inválido para o código do cupom');
   let bits = '';
-  for (let i = 0; i < hex.length; i += 2) bits += parseInt(hex.slice(i, i + 2), 16).toString(2).padStart(8, '0');
+  for (let i = 0; i < hex.length; i += 2)
+    bits += parseInt(hex.slice(i, i + 2), 16)
+      .toString(2)
+      .padStart(8, '0');
   let out = '';
-  for (let i = 0; i + 5 <= bits.length && out.length < 10; i += 5) out += BASE32[parseInt(bits.slice(i, i + 5), 2)];
+  for (let i = 0; i + 5 <= bits.length && out.length < 10; i += 5)
+    out += BASE32[parseInt(bits.slice(i, i + 5), 2)];
   return PREFIXO_CUPOM + out;
 }
 
@@ -231,12 +251,19 @@ export function expiraEm(hoje: string, validadeDias: number | null): string | nu
   return new Date(`${somaDias(hoje, validadeDias)}T23:59:59.000-03:00`).toISOString();
 }
 
-export function corpoDoCupom(p: ParamsCupom, code: string, contractorUserId: string, hoje: string): CorpoCupomFreela {
+export function corpoDoCupom(
+  p: ParamsCupom,
+  code: string,
+  contractorUserId: string,
+  hoje: string,
+): CorpoCupomFreela {
   const expira = expiraEm(hoje, p.validade_dias);
   return {
     code,
     discountType: p.discount_type,
-    ...(p.discount_type === 'PERCENT' ? { percentOff: p.percent_off ?? 100 } : { amountOffInCents: p.amount_off_cents ?? 1 }),
+    ...(p.discount_type === 'PERCENT'
+      ? { percentOff: p.percent_off ?? 100 }
+      : { amountOffInCents: p.amount_off_cents ?? 1 }),
     contractorUserId,
     singleUse: p.single_use,
     ...(p.min_job_hours != null ? { minJobHours: p.min_job_hours } : {}),
@@ -259,7 +286,10 @@ export interface CupomFreela {
 }
 
 /** Adoção (§38.7): mesmo código, mesmo contratante e mesmo desconto = é o nosso (uma tentativa anterior criou e não soubemos). */
-export function cupomConfere(c: CupomFreela, esperado: { code: string; contractorUserId: string; params: ParamsCupom }): boolean {
+export function cupomConfere(
+  c: CupomFreela,
+  esperado: { code: string; contractorUserId: string; params: ParamsCupom },
+): boolean {
   if (c.code.toUpperCase() !== esperado.code.toUpperCase()) return false;
   if (c.contractorUserId !== esperado.contractorUserId) return false;
   if (c.discountType !== esperado.params.discount_type) return false;
@@ -279,10 +309,16 @@ export type DesfechoFalha =
   | { tipo: 'rejeitado'; code: string };
 
 /** Erro de uma chamada ao Freela → o que fazer. Lê só `status`/`code` (nunca a mensagem, que pode ecoar dado). */
-export function desfechoDaFalha(e: { status?: number; code?: string; freelaStatus?: number; freelaCode?: string }): DesfechoFalha {
+export function desfechoDaFalha(e: {
+  status?: number;
+  code?: string;
+  freelaStatus?: number;
+  freelaCode?: string;
+}): DesfechoFalha {
   if (e.code === 'FREELA_NOT_CONFIGURED') return { tipo: 'transitorio', code: 'FREELA_NOT_CONFIGURED' };
   if (e.freelaStatus !== undefined) {
-    if (e.freelaStatus === 400 && e.freelaCode === 'COUPON_CODE_TAKEN') return { tipo: 'reler', code: 'COUPON_CODE_TAKEN' };
+    if (e.freelaStatus === 400 && e.freelaCode === 'COUPON_CODE_TAKEN')
+      return { tipo: 'reler', code: 'COUPON_CODE_TAKEN' };
     if (e.freelaStatus >= 500) return { tipo: 'reler', code: 'FREELA_5XX' };
     if (e.freelaStatus === 401 || e.freelaStatus === 403) return { tipo: 'transitorio', code: 'FREELA_AUTH' };
     if (e.freelaStatus === 408 || e.freelaStatus === 429) return { tipo: 'transitorio', code: 'FREELA_BUSY' };
@@ -295,7 +331,8 @@ export function desfechoDaFalha(e: { status?: number; code?: string; freelaStatu
 /** Mensagem FIXA por código (nunca a do Freela): vai para `coupon_error` e para a tela. */
 export const MENSAGEM_ERRO_CUPOM: Record<string, string> = {
   FREELA_NOT_CONFIGURED: 'Aprovado — aguardando conexão com o Freela.',
-  COUPON_CODE_TAKEN: 'O Freela já tinha este código e não confirmou que é o nosso. Tentamos de novo sozinhos.',
+  COUPON_CODE_TAKEN:
+    'O Freela já tinha este código e não confirmou que é o nosso. Tentamos de novo sozinhos.',
   FREELA_5XX: 'O Freela não respondeu direito. Tentamos de novo sozinhos.',
   FREELA_UNREACHABLE: 'O Freela não respondeu. Tentamos de novo sozinhos.',
   FREELA_ERROR: 'O Freela respondeu fora do formato esperado. Tentamos de novo sozinhos.',
@@ -303,14 +340,19 @@ export const MENSAGEM_ERRO_CUPOM: Record<string, string> = {
   FREELA_BUSY: 'O Freela pediu para esperar. Tentamos de novo sozinhos.',
   FREELA_UNKNOWN: 'Não deu para criar o cupom agora. Tentamos de novo sozinhos.',
   FREELA_REJECTED: 'O Freela recusou o cupom. Confira o desconto e a conta da empresa e use "Tentar agora".',
-  COUPON_CODE_CONFLICT: 'Já existe no Freela um cupom com este código para outra empresa ou outro desconto. Fale com o suporte do Freela.',
+  COUPON_CODE_CONFLICT:
+    'Já existe no Freela um cupom com este código para outra empresa ou outro desconto. Fale com o suporte do Freela.',
 };
 
 const ESPERAS_MIN = [2, 4, 8, 16, 32, 60] as const;
 /** Espera depois da n-ésima tentativa (1 = primeira): 2, 4, 8, 16, 32 e depois 60 min. */
-export const esperaMin = (tentativas: number): number => ESPERAS_MIN[Math.min(Math.max(tentativas, 1), ESPERAS_MIN.length) - 1]!;
+export const esperaMin = (tentativas: number): number =>
+  ESPERAS_MIN[Math.min(Math.max(tentativas, 1), ESPERAS_MIN.length) - 1]!;
 
-export function devidoAgora(v: { coupon_attempts: number; coupon_last_attempt_at: Date | null }, agora: Date): boolean {
+export function devidoAgora(
+  v: { coupon_attempts: number; coupon_last_attempt_at: Date | null },
+  agora: Date,
+): boolean {
   if (!v.coupon_last_attempt_at || v.coupon_attempts <= 0) return true;
   return agora.getTime() - v.coupon_last_attempt_at.getTime() >= esperaMin(v.coupon_attempts) * 60_000;
 }
@@ -327,9 +369,16 @@ export interface MudancaDoSync {
 export function mudancaDoSync(atual: CouponStatus, c: CupomFreela, agora: Date): MudancaDoSync | null {
   if (atual !== 'criado' && atual !== 'usado') return null;
   if (!c.active) return { para: 'desativado', evento: 'coupon_deactivated' };
-  if (c.redeemedAt && atual === 'criado') return { para: 'usado', evento: 'coupon_redeemed', redeemed_at: new Date(c.redeemedAt) };
-  if (!c.redeemedAt && atual === 'usado') return { para: 'criado', evento: 'coupon_unredeemed', redeemed_at: null };
-  if (!c.redeemedAt && atual === 'criado' && c.expiresAt && new Date(c.expiresAt).getTime() < agora.getTime()) {
+  if (c.redeemedAt && atual === 'criado')
+    return { para: 'usado', evento: 'coupon_redeemed', redeemed_at: new Date(c.redeemedAt) };
+  if (!c.redeemedAt && atual === 'usado')
+    return { para: 'criado', evento: 'coupon_unredeemed', redeemed_at: null };
+  if (
+    !c.redeemedAt &&
+    atual === 'criado' &&
+    c.expiresAt &&
+    new Date(c.expiresAt).getTime() < agora.getTime()
+  ) {
     return { para: 'vencido', evento: 'coupon_expired' };
   }
   return null;
@@ -346,7 +395,11 @@ const dd_mm = (d: Date): string => {
   return `${String(sp.getUTCDate()).padStart(2, '0')}/${String(sp.getUTCMonth() + 1).padStart(2, '0')}`;
 };
 
-export function mensagemDoLimite(existente: { consultant_name: string; created_at: Date; status: string }): string {
+export function mensagemDoLimite(existente: {
+  consultant_name: string;
+  created_at: Date;
+  status: string;
+}): string {
   return existente.status === 'aprovado'
     ? `Esta empresa já tem um cupom aprovado (pedido por ${existente.consultant_name} em ${dd_mm(existente.created_at)}).`
     : `Esta empresa já tem um cupom pedido, por ${existente.consultant_name} em ${dd_mm(existente.created_at)}.`;

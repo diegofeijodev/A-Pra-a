@@ -27,7 +27,9 @@ export interface VoucherCouponIssuer {
 export const VOUCHER_COUPON_ISSUER = Symbol('VOUCHER_COUPON_ISSUER');
 
 const nunca = (): never => {
-  throw new Error('NoopIssuer: o cupom no Freela está desligado neste servidor (FIELD_VOUCHER_COUPONS_ENABLED).');
+  throw new Error(
+    'NoopIssuer: o cupom no Freela está desligado neste servidor (FIELD_VOUCHER_COUPONS_ENABLED).',
+  );
 };
 
 export class NoopIssuer implements VoucherCouponIssuer {
@@ -67,7 +69,9 @@ export class FreelaCouponIssuer implements VoucherCouponIssuer {
   }
   async contratantes(q: string): Promise<ContratanteCandidato[]> {
     const lista = await this.client.searchContractors(q);
-    return lista.filter((c) => c.module === 'bars-restaurants').map((c) => ({ user_id: c.userId, name: c.name, city: c.city }));
+    return lista
+      .filter((c) => c.module === 'bars-restaurants')
+      .map((c) => ({ user_id: c.userId, name: c.name, city: c.city }));
   }
 }
 

@@ -12,13 +12,29 @@ export const cupomSchema = z.object({
   id: z.string().min(1),
   code: z.string().min(1),
   discountType: z.enum(['PERCENT', 'FIXED']),
-  percentOff: z.number().int().nullable().optional().transform((v) => v ?? null),
-  amountOffInCents: z.number().int().nullable().optional().transform((v) => v ?? null),
+  percentOff: z
+    .number()
+    .int()
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+  amountOffInCents: z
+    .number()
+    .int()
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
   contractorUserId: z.string().min(1),
   singleUse: z.boolean(),
   active: z.boolean(),
-  expiresAt: iso.nullable().optional().transform((v) => v ?? null),
-  redeemedAt: iso.nullable().optional().transform((v) => v ?? null),
+  expiresAt: iso
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+  redeemedAt: iso
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
 });
 
 export const listaCuponsSchema = z.array(cupomSchema);
@@ -27,7 +43,11 @@ export const listaCuponsSchema = z.array(cupomSchema);
 export const contratanteCrmSchema = z.object({
   userId: z.string().min(1),
   name: z.string(),
-  city: z.string().nullable().optional().transform((v) => v ?? null),
+  city: z
+    .string()
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
   module: z.string(),
 });
 export const listaContratantesSchema = z.array(contratanteCrmSchema);

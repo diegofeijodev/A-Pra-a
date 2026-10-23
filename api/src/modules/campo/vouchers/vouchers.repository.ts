@@ -6,7 +6,12 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/database/prisma.service';
-import type { CouponStatus, FonteContratante, StatusVoucher, TipoEventoVoucher } from '../../../domain/voucher-rules';
+import type {
+  CouponStatus,
+  FonteContratante,
+  StatusVoucher,
+  TipoEventoVoucher,
+} from '../../../domain/voucher-rules';
 
 export interface VoucherNovo {
   client_id: string;
@@ -136,7 +141,9 @@ export interface VouchersLeitura {
   // contexto do pedido (fora da tabela de cupons)
   visitaDoConsultor(consultantId: string, ref: string): Promise<{ id: string; lead_id: string } | null>;
   lead(id: string): Promise<LeadDoPedido | null>;
-  praca(id: string): Promise<{ city: string; cobertura_uf: string | null; cobertura_cidade: string | null } | null>;
+  praca(
+    id: string,
+  ): Promise<{ city: string; cobertura_uf: string | null; cobertura_cidade: string | null } | null>;
   /** Passo 1 do vínculo (§38.6): conta do Freela criada pelo cadastro assistido do lead. */
   contratanteDoCadastro(leadId: string): Promise<string | null>;
   /** Passo 2 do vínculo (§38.6): cadastro confirmado pelo Freela pareado com o lead. */
@@ -166,8 +173,11 @@ export const VOUCHERS_REPOSITORY = Symbol('VOUCHERS_REPOSITORY');
 
 type Cliente = Prisma.TransactionClient | PrismaService;
 
-const paraVoucher = (r: Record<string, any>): VoucherRow => ({ ...(r as VoucherRow) });
-const paraEvento = (r: Record<string, any>): EventoVoucherRow => ({ ...(r as EventoVoucherRow), data: (r.data ?? {}) as Record<string, unknown> });
+const paraVoucher = (r: object): VoucherRow => ({ ...(r as VoucherRow) });
+const paraEvento = (r: object): EventoVoucherRow => ({
+  ...(r as EventoVoucherRow),
+  data: ((r as { data?: unknown }).data ?? {}) as Record<string, unknown>,
+});
 
 function onde(f: FiltroVouchers): Prisma.field_vouchersWhereInput {
   return {
@@ -175,7 +185,9 @@ function onde(f: FiltroVouchers): Prisma.field_vouchersWhereInput {
     ...(f.praca_id ? { praca_id: f.praca_id } : {}),
     ...(f.status ? { status: f.status } : {}),
     ...(f.coupon_status !== undefined ? { coupon_status: f.coupon_status } : {}),
-    ...(f.desde || f.ate ? { created_at: { ...(f.desde ? { gte: f.desde } : {}), ...(f.ate ? { lt: f.ate } : {}) } } : {}),
+    ...(f.desde || f.ate
+      ? { created_at: { ...(f.desde ? { gte: f.desde } : {}), ...(f.ate ? { lt: f.ate } : {}) } }
+      : {}),
     ...(f.q ? { company_name: { contains: f.q, mode: 'insensitive' as const } } : {}),
   };
 }
@@ -195,15 +207,26 @@ function leitura(db: Cliente): VouchersLeitura {
       return r ? paraEvento(r) : null;
     },
     async eventos(voucherId) {
-      const rows = await db.field_voucher_events.findMany({ where: { voucher_id: voucherId }, orderBy: [{ created_at: 'asc' }, { id: 'asc' }] });
+      const rows = await db.field_voucher_events.findMany({
+        where: { voucher_id: voucherId },
+        orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
+      });
       return rows.map(paraEvento);
     },
     async listar(f) {
-      const rows = await db.field_vouchers.findMany({ where: onde(f), orderBy: [{ created_at: 'desc' }, { id: 'asc' }], take: f.limit ?? 500 });
+      const rows = await db.field_vouchers.findMany({
+        where: onde(f),
+        orderBy: [{ created_at: 'desc' }, { id: 'asc' }],
+        take: f.limit ?? 500,
+      });
       return rows.map(paraVoucher);
     },
     async contar(f) {
-      const g = await db.field_vouchers.groupBy({ by: ['status', 'coupon_status'], where: onde(f), _count: { _all: true } });
+      const g = await db.field_vouchers.groupBy({
+        by: ['status', 'coupon_status'],
+        where: onde(f),
+        _count: { _all: true },
+      });
       return g.map((x) => ({ status: x.status, coupon_status: x.coupon_status, n: x._count._all }));
     },
     async ativosDoLead(leadId) {
@@ -232,20 +255,33 @@ function leitura(db: Cliente): VouchersLeitura {
       return rows.map(paraVoucher);
     },
     async aguardandoVinculo(limite) {
-      const rows = await db.field_vouchers.findMany({ where: { coupon_status: 'aguardando_vinculo' }, orderBy: [{ created_at: 'asc' }], take: limite });
+      const rows = await db.field_vouchers.findMany({
+        where: { coupon_status: 'aguardando_vinculo' },
+        orderBy: [{ created_at: 'asc' }],
+        take: limite,
+      });
       return rows.map(paraVoucher);
     },
     async comCupomAtivo() {
-      const rows = await db.field_vouchers.findMany({ where: { coupon_status: { in: ['criado', 'usado'] } }, take: 5000 });
+      const rows = await db.field_vouchers.findMany({
+        where: { coupon_status: { in: ['criado', 'usado'] } },
+        take: 5000,
+      });
       return rows.map(paraVoucher);
     },
     async ultimaLeitura() {
-      const a = await db.field_vouchers.aggregate({ _max: { coupon_synced_at: true }, where: { coupon_status: { in: ['criado', 'usado'] } } });
+      const a = await db.field_vouchers.aggregate({
+        _max: { coupon_synced_at: true },
+        where: { coupon_status: { in: ['criado', 'usado'] } },
+      });
       return a._max.coupon_synced_at ?? null;
     },
     async nomesDosConsultores(ids) {
       if (!ids.length) return new Map();
-      const rows = await db.field_consultants.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
+      const rows = await db.field_consultants.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, name: true },
+      });
       return new Map(rows.map((r) => [r.id, r.name]));
     },
     async visitaDoConsultor(consultantId, ref) {
@@ -255,10 +291,16 @@ function leitura(db: Cliente): VouchersLeitura {
       });
     },
     async lead(id) {
-      return db.leads.findUnique({ where: { id }, select: { id: true, name: true, city: true, praca_id: true } });
+      return db.leads.findUnique({
+        where: { id },
+        select: { id: true, name: true, city: true, praca_id: true },
+      });
     },
     async praca(id) {
-      return db.pracas.findUnique({ where: { id }, select: { city: true, cobertura_uf: true, cobertura_cidade: true } });
+      return db.pracas.findUnique({
+        where: { id },
+        select: { city: true, cobertura_uf: true, cobertura_cidade: true },
+      });
     },
     async contratanteDoCadastro(leadId) {
       const r = await db.field_company_signups.findFirst({
@@ -279,7 +321,9 @@ function leitura(db: Cliente): VouchersLeitura {
     async lerConfig() {
       const s = await db.app_settings.findUnique({ where: { id: 1 }, select: { field_config: true } });
       const v = s?.field_config;
-      return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>).voucher : undefined;
+      return v && typeof v === 'object' && !Array.isArray(v)
+        ? (v as Record<string, unknown>).voucher
+        : undefined;
     },
   };
 }
@@ -314,7 +358,9 @@ class VouchersTxPrisma implements VouchersTx {
   inserirEvento = (voucherId: string, e: Omit<EventoVoucherNovo, 'voucher_id'>) => this.evento(voucherId, e);
 
   private async evento(voucherId: string, e: Omit<EventoVoucherNovo, 'voucher_id'>): Promise<void> {
-    await this.tx.field_voucher_events.create({ data: { ...e, voucher_id: voucherId, data: e.data as Prisma.InputJsonValue } });
+    await this.tx.field_voucher_events.create({
+      data: { ...e, voucher_id: voucherId, data: e.data as Prisma.InputJsonValue },
+    });
   }
 
   async criar(n: VoucherNovo, e: Omit<EventoVoucherNovo, 'voucher_id'>): Promise<VoucherRow> {
@@ -342,9 +388,16 @@ class VouchersTxPrisma implements VouchersTx {
   async gravarConfig(cfg: Record<string, unknown>): Promise<void> {
     // Lido DENTRO da transação: preserva as chaves das outras fases (`field_config` é um JSON só).
     const s = await this.tx.app_settings.findUnique({ where: { id: 1 }, select: { field_config: true } });
-    const raw = s?.field_config && typeof s.field_config === 'object' && !Array.isArray(s.field_config) ? (s.field_config as Record<string, unknown>) : {};
+    const raw =
+      s?.field_config && typeof s.field_config === 'object' && !Array.isArray(s.field_config)
+        ? (s.field_config as Record<string, unknown>)
+        : {};
     const novo = { ...raw, voucher: cfg } as Prisma.InputJsonValue;
-    await this.tx.app_settings.upsert({ where: { id: 1 }, update: { field_config: novo }, create: { id: 1, field_config: novo } });
+    await this.tx.app_settings.upsert({
+      where: { id: 1 },
+      update: { field_config: novo },
+      create: { id: 1, field_config: novo },
+    });
   }
 }
 

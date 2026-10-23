@@ -1,4 +1,10 @@
-import { COUPON_STATUS_COM_CODIGO, lerParamsCupom, situacaoDo, type ParamsCupom, type Situacao } from '../../../domain/voucher-rules';
+import {
+  COUPON_STATUS_COM_CODIGO,
+  lerParamsCupom,
+  situacaoDo,
+  type ParamsCupom,
+  type Situacao,
+} from '../../../domain/voucher-rules';
 import type { EventoVoucherRow, VoucherRow } from './vouchers.repository';
 
 /** O que o consultor vê (§38.3). Sem o id do contratante do Freela. */

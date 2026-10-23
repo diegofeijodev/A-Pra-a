@@ -31,7 +31,11 @@ export class VouchersCampoController {
   constructor(private readonly vouchers: VouchersService) {}
 
   @Post()
-  async pedir(@CurrentConsultant() c: CampoConsultant, @Body() dto: PedirVoucherDto, @Res({ passthrough: true }) res: FastifyReply) {
+  async pedir(
+    @CurrentConsultant() c: CampoConsultant,
+    @Body() dto: PedirVoucherDto,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ) {
     const { view, criado } = await this.vouchers.pedir(c, dto);
     // 201 = pedido novo; 200 = reenvio do mesmo `client_id` (fila offline).
     void res.code(criado ? 201 : 200);

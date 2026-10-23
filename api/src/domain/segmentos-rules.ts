@@ -8,7 +8,13 @@
 import { createHash } from 'node:crypto';
 import type { Coordenada } from './campo-rules';
 import { norm } from './dedup';
-import { categoriaApify, MAX_ELEMENTOS_OVERPASS, normalizarApify, normalizarOverpass, type LugarNormalizado } from './places-rules';
+import {
+  categoriaApify,
+  MAX_ELEMENTOS_OVERPASS,
+  normalizarApify,
+  normalizarOverpass,
+  type LugarNormalizado,
+} from './places-rules';
 
 export const OPS_FILTRO = ['=', '~'] as const;
 export type OpFiltro = (typeof OPS_FILTRO)[number];
@@ -35,26 +41,110 @@ export interface Segmento {
   apify_term?: string | null;
 }
 
-export const LIMITES_SEGMENTOS = { lista: 40, grupos: 6, filtrosPorGrupo: 4, termos: 10, palavras: 10, porBusca: 10 } as const;
+export const LIMITES_SEGMENTOS = {
+  lista: 40,
+  grupos: 6,
+  filtrosPorGrupo: 4,
+  termos: 10,
+  palavras: 10,
+  porBusca: 10,
+} as const;
 
 const f = (key: string, op: OpFiltro, value: string): FiltroSegmento => ({ key, op, value });
 
 /** Os 10 padrão (§36.5): os 8 da Lovable traduzidos para o mapa aberto + Lanchonete e Café (nossos). */
 export const SEGMENTOS_PADRAO: readonly Segmento[] = Object.freeze([
-  { slug: 'buffet', label: 'Buffet', priority: 10, active: true, apify_term: 'buffet', keywords: ['buffet'],
-    filters: [[f('craft', '=', 'caterer')], [f('amenity', '=', 'restaurant'), f('cuisine', '~', 'buffet')]] },
-  { slug: 'pizzaria', label: 'Pizzaria', priority: 20, active: true, apify_term: 'pizzaria', keywords: [],
-    filters: [[f('amenity', '~', 'restaurant|fast_food'), f('cuisine', '~', 'pizza')]] },
-  { slug: 'hamburgueria', label: 'Hamburgueria', priority: 30, active: true, apify_term: 'hamburgueria', keywords: [],
-    filters: [[f('amenity', '~', 'restaurant|fast_food'), f('cuisine', '~', 'burger')]] },
-  { slug: 'hotel', label: 'Hotel', priority: 40, active: true, apify_term: 'hotel', keywords: [], filters: [[f('tourism', '=', 'hotel')]] },
-  { slug: 'motel', label: 'Motel', priority: 50, active: true, apify_term: 'motel', keywords: [], filters: [[f('tourism', '=', 'motel')]] },
+  {
+    slug: 'buffet',
+    label: 'Buffet',
+    priority: 10,
+    active: true,
+    apify_term: 'buffet',
+    keywords: ['buffet'],
+    filters: [[f('craft', '=', 'caterer')], [f('amenity', '=', 'restaurant'), f('cuisine', '~', 'buffet')]],
+  },
+  {
+    slug: 'pizzaria',
+    label: 'Pizzaria',
+    priority: 20,
+    active: true,
+    apify_term: 'pizzaria',
+    keywords: [],
+    filters: [[f('amenity', '~', 'restaurant|fast_food'), f('cuisine', '~', 'pizza')]],
+  },
+  {
+    slug: 'hamburgueria',
+    label: 'Hamburgueria',
+    priority: 30,
+    active: true,
+    apify_term: 'hamburgueria',
+    keywords: [],
+    filters: [[f('amenity', '~', 'restaurant|fast_food'), f('cuisine', '~', 'burger')]],
+  },
+  {
+    slug: 'hotel',
+    label: 'Hotel',
+    priority: 40,
+    active: true,
+    apify_term: 'hotel',
+    keywords: [],
+    filters: [[f('tourism', '=', 'hotel')]],
+  },
+  {
+    slug: 'motel',
+    label: 'Motel',
+    priority: 50,
+    active: true,
+    apify_term: 'motel',
+    keywords: [],
+    filters: [[f('tourism', '=', 'motel')]],
+  },
   // Os 5 de hoje: filtros e termos do Apify IGUAIS aos de `places-rules`/`apify.provider` (estão gravados em types/category/cache_key).
-  { slug: 'bar', label: 'Bar', priority: 60, active: true, apify_term: 'bar', keywords: [], filters: [[f('amenity', '~', 'bar|pub')]] },
-  { slug: 'restaurante', label: 'Restaurante', priority: 70, active: true, apify_term: 'restaurante', keywords: [], filters: [[f('amenity', '=', 'restaurant')]] },
-  { slug: 'lanchonete', label: 'Lanchonete', priority: 80, active: true, apify_term: 'lanchonete', keywords: [], filters: [[f('amenity', '=', 'fast_food')]] },
-  { slug: 'cafe', label: 'Café', priority: 90, active: true, apify_term: 'cafeteria', keywords: [], filters: [[f('amenity', '=', 'cafe')]] },
-  { slug: 'padaria', label: 'Padaria', priority: 100, active: true, apify_term: 'padaria', keywords: [], filters: [[f('shop', '=', 'bakery')]] },
+  {
+    slug: 'bar',
+    label: 'Bar',
+    priority: 60,
+    active: true,
+    apify_term: 'bar',
+    keywords: [],
+    filters: [[f('amenity', '~', 'bar|pub')]],
+  },
+  {
+    slug: 'restaurante',
+    label: 'Restaurante',
+    priority: 70,
+    active: true,
+    apify_term: 'restaurante',
+    keywords: [],
+    filters: [[f('amenity', '=', 'restaurant')]],
+  },
+  {
+    slug: 'lanchonete',
+    label: 'Lanchonete',
+    priority: 80,
+    active: true,
+    apify_term: 'lanchonete',
+    keywords: [],
+    filters: [[f('amenity', '=', 'fast_food')]],
+  },
+  {
+    slug: 'cafe',
+    label: 'Café',
+    priority: 90,
+    active: true,
+    apify_term: 'cafeteria',
+    keywords: [],
+    filters: [[f('amenity', '=', 'cafe')]],
+  },
+  {
+    slug: 'padaria',
+    label: 'Padaria',
+    priority: 100,
+    active: true,
+    apify_term: 'padaria',
+    keywords: [],
+    filters: [[f('shop', '=', 'bakery')]],
+  },
 ] satisfies Segmento[]) as readonly Segmento[];
 
 // ── validação ────────────────────────────────────────────────
@@ -70,35 +160,55 @@ export type ResultadoSegmentos = { ok: true; segmentos: Segmento[] } | { ok: fal
 const obj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const texto = (v: unknown): string | null => (typeof v === 'string' ? v.trim() : null);
 
-function validarFiltro(raw: unknown, campo: string): { ok: true; f: FiltroSegmento } | { ok: false; erro: string } {
+function validarFiltro(
+  raw: unknown,
+  campo: string,
+): { ok: true; f: FiltroSegmento } | { ok: false; erro: string } {
   if (!obj(raw)) return { ok: false, erro: `${campo}: filtro inválido.` };
   const key = texto(raw.key);
-  if (!key || !RE_CHAVE.test(key)) return { ok: false, erro: `${campo}.key: use só letras minúsculas, "_" e ":" (até 40).` };
+  if (!key || !RE_CHAVE.test(key))
+    return { ok: false, erro: `${campo}.key: use só letras minúsculas, "_" e ":" (até 40).` };
   if (raw.op !== '=' && raw.op !== '~') return { ok: false, erro: `${campo}.op: use "=" ou "~".` };
   const bruto = texto(raw.value);
   if (bruto === null) return { ok: false, erro: `${campo}.value: obrigatório.` };
   const termos = bruto.split('|').map((x) => x.trim());
-  if (raw.op === '=' && termos.length !== 1) return { ok: false, erro: `${campo}.value: com "=" vai um termo só.` };
-  if (termos.length > LIMITES_SEGMENTOS.termos) return { ok: false, erro: `${campo}.value: no máximo ${LIMITES_SEGMENTOS.termos} termos.` };
+  if (raw.op === '=' && termos.length !== 1)
+    return { ok: false, erro: `${campo}.value: com "=" vai um termo só.` };
+  if (termos.length > LIMITES_SEGMENTOS.termos)
+    return { ok: false, erro: `${campo}.value: no máximo ${LIMITES_SEGMENTOS.termos} termos.` };
   if (!termos.every((x) => RE_TERMO.test(x))) {
-    return { ok: false, erro: `${campo}.value: use só letras, números, "_" e espaço (separe os termos com "|").` };
+    return {
+      ok: false,
+      erro: `${campo}.value: use só letras, números, "_" e espaço (separe os termos com "|").`,
+    };
   }
   return { ok: true, f: { key, op: raw.op, value: termos.join('|') } };
 }
 
-function validarSegmento(raw: unknown, campo: string): { ok: true; s: Segmento } | { ok: false; erro: string } {
+function validarSegmento(
+  raw: unknown,
+  campo: string,
+): { ok: true; s: Segmento } | { ok: false; erro: string } {
   if (!obj(raw)) return { ok: false, erro: `${campo}: segmento inválido.` };
   const slug = texto(raw.slug);
-  if (!slug || !RE_SLUG.test(slug)) return { ok: false, erro: `${campo}.slug: de 2 a 30 letras minúsculas, números ou "_".` };
+  if (!slug || !RE_SLUG.test(slug))
+    return { ok: false, erro: `${campo}.slug: de 2 a 30 letras minúsculas, números ou "_".` };
   const label = texto(raw.label);
   if (!label || label.length > 40) return { ok: false, erro: `${campo}.label: de 1 a 40 caracteres.` };
-  if (!Array.isArray(raw.filters) || raw.filters.length < 1 || raw.filters.length > LIMITES_SEGMENTOS.grupos) {
+  if (
+    !Array.isArray(raw.filters) ||
+    raw.filters.length < 1 ||
+    raw.filters.length > LIMITES_SEGMENTOS.grupos
+  ) {
     return { ok: false, erro: `${campo}.filters: de 1 a ${LIMITES_SEGMENTOS.grupos} grupos.` };
   }
   const filters: FiltroSegmento[][] = [];
   for (const [gi, g] of (raw.filters as unknown[]).entries()) {
     if (!Array.isArray(g) || g.length < 1 || g.length > LIMITES_SEGMENTOS.filtrosPorGrupo) {
-      return { ok: false, erro: `${campo}.filters[${gi}]: de 1 a ${LIMITES_SEGMENTOS.filtrosPorGrupo} filtros por grupo.` };
+      return {
+        ok: false,
+        erro: `${campo}.filters[${gi}]: de 1 a ${LIMITES_SEGMENTOS.filtrosPorGrupo} filtros por grupo.`,
+      };
     }
     const grupo: FiltroSegmento[] = [];
     for (const [fi, rf] of g.entries()) {
@@ -109,15 +219,20 @@ function validarSegmento(raw: unknown, campo: string): { ok: true; s: Segmento }
     filters.push(grupo);
   }
   const kwRaw = raw.keywords ?? [];
-  if (!Array.isArray(kwRaw) || kwRaw.length > LIMITES_SEGMENTOS.palavras) return { ok: false, erro: `${campo}.keywords: no máximo ${LIMITES_SEGMENTOS.palavras}.` };
+  if (!Array.isArray(kwRaw) || kwRaw.length > LIMITES_SEGMENTOS.palavras)
+    return { ok: false, erro: `${campo}.keywords: no máximo ${LIMITES_SEGMENTOS.palavras}.` };
   const keywords: string[] = [];
   for (const [ki, k] of kwRaw.entries()) {
     const p = texto(k);
-    if (!p || !RE_PALAVRA.test(p)) return { ok: false, erro: `${campo}.keywords[${ki}]: de 2 a 40 letras, números ou espaço.` };
+    if (!p || !RE_PALAVRA.test(p))
+      return { ok: false, erro: `${campo}.keywords[${ki}]: de 2 a 40 letras, números ou espaço.` };
     keywords.push(p);
   }
   if (keywords.length > 0 && basesDoSegmento({ filters } as Segmento).length === 0) {
-    return { ok: false, erro: `${campo}.keywords: palavras no nome exigem um filtro de base (${CHAVES_BASE.join(', ')}).` };
+    return {
+      ok: false,
+      erro: `${campo}.keywords: palavras no nome exigem um filtro de base (${CHAVES_BASE.join(', ')}).`,
+    };
   }
   const priority = raw.priority;
   if (!Number.isInteger(priority) || (priority as number) < 1 || (priority as number) > 999) {
@@ -127,10 +242,14 @@ function validarSegmento(raw: unknown, campo: string): { ok: true; s: Segmento }
   let apify_term: string | null = null;
   if (raw.apify_term !== undefined && raw.apify_term !== null) {
     const a = texto(raw.apify_term);
-    if (!a || !RE_PALAVRA.test(a)) return { ok: false, erro: `${campo}.apify_term: de 2 a 40 letras, números ou espaço.` };
+    if (!a || !RE_PALAVRA.test(a))
+      return { ok: false, erro: `${campo}.apify_term: de 2 a 40 letras, números ou espaço.` };
     apify_term = a;
   }
-  return { ok: true, s: { slug, label, filters, keywords, priority: priority as number, active: raw.active, apify_term } };
+  return {
+    ok: true,
+    s: { slug, label, filters, keywords, priority: priority as number, active: raw.active, apify_term },
+  };
 }
 
 /**
@@ -145,13 +264,16 @@ export function validarSegmentos(lista: unknown, existentes: readonly string[] =
   for (const [i, raw] of lista.entries()) {
     const r = validarSegmento(raw, `segments[${i}]`);
     if (!r.ok) return r;
-    if (segmentos.some((s) => s.slug === r.s.slug)) return { ok: false, erro: `segments[${i}].slug: '${r.s.slug}' repetido.` };
+    if (segmentos.some((s) => s.slug === r.s.slug))
+      return { ok: false, erro: `segments[${i}].slug: '${r.s.slug}' repetido.` };
     segmentos.push(r.s);
   }
   for (const slug of existentes) {
-    if (!segmentos.some((s) => s.slug === slug)) return { ok: false, erro: `segments: o segmento '${slug}' não pode ser apagado; desative-o.` };
+    if (!segmentos.some((s) => s.slug === slug))
+      return { ok: false, erro: `segments: o segmento '${slug}' não pode ser apagado; desative-o.` };
   }
-  if (!segmentos.some((s) => s.active)) return { ok: false, erro: 'segments: deixe ao menos um segmento ativo.' };
+  if (!segmentos.some((s) => s.active))
+    return { ok: false, erro: 'segments: deixe ao menos um segmento ativo.' };
   return { ok: true, segmentos };
 }
 
@@ -162,7 +284,14 @@ export function lerSegmentos(raw: unknown): { segmentos: Segmento[]; is_default:
     const r = validarSegmentos(lista);
     if (r.ok) return { segmentos: r.segmentos, is_default: false };
   }
-  return { segmentos: SEGMENTOS_PADRAO.map((s) => ({ ...s, filters: s.filters.map((g) => g.map((x) => ({ ...x }))), keywords: [...s.keywords] })), is_default: true };
+  return {
+    segmentos: SEGMENTOS_PADRAO.map((s) => ({
+      ...s,
+      filters: s.filters.map((g) => g.map((x) => ({ ...x }))),
+      keywords: [...s.keywords],
+    })),
+    is_default: true,
+  };
 }
 
 // ── consulta ─────────────────────────────────────────────────
@@ -177,7 +306,12 @@ export function seletorRaio(centro: Coordenada, raioM: number): string {
 }
 
 const basesDoSegmento = (s: Pick<Segmento, 'filters'>): string[] => [
-  ...new Set(s.filters.flat().map((x) => x.key).filter(ehBase)),
+  ...new Set(
+    s.filters
+      .flat()
+      .map((x) => x.key)
+      .filter(ehBase),
+  ),
 ];
 
 function renderFiltro(x: FiltroSegmento): string {
@@ -189,7 +323,8 @@ function renderFiltro(x: FiltroSegmento): string {
 export function linhasDoSegmento(s: Segmento, seletor: string): string[] {
   const linhas = s.filters.map((g) => `  nwr${g.map(renderFiltro).join('')}${seletor};`);
   if (s.keywords.length > 0) {
-    for (const b of basesDoSegmento(s)) linhas.push(`  nwr["${b}"]["name"~"${s.keywords.join('|')}",i]${seletor};`);
+    for (const b of basesDoSegmento(s))
+      linhas.push(`  nwr["${b}"]["name"~"${s.keywords.join('|')}",i]${seletor};`);
   }
   return linhas;
 }
@@ -212,25 +347,39 @@ function casaFiltro(t: Tags, x: FiltroSegmento): boolean {
 }
 
 const porPrioridade = (segs: readonly Segmento[]): Segmento[] =>
-  segs.map((s, i) => ({ s, i })).sort((a, b) => a.s.priority - b.s.priority || a.i - b.i).map((x) => x.s);
+  segs
+    .map((s, i) => ({ s, i }))
+    .sort((a, b) => a.s.priority - b.s.priority || a.i - b.i)
+    .map((x) => x.s);
 
 /** O primeiro segmento (por prioridade, empate = ordem da lista) que casa as etiquetas; `null` se nenhum. */
 export function classificarSegmento(tags: Tags, segmentos: readonly Segmento[]): string | null {
   const nome = norm(tags['name']);
   for (const s of porPrioridade(segmentos)) {
     if (s.filters.some((g) => g.every((x) => casaFiltro(tags, x)))) return s.slug;
-    if (nome && s.keywords.some((k) => nome.includes(norm(k))) && basesDoSegmento(s).some((b) => tags[b] !== undefined)) return s.slug;
+    if (
+      nome &&
+      s.keywords.some((k) => nome.includes(norm(k))) &&
+      basesDoSegmento(s).some((b) => tags[b] !== undefined)
+    )
+      return s.slug;
   }
   return null;
 }
 
 /** Overpass → lugares com a categoria = slug do segmento da busca. */
-export function normalizarOverpassSegmentos(resposta: unknown, segmentos: readonly Segmento[]): LugarNormalizado[] {
+export function normalizarOverpassSegmentos(
+  resposta: unknown,
+  segmentos: readonly Segmento[],
+): LugarNormalizado[] {
   return normalizarOverpass(resposta, (t) => classificarSegmento(t, segmentos));
 }
 
 /** Apify: o primeiro segmento cujo termo/rótulo aparece na categoria do Google; senão a regra de hoje, se pedida; senão o 1º pedido. */
-export function categoriaApifySegmentos(categoryName: string | undefined, segmentos: readonly Segmento[]): string {
+export function categoriaApifySegmentos(
+  categoryName: string | undefined,
+  segmentos: readonly Segmento[],
+): string {
   const cat = norm(categoryName);
   const ordenados = porPrioridade(segmentos);
   const achou = ordenados.find((s) => [s.apify_term ?? '', s.label].some((t) => t && cat.includes(norm(t))));
@@ -245,7 +394,8 @@ export function normalizarApifySegmentos(itens: unknown, segmentos: readonly Seg
 }
 
 /** Termos do actor do Google para os segmentos pedidos (`apify_term`, senão o rótulo). */
-export const termosApify = (segmentos: readonly Segmento[]): string[] => segmentos.map((s) => s.apify_term || s.label);
+export const termosApify = (segmentos: readonly Segmento[]): string[] =>
+  segmentos.map((s) => s.apify_term || s.label);
 
 // ── foto e cache ─────────────────────────────────────────────
 
@@ -261,7 +411,13 @@ export function segmentosDaBusca(todos: readonly Segmento[], slugs: readonly str
 export function hashSegmentos(segmentos: readonly Segmento[]): string {
   const canonico = [...segmentos]
     .sort((a, b) => a.slug.localeCompare(b.slug))
-    .map((s) => [s.slug, s.priority, s.filters.map((g) => g.map((x) => [x.key, x.op, x.value])), s.keywords, s.apify_term ?? null]);
+    .map((s) => [
+      s.slug,
+      s.priority,
+      s.filters.map((g) => g.map((x) => [x.key, x.op, x.value])),
+      s.keywords,
+      s.apify_term ?? null,
+    ]);
   return createHash('sha256').update(JSON.stringify(canonico)).digest('hex').slice(0, 16);
 }
 

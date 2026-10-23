@@ -50,15 +50,27 @@ describe('configuração e parâmetros (§38.2)', () => {
     const c = CONFIG_VOUCHER.padrao;
     expect(CONFIG_VOUCHER.aplicar(c, { percent_off: null })).toMatchObject({ ok: false });
     expect(CONFIG_VOUCHER.aplicar(c, { discount_type: 'FIXED' })).toMatchObject({ ok: false });
-    const fixo = CONFIG_VOUCHER.aplicar(c, { discount_type: 'FIXED', amount_off_cents: 5000, validade_dias: null });
+    const fixo = CONFIG_VOUCHER.aplicar(c, {
+      discount_type: 'FIXED',
+      amount_off_cents: 5000,
+      validade_dias: null,
+    });
     expect(fixo.ok).toBe(true);
     if (fixo.ok) {
-      expect(paramsDoCupom(fixo.config)).toMatchObject({ discount_type: 'FIXED', percent_off: null, amount_off_cents: 5000, validade_dias: null });
+      expect(paramsDoCupom(fixo.config)).toMatchObject({
+        discount_type: 'FIXED',
+        percent_off: null,
+        amount_off_cents: 5000,
+        validade_dias: null,
+      });
       expect(resumoDoCupom(paramsDoCupom(fixo.config))).toBe('R$ 50,00 de desconto · vale 1 vez · sem prazo');
     }
     expect(CONFIG_VOUCHER.aplicar(c, { max_por_empresa: 0 })).toMatchObject({ ok: false });
     expect(CONFIG_VOUCHER.aplicar(c, { coisa: 1 })).toMatchObject({ ok: false });
-    expect(CONFIG_VOUCHER.ler({ max_por_empresa: 'x', percent_off: 50 })).toMatchObject({ max_por_empresa: 1, percent_off: 50 });
+    expect(CONFIG_VOUCHER.ler({ max_por_empresa: 'x', percent_off: 50 })).toMatchObject({
+      max_por_empresa: 1,
+      percent_off: 50,
+    });
   });
 
   it('lê a foto dos parâmetros', () => {
@@ -81,19 +93,43 @@ describe('corpo do Freela', () => {
     expect(expiraEm('2026-12-31', 1)).toBe('2027-01-02T02:59:59.000Z');
   });
   it('FIXED não manda percentOff; sem validade não manda expiresAt; jornada mínima vai', () => {
-    const p = { ...PADRAO, discount_type: 'FIXED' as const, percent_off: null, amount_off_cents: 3000, validade_dias: null, min_job_hours: 6 };
+    const p = {
+      ...PADRAO,
+      discount_type: 'FIXED' as const,
+      percent_off: null,
+      amount_off_cents: 3000,
+      validade_dias: null,
+      min_job_hours: 6,
+    };
     const c = corpoDoCupom(p, 'PRACA-B', 'u', '2026-10-22');
-    expect(c).toEqual({ code: 'PRACA-B', discountType: 'FIXED', amountOffInCents: 3000, contractorUserId: 'u', singleUse: true, minJobHours: 6 });
+    expect(c).toEqual({
+      code: 'PRACA-B',
+      discountType: 'FIXED',
+      amountOffInCents: 3000,
+      contractorUserId: 'u',
+      singleUse: true,
+      minJobHours: 6,
+    });
   });
 });
 
 describe('adoção', () => {
   const cupom = (o: Partial<CupomFreela> = {}): CupomFreela => ({
-    id: 'c1', code: 'PRACA-AAA', discountType: 'PERCENT', percentOff: 100, amountOffInCents: null, contractorUserId: 'u1',
-    singleUse: true, active: true, expiresAt: null, redeemedAt: null, ...o,
+    id: 'c1',
+    code: 'PRACA-AAA',
+    discountType: 'PERCENT',
+    percentOff: 100,
+    amountOffInCents: null,
+    contractorUserId: 'u1',
+    singleUse: true,
+    active: true,
+    expiresAt: null,
+    redeemedAt: null,
+    ...o,
   });
   const esperado = { code: 'praca-aaa', contractorUserId: 'u1', params: PADRAO };
-  it('mesmo código, contratante e desconto = adota', () => expect(cupomConfere(cupom(), esperado)).toBe(true));
+  it('mesmo código, contratante e desconto = adota', () =>
+    expect(cupomConfere(cupom(), esperado)).toBe(true));
   it('outro contratante ou outro desconto = não', () => {
     expect(cupomConfere(cupom({ contractorUserId: 'u2' }), esperado)).toBe(false);
     expect(cupomConfere(cupom({ percentOff: 50 }), esperado)).toBe(false);
@@ -121,26 +157,56 @@ describe('falhas do Freela', () => {
     expect([1, 2, 3, 4, 5, 6, 7, 20].map(esperaMin)).toEqual([2, 4, 8, 16, 32, 60, 60, 60]);
     const t = new Date('2026-10-22T12:00:00Z');
     expect(devidoAgora({ coupon_attempts: 0, coupon_last_attempt_at: null }, t)).toBe(true);
-    expect(devidoAgora({ coupon_attempts: 3, coupon_last_attempt_at: new Date(t.getTime() - 7 * 60_000) }, t)).toBe(false);
-    expect(devidoAgora({ coupon_attempts: 3, coupon_last_attempt_at: new Date(t.getTime() - 8 * 60_000) }, t)).toBe(true);
+    expect(
+      devidoAgora({ coupon_attempts: 3, coupon_last_attempt_at: new Date(t.getTime() - 7 * 60_000) }, t),
+    ).toBe(false);
+    expect(
+      devidoAgora({ coupon_attempts: 3, coupon_last_attempt_at: new Date(t.getTime() - 8 * 60_000) }, t),
+    ).toBe(true);
   });
 });
 
 describe('leitura do estado (§38.7)', () => {
   const agora = new Date('2026-10-22T12:00:00Z');
   const c = (o: Partial<CupomFreela>): CupomFreela => ({
-    id: 'c1', code: 'PRACA-AAA', discountType: 'PERCENT', percentOff: 100, amountOffInCents: null, contractorUserId: 'u1',
-    singleUse: true, active: true, expiresAt: null, redeemedAt: null, ...o,
+    id: 'c1',
+    code: 'PRACA-AAA',
+    discountType: 'PERCENT',
+    percentOff: 100,
+    amountOffInCents: null,
+    contractorUserId: 'u1',
+    singleUse: true,
+    active: true,
+    expiresAt: null,
+    redeemedAt: null,
+    ...o,
   });
   it('usado, devolvido, vencido, desativado; nada muda = null', () => {
     expect(mudancaDoSync('criado', c({ redeemedAt: '2026-10-21T15:00:00.000Z' }), agora)).toEqual({
-      para: 'usado', evento: 'coupon_redeemed', redeemed_at: new Date('2026-10-21T15:00:00.000Z'),
+      para: 'usado',
+      evento: 'coupon_redeemed',
+      redeemed_at: new Date('2026-10-21T15:00:00.000Z'),
     });
-    expect(mudancaDoSync('usado', c({}), agora)).toEqual({ para: 'criado', evento: 'coupon_unredeemed', redeemed_at: null });
-    expect(mudancaDoSync('criado', c({ expiresAt: '2026-10-21T00:00:00.000Z' }), agora)).toEqual({ para: 'vencido', evento: 'coupon_expired' });
-    expect(mudancaDoSync('usado', c({ active: false, redeemedAt: '2026-10-21T15:00:00.000Z' }), agora)).toEqual({ para: 'desativado', evento: 'coupon_deactivated' });
+    expect(mudancaDoSync('usado', c({}), agora)).toEqual({
+      para: 'criado',
+      evento: 'coupon_unredeemed',
+      redeemed_at: null,
+    });
+    expect(mudancaDoSync('criado', c({ expiresAt: '2026-10-21T00:00:00.000Z' }), agora)).toEqual({
+      para: 'vencido',
+      evento: 'coupon_expired',
+    });
+    expect(
+      mudancaDoSync('usado', c({ active: false, redeemedAt: '2026-10-21T15:00:00.000Z' }), agora),
+    ).toEqual({ para: 'desativado', evento: 'coupon_deactivated' });
     expect(mudancaDoSync('criado', c({}), agora)).toBeNull();
-    expect(mudancaDoSync('usado', c({ redeemedAt: '2026-10-21T15:00:00.000Z', expiresAt: '2026-10-01T00:00:00.000Z' }), agora)).toBeNull();
+    expect(
+      mudancaDoSync(
+        'usado',
+        c({ redeemedAt: '2026-10-21T15:00:00.000Z', expiresAt: '2026-10-01T00:00:00.000Z' }),
+        agora,
+      ),
+    ).toBeNull();
     expect(mudancaDoSync('vencido', c({ active: false }), agora)).toBeNull();
   });
   it('lê a cada voucher_sync_min', () => {
@@ -163,8 +229,12 @@ describe('situação e textos', () => {
     expect(situacaoDo({ status, coupon_status })).toBe(s);
   });
   it('limite: diz quem pediu e quando (dia de Brasília)', () => {
-    expect(mensagemDoLimite({ consultant_name: 'Ana', created_at: new Date('2026-10-21T02:30:00Z'), status: 'pendente' })).toBe(
-      'Esta empresa já tem um cupom pedido, por Ana em 20/10.',
-    );
+    expect(
+      mensagemDoLimite({
+        consultant_name: 'Ana',
+        created_at: new Date('2026-10-21T02:30:00Z'),
+        status: 'pendente',
+      }),
+    ).toBe('Esta empresa já tem um cupom pedido, por Ana em 20/10.');
   });
 });

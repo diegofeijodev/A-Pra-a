@@ -23,7 +23,12 @@ import type {
   VouchersTx,
 } from '../vouchers.repository';
 
-const unico = (alvo: string) => new Prisma.PrismaClientKnownRequestError(`Unique constraint failed: ${alvo}`, { code: 'P2002', clientVersion: '5.22.0', meta: { target: alvo } });
+const unico = (alvo: string) =>
+  new Prisma.PrismaClientKnownRequestError(`Unique constraint failed: ${alvo}`, {
+    code: 'P2002',
+    clientVersion: '5.22.0',
+    meta: { target: alvo },
+  });
 const QUE_OCUPAM = ['aguardando_freela', 'criado', 'usado'];
 
 export class RepoFalso implements VouchersRepository {
@@ -70,7 +75,9 @@ export class RepoFalso implements VouchersRepository {
       .sort((a, b) => b.created_at.getTime() - a.created_at.getTime());
   }
   async listar(f: FiltroVouchers) {
-    return this.filtrar(f).slice(0, f.limit ?? 500).map((v) => ({ ...v }));
+    return this.filtrar(f)
+      .slice(0, f.limit ?? 500)
+      .map((v) => ({ ...v }));
   }
   async contar(f: FiltroVouchers) {
     const m = new Map<string, { status: string; coupon_status: string | null; n: number }>();
@@ -88,7 +95,15 @@ export class RepoFalso implements VouchersRepository {
       .sort((a, b) => a.created_at.getTime() - b.created_at.getTime());
   }
   async comCupomDoContratante(u: string, exceto: string) {
-    return [...this.vouchers.values()].find((v) => v.contractor_user_id === u && v.id !== exceto && v.coupon_status !== null && ['aguardando_freela', 'criado', 'usado', 'vencido', 'desativado', 'erro'].includes(v.coupon_status)) ?? null;
+    return (
+      [...this.vouchers.values()].find(
+        (v) =>
+          v.contractor_user_id === u &&
+          v.id !== exceto &&
+          v.coupon_status !== null &&
+          ['aguardando_freela', 'criado', 'usado', 'vencido', 'desativado', 'erro'].includes(v.coupon_status),
+      ) ?? null
+    );
   }
   async aguardandoFreela(limite: number) {
     return [...this.vouchers.values()]
@@ -98,10 +113,15 @@ export class RepoFalso implements VouchersRepository {
       .map((v) => ({ ...v }));
   }
   async aguardandoVinculo(limite: number) {
-    return [...this.vouchers.values()].filter((v) => v.coupon_status === 'aguardando_vinculo').slice(0, limite).map((v) => ({ ...v }));
+    return [...this.vouchers.values()]
+      .filter((v) => v.coupon_status === 'aguardando_vinculo')
+      .slice(0, limite)
+      .map((v) => ({ ...v }));
   }
   async comCupomAtivo() {
-    return [...this.vouchers.values()].filter((v) => v.coupon_status === 'criado' || v.coupon_status === 'usado').map((v) => ({ ...v }));
+    return [...this.vouchers.values()]
+      .filter((v) => v.coupon_status === 'criado' || v.coupon_status === 'usado')
+      .map((v) => ({ ...v }));
   }
   async ultimaLeitura() {
     const ds = (await this.comCupomAtivo()).map((v) => v.coupon_synced_at).filter((d): d is Date => !!d);
@@ -111,7 +131,9 @@ export class RepoFalso implements VouchersRepository {
     return new Map(ids.filter((i) => this.consultores.has(i)).map((i) => [i, this.consultores.get(i)!]));
   }
   async visitaDoConsultor(consultantId: string, ref: string) {
-    const v = this.visitas.find((x) => x.consultant_id === consultantId && (x.id === ref || x.client_id === ref));
+    const v = this.visitas.find(
+      (x) => x.consultant_id === consultantId && (x.id === ref || x.client_id === ref),
+    );
     return v ? { id: v.id, lead_id: v.lead_id } : null;
   }
   async lead(id: string) {
@@ -137,12 +159,17 @@ export class RepoFalso implements VouchersRepository {
   private conferirIndice(v: VoucherRow) {
     if (!v.contractor_user_id || !v.coupon_status || !QUE_OCUPAM.includes(v.coupon_status)) return;
     const outro = [...this.vouchers.values()].find(
-      (x) => x.id !== v.id && x.contractor_user_id === v.contractor_user_id && x.coupon_status !== null && QUE_OCUPAM.includes(x.coupon_status),
+      (x) =>
+        x.id !== v.id &&
+        x.contractor_user_id === v.contractor_user_id &&
+        x.coupon_status !== null &&
+        QUE_OCUPAM.includes(x.coupon_status),
     );
     if (outro) throw unico('field_vouchers_one_coupon_per_contractor');
   }
   private evento(voucherId: string, e: Omit<EventoVoucherNovo, 'voucher_id'>) {
-    if (e.client_id && this.eventosGravados.some((x) => x.client_id === e.client_id)) throw unico('field_voucher_events_client_id_key');
+    if (e.client_id && this.eventosGravados.some((x) => x.client_id === e.client_id))
+      throw unico('field_voucher_events_client_id_key');
     const row: EventoVoucherRow = { ...e, voucher_id: voucherId, id: randomUUID(), created_at: new Date() };
     this.eventosGravados.push(row);
     this.registrar(() => (this.eventosGravados = this.eventosGravados.filter((x) => x !== row)));
@@ -173,7 +200,8 @@ export class RepoFalso implements VouchersRepository {
       async criar(n: VoucherNovo, e) {
         // Um respiro: sem o lock, duas criações em paralelo se intercalariam aqui (é o que o teste de concorrência pega).
         await new Promise((r) => setTimeout(r, 5));
-        if ([...self.vouchers.values()].some((x) => x.client_id === n.client_id)) throw unico('field_vouchers_client_id_key');
+        if ([...self.vouchers.values()].some((x) => x.client_id === n.client_id))
+          throw unico('field_vouchers_client_id_key');
         const row: VoucherRow = {
           ...n,
           id: randomUUID(),
@@ -209,8 +237,13 @@ export class RepoFalso implements VouchersRepository {
         if (de.status !== undefined && v.status !== de.status) return null;
         if (de.coupon_status !== undefined && v.coupon_status !== de.coupon_status) return null;
         // Trigger: decisão é uma só; parâmetros fotografados não mudam.
-        if (v.status !== 'pendente' && m.status !== undefined && m.status !== v.status) throw new Error('field_vouchers: pedido já decidido não muda de status');
-        if (v.coupon_params != null && m.coupon_params !== undefined && JSON.stringify(m.coupon_params) !== JSON.stringify(v.coupon_params)) {
+        if (v.status !== 'pendente' && m.status !== undefined && m.status !== v.status)
+          throw new Error('field_vouchers: pedido já decidido não muda de status');
+        if (
+          v.coupon_params != null &&
+          m.coupon_params !== undefined &&
+          JSON.stringify(m.coupon_params) !== JSON.stringify(v.coupon_params)
+        ) {
           throw new Error('field_vouchers: os parâmetros do cupom fotografados na aprovação são imutáveis');
         }
         const antes = { ...v };
@@ -218,7 +251,11 @@ export class RepoFalso implements VouchersRepository {
         self.vouchers.set(id, depois);
         try {
           self.conferirIndice(depois);
-          if (depois.coupon_code && [...self.vouchers.values()].some((x) => x.id !== id && x.coupon_code === depois.coupon_code)) throw unico('field_vouchers_coupon_code_key');
+          if (
+            depois.coupon_code &&
+            [...self.vouchers.values()].some((x) => x.id !== id && x.coupon_code === depois.coupon_code)
+          )
+            throw unico('field_vouchers_coupon_code_key');
         } catch (err) {
           self.vouchers.set(id, antes);
           throw err;
@@ -244,7 +281,10 @@ export class RepoFalso implements VouchersRepository {
     const anterior = this.filas.get(chave) ?? Promise.resolve();
     let liberar!: () => void;
     const minha = new Promise<void>((r) => (liberar = r));
-    this.filas.set(chave, anterior.then(() => minha));
+    this.filas.set(
+      chave,
+      anterior.then(() => minha),
+    );
     await anterior;
     const log: (() => void)[] = [];
     const externo = this.desfazer;
@@ -276,7 +316,11 @@ export class FreelaFalso {
   }
 
   private exigirConfig() {
-    if (!this.configurado) throw new ServiceUnavailableException({ code: 'FREELA_NOT_CONFIGURED', message: 'Conexão com o Freela não configurada.' });
+    if (!this.configurado)
+      throw new ServiceUnavailableException({
+        code: 'FREELA_NOT_CONFIGURED',
+        message: 'Conexão com o Freela não configurada.',
+      });
   }
 
   private gravar(c: CorpoCupomFreela): CupomFreela {
@@ -300,15 +344,23 @@ export class FreelaFalso {
     this.chamadas.push(`create:${c.code}`);
     this.exigirConfig();
     const f = this.proximas[0] && this.proximas[0] !== 'lista_timeout' ? this.proximas.shift() : undefined;
-    if (f === 'timeout') throw new BadGatewayException({ code: 'FREELA_UNREACHABLE', message: 'O Freela não respondeu em 15 s.' });
+    if (f === 'timeout')
+      throw new BadGatewayException({
+        code: 'FREELA_UNREACHABLE',
+        message: 'O Freela não respondeu em 15 s.',
+      });
     if (f === 'criar_e_timeout') {
       this.gravar(c);
-      throw new BadGatewayException({ code: 'FREELA_UNREACHABLE', message: 'O Freela não respondeu em 15 s.' });
+      throw new BadGatewayException({
+        code: 'FREELA_UNREACHABLE',
+        message: 'O Freela não respondeu em 15 s.',
+      });
     }
     if (f === '500') throw new FreelaHttpError(500, 'O Freela respondeu HTTP 500.');
     if (f === '401') throw new FreelaHttpError(401, 'Não autorizado.');
     if (f === '422') throw new FreelaHttpError(422, 'Algo inválido.');
-    if (this.cupons.has(c.code.trim().toUpperCase())) throw new FreelaHttpError(400, 'Código já existe.', { code: 'COUPON_CODE_TAKEN' });
+    if (this.cupons.has(c.code.trim().toUpperCase()))
+      throw new FreelaHttpError(400, 'Código já existe.', { code: 'COUPON_CODE_TAKEN' });
     return this.gravar(c);
   }
 
@@ -317,7 +369,10 @@ export class FreelaFalso {
     this.exigirConfig();
     if (this.proximas[0] === 'lista_timeout') {
       this.proximas.shift();
-      throw new BadGatewayException({ code: 'FREELA_UNREACHABLE', message: 'O Freela não respondeu em 15 s.' });
+      throw new BadGatewayException({
+        code: 'FREELA_UNREACHABLE',
+        message: 'O Freela não respondeu em 15 s.',
+      });
     }
     return [...this.cupons.values()].map((c) => ({ ...c }));
   }

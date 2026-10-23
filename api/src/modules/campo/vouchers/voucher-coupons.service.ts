@@ -32,11 +32,24 @@ export const LIMITE_POR_RODADA = 20;
 const UMA_HORA_MS = 60 * 60_000;
 
 export const cuponsDesligados = () =>
-  new NotFoundException({ code: 'VOUCHER_COUPONS_DISABLED', message: 'O cupom no Freela não está ligado neste servidor.' });
+  new NotFoundException({
+    code: 'VOUCHER_COUPONS_DISABLED',
+    message: 'O cupom no Freela não está ligado neste servidor.',
+  });
 
 /** Só o que o domínio precisa do erro (status e códigos); a mensagem do Freela nunca é lida. */
-function infoDoErro(e: unknown): { status?: number; code?: string; freelaStatus?: number; freelaCode?: string } {
-  const x = e as { getStatus?: () => number; getResponse?: () => unknown; freelaStatus?: number; freelaError?: { code?: string } };
+function infoDoErro(e: unknown): {
+  status?: number;
+  code?: string;
+  freelaStatus?: number;
+  freelaCode?: string;
+} {
+  const x = e as {
+    getStatus?: () => number;
+    getResponse?: () => unknown;
+    freelaStatus?: number;
+    freelaError?: { code?: string };
+  };
   const resp = typeof x?.getResponse === 'function' ? (x.getResponse() as { code?: unknown }) : null;
   return {
     ...(typeof x?.getStatus === 'function' ? { status: x.getStatus() } : {}),
@@ -97,7 +110,9 @@ export class VoucherCouponsService {
     this.ultimoAviso = agora.getTime();
     const n = (await this.repo.aguardandoFreela(LIMITE_POR_RODADA)).length;
     if (n > 0) {
-      this.log.warn(`${n}${n === LIMITE_POR_RODADA ? '+' : ''} cupom(ns) aprovado(s) aguardando conexão com o Freela (FREELA_API_URL/FREELA_ADMIN_* vazios).`);
+      this.log.warn(
+        `${n}${n === LIMITE_POR_RODADA ? '+' : ''} cupom(ns) aprovado(s) aguardando conexão com o Freela (FREELA_API_URL/FREELA_ADMIN_* vazios).`,
+      );
     }
   }
 
@@ -144,7 +159,9 @@ export class VoucherCouponsService {
           achado = undefined;
         }
         if (achado) {
-          return cupomConfere(achado, esperado) ? this.concluir(v, achado, 'coupon_adopted', agora) : this.falhar(v, 'COUPON_CODE_CONFLICT', agora);
+          return cupomConfere(achado, esperado)
+            ? this.concluir(v, achado, 'coupon_adopted', agora)
+            : this.falhar(v, 'COUPON_CODE_CONFLICT', agora);
         }
       }
       return this.anotar(v, d.code, agora, true);
@@ -152,7 +169,12 @@ export class VoucherCouponsService {
   }
 
   /** Tentativa que não deu: conta, guarda o código e a mensagem FIXA e espera (sem evento: não é mudança de estado). */
-  private async anotar(v: VoucherRow, code: string, agora: Date, contar: boolean): Promise<VoucherRow | null> {
+  private async anotar(
+    v: VoucherRow,
+    code: string,
+    agora: Date,
+    contar: boolean,
+  ): Promise<VoucherRow | null> {
     return this.repo.emTransacao(`voucher:${v.id}`, (tx) =>
       tx.transitar(
         v.id,
@@ -179,12 +201,25 @@ export class VoucherCouponsService {
           coupon_attempts: v.coupon_attempts + 1,
           coupon_last_attempt_at: agora,
         },
-        { type: 'coupon_failed', client_id: null, actor_kind: 'sistema', actor_id: null, actor_name: null, reason: null, data: { code } },
+        {
+          type: 'coupon_failed',
+          client_id: null,
+          actor_kind: 'sistema',
+          actor_id: null,
+          actor_name: null,
+          reason: null,
+          data: { code },
+        },
       ),
     );
   }
 
-  private async concluir(v: VoucherRow, c: CupomFreela, tipo: 'coupon_created' | 'coupon_adopted', agora: Date): Promise<VoucherRow | null> {
+  private async concluir(
+    v: VoucherRow,
+    c: CupomFreela,
+    tipo: 'coupon_created' | 'coupon_adopted',
+    agora: Date,
+  ): Promise<VoucherRow | null> {
     return this.repo.emTransacao(`voucher:${v.id}`, (tx) =>
       tx.transitar(
         v.id,
@@ -200,7 +235,15 @@ export class VoucherCouponsService {
           coupon_last_attempt_at: agora,
           coupon_synced_at: agora,
         },
-        { type: tipo, client_id: null, actor_kind: 'sistema', actor_id: null, actor_name: null, reason: null, data: { code: c.code, coupon_id: c.id } },
+        {
+          type: tipo,
+          client_id: null,
+          actor_kind: 'sistema',
+          actor_id: null,
+          actor_name: null,
+          reason: null,
+          data: { code: c.code, coupon_id: c.id },
+        },
       ),
     );
   }
@@ -211,7 +254,10 @@ export class VoucherCouponsService {
     const v = await this.repo.porId(id);
     if (!v) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Pedido de cupom não encontrado.' });
     if ((v.coupon_status !== 'erro' && v.coupon_status !== 'aguardando_freela') || !v.contractor_user_id) {
-      throw new ConflictException({ code: 'INVALID_TRANSITION', message: 'Este cupom não está esperando o Freela.' });
+      throw new ConflictException({
+        code: 'INVALID_TRANSITION',
+        message: 'Este cupom não está esperando o Freela.',
+      });
     }
     const de = v.coupon_status;
     const r = await this.repo.emTransacao(`voucher:${id}`, (tx) =>
@@ -219,20 +265,41 @@ export class VoucherCouponsService {
         id,
         { coupon_status: de },
         { coupon_status: 'aguardando_freela', coupon_last_attempt_at: null },
-        { type: 'coupon_retried', client_id: null, actor_kind: 'equipe', actor_id: ator.id, actor_name: ator.name, reason: null, data: { from: de } },
+        {
+          type: 'coupon_retried',
+          client_id: null,
+          actor_kind: 'equipe',
+          actor_id: ator.id,
+          actor_name: ator.name,
+          reason: null,
+          data: { from: de },
+        },
       ),
     );
-    if (!r) throw new ConflictException({ code: 'INVALID_TRANSITION', message: 'Este cupom mudou enquanto você olhava. Atualize a tela.' });
+    if (!r)
+      throw new ConflictException({
+        code: 'INVALID_TRANSITION',
+        message: 'Este cupom mudou enquanto você olhava. Atualize a tela.',
+      });
     await this.tentarCriar(id, agora);
   }
 
   /** Desativa no Freela (`PATCH active=false`) e só então marca `desativado`. Falha do Freela sobe (502/503) e nada muda. */
-  async desativar(id: string, clientId: string, motivo: string, ator: { id: string; name: string }, agora = new Date()): Promise<void> {
+  async desativar(
+    id: string,
+    clientId: string,
+    motivo: string,
+    ator: { id: string; name: string },
+    agora = new Date(),
+  ): Promise<void> {
     if (!this.ligado) throw cuponsDesligados();
     const v = await this.repo.porId(id);
     if (!v) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Pedido de cupom não encontrado.' });
     if ((v.coupon_status !== 'criado' && v.coupon_status !== 'usado') || !v.coupon_id) {
-      throw new ConflictException({ code: 'INVALID_TRANSITION', message: 'Só dá para desativar um cupom criado no Freela.' });
+      throw new ConflictException({
+        code: 'INVALID_TRANSITION',
+        message: 'Só dá para desativar um cupom criado no Freela.',
+      });
     }
     await this.issuer.desativar(v.coupon_id);
     const de = v.coupon_status;
@@ -241,10 +308,22 @@ export class VoucherCouponsService {
         id,
         { coupon_status: de },
         { coupon_status: 'desativado', coupon_synced_at: agora },
-        { type: 'coupon_deactivated', client_id: clientId, actor_kind: 'equipe', actor_id: ator.id, actor_name: ator.name, reason: motivo, data: { source: 'praca' } },
+        {
+          type: 'coupon_deactivated',
+          client_id: clientId,
+          actor_kind: 'equipe',
+          actor_id: ator.id,
+          actor_name: ator.name,
+          reason: motivo,
+          data: { source: 'praca' },
+        },
       ),
     );
-    if (!r) throw new ConflictException({ code: 'INVALID_TRANSITION', message: 'Este cupom mudou enquanto você olhava. Atualize a tela.' });
+    if (!r)
+      throw new ConflictException({
+        code: 'INVALID_TRANSITION',
+        message: 'Este cupom mudou enquanto você olhava. Atualize a tela.',
+      });
   }
 
   /**
@@ -271,7 +350,15 @@ export class VoucherCouponsService {
                   coupon_status: 'aguardando_freela',
                   coupon_code: codigoDoCupom(v.id),
                 },
-                { type: 'contractor_linked', client_id: null, actor_kind: 'sistema', actor_id: null, actor_name: null, reason: null, data: { source: auto.source } },
+                {
+                  type: 'contractor_linked',
+                  client_id: null,
+                  actor_kind: 'sistema',
+                  actor_id: null,
+                  actor_name: null,
+                  reason: null,
+                  data: { source: auto.source },
+                },
               ),
             )
             .catch(() => null);
@@ -286,7 +373,9 @@ export class VoucherCouponsService {
       return r;
     }
     try {
-      const devidos = (await this.repo.aguardandoFreela(LIMITE_POR_RODADA * 5)).filter((v) => devidoAgora(v, agora)).slice(0, LIMITE_POR_RODADA);
+      const devidos = (await this.repo.aguardandoFreela(LIMITE_POR_RODADA * 5))
+        .filter((v) => devidoAgora(v, agora))
+        .slice(0, LIMITE_POR_RODADA);
       for (const v of devidos) {
         r.tentados++;
         const depois = await this.tentarCriar(v.id, agora);
@@ -311,7 +400,9 @@ export class VoucherCouponsService {
     const ativos = await this.repo.comCupomAtivo();
     if (ativos.length === 0) return 0;
     const porCodigo = new Map(
-      (await this.issuer.listar()).filter((c) => c.code.toUpperCase().startsWith(PREFIXO_CUPOM)).map((c) => [c.code.toUpperCase(), c]),
+      (await this.issuer.listar())
+        .filter((c) => c.code.toUpperCase().startsWith(PREFIXO_CUPOM))
+        .map((c) => [c.code.toUpperCase(), c]),
     );
     for (const v of ativos) {
       const c = v.coupon_code ? porCodigo.get(v.coupon_code.toUpperCase()) : undefined;
@@ -323,9 +414,24 @@ export class VoucherCouponsService {
           { coupon_status: de },
           {
             coupon_synced_at: agora,
-            ...(m ? { coupon_status: m.para, ...(m.redeemed_at !== undefined ? { redeemed_at: m.redeemed_at } : {}) } : {}),
+            ...(m
+              ? {
+                  coupon_status: m.para,
+                  ...(m.redeemed_at !== undefined ? { redeemed_at: m.redeemed_at } : {}),
+                }
+              : {}),
           },
-          m ? { type: m.evento, client_id: null, actor_kind: 'sistema', actor_id: null, actor_name: null, reason: null, data: { source: 'freela' } } : null,
+          m
+            ? {
+                type: m.evento,
+                client_id: null,
+                actor_kind: 'sistema',
+                actor_id: null,
+                actor_name: null,
+                reason: null,
+                data: { source: 'freela' },
+              }
+            : null,
         ),
       );
     }

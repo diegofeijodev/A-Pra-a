@@ -2,7 +2,13 @@ import { BadRequestException, Inject, Injectable, NotFoundException, Optional } 
 import type { Prisma } from '@prisma/client';
 import { AuthUser } from '../../common/auth/auth-user';
 import { PrismaService } from '../../common/database/prisma.service';
-import { LIMITES_SEGMENTOS, lerSegmentos, segmentosDaBusca, validarSegmentos, type Segmento } from '../../domain/segmentos-rules';
+import {
+  LIMITES_SEGMENTOS,
+  lerSegmentos,
+  segmentosDaBusca,
+  validarSegmentos,
+  type Segmento,
+} from '../../domain/segmentos-rules';
 import { LOVABLE_C_FLAGS, type FlagsLovableC } from '../rotas/rotas.tokens';
 
 export interface SegmentosView {
@@ -13,7 +19,10 @@ export interface SegmentosView {
 }
 
 const desligado = () =>
-  new NotFoundException({ code: 'SEGMENTS_DISABLED', message: 'Os segmentos editáveis da busca não estão ligados neste servidor.' });
+  new NotFoundException({
+    code: 'SEGMENTS_DISABLED',
+    message: 'Os segmentos editáveis da busca não estão ligados neste servidor.',
+  });
 
 /**
  * Segmentos editáveis da busca (contrato §36). Só com `FIELD_SEGMENTS_ENABLED`. Guardados em `app_settings.place_segments`
@@ -31,7 +40,10 @@ export class PlacesSegmentsService {
   }
 
   private async bruto(): Promise<unknown> {
-    const s = await this.prisma.app_settings.findUnique({ where: { id: 1 }, select: { place_segments: true } });
+    const s = await this.prisma.app_settings.findUnique({
+      where: { id: 1 },
+      select: { place_segments: true },
+    });
     return s?.place_segments ?? null;
   }
 
@@ -52,7 +64,10 @@ export class PlacesSegmentsService {
   async salvar(lista: unknown[], user: AuthUser, agora = new Date()): Promise<SegmentosView> {
     if (!this.ligado) throw desligado();
     const atuais = lerSegmentos(await this.bruto()).segmentos;
-    const r = validarSegmentos(lista, atuais.map((s) => s.slug));
+    const r = validarSegmentos(
+      lista,
+      atuais.map((s) => s.slug),
+    );
     if (!r.ok) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: r.erro });
     const gravar = { segments: r.segmentos, atualizado_por: user.id, atualizado_em: agora.toISOString() };
     await this.prisma.app_settings.upsert({
@@ -74,16 +89,30 @@ export class PlacesSegmentsService {
    */
   async fotoDaBusca(types: unknown): Promise<{ types: string[]; foto: Segmento[] }> {
     const max = LIMITES_SEGMENTOS.porBusca;
-    if (!Array.isArray(types) || types.length < 1 || types.length > max || types.some((t) => typeof t !== 'string')) {
-      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: `types: escolha de 1 a ${max} segmentos.` });
+    if (
+      !Array.isArray(types) ||
+      types.length < 1 ||
+      types.length > max ||
+      types.some((t) => typeof t !== 'string')
+    ) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: `types: escolha de 1 a ${max} segmentos.`,
+      });
     }
     if (new Set(types).size !== types.length) {
-      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'types: cada segmento só uma vez.' });
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'types: cada segmento só uma vez.',
+      });
     }
     const ativos = await this.ativos();
     const fora = (types as string[]).find((t) => !ativos.some((s) => s.slug === t));
     if (fora !== undefined) {
-      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: `types: '${fora.slice(0, 40)}' não é um segmento ativo da busca.` });
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: `types: '${fora.slice(0, 40)}' não é um segmento ativo da busca.`,
+      });
     }
     const ordenados = [...(types as string[])].sort();
     return { types: ordenados, foto: segmentosDaBusca(ativos, ordenados) };
