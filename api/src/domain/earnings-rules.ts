@@ -420,8 +420,16 @@ export function validarVigencia(p: {
         'week_start_weekday: não dá para mudar o início da semana depois que há ganhos lançados ou semanas fechadas.',
     };
   }
-  const semanal = p.nova.tiers_period === 'week' || antes?.config.tiers_period === 'week';
-  if (semanal && p.valid_from !== inicioDaSemana(p.valid_from, p.nova.week_start_weekday)) {
+  return conferirAlinhamento(p.valid_from, p.nova, antes?.config ?? null);
+}
+
+/**
+ * Alinhamento da vigência: com faixa/teto semanal (na nova ou na de antes) começa no 1º dia da semana; com bônus mensal,
+ * no dia 1 do mês. `antes` = a regra que valeria no `valid_from` sem a nova (a geral ou, no L13, a resolvida do consultor).
+ */
+export function conferirAlinhamento(valid_from: string, nova: RegraBruta, antes: RegraBruta | null): ErroVigencia | null {
+  const semanal = nova.tiers_period === 'week' || antes?.tiers_period === 'week';
+  if (semanal && valid_from !== inicioDaSemana(valid_from, nova.week_start_weekday)) {
     return {
       code: 'VALIDATION_ERROR',
       campo: 'valid_from',
@@ -430,8 +438,8 @@ export function validarVigencia(p: {
     };
   }
   // L11 §43.2: os parâmetros do mês seguem a versão do dia 1; trocar no meio do mês misturaria duas regras no mesmo mês.
-  const mensal = p.nova.tiers_period === 'month' || antes?.config.tiers_period === 'month';
-  if (mensal && p.valid_from.slice(8, 10) !== '01') {
+  const mensal = nova.tiers_period === 'month' || antes?.tiers_period === 'month';
+  if (mensal && valid_from.slice(8, 10) !== '01') {
     return {
       code: 'VALIDATION_ERROR',
       campo: 'valid_from',
