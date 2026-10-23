@@ -1032,6 +1032,34 @@ console.log('-- Campo: GPS negado --');
   await page.getByRole('button', { name: lov.segments ? 'Pizzaria' : 'Bares', exact: true }).waitFor({ timeout: 20000 });
   const chips = await page.locator('fieldset', { hasText: '2. O que buscar' }).locator('button[aria-pressed]').count();
   check(`Buscar estabelecimentos: ${lov.segments ? '10 segmentos (Lovable + nossos)' : 'os 5 tipos de hoje'} (${chips})`, chips === (lov.segments ? 10 : 5));
+
+  // ── Lote D (contrato §39/§40): só leitura e presença; NADA gera plano nem busca shopping (a busca chamaria o Overpass) ──
+  console.log('-- Equipe: lote D da Lovable (dividir em rotas e shoppings) --');
+  await page.goto(`${BASE}/consultores/roteiros`, { waitUntil: 'networkidle' });
+  await page.getByText('Chegada ao local').first().waitFor({ timeout: 20000 });
+  if (lov.route_plans) await page.getByRole('tab', { name: 'Dividir em rotas' }).waitFor({ timeout: 20000 });
+  check('Rotas: aba "Dividir em rotas" só com os planos ligados', ((await page.getByRole('tab', { name: 'Dividir em rotas' }).count()) === 1) === !!lov.route_plans);
+  check('Rotas: aba "Shoppings" só com os shoppings ligados', ((await page.getByRole('tab', { name: 'Shoppings' }).count()) === 1) === !!lov.malls);
+  check('Rotas: sem as flags, a tela é a de antes ("Roteiros do dia", sem abas)', !lov.route_plans || (await page.getByRole('tablist', { name: 'Rotas' }).count()) === 1);
+  if (lov.route_plans) {
+    await page.getByRole('tab', { name: 'Dividir em rotas' }).click();
+    await page.getByTestId('previa-divisao').filter({ hasText: /estabelecimento/ }).waitFor({ timeout: 20000 });
+    const previa = await page.getByTestId('previa-divisao').innerText();
+    check('Dividir em rotas: a prévia com a conta aparece antes de gerar (R1)', /÷|Nenhum estabelecimento/.test(previa));
+    check('Dividir em rotas: dois botões de gerar (carro/moto e a pé)', (await page.getByRole('button', { name: 'Gerar rotas de carro/moto' }).count()) === 1 && (await page.getByRole('button', { name: 'Gerar rotas a pé' }).count()) === 1);
+  }
+  if (lov.malls) {
+    await page.getByRole('tab', { name: 'Shoppings' }).click();
+    await page.getByTestId('criterio-shopping').waitFor({ timeout: 20000 });
+    const crit = await page.getByTestId('criterio-shopping').innerText();
+    check('Shoppings: o ⓘ descreve o critério que vale (área) e a marcação à mão', crit.includes('m² de área no mapa aberto') && crit.includes('marque à mão'));
+    check('Shoppings: "Descobrir shoppings da cidade" para o admin (não clicado)', (await page.getByRole('button', { name: 'Descobrir shoppings da cidade' }).count()) === 1);
+  }
+  if (lov.route_plans) {
+    await page.getByRole('tab', { name: 'Dia de cada consultor' }).click();
+    await page.getByText('Chegada ao local').first().waitFor({ timeout: 20000 });
+    check('Rotas: "Dia de cada consultor" continua o roteiro do dia de hoje', (await page.getByText('Chegada ao local').count()) >= 1);
+  }
 } catch (e) {
   ko('roteiro do campo interrompido', String(e).slice(0, 300));
 } finally {
@@ -1107,6 +1135,19 @@ try {
     await cs.getByRole('button', { name: 'Encerrar o dia' }).waitFor({ timeout: 20000 });
     await semPendencia();
     check('simples: equipe vê o consultor em jornada', (await situacaoS())?.status === 'em_jornada');
+
+    // Lote D (§39.7): "Próximos dias" só com a flag; abre o calendário (só leitura) e volta para hoje.
+    const temProximos = (await cs.getByRole('button', { name: 'Próximos dias' }).count()) > 0;
+    check('simples: "Próximos dias" só com os planos de rota ligados', temProximos === (meS.features?.route_plans === true && (await cs.getByText('Sem roteiro para hoje').count()) > 0));
+    if (temProximos) {
+      await cs.getByRole('button', { name: 'Próximos dias' }).click();
+      await cs.getByRole('grid').waitFor({ timeout: 20000 });
+      await cs.getByText(/Nenhuma rota neste dia|paradas? ·/).first().waitFor({ timeout: 20000 });
+      const cel = await cs.getByRole('grid').getByRole('button').first().boundingBox();
+      check('Próximos dias: calendário com células ≥ 48 px (R7)', !!cel && cel.height >= 48 && cel.width >= 40);
+      await cs.getByRole('button', { name: 'Ir para hoje' }).click();
+      await cs.getByRole('button', { name: 'Encerrar o dia' }).waitFor({ timeout: 20000 });
+    }
 
     const jpegS = await cs.evaluate(
       () =>

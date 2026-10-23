@@ -2146,6 +2146,22 @@ check "busca com tipo novo: a mesma frase do class-validator de hoje" "400|types
   "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' -X POST $API/v1/place-searches -H "$J" -H "$HD" -d "{\"praca_id\":\"$PRACA_SEED\",\"area_id\":\"$(uuid)\",\"types\":[\"hotel\"]}")|$(jq -r .error.message /tmp/praca-smoke-l.json)"
 check "token de consultor nos cupons da equipe continua 401 (sessão antes da flag)" "401" "$(curl -s -o /dev/null -w '%{http_code}' $API/v1/consultores/vouchers -H "$HC")"
 
+echo "── Restante da Lovable, lote D (§39/§40), flags desligadas: nada muda ──"
+# Com FIELD_ROUTE_PLANS_ENABLED e FIELD_MALLS_ENABLED desligadas (padrão) as rotas novas respondem 404, a busca de hoje e os
+# candidatos não mudam e o /me não ganha nada além de features.route_plans=false. Ligadas: `scripts/smoke-lovable-d.sh`.
+check "/me: route_plans desligado" "false" "$(echo "$ME_FLAG" | jq -r '.features.route_plans')"
+check "config: features do lote D desligadas" "false|false" \
+  "$(curl -s $API/v1/consultores/settings/config -H "$HD" | jq -r '"\(.features.route_plans)|\(.features.malls)"')"
+check "planos de rota (lista, prévia, config, criar) = ROUTE_PLANS_DISABLED" "404|ROUTE_PLANS_DISABLED|404|404|ROUTE_PLANS_DISABLED" \
+  "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' "$API/v1/route-plans?praca_id=$PRACA_SEED" -H "$HD")|$(jq -r .error.code /tmp/praca-smoke-l.json)|$(curl -s -o /dev/null -w '%{http_code}' "$API/v1/route-plans/preview?praca_id=$PRACA_SEED" -H "$HD")|$(curl -s -o /dev/null -w '%{http_code}' $API/v1/route-plans/config -H "$HD")|$(curl -s -X POST $API/v1/route-plans -H "$J" -H "$HD" -d "{\"praca_id\":\"$PRACA_SEED\"}" | jq -r .error.code)"
+check "Minhas rotas do consultor = ROUTE_PLANS_DISABLED" "404|ROUTE_PLANS_DISABLED" \
+  "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' $API/v1/campo/routes -H "$HC")|$(jq -r .error.code /tmp/praca-smoke-l.json)"
+check "shoppings = MALLS_DISABLED; busca kind shoppings = MALLS_DISABLED (nada gravado)" "404|MALLS_DISABLED|404|MALLS_DISABLED|0" \
+  "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' "$API/v1/consultores/shoppings?praca_id=$PRACA_SEED" -H "$HD")|$(jq -r .error.code /tmp/praca-smoke-l.json)|$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' -X POST $API/v1/place-searches -H "$J" -H "$HD" -d "{\"praca_id\":\"$PRACA_SEED\",\"kind\":\"shoppings\"}")|$(jq -r .error.code /tmp/praca-smoke-l.json)|$(docker exec praca-postgres psql -U praca -d praca -qtAc "select count(*) from place_import_runs where kind <> 'lugares'" 2>/dev/null | tr -d '[:space:]' || echo 0)"
+check "candidatos com scope (flag desligada) = 404" "404" "$(curl -s -o /dev/null -w '%{http_code}' "$API/v1/routes/candidates?praca_id=$PRACA_SEED&scope=geral" -H "$HD")"
+check "busca sem kind: área continua obrigatória com a mesma frase" "400|area_id: area_id must be a string" \
+  "$(curl -s -o /tmp/praca-smoke-l.json -w '%{http_code}' -X POST $API/v1/place-searches -H "$J" -H "$HD" -d "{\"praca_id\":\"$PRACA_SEED\",\"types\":[\"bar\"]}")|$(jq -r .error.message /tmp/praca-smoke-l.json)"
+
 check "CRM: UM evento de visita do consultor, com a etapa nova" "1|3" \
   "$(echo "$LEAD_DEPOIS" | jq -r --arg a "Consultor: Consultor $SUF" '[.events[] | select(.kind=="visit" and .author_label==$a)] | "\(length)|\(.[0].stage_to)"')"
 check "foto da visita para o consultor" "image/jpeg" \

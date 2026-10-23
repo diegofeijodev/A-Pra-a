@@ -95,7 +95,7 @@ export function ProximosDiasTela() {
                       onClick={() => setDiaSel(d)}
                       aria-pressed={d === diaSel}
                       aria-label={`${diaCurto(d)}${porDia.has(d) ? `, ${porDia.get(d)!.length} rota(s)` : ', sem rota'}${d === hoje ? ', hoje' : ''}`}
-                      className={`relative h-12 min-w-12 rounded-md border text-sm font-bold ${d === diaSel ? 'border-primary bg-primary text-primary-foreground' : d === hoje ? 'border-foreground' : 'border-border'}`}
+                      className={`relative h-12 w-full rounded-md border text-sm font-bold ${d === diaSel ? 'border-primary bg-primary text-primary-foreground' : d === hoje ? 'border-foreground' : 'border-border'}`}
                     >
                       {Number(d.slice(8, 10))}
                       {porDia.has(d) && <span aria-hidden className="absolute bottom-1 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-current" />}
