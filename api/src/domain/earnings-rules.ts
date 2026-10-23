@@ -530,7 +530,8 @@ export function calcularMes(p: {
     conta.push(
       `Faltam ${rotuloCadastro(regra, prox.faltam)} para a ${cumulativo ? 'meta' : 'faixa'} do mês de ${brl(prox.amount_cents)} (${plural(prox.min_signups, 'cadastro', 'cadastros')}).`,
     );
-  conta.push(`Bônus do mês: ${brl(cents)}${encerrado ? '' : ' até agora'} (regra versão ${v.version}, vigente no dia 1).`);
+  // Versão 0 = simulação de uma regra ainda não salva (não há número para citar).
+  conta.push(`Bônus do mês: ${brl(cents)}${encerrado ? '' : ' até agora'} (${v.version > 0 ? `regra versão ${v.version}, vigente no dia 1` : 'regra em edição, não salva'}).`);
   return {
     mes: p.mes,
     from,

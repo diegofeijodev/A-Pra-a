@@ -94,6 +94,8 @@ describe('L11 — PUT e simulador com o bônus mensal', () => {
     expect(r.month?.total_cents).toBe(30000);
     expect(r.day.total_cents).toBe(3000);
     expect(r.month?.conta.join(' ')).toContain('Faixa do mês atingida: 40 cadastros = R$ 300,00.');
+    expect(r.month?.conta.join(' ')).toContain('(regra em edição, não salva)');
+    expect(r.month?.conta.join(' ')).not.toContain('versão 0');
     // sem regra mensal, month_signups é ignorado
     expect('month' in (await s.simular({ signups_confirmed: 3, month_signups: 42 }, AGORA))).toBe(false);
   });
