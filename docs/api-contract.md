@@ -5232,7 +5232,9 @@ perfil, até de admin — aqui o gestor só redefine a de **consultor de campo**
 | `/v1/users` POST/PATCH/DELETE, `DELETE /v1/pracas/:id`, `DELETE /v1/leads/:id` | admin | admin |
 
 - O gestor **vê o Pix mascarado** no `ConsultorView` (`pix_key` = `•••` + os 4 últimos; decisão do orquestrador: o gestor não vê nem mexe em Pix, pagamentos ou configuração); a conta
-  bancária ele já recebe mascarada (§41.3). A equipe que não é gestor continua vendo o que vê hoje.
+  bancária ele já recebe mascarada (§41.3). **Com `TEAM_GESTOR_ENABLED` ligada, a equipe que não é gestor também recebe o `pix_key` mascarado** (lista e
+  detalhe; decisão do dono 23/10: o Pix inteiro só para o admin, que é quem paga — como em `payouts`, onde a chave completa já era só do admin).
+  Desligada, a equipe continua vendo o Pix inteiro como antes. Chamadas internas (sem usuário) não mudam.
 - Erro de permissão do gestor: `403 FORBIDDEN` "Só administradores podem fazer isso." (rota só de admin) ou `403 FORBIDDEN_FIELD` "Gestor não muda <campo>: peça a um administrador."
   (sem o valor).
 

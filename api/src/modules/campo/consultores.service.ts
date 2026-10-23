@@ -174,11 +174,20 @@ export class ConsultoresService {
   }
 
   /**
+   * Pix inteiro só para quem paga (decisão do dono 23/10): com o perfil gestor ligado, todo mundo da equipe que não é admin
+   * recebe a chave mascarada; desligado, só o gestor (como antes). Chamada interna (sem quem pede) segue inteira.
+   */
+  private pixMascaradoPara(quem?: AuthUser): boolean {
+    if (!quem || quem.is_admin) return false;
+    return ehGestor(quem) || this.lovE?.team_gestor === true;
+  }
+
+  /**
    * O que cada um vê (§41.3, §42.3): o gestor vê o Pix mascarado; com o cadastro ligado entram endereço e banco, e a conta
    * completa só vai ao admin. Sem quem pede (chamadas internas) = o mais restrito para a conta.
    */
   private projetar(view: ConsultorView, c: ConsultorRow, quem?: AuthUser): ConsultorView {
-    let out = ehGestor(quem) ? { ...view, pix_key: mascararPix(view.pix_key) } : view;
+    let out = this.pixMascaradoPara(quem) ? { ...view, pix_key: mascararPix(view.pix_key) } : view;
     if (!this.perfilLigado) return out;
     out = {
       ...out,

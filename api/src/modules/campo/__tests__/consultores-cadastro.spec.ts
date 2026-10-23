@@ -141,6 +141,14 @@ describe('gestor (§42.3)', () => {
     expect(g).not.toHaveProperty('bank_account');
     expect((await s.get(CONS, ADMIN)).pix_key).toBe('52998224725');
   });
+  it('com o perfil gestor ligado, a equipe que não é gestor também vê o Pix mascarado (decisão do dono 23/10); o admin vê inteiro', async () => {
+    const s = montar(fakePrisma(), { team_gestor: true });
+    expect((await s.get(CONS, EQUIPE)).pix_key).toBe('•••4725');
+    expect((await s.list(new Date(), EQUIPE))[0]!.pix_key).toBe('•••4725');
+    expect((await s.get(CONS, ADMIN)).pix_key).toBe('52998224725');
+    // Chamada interna (sem quem pede) segue como hoje.
+    expect((await s.get(CONS)).pix_key).toBe('52998224725');
+  });
   it.each([
     ['pix_key', { pix_key: '52998224725' }, 'a chave Pix'],
     ['pix_key_type', { pix_key_type: 'cpf' }, 'o tipo da chave Pix'],
