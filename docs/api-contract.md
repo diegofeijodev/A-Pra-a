@@ -4478,11 +4478,37 @@ senão `categoriaDaVisita` da última visita concluída (maior `checkout_at`). A
 Mesma resposta do §34.1, só com os leads **da praça do consultor** que estão num roteiro dele (qualquer dia) ou que ele visitou (como a RLS do representante na Lovable). Lead de
 outro consultor que não passou por ele **não aparece**.
 
+### 34.6 Lista dos estabelecimentos (Clientes > Lista, lote E) — `GET /v1/consultores/map/list?praca_id=&codes=&q=&cursor=&limit=` (equipe; token de consultor → `401`)
+
+Mesma trava (`FIELD_MAP_PINS_ENABLED`, desligada → `404 MAP_PINS_DISABLED`) e mesma base do §34.1 (leads `archived = false`, `is_test = false`, das praças do filtro; sem `praca_id` = as
+praças abertas), **com e sem localização** (a Lista é a forma equivalente do mapa e mostra os "sem localização exata", UX §3.3 M3). A situação vem da MESMA `categoriaDoLead` do §34.3.
+
+| Parâmetro | Regra |
+|---|---|
+| `praca_id` | como no §34.1 |
+| `codes` | opcional, códigos da legenda separados por vírgula (`a_visitar,cadastrado,…`); desconhecido → `400 VALIDATION_ERROR`; ausente = todos |
+| `q` | opcional, 2–80 caracteres: parte do nome, do endereço ou da cidade (sem diferenciar caixa) |
+| `cursor` / `limit` | como no §34.1; `limit` 1–500, padrão 200; `ORDER BY name, id` (cursor = `id` da última linha, a ordem continua estável) |
+
+```json
+{
+  "pracas": [ { "id": "uuid", "name": "Moema" } ],
+  "counts": { "a_visitar": 2870, "cadastrado": 41, "…": 0 }, "total": 3406, "without_location": 312,
+  "items": [ { "id": "uuid", "name": "Padaria Bom Pão", "address": "Rua X, 10", "city": "Belo Horizonte", "praca_id": "uuid",
+               "code": "cadastrado", "label": "Cadastrou", "color": "#16a34a", "has_location": true,
+               "phone": { "masked": "(31) 9****-4321", "kind": "whatsapp" }, "last_visit": { "day": "2026-10-22", "consultant_name": "Ana" } } ],
+  "next_cursor": "uuid", "conta": "…"
+}
+```
+
+- `counts` = o filtro inteiro (praça + busca), **antes** do filtro `codes` (os chips mostram quantos há de cada situação); `total` = a soma de `counts`; `without_location` = dos `total`, os
+  sem `lat`/`lng`. O telefone vem **só mascarado** (§34.2). Nunca e-mail do contato, nem o telefone completo.
+
 ### 34.5 Variáveis
 
 | Variável | Padrão | Efeito |
 |---|---|---|
-| `FIELD_MAP_PINS_ENABLED` | `false` | liga as três rotas e a tela "Mapa por situação" |
+| `FIELD_MAP_PINS_ENABLED` | `false` | liga as três rotas e a tela "Mapa por situação"; com o lote E também a Lista (§34.6) e o mapa do consultor no celular (usa o §34.4) |
 
 ## 35. Checklist de abordagem e cronômetro da visita (restante da Lovable, fase L3)
 
@@ -5070,3 +5096,162 @@ usa o centro da praça ou de uma área (a Lovable usava a grade 3 × 3 do Google
 consultor agrupada por piso e o raio de chegada até o shopping (`raio_shopping_m`, mexe no check-in); Apify restrito ao polígono; "Adicionar loja ao shopping" à mão.
 
 **Ordem de subida (L7 e L8):** `migrate deploy` → **API** → **web**. Com as flags desligadas o web novo não manda nada novo.
+
+## 41. Regra de senha, cadastro do consultor e e-mail do contato (restante da Lovable, fase L9)
+
+Origem: arquitetura itens 9 e 14 e UX §3.5, §3.8, §3.9; Lovable `users.functions.ts` (`changeOwnPassword`: 8–72, 1 maiúscula, 1 número), `representantes` (endereço e banco),
+`visitas.contato_email` e `CredenciaisDialog.tsx` ("Enviar pelo WhatsApp").
+
+### 41.1 Travas (padrão `false`; desligadas = nada novo no wire das rotas existentes)
+
+| Flag | Desligada | Ligada |
+|---|---|---|
+| `PASSWORD_POLICY_ENABLED` | `GET /v1/password-policy` → `200 { "enabled": false }`; `PUT` → `404 PASSWORD_POLICY_DISABLED`; senhas como hoje (equipe 6–72, campo nova 8–72) | a política vale para senha **nova** (§41.2) |
+| `FIELD_CONSULTANT_PROFILE_ENABLED` | `ConsultorView` sem chave nova; endereço/banco não nulos no POST/PATCH → `422 CONSULTANT_PROFILE_DISABLED` (`null`/ausente = ignorado) | endereço e banco no cadastro (§41.3) e "Enviar pelo WhatsApp" na senha provisória (web) |
+| `FIELD_CONTACT_EMAIL_ENABLED` | `answers` sem `contact_email`; `contact_email` não nulo no rascunho → `422 CONTACT_EMAIL_DISABLED` (`null`/ausente = ignorado); `email` em `contato_campos` → `400 VALIDATION_ERROR` (a mensagem de hoje) | e-mail de quem atendeu (§41.4) |
+
+`features` ganha (aditivo): no `GET /v1/consultores/settings/config` `password_policy`, `consultant_profile`, `contact_email` e `team_gestor` (§42); no `/v1/campo/me` `password_policy` e
+`contact_email`. O web nunca sonda rota desligada.
+
+### 41.2 Regra de senha (`domain/senha-rules.ts`)
+
+Política `{ min_length, require_upper, require_digit }` (o máximo é sempre 72, o limite do bcrypt), gravada em `app_settings.password_policy` (`NULL` = **a da Lovable**: 8, maiúscula, número).
+
+| Chave | Validação |
+|---|---|
+| `min_length` | inteiro 8–12 (12 = a política mais forte permitida; a senha provisória sempre a cumpre) |
+| `require_upper` | boolean |
+| `require_digit` | boolean |
+
+| Método | Rota | Acesso | Corpo / resposta |
+|---|---|---|---|
+| GET | `/v1/password-policy` | `@Public()` (não é segredo) | ligada: `{ enabled: true, min_length, max_length: 72, require_upper, require_digit, is_default, rules: [{ key, label }] }` (`rules` na ordem da tela: `min_length` "8 caracteres ou mais", `upper` "Uma letra maiúscula", `digit` "Um número") |
+| PUT | `/v1/password-policy` | só admin | parcial `{ min_length?, require_upper?, require_digit? }` (`null` = ausente); devolve o GET. Fora da faixa → `400 VALIDATION_ERROR` |
+
+- **Onde vale (só senha NOVA, com a flag ligada):** `new_password` de `POST /v1/campo/auth/change-password`, `password` de `PUT /v1/users/:id/password` e de `POST /v1/users` (senha
+  inicial definida pelo admin). **Nunca** no login nem no `current_password`; nenhuma senha atual é invalidada. Os limites dos DTOs não mudam.
+- **Erro:** `400 WEAK_PASSWORD` com o que falta, nesta ordem: "A senha precisa de: 8 caracteres ou mais, 1 letra maiúscula, 1 número." (só os itens que faltam; a senha nunca aparece
+  no erro nem no log).
+- **Senha provisória** (`POST /v1/consultores` e `POST /v1/consultores/:id/reset-password`, com ou sem a flag): 12 caracteres de `ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789`
+  (sem os ambíguos 0/O/o, 1/I/l/i), com pelo menos 1 maiúscula, 1 minúscula e 1 número — cumpre a política mais forte permitida (teste de propriedade com 1.000 amostras). Era
+  10 minúsculas/números.
+
+### 41.3 Cadastro do consultor (`FIELD_CONSULTANT_PROFILE_ENABLED`)
+
+Colunas novas em `field_consultants`, todas `NULL` (nenhum consultor existente muda):
+
+| Chave | Validação (no serviço; texto aparado, `""` = `null`) |
+|---|---|
+| `address_cep` | 8 dígitos (aceita `00000-000`, grava só os dígitos) |
+| `address_street` | ≤ 120 |
+| `address_number` | ≤ 20 |
+| `address_complement` | ≤ 60 |
+| `address_district` | ≤ 80 |
+| `address_city` | ≤ 80 |
+| `address_state` | UF (2 letras, gravada em maiúsculas) |
+| `bank_name` | ≤ 80 |
+| `bank_branch` | agência: 1–10 de dígitos, `-` e `x` |
+| `bank_account` | conta: 1–20 de dígitos, `-` e `x` |
+| `bank_account_type` | `corrente` \| `poupanca` \| `pagamento` |
+
+- `POST /v1/consultores` e `PATCH /v1/consultores/:id` aceitam as 11 chaves (opcionais; no PATCH `null` limpa e ausente mantém). Valor inválido → `400 VALIDATION_ERROR` com o nome do
+  campo, **sem** repetir o valor.
+- `ConsultorView` (lista e detalhe) ganha, só com a flag: as 7 de endereço, `bank_name`, `bank_branch`, `bank_account_type`, `bank_account_masked` (`•••45-6`, os 3 últimos; `null` sem
+  conta) e `bank_account` (completa) **só para o admin** — para o resto da equipe a chave não vem.
+- Nunca em log, evento ou erro; **não entra no pagamento** (o Pix do §29 continua fotografado no fechamento).
+- Web: "Enviar pelo WhatsApp" na tela da senha provisória monta `https://wa.me/55<telefone>?text=…` **no navegador** (a senha não passa pela API de novo); o risco de ficar no histórico
+  do WhatsApp é mitigado por `must_change_password`.
+
+### 41.4 E-mail do contato (`FIELD_CONTACT_EMAIL_ENABLED`)
+
+- `field_visits.contact_email TEXT NULL` (CHECK ≤ 120).
+- `PATCH /v1/campo/visits/:ref/answers` aceita `contact_email` (texto ≤ 120 ou `null`): aparado, minúsculo, `""` = `null`; formato `local@dominio.tld` (sem espaço) — inválido →
+  `400 VALIDATION_ERROR` "contact_email: confira o e-mail (falta o @ ou o domínio)." (sem repetir o valor).
+- `answers.contact_email` (sempre explícito, `null` sem e-mail) só com a flag, como o telefone do §30.3: completo no `VisitView` do consultor dono e no detalhe da equipe
+  (`GET /v1/consultores/:id/days/:day`).
+- Listas: `FollowupView` ganha `contact_email_masked` (`m***@dominio.com`; `null` sem e-mail) na fila da equipe e na do consultor; `contact_email` completo **só** em
+  `GET /v1/campo/followups` (as visitas dele).
+- `contato_campos` (§31.3) aceita `email` (fim da ordem canônica: `nome`, `cargo`, `telefone`, `email`); padrão sem ele (opcional, como na Lovable). Com `email` e o resultado em
+  `contato_obrigatorio_em`, o checkout simples pede "e-mail de quem atendeu". Com a flag desligada, `email` gravado antes é ignorado na leitura (o resto da lista vale).
+- **Nunca** em `lead_events`, resumo do dia, painel, pinos, log ou erro.
+
+### 41.5 Banco (migração aditiva `20261104100000_lovable_l9_cadastro`)
+
+`app_settings.password_policy JSONB NULL`; `field_consultants.address_cep|address_street|address_number|address_complement|address_district|address_city|address_state|bank_name|bank_branch|
+bank_account|bank_account_type TEXT NULL` (CHECK do tipo da conta); `field_visits.contact_email TEXT NULL` (CHECK ≤ 120). Sem índice parcial novo; sem `DROP INDEX`.
+
+### 41.6 Variáveis
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `PASSWORD_POLICY_ENABLED` | `false` | a regra de senha nova (§41.2) |
+| `FIELD_CONSULTANT_PROFILE_ENABLED` | `false` | endereço e banco do consultor + WhatsApp da senha provisória (§41.3) |
+| `FIELD_CONTACT_EMAIL_ENABLED` | `false` | e-mail de quem atendeu (§41.4) |
+
+## 42. Perfil "gestor" (restante da Lovable, fase L10)
+
+Origem: arquitetura item 12 e UX §3.8; Lovable `0000:1,29-32` (`admin | gestor | representante`, "staff all"). **Fora, por segurança:** o gestor da Lovable redefine a senha de qualquer
+perfil, até de admin — aqui o gestor só redefine a de **consultor de campo**.
+
+### 42.1 Trava: `TEAM_GESTOR_ENABLED` (padrão `false`)
+
+| Estado | Efeito |
+|---|---|
+| Desligada | `is_gestor` gravado não vale nada: o gestor é equipe e recebe `403 FORBIDDEN` ("Só administradores podem fazer isso.") **como hoje**; `UserView` sem chave nova; `is_gestor` não nulo no POST/PATCH de `/v1/users` → `422 TEAM_GESTOR_DISABLED` (`null`/ausente = ignorado) |
+| Ligada | `UserView.is_gestor` (aditivo); as rotas da tabela do §42.3 abrem para o gestor; `features.team_gestor = true` |
+
+### 42.2 Dados e guarda
+
+- `users.is_gestor BOOLEAN NOT NULL DEFAULT false` (migração aditiva `20261105100000_lovable_l10_gestor`). Nenhum usuário existente vira gestor.
+- O `JwtAuthGuard` lê `active`, `is_admin` e `is_gestor` **do banco a cada request** (o token nunca carrega o gestor); `AuthUser.is_gestor` = flag **e** coluna.
+- Marcas de permissão (uma por rota; a do método vale sobre a da classe): `@AdminOnly()` (só admin), `@GestorOuAdmin()` (admin, ou gestor com a flag), `@Equipe()` (qualquer pessoa
+  da equipe — o comportamento de hoje das rotas sem marca). Toda rota de **escrita** da equipe tem uma das três (teste de proteção do §42.5).
+- `POST/PATCH /v1/users` aceitam `is_gestor` (só admin, como hoje). Na tela Pessoas o admin escolhe **Admin / Gestor / Equipe** (`{is_admin, is_gestor}` = `{true,false}` /
+  `{false,true}` / `{false,false}`).
+
+### 42.3 Mapa de permissões (o que não aparece aqui não muda)
+
+| Rota | Antes | Agora |
+|---|---|---|
+| `POST /v1/consultores` | admin | gestor ou admin (o gestor preenche o Pix ao criar — é obrigatório; endereço sim, banco não) |
+| `PATCH /v1/consultores/:id` | admin | gestor ou admin; o gestor com `pix_key`, `pix_key_type`, `visit_flow` ou qualquer `bank_*` no corpo (mesmo `null`) → `403 FORBIDDEN_FIELD` |
+| `POST /v1/consultores/:id/reset-password` | admin | gestor ou admin (só senha de **consultor**; a senha de usuário da equipe segue só admin ou o próprio, §42.4) |
+| `POST /v1/consultores/:id/freela-sync` | admin | gestor ou admin |
+| `DELETE /v1/consultores/:id` | admin | admin |
+| `POST /v1/areas`, `PATCH /v1/areas/:id` | admin | gestor ou admin |
+| `POST /v1/routes`, `PUT /v1/routes/:id/order`, `POST /v1/routes/:id/reoptimize` | admin | gestor ou admin |
+| `POST /v1/route-plans`, `POST /v1/route-plans/:id/items/:itemId/assign`, `POST /v1/route-plans/:id/archive` | admin | gestor ou admin |
+| `PUT /v1/route-plans/config` | admin | admin |
+| `PATCH /v1/consultores/shoppings/:lead_id` | admin | gestor ou admin |
+| `PUT /v1/consultores/shoppings/config` | admin | admin |
+| `/v1/place-searches` (leituras, `POST`, `cancel`, `leads`) | admin | gestor ou admin, **só `source = osm`**: o gestor com `source = apify` → `403 FORBIDDEN`; na lista ele vê só as buscas do mapa aberto; abrir/cancelar/adicionar de uma busca Apify → `403 FORBIDDEN` |
+| `PUT /v1/place-searches/segments` | admin | admin (o `GET` passa a gestor ou admin, para a tela de busca) |
+| `PUT settings/config`, `PUT settings/channels`, `password_policy`, configs de cupom, divisão e shoppings | admin | admin |
+| earnings (todas as escritas), payouts (todas, inclusive `pix-key` e o CSV), void de declarados | admin | admin |
+| vouchers: `approve`/`reject`/`link`/`retry`/`deactivate` | admin | admin |
+| `/v1/users` POST/PATCH/DELETE, `DELETE /v1/pracas/:id`, `DELETE /v1/leads/:id` | admin | admin |
+
+- O gestor **vê o Pix mascarado** no `ConsultorView` (`pix_key` = `•••` + os 4 últimos; decisão do orquestrador: o gestor não vê nem mexe em Pix, pagamentos ou configuração); a conta
+  bancária ele já recebe mascarada (§41.3). A equipe que não é gestor continua vendo o que vê hoje.
+- Erro de permissão do gestor: `403 FORBIDDEN` "Só administradores podem fazer isso." (rota só de admin) ou `403 FORBIDDEN_FIELD` "Gestor não muda <campo>: peça a um administrador."
+  (sem o valor).
+
+### 42.4 Senhas
+
+- `POST /v1/consultores/:id/reset-password` só existe para consultor de campo (o `:id` é de `field_consultants`); `PUT /v1/users/:id/password` continua admin **ou o próprio** — o
+  gestor não troca a senha de nenhum usuário da equipe nem de admin.
+
+### 42.5 Testes
+
+- **Matriz** gerada da tabela do §42.3: admin, gestor (flag ligada), equipe, gestor com a flag desligada e token de campo (`401`). O conjunto de rotas `@GestorOuAdmin()` tem de ser
+  EXATAMENTE o da tabela (rota nova de gestor exige linha nova).
+- **Proteção:** percorre todos os controllers do Nest e falha se houver rota de escrita da equipe (`POST`/`PUT`/`PATCH`/`DELETE`, sem `@CampoRoute()` nem `@Public()`) sem marca de
+  permissão explícita.
+
+### 42.6 Variáveis
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `TEAM_GESTOR_ENABLED` | `false` | liga o perfil gestor (§42.3) |
+
+**Ordem de subida (L9 e L10):** `migrate deploy` → **API** → **web**. Com as flags desligadas o web novo não manda nada novo.
