@@ -154,7 +154,7 @@ describe('Roteiro: a linha do progresso (Lovable "4 de 18 clientes visitados · 
 describe('Roteiro: selo da parada visitada', () => {
   it('simples: o resultado escolhido, com a cor da situação', () => {
     expect(seloDaParada({ flow: 'simples', answers: { result: 'cadastrou' } })).toEqual({ rotulo: 'Cadastrou agora', cor: '#16a34a' });
-    expect(seloDaParada({ flow: 'simples', answers: { result: 'sem_interesse' } })).toEqual({ rotulo: 'Sem interesse', cor: '#dc2626' });
+    expect(seloDaParada({ flow: 'simples', answers: { result: 'sem_interesse' } })).toEqual({ rotulo: 'Sem interesse', cor: '#9f1239' });
   });
   it('completo: QR = cadastrou; fechado; o resto só "Visitado"', () => {
     expect(seloDaParada({ answers: { freela_status: 'cadastrou_qr' } }).rotulo).toBe('Cadastrou agora');

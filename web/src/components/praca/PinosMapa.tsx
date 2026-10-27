@@ -3,11 +3,13 @@
 import { useEffect, useRef } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { TILES_URL, tilesOptions } from '@/lib/map-tiles';
-import type { PinosPagina } from '@/modules/pinos/domain/pinos';
+import { contornoDaForma, type Forma, type PinosPagina } from '@/modules/pinos/domain/pinos';
 
 interface Props {
   pins: PinosPagina['pins'];
   cores: Record<string, string>;
+  /** Forma de cada situação (a da legenda): o pino tem o mesmo símbolo que a legenda promete. Ausente = círculo. */
+  formas?: Record<string, Forma>;
   /** Muda quando o filtro muda: a próxima carga reenquadra o mapa nos pinos. */
   chaveEnquadre: string;
   onPino: (leadId: string) => void;
@@ -16,20 +18,49 @@ interface Props {
 }
 
 /**
- * Pinos por situação (contrato §34, Lovable `mapa.tsx`): `circleMarker` no renderer de canvas (10 mil SVGs travariam),
- * mapa aberto (OSM), como os outros mapas. Entra por `next/dynamic({ ssr: false })`.
+ * `circleMarker` que desenha a FORMA da situação (quadrado, losango, triângulo, hexágono, ✕, traço) no canvas, no lugar da
+ * bolinha: a legenda mostra símbolo e cor, e o pino tem de bater (cor nunca sozinha, UX §3.0). O toque continua pelo círculo do
+ * raio (a área de clique do Leaflet). Sem o canvas (renderer SVG), volta à bolinha.
  */
-export default function PinosMapa({ pins, cores, chaveEnquadre, onPino, balao }: Props) {
+type PinoComForma = new (latlng: [number, number], opcoes: import('leaflet').CircleMarkerOptions & { forma?: Forma }) => import('leaflet').CircleMarker;
+function classeDoPino(L: typeof import('leaflet')): PinoComForma {
+  return L.CircleMarker.extend({
+    _updatePath(this: {
+      _renderer: { _ctx?: CanvasRenderingContext2D; _drawing?: boolean; _updateCircle(l: unknown): void; _fillStroke(c: CanvasRenderingContext2D, l: unknown): void };
+      _point: { x: number; y: number };
+      _radius: number;
+      _empty(): boolean;
+      options: { forma?: Forma };
+    }) {
+      const r = this._renderer;
+      const contorno = this.options.forma ? contornoDaForma(this.options.forma, this._radius) : null;
+      if (!contorno || !r._ctx) return r._updateCircle(this);
+      if (!r._drawing || this._empty()) return;
+      const ctx = r._ctx;
+      ctx.beginPath();
+      contorno.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(this._point.x + x, this._point.y + y) : ctx.lineTo(this._point.x + x, this._point.y + y)));
+      ctx.closePath();
+      r._fillStroke(ctx, this);
+    },
+  }) as unknown as PinoComForma;
+}
+
+/**
+ * Pinos por situação (contrato §34, Lovable `mapa.tsx`): marcadores no renderer de canvas (10 mil SVGs travariam), com a forma da
+ * legenda (`classeDoPino`), mapa aberto (OSM), como os outros mapas. Entra por `next/dynamic({ ssr: false })`.
+ */
+export default function PinosMapa({ pins, cores, formas, chaveEnquadre, onPino, balao }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import('leaflet').Map | null>(null);
   const LRef = useRef<typeof import('leaflet') | null>(null);
+  const PinoRef = useRef<PinoComForma | null>(null);
   const grupoRef = useRef<import('leaflet').LayerGroup | null>(null);
   const marcadores = useRef(new Map<string, import('leaflet').CircleMarker>());
   const enquadrarRef = useRef(true);
   const onPinoRef = useRef(onPino);
   onPinoRef.current = onPino;
-  const dadosRef = useRef({ pins, cores });
-  dadosRef.current = { pins, cores };
+  const dadosRef = useRef({ pins, cores, formas });
+  dadosRef.current = { pins, cores, formas };
 
   useEffect(() => {
     enquadrarRef.current = true;
@@ -42,6 +73,7 @@ export default function PinosMapa({ pins, cores, chaveEnquadre, onPino, balao }:
       const L = await import('leaflet');
       if (!alive || !el.current) return;
       LRef.current = L;
+      PinoRef.current = classeDoPino(L);
       const map = L.map(el.current, { zoomControl: true, preferCanvas: true, renderer: L.canvas({ padding: 0.3 }) }).setView([-15.8, -47.9], 4);
       map.attributionControl.setPrefix(false);
       L.tileLayer(TILES_URL, tilesOptions(19)).addTo(map);
@@ -61,14 +93,15 @@ export default function PinosMapa({ pins, cores, chaveEnquadre, onPino, balao }:
 
   function desenhar() {
     const L = LRef.current;
+    const Pino = PinoRef.current;
     const map = mapRef.current;
     const grupo = grupoRef.current;
-    if (!L || !map || !grupo) return;
+    if (!L || !Pino || !map || !grupo) return;
     const d = dadosRef.current;
     grupo.clearLayers();
     marcadores.current.clear();
     for (const [id, lat, lng, code] of d.pins) {
-      const m = L.circleMarker([lat, lng], { radius: 7, weight: 2, color: '#ffffff', fillColor: d.cores[code] ?? '#64748b', fillOpacity: 0.95 });
+      const m = new Pino([lat, lng], { radius: 7, weight: 2, color: '#ffffff', fillColor: d.cores[code] ?? '#64748b', fillOpacity: 0.95, forma: d.formas?.[code] });
       m.on('click', () => onPinoRef.current(id));
       m.addTo(grupo);
       marcadores.current.set(id, m);
@@ -79,7 +112,7 @@ export default function PinosMapa({ pins, cores, chaveEnquadre, onPino, balao }:
     }
   }
 
-  useEffect(desenhar, [pins, cores]);
+  useEffect(desenhar, [pins, cores, formas]);
 
   useEffect(() => {
     const m = balao ? marcadores.current.get(balao.leadId) : undefined;

@@ -36,7 +36,8 @@ export const META_CATEGORIA: Record<CategoriaPino, MetaCategoria> = {
   ja_usa: { label: 'Já usa o Freela', color: '#f97316', shape: 'losango' },
   retornar: { label: 'Quer retorno', color: '#9333ea', shape: 'triangulo' },
   nao_contrata: { label: 'Não contrata freelas', color: '#ca8a04', shape: 'hexagono' },
-  nao_cadastrado: { label: 'Sem interesse', color: '#dc2626', shape: 'xis' },
+  // Vinho, não o vermelho #dc2626 de antes: no mapa aberto o vermelho é o das farmácias e hospitais (27/10). ≈ 7:1 no fundo claro do mapa (#f2efe9).
+  nao_cadastrado: { label: 'Sem interesse', color: '#9f1239', shape: 'xis' },
   // A Lovable usa #334155, que some no mapa escuro invertido (UX §3.3).
   fechado: { label: 'Estabelecimento fechado', color: '#9A9A92', shape: 'traco' },
 };

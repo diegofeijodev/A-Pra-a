@@ -25,6 +25,7 @@ export function MapaCampo({ paradas }: { paradas: StopView[] }) {
   const [selecionado, setSelecionado] = useState<string | null>(null);
   const m = mapa.data;
   const cores = useMemo(() => Object.fromEntries((m?.legend ?? []).map((l) => [l.code, l.color])), [m]);
+  const formas = useMemo(() => Object.fromEntries((m?.legend ?? []).map((l) => [l.code, l.shape])), [m]);
   const rotulo = useMemo(() => new Map((m?.legend ?? []).map((l) => [l.code, l.label])), [m]);
   const visiveis = useMemo(() => (m ? pinosVisiveis(m.pins, escondidos) : []), [m, escondidos]);
   const parada = selecionado ? paradas.find((s) => s.lead_id === selecionado) : undefined;
@@ -48,7 +49,7 @@ export function MapaCampo({ paradas }: { paradas: StopView[] }) {
 
   return (
     <div className="space-y-3">
-      <PinosMapa pins={visiveis} cores={cores} chaveEnquadre="campo" onPino={setSelecionado} balao={pino ? { leadId: pino[0], linhas } : null} />
+      <PinosMapa pins={visiveis} cores={cores} formas={formas} chaveEnquadre="campo" onPino={setSelecionado} balao={pino ? { leadId: pino[0], linhas } : null} />
       {pino && (
         <div className="card-surface flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
           <span className="min-w-0 break-words">{linhas.join(' · ')}</span>

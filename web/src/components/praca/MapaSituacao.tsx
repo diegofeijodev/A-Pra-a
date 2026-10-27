@@ -43,6 +43,7 @@ export function MapaSituacao() {
   const detalhe = useDetalhePino(selecionado);
   const m = mapa.data;
   const cores = useMemo(() => Object.fromEntries((m?.legend ?? []).map((l) => [l.code, l.color])), [m]);
+  const formas = useMemo(() => Object.fromEntries((m?.legend ?? []).map((l) => [l.code, l.shape])), [m]);
   const visiveis = useMemo(() => (m ? pinosVisiveis(m.pins, escondidos) : []), [m, escondidos]);
   const balao = selecionado && detalhe.data?.id === selecionado ? { leadId: selecionado, linhas: linhasDoBalao(detalhe.data) } : null;
   const escolherPraca = (id: string) => {
@@ -129,7 +130,7 @@ export function MapaSituacao() {
                 carregando clientes…
               </div>
             )}
-            <PinosMapa pins={visiveis} cores={cores} chaveEnquadre={`${pracaId}|${modo}`} onPino={setSelecionado} balao={balao} />
+            <PinosMapa pins={visiveis} cores={cores} formas={formas} chaveEnquadre={`${pracaId}|${modo}`} onPino={setSelecionado} balao={balao} />
           </div>
           {selecionado && detalhe.data?.id === selecionado && (
             <div className={`${CARTAO} flex flex-wrap items-center justify-between gap-2 p-4 text-sm`}>

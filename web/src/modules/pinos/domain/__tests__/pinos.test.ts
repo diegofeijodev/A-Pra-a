@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alternarCodigo, codigosDaEscolha, juntarPaginas, linhasDoBalao, listaCampoSchema, pilulasVisitados, pinosSchema, pinosVisiveis, rodapeDaLista, SIMBOLO, SITUACOES_LISTA, type PinosPagina } from '../pinos';
+import { alternarCodigo, codigosDaEscolha, contornoDaForma, FORMAS, juntarPaginas, linhasDoBalao, listaCampoSchema, pilulasVisitados, pinosSchema, pinosVisiveis, rodapeDaLista, SIMBOLO, SITUACOES_LISTA, type PinosPagina } from '../pinos';
 
 const pagina = (pins: PinosPagina['pins'], next: string | null): PinosPagina =>
   pinosSchema.parse({
@@ -92,5 +92,33 @@ describe('rodapé de Clientes (o número da pílula e o do rodapé batem)', () =
   });
   it('pílula de uma situação: o primeiro número é o dela', () => {
     expect(rodapeDaLista(r, 'nao_cadastrado').startsWith('0 nesta lista de 31 clientes')).toBe(true);
+  });
+});
+
+describe('pino do mapa com a forma da legenda (cor nunca sozinha)', () => {
+  it('cada forma da legenda tem desenho no pino; o círculo fica com o do Leaflet', () => {
+    expect(contornoDaForma('circulo', 7)).toBeNull();
+    const lados: Record<string, number> = { quadrado: 4, losango: 4, triangulo: 3, hexagono: 6, xis: 12, traco: 4 };
+    for (const f of FORMAS.filter((x) => x !== 'circulo')) expect(contornoDaForma(f, 7)).toHaveLength(lados[f]!);
+    // Toda situação da legenda tem símbolo E forma.
+    for (const s of SITUACOES_LISTA) expect(SIMBOLO[s.shape]).toBeTruthy();
+  });
+  it('nenhum ponto passa de 1,2 × o raio (o Leaflet só redesenha a caixa do raio + espessura + 1 px)', () => {
+    for (const f of FORMAS) {
+      for (const [x, y] of contornoDaForma(f, 7) ?? []) expect(Math.hypot(x, y)).toBeLessThanOrEqual(1.2 * 7 + 1e-9);
+    }
+  });
+  it('o ✕ é diagonal (braços nos cantos) e o traço é deitado (mais largo que alto)', () => {
+    const xis = contornoDaForma('xis', 10)!;
+    // Uma ponta em cada diagonal; nenhuma ponta no eixo (isso seria um "+", como a cruz das farmácias).
+    for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]] as const) expect(xis.some(([x, y]) => x * sx > 4 && y * sy > 4)).toBe(true);
+    expect(xis.some(([x, y]) => Math.abs(x) < 1 && Math.abs(y) > 9)).toBe(false);
+    const traco = contornoDaForma('traco', 10)!;
+    const largura = Math.max(...traco.map((p) => p[0])) - Math.min(...traco.map((p) => p[0]));
+    const altura = Math.max(...traco.map((p) => p[1])) - Math.min(...traco.map((p) => p[1]));
+    expect(largura).toBeGreaterThan(2 * altura);
+  });
+  it('"Sem interesse" não é o vermelho das farmácias do mapa', () => {
+    expect(SITUACOES_LISTA.find((s) => s.code === 'nao_cadastrado')).toMatchObject({ color: '#9f1239', shape: 'xis' });
   });
 });

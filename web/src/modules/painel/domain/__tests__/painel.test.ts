@@ -28,7 +28,7 @@ const PAINEL: PainelView = painelSchema.parse({
     { consultant_id: 'a', name: 'Ana', praca_id: 'p', visits: 80, signups: 20, positivation_pct: 25 },
     { consultant_id: 'b', name: 'Bruno; Lima', praca_id: 'p', visits: 75, signups: 15, positivation_pct: 20 },
   ],
-  by_result: [{ code: 'nao_cadastrado', label: 'Sem interesse', color: '#dc2626', n: 300 }],
+  by_result: [{ code: 'nao_cadastrado', label: 'Sem interesse', color: '#9f1239', n: 300 }],
   conta,
   fonte: conta,
   signup_sync_enabled: false,

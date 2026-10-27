@@ -4398,7 +4398,7 @@ filtra pelos consultores da praça (`field_consultants.praca_id`) e pelos estabe
     "leads_mapped": 3406, "leads_without_exact_location": 312
   },
   "ranking": [ { "consultant_id": "uuid", "name": "Ana", "praca_id": "uuid", "visits": 80, "signups": 20, "positivation_pct": 25 } ],
-  "by_result": [ { "code": "nao_cadastrado", "label": "Sem interesse", "color": "#dc2626", "n": 140 } ],
+  "by_result": [ { "code": "nao_cadastrado", "label": "Sem interesse", "color": "#9f1239", "n": 140 } ],
   "conta": { "pct_done": "…", "visits": "…", "positivation": "…", "time": "…", "signups": "…", "vouchers": "…", "pracas_open": "…", "leads_mapped": "…" },
   "fonte": { "pct_done": "…", "visits": "…", "positivation": "…", "time": "…", "signups": "…", "vouchers": "…", "pracas_open": "…", "leads_mapped": "…" },
   "signup_sync_enabled": false
@@ -4504,7 +4504,7 @@ O telefone vem **só mascarado** (`(11) 9****-4321`) com o tipo (Lovable `classi
 | `ja_usa` | Já usa o Freela | `#f97316` | `losango` | `result = ja_usa` ou `freela_status = ja_usa` |
 | `nao_contrata` | Não contrata freelas | `#ca8a04` | `hexagono` | `refusal_reason = nao_contrata_freelancers` |
 | `retornar` | Quer retorno | `#9333ea` | `triangulo` | `result = retorno` ou `needs_followup = true` (Lovable "retornar outro dia" e "ligar depois" unidos) |
-| `nao_cadastrado` | Sem interesse | `#dc2626` | `xis` | os demais (sem interesse, não cadastrou) |
+| `nao_cadastrado` | Sem interesse | `#9f1239` (até 27/10: `#dc2626`, confundia com o vermelho das farmácias do mapa) | `xis` | os demais (sem interesse, não cadastrou) |
 
 `categoriaDoLead(lead, última visita concluída, declaração)`: declaração **não anulada** ou etapa do funil 5–7 → `cadastrado`; sem visita concluída → `a_visitar` (`#2563eb`, `circulo`);
 senão `categoriaDaVisita` da última visita concluída (maior `checkout_at`). A etapa 8 (Perdido) não conta como cadastrado. `mode=estagio`: `code` = número da etapa, rótulo e cor do catálogo do funil.

@@ -32,8 +32,43 @@ export const detalhePinoSchema = z.object({
 });
 export type DetalhePino = z.infer<typeof detalhePinoSchema>;
 
-/** Cor nunca sozinha (UX §3.0): cada situação tem um símbolo na legenda. */
+/** Cor nunca sozinha (UX §3.0): cada situação tem um símbolo na legenda — e o pino do mapa tem a MESMA forma (`contornoDaForma`). */
 export const SIMBOLO: Record<Forma, string> = { circulo: '●', quadrado: '■', losango: '◆', triangulo: '▲', hexagono: '⬢', xis: '✕', traco: '▬' };
+
+/**
+ * Contorno do pino no mapa, com o mesmo desenho do `SIMBOLO` da legenda: pontos em volta do centro (x para a direita, y para BAIXO,
+ * como no canvas), na escala do raio `r` do pino. `null` = círculo (o `arc` do próprio Leaflet). Nenhum ponto passa de 1,2 × `r`:
+ * o Leaflet só limpa e redesenha a caixa de raio `r` + espessura + 1 px em volta de cada pino, e um pino maior deixaria rastro.
+ */
+export function contornoDaForma(forma: Forma, r: number): [number, number][] | null {
+  const pontos = (lista: [number, number][]) => lista.map(([x, y]) => [x * r, y * r] as [number, number]);
+  const emVolta = (n: number, raio: number, inicioGraus: number) =>
+    Array.from({ length: n }, (_, i) => {
+      const a = ((inicioGraus + (360 / n) * i) * Math.PI) / 180;
+      return [raio * Math.cos(a), raio * Math.sin(a)] as [number, number];
+    });
+  switch (forma) {
+    case 'circulo':
+      return null;
+    case 'quadrado':
+      return pontos([[-0.85, -0.85], [0.85, -0.85], [0.85, 0.85], [-0.85, 0.85]]);
+    case 'losango':
+      return pontos([[0, -1.15], [1.15, 0], [0, 1.15], [-1.15, 0]]);
+    case 'triangulo':
+      return pontos(emVolta(3, 1.15, -90));
+    case 'hexagono':
+      return pontos(emVolta(6, 1.05, -90));
+    case 'traco':
+      return pontos([[-1.1, -0.4], [1.1, -0.4], [1.1, 0.4], [-1.1, 0.4]]);
+    case 'xis': {
+      // Uma cruz "+" de braços 1 × 0,38 girada 45°.
+      const [a, t] = [1, 0.38];
+      const mais: [number, number][] = [[t, -a], [t, -t], [a, -t], [a, t], [t, t], [t, a], [-t, a], [-t, t], [-a, t], [-a, -t], [-t, -t], [-t, -a]];
+      const c = Math.SQRT1_2;
+      return pontos(mais.map(([x, y]) => [(x - y) * c, (x + y) * c] as [number, number]));
+    }
+  }
+}
 
 /** Teto do navegador (arquitetura item 4): acima disso, "Mostrando N de M". */
 export const MAX_PINOS_NA_TELA = 10_000;
@@ -127,7 +162,7 @@ export const SITUACOES_LISTA: readonly { code: string; label: string; color: str
   { code: 'ja_usa', label: 'Já usa o Freela', color: '#f97316', shape: 'losango' },
   { code: 'retornar', label: 'Quer retorno', color: '#9333ea', shape: 'triangulo' },
   { code: 'nao_contrata', label: 'Não contrata freelas', color: '#ca8a04', shape: 'hexagono' },
-  { code: 'nao_cadastrado', label: 'Sem interesse', color: '#dc2626', shape: 'xis' },
+  { code: 'nao_cadastrado', label: 'Sem interesse', color: '#9f1239', shape: 'xis' },
   { code: 'fechado', label: 'Estabelecimento fechado', color: '#9A9A92', shape: 'traco' },
 ];
 
