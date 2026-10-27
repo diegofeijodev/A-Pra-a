@@ -1237,7 +1237,8 @@ console.log('-- Campo: GPS negado --');
     check('Mapa: pílula "Todas (n)" das praças abertas, escolhida', (await page.getByRole('button', { name: /^Todas \(\d+\)$/ }).getAttribute('aria-pressed')) === 'true');
     check('Mapa: "Etapa do funil" só com o Comercial', ((await page.getByRole('button', { name: 'Etapa do funil' }).count()) === 1) === !!lov.commercial);
     await page.locator('.leaflet-container').waitFor({ timeout: 30000 });
-    await page.waitForLoadState('networkidle');
+    // Sair com ladrilhos a caminho cancela os pedidos (ERR_ABORTED em tile.openstreetmap.org derruba a rodada).
+    await esperarLadrilhos(page);
   } else {
     check('Mapa por situação desligado: avisa, sem chamar a rota', (await corpo(page)).includes('ainda não está ligado neste servidor'));
   }
@@ -1363,7 +1364,7 @@ console.log('-- Campo: GPS negado --');
     await page.goto(`${BASE}/consultores/clientes?modo=mapa`, { waitUntil: 'networkidle' });
     await page.waitForURL('**/consultores/mapa', { timeout: 20000 });
     await page.locator('.leaflet-container').waitFor({ timeout: 30000 });
-    await page.waitForLoadState('networkidle');
+    await esperarLadrilhos(page);
     check('Clientes ?modo=mapa (endereço antigo) leva à página do Mapa', new URL(page.url()).pathname === '/consultores/mapa');
   }
   await page.goto(`${BASE}/configuracoes`, { waitUntil: 'networkidle' });
