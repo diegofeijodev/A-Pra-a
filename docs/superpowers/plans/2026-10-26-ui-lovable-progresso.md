@@ -181,3 +181,18 @@ Endereços novos com redirecionamento dos antigos (vídeos, favoritos e o browse
         6. (Claude) `/health`, `features` novos no `settings/config`, `POST /v1/auth/change-password` 401 sem token, logs sem erro
         7. (Claude) web: cópia sem git do commit + `vercel deploy --prod`; conferir aberturademercado.com.br/entrar
       - Volta: API `praca-api:pre-ui-lovable` (`docker tag` + compose up); web: promover o deploy anterior na Vercel; git: tag `pre-ui-lovable`.
+      - Acabamento das capturas (27/10 ~04:30): `bb55fd1` "Lovable" fora dos textos de tela (web + a fonte do "Tempo médio" na API);
+        `1dc462c` textos no lugar certo (área → detalhe da praça, com link; "Buscar clientes no mapa"; Shoppings 1-2-3) + varredura
+        "consultor" → "representante" no web; `84cb259` pílula acesa do menu no meio da faixa (recentra quando o `features` acrescenta
+        itens antes dela e quando a fonte chega); `5f60bcb` + `fec4a36` celular (etapa do voucher, "Cheguei" na barra inteira, detalhe da
+        praça, nomes das paradas quebram linha); `f265ae7` números: Dashboard "Visitas concluídas" contava a visita ABERTA (a parada vira
+        `visitada` na chegada) — agora só a concluída, como a ficha (API + contrato §33.4 + jest); Rotas "feita · 09h00" era o horário
+        PREVISTO → "chegada registrada · prevista para 09h00"; Clientes "31 no filtro" contava os 22 a visitar → "9 nesta lista de 31…";
+        `13b967f` + `8868796` pino com o símbolo da legenda (canvas) e "Sem interesse" #dc2626 → #9f1239 (API + contrato §34.3).
+        Dado de teste/horário, não bug: "Visitadas 0" e "Feitas 0 de 30" com a visita aberta; "03:42" (madrugada). Verificação: web lint 0,
+        typecheck 0, vitest 43/481; API tsc 0, jest 10 suítes/118 (painel, pinos, pin-rules, lote A/C/F2, modo); capturas regeradas (44,
+        sem rolagem lateral, nada fora da tela nem cortado, banco de volta ao seed); browser-check flags A–F 288/288.
+        Fica para depois: telefone sem máscara para a equipe, contraste de botões desabilitados, fonte 12 px; a frase da API "Cadastre uma
+        em Configurações" (`planos.service.ts:317`, presa ao `planos-perfil.spec.ts` só reformatado — a tela já mostra a nossa); textos da
+        API com "consultor"; `eta` da parada `visitada` (o contrato §23 diz nulo, o check-in não zera); mapa borrado no celular (ladrilhos
+        sem retina); `progress.done` da rota conta a chegada (rotulado, não mudado).
