@@ -78,9 +78,12 @@ HX=$(entra /tmp/praca-smoke-f1x.json 1); HY=$(entra /tmp/praca-smoke-f1y.json 2)
 check "três consultores de teste criados e logados" "true" "$([ -n "$X" ] && [ "$X" != null ] && [ "$W" != null ] && curl -s $API/v1/campo/me -H "$HX" | jq '.features.earnings == true')"
 
 echo "── L11: o razão aceita a parte do mês (CHECKs da migração; linhas apagadas na limpeza) ──"
-lin(){ $PSQL "insert into field_earnings_ledger (id, consultant_id, kind, amount_cents, work_scope, work_day, work_week, payout_week, source, reason, idempotency_key, snapshot) values (gen_random_uuid(), '$X', '$1', 100, 'month', '$2', '2026-10-26', '2026-10-26', 'smoke-f1', $3, 'smoke-f1-$(uuid)', '{}')" > /dev/null 2>&1 && echo aceito || echo barrado; }
+# Semana e mês LONGE de hoje (100 semanas à frente): a linha aceita não pode cair na semana nem no mês correntes, senão entra no
+# total de X logo abaixo (com a semana fixa '2026-10-26' o smoke passou a dar 4100 em vez de 4000 quando essa semana chegou).
+LONGE=$(date -d "$SEG +700 days" +%F); MES_LONGE=$(date -d "$LONGE" +%Y-%m)
+lin(){ $PSQL "insert into field_earnings_ledger (id, consultant_id, kind, amount_cents, work_scope, work_day, work_week, payout_week, source, reason, idempotency_key, snapshot) values (gen_random_uuid(), '$X', '$1', 100, 'month', '$2', '$LONGE', '$LONGE', 'smoke-f1', $3, 'smoke-f1-$(uuid)', '{}')" > /dev/null 2>&1 && echo aceito || echo barrado; }
 check "parte do mês no dia 1 é aceita; fora do dia 1, barrada; ajuste com escopo month, barrado" "aceito|barrado|barrado" \
-  "$(lin accrual 2026-10-01 null)|$(lin accrual 2026-10-15 null)|$(lin adjustment 2026-10-01 "'teste'")"
+  "$(lin accrual $MES_LONGE-01 null)|$(lin accrual $MES_LONGE-15 null)|$(lin adjustment $MES_LONGE-01 "'teste'")"
 
 echo "── L13: permissões e conferências da regra própria ──"
 R0=$(curl -s "$API/v1/consultores/earnings/consultant-rules?consultant_id=$X" -H "$HD")
