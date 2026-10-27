@@ -84,6 +84,9 @@ export class PainelService {
     const cupons = this.vouchers?.ligado ? await this.vouchers.resumoPainel(from, to, q.praca_id) : null;
     const naRota = new Set(paradas.map((p) => p.visit_id).filter((id): id is string => !!id));
     const planejadas = paradas.filter((p) => p.kind === 'planejada' && p.status !== 'descartada');
+    // A parada vira `visitada` já na CHEGADA (§23.3); "Visitas concluídas" só conta a que tem a visita concluída — a mesma régua do
+    // resumo do dia (§33.5), senão a visita aberta aparecia como concluída aqui e como 0 na ficha do representante.
+    const concluidas = new Set(visitas.map((v) => v.id));
     const calculado = montarPainel({
       consultores,
       visitas: visitas.map((v) => ({
@@ -99,7 +102,7 @@ export class PainelService {
         refusal_reason: v.refusal_reason,
         na_rota: naRota.has(v.id),
       })),
-      paradas: { planejadas: planejadas.length, visitadas: planejadas.filter((p) => p.status === 'visitada').length },
+      paradas: { planejadas: planejadas.length, visitadas: planejadas.filter((p) => p.status === 'visitada' && !!p.visit_id && concluidas.has(p.visit_id)).length },
       cadastros: cad.totais,
       fonteCadastros: cad.fonte,
       syncLigado: this.sync?.ligado ?? false,

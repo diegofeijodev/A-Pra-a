@@ -95,7 +95,7 @@ describe('montarPainel', () => {
       avg_duration_min: 7,
       consultants_active: 2,
     });
-    expect(p.conta.pct_done).toBe('3 de 5 paradas planejadas nas rotas = 60%.');
+    expect(p.conta.pct_done).toBe('3 de 5 paradas planejadas nas rotas com a visita concluída = 60%.');
     expect(p.conta.positivation).toContain('1 cadastro ÷ 4 visitas = 25%');
     expect(p.by_result.reduce((a, x) => a + x.n, 0)).toBe(4);
     expect(p.by_result.find((x) => x.code === 'fechado')?.n).toBe(1);

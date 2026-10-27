@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alternarFixa, mover, mudou, pendentesParaOrdenar, resumoDaMeta } from '../ordem';
+import { alternarFixa, mover, mudou, pendentesParaOrdenar, resumoDaMeta, rotuloAndamento, rotuloParadaVisitada } from '../ordem';
 import type { StopView } from '../rota.schema';
 
 const s = (n: number, over: Partial<StopView> = {}): StopView => ({
@@ -33,5 +33,16 @@ describe('ordem editável pela equipe', () => {
       '28 paradas planejadas, faltam 2 para a meta de 30. Rode uma busca na área ou aceite 28.',
     );
     expect(resumoDaMeta({ planned: 18, reserve: 3, fits_meta: true, not_fit: 0 }, 30, 12)).toBe('30 paradas planejadas (meta 30); 3 de reserva.');
+  });
+});
+
+describe('parada visitada na rota da equipe (o número diz o que é)', () => {
+  it('o horário é o PREVISTO, não o da chegada: nunca "feita · 09h00"', () => {
+    expect(rotuloParadaVisitada('09:00')).toBe('chegada registrada · prevista para 09h00');
+    expect(rotuloParadaVisitada(null)).toBe('chegada registrada');
+    expect(rotuloParadaVisitada('09:00')).not.toMatch(/feita/);
+  });
+  it('o andamento conta paradas com chegada (a visita aberta entra), não visitas concluídas', () => {
+    expect(rotuloAndamento({ done: 1, meta: 30 })).toBe('1 de 30 paradas com chegada registrada');
   });
 });

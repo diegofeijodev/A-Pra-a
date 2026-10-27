@@ -4405,7 +4405,9 @@ filtra pelos consultores da praça (`field_consultants.praca_id`) e pelos estabe
 }
 ```
 
-- **Visitas concluídas** (`pct_done`): paradas `visitada` ÷ paradas `planejada` não `descartada` dos roteiros ativos dos consultores no período (inteiro arredondado). Sem parada planejada no
+- **Visitas concluídas** (`pct_done`): paradas `visitada` **cuja visita foi concluída** (`visit_id` entre as visitas com `checkout_at` do período) ÷ paradas `planejada` não `descartada` dos
+  roteiros ativos dos consultores no período (inteiro arredondado). A parada vira `visitada` já na chegada (§23.3): a visita ainda aberta não conta (27/10: visita concluída, como o `route_visited`
+  do §33.5, para o Dashboard e a ficha não divergirem; o `route_visited` ainda tira o "fechado" que não conta na meta). Sem parada planejada no
   período → `pct_done: null` (a tela diz "Sem rota planejada no período", nunca "0%").
 - **Visitas realizadas** (`visits`): visitas com conclusão (`checkout_at`) no período, com ou sem roteiro (o "fechado" também conta: é um resultado). `visits_off_route` = as que não estão
   ligadas a nenhuma parada de roteiro.

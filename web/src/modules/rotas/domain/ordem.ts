@@ -35,3 +35,14 @@ export function resumoDaMeta(p: { planned: number; reserve: number; fits_meta: b
   if (p.fits_meta) return `${total} paradas planejadas (meta ${meta}); ${p.reserve} de reserva.`;
   return `${total} paradas planejadas, faltam ${meta - total} para a meta de ${meta}. Rode uma busca na área ou aceite ${total}.`;
 }
+
+/**
+ * Parada `visitada` na rota da equipe. Ela vira `visitada` na CHEGADA (contrato §23.3), com a visita ainda aberta, e o horário que
+ * o roteiro guarda é o PREVISTO (`eta`), não a hora da chegada: "feita · 09h00" fazia parecer feita às 9h uma visita começada às
+ * 03h42. O rótulo diz o que o número é.
+ */
+export const rotuloParadaVisitada = (eta: string | null): string =>
+  eta ? `chegada registrada · prevista para ${eta.replace(':', 'h')}` : 'chegada registrada';
+
+/** A linha do andamento: `progress.done` conta as paradas com chegada (fora o "fechado" que não conta na meta), não visitas concluídas. */
+export const rotuloAndamento = (p: { done: number; meta: number }): string => `${p.done} de ${p.meta} paradas com chegada registrada`;

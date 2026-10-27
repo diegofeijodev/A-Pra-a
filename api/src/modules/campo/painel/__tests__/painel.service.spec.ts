@@ -47,7 +47,7 @@ describe('PainelService (contrato §33.4)', () => {
     expect(p.field_visits.findMany.mock.calls[0][0].where).toMatchObject({ checkout_at: { not: null }, journey: { day: { gte: '2026-10-21', lte: '2026-10-21' } } });
     expect(r.kpis).toMatchObject({ planned_stops: 2, done_stops: 1, pct_done: 50, visits: 2, visits_off_route: 1, declared_now: 1, pracas_open: 1, leads_mapped: 8, leads_without_exact_location: 2, vouchers: null });
     expect(r.by_result.reduce((a: number, x: { n: number }) => a + x.n, 0)).toBe(2);
-    expect(r.conta.pct_done).toBe('1 de 2 paradas planejadas nas rotas = 50%.');
+    expect(r.conta.pct_done).toBe('1 de 2 paradas planejadas nas rotas com a visita concluída = 50%.');
     expect(r.signup_sync_enabled).toBe(false);
   });
 
@@ -61,6 +61,27 @@ describe('PainelService (contrato §33.4)', () => {
     const r2 = await montar(fakePrisma(), repo, inputs).s.painel({}, AGORA);
     expect(r2.kpis).toMatchObject({ signups: 3, signups_source: 'declared', positivation_pct: 150 });
     expect(r2.ranking[0]).toMatchObject({ consultant_id: A, signups: 3 });
+  });
+
+  it('"Visitas concluídas": parada que virou `visitada` na chegada, com a visita ainda ABERTA, não conta (a ficha também dá 0)', async () => {
+    const p = fakePrisma();
+    // A parada da visita aberta `v9` (sem checkout: fora da lista de visitas concluídas) e a da `v1` (concluída).
+    p.field_route_stops.findMany.mockResolvedValue([
+      { kind: 'planejada', status: 'visitada', visit_id: 'v9' },
+      { kind: 'planejada', status: 'visitada', visit_id: 'v1' },
+      { kind: 'planejada', status: 'pendente', visit_id: null },
+      { kind: 'planejada', status: 'pendente', visit_id: null },
+    ]);
+    const r = await montar(p).s.painel({}, AGORA);
+    expect(r.kpis).toMatchObject({ planned_stops: 4, done_stops: 1, pct_done: 25 });
+    expect(r.conta.pct_done).toBe('1 de 4 paradas planejadas nas rotas com a visita concluída = 25%.');
+    // Só a visita aberta: 0%, não 1 de 4.
+    p.field_route_stops.findMany.mockResolvedValue([
+      { kind: 'planejada', status: 'visitada', visit_id: 'v9' },
+      { kind: 'planejada', status: 'pendente', visit_id: null },
+    ]);
+    p.leads.count.mockResolvedValueOnce(8).mockResolvedValueOnce(10);
+    expect((await montar(p).s.painel({}, AGORA)).kpis).toMatchObject({ planned_stops: 2, done_stops: 0, pct_done: 0 });
   });
 
   it('praça filtra consultores e estabelecimentos; praça inexistente = 404; período > 92 dias = 400', async () => {

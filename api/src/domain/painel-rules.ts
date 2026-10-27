@@ -202,7 +202,7 @@ export function montarPainel(e: EntradaPainel): PainelCalculado {
       pct_done:
         pctDone == null
           ? 'Sem rota planejada no período.'
-          : `${e.paradas.visitadas} de ${plural(e.paradas.planejadas, 'parada planejada', 'paradas planejadas')} nas rotas = ${pctDone}%.`,
+          : `${e.paradas.visitadas} de ${plural(e.paradas.planejadas, 'parada planejada', 'paradas planejadas')} nas rotas com a visita concluída = ${pctDone}%.`,
       visits: `${plural(V, 'visita concluída', 'visitas concluídas')} no período, com ou sem roteiro; ${foraDaRota} fora do roteiro.`,
       positivation:
         positivacao == null
@@ -218,7 +218,7 @@ export function montarPainel(e: EntradaPainel): PainelCalculado {
       leads_mapped: `${plural(e.leadsMapeados, 'estabelecimento', 'estabelecimentos')} com localização exata (ponto ou endereço) · ${e.leadsSemLocalizacao.toLocaleString('pt-BR')} sem localização exata.`,
     },
     fonte: {
-      pct_done: 'Roteiros do dia (paradas planejadas não descartadas; concluída = visitada).',
+      pct_done: 'Roteiros do dia (paradas planejadas não descartadas; concluída = a visita da parada terminou; visita ainda aberta não conta).',
       visits: 'Visitas de campo concluídas, pelo dia da jornada (Brasília).',
       positivation: textoFonteCadastros(e.fonteCadastros, e.syncLigado),
       time: 'Horários de chegada e de conclusão das visitas (Brasília).',

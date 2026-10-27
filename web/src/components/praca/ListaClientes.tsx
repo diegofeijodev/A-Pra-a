@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { useUiStore } from '@/lib/ui-store';
 import { useListaClientes } from '@/modules/acesso/application/use-acesso';
 import { diaCurto } from '@/modules/planos/domain/planos';
-import { codigosDaEscolha, pilulasVisitados, SIMBOLO, SITUACOES_LISTA, type EscolhaVisitados } from '@/modules/pinos/domain/pinos';
+import { codigosDaEscolha, pilulasVisitados, rodapeDaLista, SIMBOLO, SITUACOES_LISTA, type EscolhaVisitados } from '@/modules/pinos/domain/pinos';
 import { usePracas } from '@/modules/pracas/application/use-pracas';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 
@@ -164,7 +164,7 @@ export function ListaClientes() {
             </table>
           </div>
           <p className="text-sm text-muted-foreground" data-testid="lista-conta">
-            {r.total.toLocaleString('pt-BR')} no filtro · {r.without_location.toLocaleString('pt-BR')} sem localização exata (não aparecem no mapa)
+            {rodapeDaLista(r, escolha)}
           </p>
           <div className="flex flex-wrap gap-2">
             {paginas.length > 0 && (

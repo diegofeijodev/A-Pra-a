@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alternarCodigo, codigosDaEscolha, juntarPaginas, linhasDoBalao, listaCampoSchema, pilulasVisitados, pinosSchema, pinosVisiveis, SIMBOLO, SITUACOES_LISTA, type PinosPagina } from '../pinos';
+import { alternarCodigo, codigosDaEscolha, juntarPaginas, linhasDoBalao, listaCampoSchema, pilulasVisitados, pinosSchema, pinosVisiveis, rodapeDaLista, SIMBOLO, SITUACOES_LISTA, type PinosPagina } from '../pinos';
 
 const pagina = (pins: PinosPagina['pins'], next: string | null): PinosPagina =>
   pinosSchema.parse({
@@ -78,5 +78,19 @@ describe('aba "Clientes" do representante > Visitados (contrato §34.7)', () => 
     });
     expect(r.items[0]!.phone?.masked).toContain('****');
     expect('pracas' in r).toBe(false);
+  });
+});
+
+describe('rodapé de Clientes (o número da pílula e o do rodapé batem)', () => {
+  // As capturas de 27/10: 25 do seed (9 cadastrados pela etapa, 16 a visitar) + 6 de teste a visitar; 25 sem localização exata.
+  const r = { counts: { a_visitar: 22, cadastrado: 9 }, total: 31, without_location: 25 };
+  it('"Todos 9" na pílula = "9 nesta lista"; os 31 do filtro aparecem com os 22 a visitar que ficam fora', () => {
+    expect(pilulasVisitados(r.counts)[0]).toMatchObject({ escolha: 'todos', n: 9 });
+    expect(rodapeDaLista(r, 'todos')).toBe(
+      '9 nesta lista de 31 clientes no filtro de praça e busca (22 ainda a visitar) · 25 dos 31 sem localização exata (não aparecem no mapa)',
+    );
+  });
+  it('pílula de uma situação: o primeiro número é o dela', () => {
+    expect(rodapeDaLista(r, 'nao_cadastrado').startsWith('0 nesta lista de 31 clientes')).toBe(true);
   });
 });

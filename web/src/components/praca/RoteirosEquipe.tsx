@@ -26,21 +26,21 @@ import {
   useRotasDoDia,
   useSalvarRotaConfig,
 } from '@/modules/rotas/application/use-rotas-equipe';
-import { alternarFixa, mover, mudou, pendentesParaOrdenar, resumoDaMeta, type ItemOrdem } from '@/modules/rotas/domain/ordem';
+import { alternarFixa, mover, mudou, pendentesParaOrdenar, resumoDaMeta, rotuloAndamento, rotuloParadaVisitada, type ItemOrdem } from '@/modules/rotas/domain/ordem';
 import { etaTexto } from '@/modules/rotas/domain/rota-local';
 import { MODOS_DESLOCAMENTO, rotuloMotivo, type ConfigRota, type ModoDeslocamento, type RouteView } from '@/modules/rotas/domain/rota.schema';
 import { todaySp } from '@/lib/dates';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 import { atuaNaPraca } from '@/modules/consultores/domain/pracas';
 
-const ICONE: Record<string, string> = { visitada: '✓ feita', pendente: 'pendente', adiada: '⏭ para depois', pulada: '✕ pulada' };
+const ICONE: Record<string, string> = { visitada: '✓ chegada registrada', pendente: 'pendente', adiada: '⏭ para depois', pulada: '✕ pulada' };
 
 function Progresso({ r }: { r: RouteView }) {
   const p = r.progress;
   const posicao = p.delta > 0 ? `${p.delta} à frente` : p.delta === 0 ? 'no ponto' : `${-p.delta} atrás`;
   return (
     <p className="text-sm text-muted-foreground">
-      {p.done} de {p.meta} visitas · esperado agora {p.expected_now} ({posicao}) · {p.skipped} puladas · {p.deferred} para depois
+      {rotuloAndamento(p)} · esperado agora {p.expected_now} ({posicao}) · {p.skipped} puladas · {p.deferred} para depois
       <br />
       <span className="text-sm">Esperado = minutos úteis (janela menos almoço) ÷ (minutos úteis do dia ÷ meta {p.meta}), segundo o servidor.</span>
     </p>
@@ -76,10 +76,8 @@ function RoteiroCartao({ r, admin }: { r: RouteView; admin: boolean }) {
       <ol className="space-y-1">
         {feitas.map((s) => (
           <li key={s.id} className="flex items-center justify-between gap-2 text-sm">
-            <span>
-              ✓ {s.name}
-            </span>
-            <span className="text-muted-foreground">feita {s.eta ? `· ${etaTexto(s.eta)}` : ''}</span>
+            <span className="min-w-0 break-words">✓ {s.name}</span>
+            <span className="shrink-0 text-right text-muted-foreground">{rotuloParadaVisitada(s.eta)}</span>
           </li>
         ))}
         {ordem.map((it, i) => {

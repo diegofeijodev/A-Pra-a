@@ -147,3 +147,18 @@ export function pilulasVisitados(counts: Record<string, number> | undefined): { 
     ...SITUACOES_LISTA.filter((s) => s.code !== 'a_visitar').map((s) => ({ escolha: s.code, rotulo: s.label, n: n(s.code), color: s.color, shape: s.shape })),
   ];
 }
+
+/**
+ * Rodapé de Clientes: cada número diz o que é. `counts`/`total`/`without_location` são do filtro de praça e busca INTEIRO, antes da
+ * pílula (contrato §34.6) — com "A visitar" —, e a tabela mostra só a pílula escolhida. Antes, "31 no filtro" embaixo de "Todos 9"
+ * parecia contradizer a pílula.
+ */
+export function rodapeDaLista(r: { counts: Record<string, number>; total: number; without_location: number }, escolha: EscolhaVisitados): string {
+  const n = (x: number) => x.toLocaleString('pt-BR');
+  const naLista = codigosDaEscolha(escolha).reduce((a, c) => a + (r.counts[c] ?? 0), 0);
+  const aVisitar = r.counts.a_visitar ?? 0;
+  return (
+    `${n(naLista)} nesta lista de ${n(r.total)} ${r.total === 1 ? 'cliente' : 'clientes'} no filtro de praça e busca (${n(aVisitar)} ainda a visitar)` +
+    ` · ${n(r.without_location)} dos ${n(r.total)} sem localização exata (não aparecem no mapa)`
+  );
+}
