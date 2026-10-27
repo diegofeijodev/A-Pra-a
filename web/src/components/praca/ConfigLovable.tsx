@@ -35,7 +35,7 @@ export function ConfigLovable({ admin }: { admin: boolean }) {
           <Label htmlFor="cl-raio">Raio da chegada (metros)</Label>
           <Input id="cl-raio" type="number" min={50} max={1000} disabled={!admin} value={Number.isNaN(form.raio_checkin_m) ? '' : form.raio_checkin_m} onChange={(e) => set({ raio_checkin_m: num(e.target.value) })} />
           <p className="text-sm text-muted-foreground">
-            Chegada a mais de {Number.isNaN(form.raio_checkin_m) ? '—' : form.raio_checkin_m} m do endereço fica marcada “longe do local”. Padrão 200 m (como hoje e como a Lovable). Vale para as
+            Chegada a mais de {Number.isNaN(form.raio_checkin_m) ? '—' : form.raio_checkin_m} m do endereço fica marcada “longe do local”. Padrão 200 m. Vale para as
             visitas abertas depois de salvar.
           </p>
         </div>
@@ -47,7 +47,7 @@ export function ConfigLovable({ admin }: { admin: boolean }) {
               <div className="space-y-1">
                 <Label htmlFor="cl-ui">O que o consultor vê ao encerrar o dia</Label>
                 <select id="cl-ui" disabled={!admin} className={sel} value={form.ui_resumo_dia} onChange={(e) => set({ ui_resumo_dia: e.target.value as ConfigLovableCampos['ui_resumo_dia'] })}>
-                  <option value="nota">A nota de 0 a 10, com a conta (como a Lovable)</option>
+                  <option value="nota">A nota de 0 a 10, com a conta (padrão)</option>
                   <option value="numeros">Só os números, sem nota (nosso)</option>
                   <option value="desligado">Nada</option>
                 </select>
@@ -71,7 +71,7 @@ export function ConfigLovable({ admin }: { admin: boolean }) {
             </div>
             <p className="text-sm text-muted-foreground">
               Nota = rota × {form.nota_peso_rota} + cadastros × {form.nota_peso_conversao} (os pesos somam 10). Rota = visitadas ÷ previstas (teto 100%); cadastros = mín(1; positivação ÷{' '}
-              {form.nota_meta_conversao_pct}%). Lovable: 7, 3 e 30%.
+              {form.nota_meta_conversao_pct}%). Padrão: 7, 3 e 30%.
             </p>
           </fieldset>
         )}
@@ -83,7 +83,7 @@ export function ConfigLovable({ admin }: { admin: boolean }) {
               <div className="space-y-1">
                 <Label htmlFor="cl-tempo">Número grande do cartão de tempo</Label>
                 <select id="cl-tempo" disabled={!admin} className={sel} value={form.painel_tempo_medio} onChange={(e) => set({ painel_tempo_medio: e.target.value as ConfigLovableCampos['painel_tempo_medio'] })}>
-                  <option value="intervalo">Tempo entre chegadas seguidas (como a Lovable)</option>
+                  <option value="intervalo">Tempo entre chegadas seguidas (padrão)</option>
                   <option value="duracao">Tempo dentro do local (chegada → conclusão)</option>
                 </select>
               </div>

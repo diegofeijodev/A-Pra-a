@@ -161,7 +161,7 @@ export function DividirRotas({ praca, seletorPraca }: { praca: PracaView; seleto
           <p>
             Fonte: clientes da praça com localização exata, até o estágio do roteiro, sem cadastro declarado e fora de rota já publicada. Perfil: o
             segmento com que o cliente foi achado na busca de estabelecimentos (vale qualquer busca); cliente cadastrado à mão, importado ou aberto na
-            visita não tem perfil e fica de fora quando há perfil marcado. Padrão da Lovable:{' '}
+            visita não tem perfil e fica de fora quando há perfil marcado. Tempo previsto de cada rota:{' '}
             {config.data
               ? `${config.data.minutos_por_cliente} min por cliente + ${config.data.intervalo_min} min de intervalo + deslocamento, até ${Math.round(config.data.limite_min / 60)} h`
               : '…'}

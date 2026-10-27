@@ -254,7 +254,7 @@ export function textoCriterio(c: ConfigShopping): string {
           : c.criterio === 'area_e_lojas'
             ? `${area} e ${lojas}`
             : 'todo shopping conta';
-  return `Shopping grande = ${qual}. A Lovable usava 2.500 avaliações no Google (≈ 50 lojas); aqui medimos a área do prédio no mapa aberto, porque ele quase não tem as lojas de dentro. Shopping de vários andares pode ter área pequena: marque à mão, a marcação vale mais que o critério.`;
+  return `Shopping grande = ${qual}. Medimos a área do prédio no mapa aberto, porque o mapa quase não tem as lojas de dentro para contar. Shopping de vários andares pode ter área pequena: marque à mão, a marcação vale mais que o critério.`;
 }
 
 /** Dias do mês (calendário "Próximos dias"): semanas de domingo a sábado, com `null` fora do mês. */

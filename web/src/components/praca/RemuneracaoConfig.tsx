@@ -236,8 +236,8 @@ export function RemuneracaoConfig({ consultor, embutido = false }: { consultor?:
             </div>
             {perfil === 'chefe' && (
               <p className="text-sm text-muted-foreground">
-                Perfil do chefe (versão Lovable): cadastro declarado pelo consultor, diária pelos dias com rota da equipe, metas que somam, contadas na semana, limite de 30 declarações por dia. A Lovable não tem
-                valores prontos (cada representante é cadastrado com o seu), então <span className="font-bold">preencha a diária, o valor por cadastro e as metas</span>: nos testes dela aparecem diária R$ 150,00,
+                Perfil do chefe: cadastro declarado pelo representante, diária pelos dias com rota da equipe, metas que somam, contadas na semana, limite de 30 declarações por dia. O perfil não traz
+                valores prontos (cada representante é cadastrado com o seu), então <span className="font-bold">preencha a diária, o valor por cadastro e as metas</span>: um exemplo é diária R$ 150,00,
                 R$ 10,00 por cadastro e meta de 5 cadastros = R$ 200,00, só como exemplo.
               </p>
             )}

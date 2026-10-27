@@ -43,6 +43,8 @@ describe('planos — wire (§39) e textos (UX §3.4)', () => {
     expect(t).toContain('pelo menos 20.000 m² de área');
     expect(t).toContain('a marcação vale mais que o critério');
     expect(t.toLowerCase()).not.toMatch(/voucher|status|check-in|checkout/);
+    // Texto de produto: o nome da ferramenta em que o protótipo foi feito nunca aparece na tela.
+    expect(t).not.toMatch(/lovable/i);
   });
   it('calendário: semanas de domingo a sábado com o mês inteiro', () => {
     const s = semanasDoMes(2026, 10);

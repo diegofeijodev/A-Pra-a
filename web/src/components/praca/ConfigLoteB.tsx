@@ -75,7 +75,7 @@ function ConfigChecklist({ admin }: { admin: boolean }) {
         </div>
         {ck.obrigatorio === 'todas' && (
           <p role="status" className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
-            ⚠ {toquesObrigatorios(ck.itens.length, data.meta_diaria)} (etapas × meta diária de visitas da configuração do roteiro). A Lovable não exige.
+            ⚠ {toquesObrigatorios(ck.itens.length, data.meta_diaria)} (etapas × meta diária de visitas da configuração do roteiro). O padrão é não exigir.
           </p>
         )}
         {!ck.simples && !ck.completo && <p className="text-sm text-muted-foreground">Sem fluxo marcado, a visita não mostra o roteiro (como era antes).</p>}
@@ -122,7 +122,7 @@ function ConfigChecklist({ admin }: { admin: boolean }) {
               + Adicionar etapa
             </Button>
             <Button type="button" variant="outline" className="h-12" onClick={() => setCk({ ...FORM_CHECKLIST_LOVABLE, itens: FORM_CHECKLIST_LOVABLE.itens.map((e) => ({ ...e })) })}>
-              Voltar ao padrão da Lovable
+              Voltar ao padrão
             </Button>
             <Button type="button" className="h-12" disabled={salvar.isPending || erros.length > 0} onClick={() => salvar.mutate(corpoChecklist(ck))}>
               {salvar.isPending ? 'Salvando…' : 'Salvar'}
@@ -152,12 +152,12 @@ function ConfigIntervalo({ admin }: { admin: boolean }) {
       <div className="mt-3 space-y-4">
         <label className="flex min-h-12 items-center gap-2 text-sm">
           <input type="checkbox" className={caixa} disabled={!admin} checked={f.ativo} onChange={(e) => setF({ ...f, ativo: e.target.checked })} />
-          Mostrar “Intervalo” no campo (como a Lovable). Desmarcado = só a janela de almoço configurada (nosso).
+          Mostrar “Intervalo” no campo (padrão). Desmarcado = só a janela de almoço configurada.
         </label>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
             <label htmlFor="iv-lembrete" className="text-sm font-bold">
-              Lembrar o consultor depois de (min)
+              Lembrar o representante depois de (min)
             </label>
             <Input id="iv-lembrete" type="number" min={15} max={480} disabled={!admin} value={Number.isNaN(f.lembrete) ? '' : f.lembrete} onChange={(e) => setF({ ...f, lembrete: num(e.target.value) })} className="h-12" />
           </div>
@@ -169,7 +169,7 @@ function ConfigIntervalo({ admin }: { admin: boolean }) {
           </div>
         </div>
         <p className="text-sm text-muted-foreground">
-          No dia com intervalo, o ritmo desconta o intervalo real no lugar do almoço configurado (nunca os dois), e a localização fica pausada. Padrões: lembrete 60 min (UX), alerta 75 min (Lovable).
+          No dia com intervalo, o ritmo desconta o intervalo real no lugar do almoço configurado (nunca os dois), e a localização fica pausada. Padrões: lembrete 60 min, alerta 75 min.
         </p>
         {erros.length > 0 && (
           <ul role="alert" className="list-disc space-y-0.5 pl-5 text-sm text-destructive">

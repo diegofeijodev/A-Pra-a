@@ -201,7 +201,7 @@ export function SegmentosBusca({ admin }: { admin: boolean }) {
               {salvar.isPending ? 'Salvando…' : 'Salvar segmentos'}
             </Button>
             <p className="text-sm text-muted-foreground">
-              Vale para as próximas buscas. {data?.is_default ? 'Hoje: o padrão (os 8 da Lovable + Lanchonete e Café).' : 'Nada é apagado: o que não serve fica desativado.'}
+              Vale para as próximas buscas. {data?.is_default ? 'Hoje: o padrão (os 10 segmentos da lista).' : 'Nada é apagado: o que não serve fica desativado.'}
             </p>
           </div>
         )}

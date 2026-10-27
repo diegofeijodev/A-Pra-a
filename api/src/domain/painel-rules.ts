@@ -221,7 +221,7 @@ export function montarPainel(e: EntradaPainel): PainelCalculado {
       pct_done: 'Roteiros do dia (paradas planejadas não descartadas; concluída = visitada).',
       visits: 'Visitas de campo concluídas, pelo dia da jornada (Brasília).',
       positivation: textoFonteCadastros(e.fonteCadastros, e.syncLigado),
-      time: 'Horários de chegada e de conclusão das visitas (Brasília). Definição da Lovable, com o nome corrigido.',
+      time: 'Horários de chegada e de conclusão das visitas (Brasília).',
       signups: textoFonteCadastros(e.fonteCadastros, e.syncLigado),
       vouchers: e.cupons
         ? 'Pedidos de cupom da 1ª contratação feitos no período (dia de Brasília); a situação de cada um é a de agora.'

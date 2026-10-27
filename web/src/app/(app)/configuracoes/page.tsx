@@ -140,7 +140,7 @@ function SegurancaSenha() {
         >Salvar</button>
       )}
       <p className="w-full text-xs text-muted-foreground">
-        {p.is_default ? 'Padrão da Lovable: 8 caracteres, 1 maiúscula e 1 número. ' : ''}Vale para senhas novas (troca do representante, senha da equipe criada ou redefinida em Usuários); ninguém é obrigado a trocar a senha que já tem. De 8 a 12 caracteres: a senha provisória gerada sempre cumpre a regra mais forte (12, com maiúscula e número).
+        {p.is_default ? 'Padrão: 8 caracteres, 1 maiúscula e 1 número. ' : ''}Vale para senhas novas (troca do representante, senha da equipe criada ou redefinida em Usuários); ninguém é obrigado a trocar a senha que já tem. De 8 a 12 caracteres: a senha provisória gerada sempre cumpre a regra mais forte (12, com maiúscula e número).
       </p>
     </div>
   );

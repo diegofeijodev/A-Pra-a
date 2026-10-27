@@ -261,7 +261,7 @@ function FluxoVisitaConfig({ admin }: { admin: boolean }) {
             <select id="fv-just" disabled={!admin} className={sel} value={form.justificativa_distancia} onChange={(e) => set({ justificativa_distancia: e.target.value as ConfigModo['justificativa_distancia'] })}>
               <option value="nao">Só marcar</option>
               <option value="opcional">Pedir o motivo, sem obrigar</option>
-              <option value="obrigatoria">Motivo obrigatório (como a Lovable)</option>
+              <option value="obrigatoria">Motivo obrigatório</option>
             </select>
           </div>
         </div>
