@@ -6,7 +6,6 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { CadastroLink } from '@/components/campo/CadastroLink';
 import { CampoTopo } from '@/components/campo/CampoTopo';
-import { FaixaFila } from '@/components/campo/FaixaFila';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useCampoSession } from '@/modules/campo/application/campo-session.store';
@@ -197,7 +196,6 @@ export function CadastroEmpresaTela({ refVisita }: { refVisita: string }) {
   return (
     <main className="space-y-5 pb-10">
       <CampoTopo titulo="Cadastrar no Freela" />
-      <FaixaFila />
       <button type="button" onClick={voltar} className="text-sm font-bold text-primary">
         ← Voltar para a visita
       </button>

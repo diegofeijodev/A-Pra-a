@@ -7,7 +7,6 @@ import { CampoTopo } from '@/components/campo/CampoTopo';
 import { ChecklistVisita } from '@/components/campo/ChecklistVisita';
 import { LinhaPedirCupom } from '@/components/campo/PedirCupomTela';
 import { Cronometro } from '@/components/campo/Cronometro';
-import { FaixaFila } from '@/components/campo/FaixaFila';
 import { Questionario } from '@/components/campo/Questionario';
 import { Button } from '@/components/ui/button';
 import { todaySp } from '@/lib/dates';
@@ -156,7 +155,6 @@ export function VisitaTela({ refVisita }: { refVisita: string }) {
   return (
     <main className="space-y-5 pb-32">
       <CampoTopo titulo={local.nome} />
-      <FaixaFila />
       {gps && <AvisoGps motivo={gps} onFechar={() => setGps(null)} />}
       <button type="button" onClick={() => irPara({ v: 'hoje' })} className="text-sm font-bold text-primary">
         ← Voltar

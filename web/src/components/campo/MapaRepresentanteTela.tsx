@@ -1,6 +1,5 @@
 'use client';
 
-import { FaixaFila } from '@/components/campo/FaixaFila';
 import { MapaCampo } from '@/components/campo/MapaCampo';
 import { useCampoMe } from '@/modules/campo/application/use-campo';
 import { useOnline } from '@/modules/campo/application/use-online';
@@ -22,7 +21,6 @@ export function MapaRepresentanteTela() {
         <h1 className="text-3xl font-semibold">Mapa</h1>
         <p className="text-muted-foreground">Seus clientes: os da sua rota e os que você visitou. Cor e símbolo indicam a situação.</p>
       </div>
-      <FaixaFila />
       {!me.data ? (
         <div aria-busy="true" className="h-[60vh] animate-pulse rounded-lg bg-muted" />
       ) : !ligado ? (

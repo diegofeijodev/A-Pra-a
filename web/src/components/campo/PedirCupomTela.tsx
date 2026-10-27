@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { CampoTopo } from '@/components/campo/CampoTopo';
-import { FaixaFila } from '@/components/campo/FaixaFila';
 import { useCampoSession } from '@/modules/campo/application/campo-session.store';
 import { useCampoMe, useDia } from '@/modules/campo/application/use-campo';
 import { enfileirar, useFilaStore } from '@/modules/campo/application/use-fila';
@@ -69,7 +68,6 @@ export function PedirCupomTela({ refVisita }: { refVisita: string }) {
   return (
     <main className="space-y-5 pb-36">
       <CampoTopo titulo="Pedir cupom da 1ª contratação" />
-      <FaixaFila />
       <button type="button" onClick={voltar} className="min-h-12 text-sm font-bold text-primary">
         ← Voltar para a visita
       </button>

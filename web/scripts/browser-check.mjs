@@ -825,7 +825,8 @@ try {
   await cel.getByRole('button', { name: 'Salvar senha', exact: true }).click();
   await cel.waitForURL(/\/campo$/, { timeout: 20000 });
   await espera(1500);
-  check('depois da troca, a tela de hoje do consultor', (await corpo(cel)).includes(CAMPO_NOME.toLowerCase()));
+  // E5c (UX §4.12): a Hoje abre com a saudação da Lovable pelo primeiro nome ("Consultor Check …" → "Consultor").
+  check('depois da troca, a tela de hoje do consultor ("Bom trabalho, {primeiro nome}!")', (await corpo(cel)).includes(`bom trabalho, ${CAMPO_NOME.split(' ')[0].toLowerCase()}!`));
   // Casca do representante (redesenho E4, UX §2.5): faixa azul com "Sair" e as 5 abas da Lovable embaixo, "Hoje" acesa.
   const secoes = cel.getByRole('navigation', { name: 'Seções' });
   const abasRep = secoes.getByRole('button');
@@ -1505,7 +1506,7 @@ try {
 
     // Lote D (§39.7): "Próximos dias" só com a flag; abre o calendário (só leitura) e volta para hoje.
     const temProximos = (await cs.getByRole('button', { name: 'Próximos dias' }).count()) > 0;
-    check('simples: "Próximos dias" só com os planos de rota ligados', temProximos === (meS.features?.route_plans === true && (await cs.getByText('Sem roteiro para hoje').count()) > 0));
+    check('simples: "Próximos dias" só com os planos de rota ligados', temProximos === (meS.features?.route_plans === true && (await cs.getByText('Nenhuma rota hoje').count()) > 0));
     if (temProximos) {
       await cs.getByRole('button', { name: 'Próximos dias' }).click();
       await cs.getByRole('grid').waitFor({ timeout: 20000 });
@@ -1619,7 +1620,7 @@ try {
 
     // Lote B, L4 (contrato §37): intervalo — 1 toque para começar, 1 para voltar; a equipe vê "em intervalo".
     if (meS.features?.breaks) {
-      await cs.getByRole('button', { name: 'Intervalo', exact: true }).click();
+      await cs.getByRole('button', { name: 'Iniciar intervalo', exact: true }).click();
       await cs.getByText(/Em intervalo desde/).waitFor({ timeout: 10000 });
       await espera(9500); // o início espera os segundos do "Desfazer" na fila
       await semPendencia();
@@ -1627,13 +1628,13 @@ try {
       check('L4: intervalo aberto no servidor', !!emIntervalo.breaks_open && emIntervalo.breaks.length === 1);
       const at = (await api('GET', '/v1/consultores/attention')).consultants.find((c) => c.consultant_id === consultorSimplesId);
       check('L4: a equipe vê "em intervalo desde"', !!at?.on_break_since);
-      await cs.getByRole('button', { name: 'Voltar do intervalo' }).click();
+      await cs.getByRole('button', { name: 'Encerrar intervalo' }).click();
       await semPendencia();
       await espera(1000);
       const depois = await hojeDoConsultor();
-      check('L4: "Voltar do intervalo" encerra (manual) e o botão volta', !depois.breaks_open && depois.breaks[0]?.end_reason === 'manual' && (await cs.getByRole('button', { name: 'Intervalo', exact: true }).count()) === 1);
+      check('L4: "Encerrar intervalo" encerra (manual) e o "Iniciar intervalo" volta', !depois.breaks_open && depois.breaks[0]?.end_reason === 'manual' && (await cs.getByRole('button', { name: 'Iniciar intervalo', exact: true }).count()) === 1);
     } else {
-      check('sem FIELD_BREAKS_ENABLED: nenhum botão de intervalo', (await cs.getByRole('button', { name: 'Intervalo', exact: true }).count()) === 0);
+      check('sem FIELD_BREAKS_ENABLED: nenhum botão de intervalo', (await cs.getByRole('button', { name: /intervalo$/i }).count()) === 0);
     }
 
     // Visita 2: "Quer retorno" + Amanhã + contato (o padrão exige contato no retorno).

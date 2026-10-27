@@ -6,7 +6,6 @@ import { AvisoGps } from '@/components/campo/AvisoGps';
 import { CampoTopo } from '@/components/campo/CampoTopo';
 import { ChecklistVisita } from '@/components/campo/ChecklistVisita';
 import { Cronometro } from '@/components/campo/Cronometro';
-import { FaixaFila } from '@/components/campo/FaixaFila';
 import { LinhaPedirCupom } from '@/components/campo/PedirCupomTela';
 import { podePedirCupom } from '@/modules/cupons/domain/cupons';
 import { Chip, Grupo } from '@/components/campo/simples/Chip';
@@ -19,7 +18,6 @@ import { useChecklist } from '@/modules/campo/application/use-checklist';
 import { desfazerCheckout, descartarEnvio, enfileirar, useFilaStore } from '@/modules/campo/application/use-fila';
 import { useFluxo } from '@/modules/campo/application/use-fluxo';
 import { useFotoUrl } from '@/modules/campo/application/use-foto-url';
-import { useSol } from '@/modules/campo/application/use-sol';
 import { irPara } from '@/modules/campo/application/use-tela';
 import type { VisitAnswers } from '@/modules/campo/domain/campo.types';
 import { checklistDaTela, pendenciasChecklist, type ChecklistTela } from '@/modules/campo/domain/checklist';
@@ -59,7 +57,6 @@ export function ResultadoTela({ refVisita }: { refVisita: string }) {
   const me = useCampoMe();
   const itens = useFilaStore((s) => s.itens);
   const foto = useFotoUrl(refVisita);
-  const { sol } = useSol();
   const qc = useQueryClient();
   const [gps, setGps] = useState<MotivoGps | null>(null);
   const [ocupado, setOcupado] = useState(false);
@@ -217,9 +214,8 @@ export function ResultadoTela({ refVisita }: { refVisita: string }) {
   const frase = frasePendencia(falta);
 
   return (
-    <main data-sol={sol} className="space-y-5 pb-40">
+    <main className="space-y-5 pb-40">
       <CampoTopo titulo={local.nome} />
-      <FaixaFila />
       {gps && <AvisoGps motivo={gps} onFechar={() => setGps(null)} />}
       <div className="flex items-center justify-between gap-3">
         <button type="button" onClick={() => irPara({ v: 'hoje' })} className="min-h-12 text-sm font-bold text-primary">

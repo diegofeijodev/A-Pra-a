@@ -5,13 +5,11 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { AvisoGps } from '@/components/campo/AvisoGps';
 import { CampoTopo } from '@/components/campo/CampoTopo';
-import { FaixaFila } from '@/components/campo/FaixaFila';
 import { ChegueiBotao, type AlvoChegada } from '@/components/campo/simples/ChegueiBotao';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useDia } from '@/modules/campo/application/use-campo';
 import { useOnline } from '@/modules/campo/application/use-online';
-import { useSol } from '@/modules/campo/application/use-sol';
 import { irPara, useTela } from '@/modules/campo/application/use-tela';
 import type { PlaceView } from '@/modules/campo/domain/campo.types';
 import { seguirSemConferirParecidos } from '@/modules/campo/domain/fila-politica';
@@ -33,7 +31,6 @@ export function OndeVoceEstaTela() {
   const tela = useTela();
   const rot = useRoteiro();
   const { dia, carregando } = useDia();
-  const { sol } = useSol();
   const [lugares, setLugares] = useState<PlaceView[] | null>(null);
   const [carregandoLista, setCarregandoLista] = useState(false);
   const [busca, setBusca] = useState('');
@@ -130,7 +127,7 @@ export function OndeVoceEstaTela() {
 
   if (escolhido) {
     return (
-      <main data-sol={sol} className="space-y-4 pb-28">
+      <main className="space-y-4 pb-28">
         <CampoTopo titulo="Onde você está?" />
         {gps && <AvisoGps motivo={gps} onFechar={() => setGps(null)} />}
         <section className="card-surface space-y-1 p-4">
@@ -152,9 +149,8 @@ export function OndeVoceEstaTela() {
   }
 
   return (
-    <main data-sol={sol} className="space-y-4 pb-8">
+    <main className="space-y-4 pb-8">
       <CampoTopo titulo="Onde você está?" />
-      <FaixaFila />
       {gps && <AvisoGps motivo={gps} onFechar={() => setGps(null)} />}
       <button type="button" onClick={() => irPara({ v: 'hoje' })} className="min-h-12 text-sm font-bold text-primary">
         ← Voltar

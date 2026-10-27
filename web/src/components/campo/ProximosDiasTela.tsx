@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { CampoTopo } from '@/components/campo/CampoTopo';
 import { addDays, todaySp } from '@/lib/dates';
-import { useSol } from '@/modules/campo/application/use-sol';
 import { irPara } from '@/modules/campo/application/use-tela';
 import { useMinhasRotas } from '@/modules/planos/application/use-planos';
 import { diaCurto, semanasDoMes, type MinhaRota } from '@/modules/planos/domain/planos';
@@ -43,7 +42,6 @@ function CartaoRota({ r }: { r: MinhaRota }) {
  * as rotas do dia escolhido — só leitura. Precisa de sinal (não fica no aparelho). O roteiro de hoje continua na tela Hoje.
  */
 export function ProximosDiasTela() {
-  const { sol } = useSol();
   const hoje = todaySp();
   const [diaSel, setDiaSel] = useState(hoje);
   const [ano, mes] = [Number(diaSel.slice(0, 4)), Number(diaSel.slice(5, 7))];
@@ -61,8 +59,8 @@ export function ProximosDiasTela() {
   };
 
   return (
-    <main data-sol={sol} className="space-y-4 pb-24">
-      <CampoTopo titulo="Próximos dias" />
+    <main className="space-y-4 pb-24">
+      <CampoTopo titulo="Próximos dias" grande />
       {!q.ligado ? (
         <p className="card-surface p-5 text-sm">Este recurso ainda não está ligado neste servidor.</p>
       ) : (

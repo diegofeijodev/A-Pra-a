@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { CampoTopo } from '@/components/campo/CampoTopo';
-import { FaixaFila } from '@/components/campo/FaixaFila';
 import { AlternarListaMapa, MapaCampo } from '@/components/campo/MapaCampo';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -111,7 +110,6 @@ export function RoteiroTela() {
   return (
     <main className="space-y-5 pb-28">
       <CampoTopo titulo="Roteiro de hoje" />
-      <FaixaFila />
       {rot.guardado && (
         <p role="status" className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
           Lista guardada neste aparelho. O mapa e os horários novos voltam com o sinal.

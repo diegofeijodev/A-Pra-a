@@ -34,6 +34,11 @@ export interface DiaLocal {
   intervaloAberto: IntervaloLocal | null;
   visitas: VisitaLocal[];
   visitaAberta: VisitaLocal | null;
+  /**
+   * Redesenho E5c (UX §4.13, Lovable "Encerrada"): o dia de hoje já teve jornada e ela foi encerrada — no servidor ou com o
+   * "encerrar" ainda na fila — e nenhuma outra foi aberta depois. Sem isso, "encerrou" e "nem começou" são o mesmo `jornada: null`.
+   */
+  encerradaHoje: boolean;
   /** `visitas` = total de check-ins do dia; `feitas` = só as com conversa (a conta da meta); `fechadas` = fora da meta. */
   contadores: { visitas: number; feitas: number; fechadas: number; cadastrou_qr: number; cadastrou_agora: number };
 }
@@ -51,6 +56,7 @@ export function montarDia(today: TodayView | null, fila: ItemFila[], opcoes: { f
         ...(today.journey.praca_id ? { praca_id: today.journey.praca_id } : {}),
       }
     : null;
+  let encerradaHoje = !today?.journey && (today?.journeys ?? []).some((j) => !!j.ended_at);
   const visitas: VisitaLocal[] = (today?.visits ?? []).map((v) => ({
     ref: v.client_id,
     nome: v.lead_name,
@@ -84,10 +90,12 @@ export function montarDia(today: TodayView | null, fila: ItemFila[], opcoes: { f
             pendente: true,
             ...(item.payload.praca_id ? { praca_id: item.payload.praca_id } : {}),
           };
+          encerradaHoje = false;
         }
         break;
       case 'end':
         fecharIntervalo(item.payload.at);
+        if (jornada) encerradaHoje = true;
         jornada = null;
         break;
       case 'break_start':
@@ -157,6 +165,7 @@ export function montarDia(today: TodayView | null, fila: ItemFila[], opcoes: { f
     intervaloAberto: jornada ? (intervalos.find((i) => !i.ended_at) ?? null) : null,
     visitas,
     visitaAberta,
+    encerradaHoje,
     contadores: {
       visitas: visitas.length,
       // §31.6: no fluxo simples o "fechado" fotografado conta, se configurado (`fechado_conta_na_meta`).

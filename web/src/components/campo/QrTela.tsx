@@ -9,7 +9,7 @@ export function QrTela() {
   const me = useCampoMe();
   return (
     <main className="space-y-6">
-      <CampoTopo titulo="QR code" />
+      <CampoTopo titulo="QR code" grande />
       <QrDoFreela url={me.data?.consultant.signup_url ?? null} tamanho={300} />
       <button
         type="button"

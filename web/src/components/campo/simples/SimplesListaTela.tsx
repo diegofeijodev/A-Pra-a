@@ -2,11 +2,9 @@
 
 import { useState } from 'react';
 import { CampoTopo } from '@/components/campo/CampoTopo';
-import { FaixaFila } from '@/components/campo/FaixaFila';
 import { AlternarListaMapa, MapaCampo } from '@/components/campo/MapaCampo';
 import { ChegueiBotao } from '@/components/campo/simples/ChegueiBotao';
 import { useCampoMe, useDia } from '@/modules/campo/application/use-campo';
-import { useSol } from '@/modules/campo/application/use-sol';
 import { irPara } from '@/modules/campo/application/use-tela';
 import { useRoteiro } from '@/modules/rotas/application/use-roteiro';
 import { etaTexto, faltam } from '@/modules/rotas/domain/rota-local';
@@ -18,16 +16,14 @@ import { etaTexto, faltam } from '@/modules/rotas/domain/rota-local';
 export function SimplesListaTela() {
   const rot = useRoteiro();
   const { dia } = useDia();
-  const { sol } = useSol();
   const pendentes = rot.route ? faltam(rot.route.stops) : [];
   // Lote E (UX §2.2): "Lista | Mapa" só com o mapa ligado no servidor; desligado, a tela é a de hoje.
   const mapaLigado = useCampoMe().data?.features?.map_pins === true;
   const [modo, setModo] = useState<'lista' | 'mapa'>('lista');
 
   return (
-    <main data-sol={sol} className="space-y-4 pb-24">
+    <main className="space-y-4 pb-24">
       <CampoTopo titulo="Paradas que faltam" />
-      <FaixaFila />
       {mapaLigado && <AlternarListaMapa modo={modo} onModo={setModo} />}
       {mapaLigado && modo === 'mapa' ? (
         <MapaCampo paradas={pendentes} escuro={false} />

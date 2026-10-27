@@ -2,7 +2,6 @@
 
 import { useEffect } from 'react';
 import { CampoTopo } from '@/components/campo/CampoTopo';
-import { FaixaFila } from '@/components/campo/FaixaFila';
 import { ResumoDiaConteudo } from '@/components/praca/ResumoDiaConteudo';
 import { Button } from '@/components/ui/button';
 import { todaySp } from '@/lib/dates';
@@ -33,8 +32,6 @@ export function ResumoDiaTela({ dia }: { dia?: string }) {
   return (
     <main className="space-y-4 pb-28">
       <CampoTopo titulo={`Resultado do seu dia · ${rotuloDia(diaTela)}`} />
-      {/* O encerrar pode estar na fila (sem sinal): a faixa diz o que ainda não saiu deste celular. */}
-      <FaixaFila />
       {!ligado && me.data ? (
         <p className="card-surface p-4 text-sm">Este recurso ainda não está ligado neste servidor.</p>
       ) : q.isError ? (

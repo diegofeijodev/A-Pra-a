@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { CuponsCampo } from '@/components/campo/CuponsCampo';
-import { FaixaFila } from '@/components/campo/FaixaFila';
 import { RetornosCampo } from '@/components/campo/RetornosCampo';
 import { Button } from '@/components/ui/button';
 import { useCampoMe } from '@/modules/campo/application/use-campo';
@@ -160,7 +159,6 @@ export function ClientesRepresentanteTela() {
         <h1 className="text-3xl font-semibold">Clientes</h1>
         <p className="text-muted-foreground">Quem você precisa procurar de novo e os vouchers que você pediu.</p>
       </div>
-      <FaixaFila />
       {segmentos.length > 1 && (
         <div className="flex gap-1 rounded-lg bg-muted p-1" role="group" aria-label="Ver">
           {segmentos.map(([s, rotulo]) => (

@@ -1,7 +1,6 @@
 'use client';
 
 import { CadastrosConfirmadosCard } from '@/components/campo/CadastrosConfirmadosCard';
-import { FaixaFila } from '@/components/campo/FaixaFila';
 import { GanhosCard } from '@/components/campo/GanhosCard';
 import { PixCard } from '@/components/campo/PixCard';
 import { ResumoDiaAtalhos } from '@/components/campo/ResumoDiaTela';
@@ -21,7 +20,6 @@ export function CarteiraTela() {
   return (
     <main className="space-y-4">
       <h1 className="text-3xl font-semibold">Carteira</h1>
-      <FaixaFila />
       {me.data && !dinheiroLigado && <p className="card-surface p-5 text-sm">Ganhos e Pix ainda não estão ligados neste servidor.</p>}
       {!carregando && <CadastrosConfirmadosCard />}
       <GanhosCard />

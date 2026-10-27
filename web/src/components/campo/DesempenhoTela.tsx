@@ -1,6 +1,5 @@
 'use client';
 
-import { FaixaFila } from '@/components/campo/FaixaFila';
 import { Button } from '@/components/ui/button';
 import { EmBreve } from '@/components/ui/EmBreve';
 import { useCampoMe } from '@/modules/campo/application/use-campo';
@@ -14,7 +13,6 @@ export function DesempenhoTela() {
   const resumoLigado = useCampoMe().data?.features?.day_summary === true;
   return (
     <main className="space-y-4">
-      <FaixaFila />
       <EmBreve titulo="Desempenho" descricao="Seus indicadores de visitas, cadastros e conversão.">
         {resumoLigado && (
           <Button variant="outline" className="h-12 w-full" onClick={() => irPara({ v: 'resumo' })}>
