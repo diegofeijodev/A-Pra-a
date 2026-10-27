@@ -111,7 +111,7 @@ export function MapaDeCalor() {
             </select>
           </label>
           <label className="text-xs text-muted-foreground">
-            <span className="block">Consultor</span>
+            <span className="block">Representante</span>
             <select
               className={selectCls}
               value={consultor ?? ''}
@@ -164,7 +164,7 @@ export function MapaDeCalor() {
             </label>
           ))}
         </fieldset>
-        {f.camada === 'cobertura' && <p className="text-xs text-muted-foreground">Em “Falta visitar” conta a visita de qualquer consultor da praça: o filtro de consultor não vale aqui.</p>}
+        {f.camada === 'cobertura' && <p className="text-xs text-muted-foreground">Em “Falta visitar” conta a visita de qualquer representante da praça: o filtro de representante não vale aqui.</p>}
       </section>
 
       <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground" data-testid="aviso-calor">
@@ -222,8 +222,8 @@ export function MapaDeCalor() {
 
 function mensagemVazia(c: Camada): string {
   if (c === 'cobertura') return 'Nenhum estabelecimento com localização precisa nesse recorte, ou todos já foram visitados. Escolha outro período ou área.';
-  if (c === 'passagem') return 'Nenhum registro de trajeto nesse período. Escolha outro período ou consultor.';
-  return 'Nenhuma visita nesse período. Escolha outro período ou consultor.';
+  if (c === 'passagem') return 'Nenhum registro de trajeto nesse período. Escolha outro período ou representante.';
+  return 'Nenhuma visita nesse período. Escolha outro período ou representante.';
 }
 
 function Legenda({ dados }: { dados: HeatmapView }) {
@@ -304,7 +304,7 @@ function Resumo({ dados }: { dados: HeatmapView | undefined }) {
           <p className="text-xs text-muted-foreground">Conta: cada check-in do período é uma visita; o mesmo estabelecimento visitado duas vezes conta duas visitas e um estabelecimento.</p>
           {dados.summary.consultants.length > 0 && (
             <>
-              <h3 className="pt-1 text-xs font-bold">Por consultor</h3>
+              <h3 className="pt-1 text-xs font-bold">Por representante</h3>
               <ul className="space-y-0.5 text-xs">
                 {dados.summary.consultants.map((c) => (
                   <li key={c.id} className="flex justify-between gap-2">

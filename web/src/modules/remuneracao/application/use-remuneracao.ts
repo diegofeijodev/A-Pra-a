@@ -65,7 +65,7 @@ export function useFecharSemana() {
     mutationFn: fecharSemana,
     onSuccess: (r) => {
       invalidar();
-      toast.success(r.closed > 0 ? `Semana fechada: ${r.closed} consultor(es).` : 'Esta semana já estava fechada.');
+      toast.success(r.closed > 0 ? `Semana fechada: ${r.closed} representante(s).` : 'Esta semana já estava fechada.');
     },
     onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível fechar a semana.')),
   });
@@ -116,6 +116,6 @@ export function useCriarRegraConsultor() {
       invalidar();
       toast.success('Regra própria salva. Ela vale a partir da data de início; o que já foi fechado não muda.');
     },
-    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível salvar a regra deste consultor.')),
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível salvar a regra deste representante.')),
   });
 }

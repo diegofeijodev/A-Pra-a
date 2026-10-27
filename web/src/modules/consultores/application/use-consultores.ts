@@ -49,7 +49,7 @@ export function useCreateConsultor() {
   return useMutation({
     mutationFn: (input: CreateConsultorInput & PerfilConsultorInput) => createConsultor(input),
     onSuccess: invalidar,
-    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível criar o consultor.')),
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível criar o representante.')),
   });
 }
 

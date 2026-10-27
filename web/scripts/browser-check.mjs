@@ -1168,8 +1168,8 @@ console.log('-- Campo: GPS negado --');
     check('Perfil completo: volta à regra de hoje', (await corpo(page)).includes('cadastro confirmado pelo freela, maior faixa, sem diária'));
     check('os perfis só preenchem: nenhuma versão nova foi criada', (await api('GET', '/v1/consultores/earnings/config')).history.length === versoesAntes);
     await page.getByLabel('Simular a semana').check();
-    await page.getByText('o consultor ganha').filter({ hasText: 'na semana' }).first().waitFor({ timeout: 15000 });
-    check('Simulador: calcula a semana pela mesma função do servidor', (await corpo(page)).includes('dias, o consultor ganha') || (await corpo(page)).includes('dia, o consultor ganha'));
+    await page.getByText('o representante ganha').filter({ hasText: 'na semana' }).first().waitFor({ timeout: 15000 });
+    check('Simulador: calcula a semana pela mesma função do servidor', (await corpo(page)).includes('dias, o representante ganha') || (await corpo(page)).includes('dia, o representante ganha'));
     await page.getByLabel('Simular a semana').uncheck();
 
     // A tela dos declarados só existe com FIELD_DECLARED_SIGNUPS_ENABLED, lida do `features` (sem sondar rota que dá 404). E5.5: o link
@@ -1212,14 +1212,14 @@ console.log('-- Campo: GPS negado --');
   if (remFeat.per_consultant_enabled && consultorId) {
     console.log('-- Equipe: regra de pagamento por consultor (L13) --');
     await page.goto(`${BASE}/representantes/${consultorId}`, { waitUntil: 'networkidle' });
-    const resumo = page.getByText('Regra de pagamento deste consultor');
+    const resumo = page.getByText('Regra de pagamento deste representante');
     await resumo.first().waitFor({ timeout: 15000 });
     await resumo.first().click();
     await page.getByText('Hoje vale:').first().waitFor({ timeout: 15000 });
     check('Consultor: "Hoje vale: Regra geral · versão N" (sem regra própria)', /hoje vale: regra geral · versão \d+\./.test(await corpo(page)));
     check('Consultor: o calendário fica com a regra geral (sem os campos da semana)', (await page.locator('#rem-wstart').count()) === 0 && (await page.getByRole('button', { name: 'Salvar regra própria' }).count()) === 1);    // O simulador da regra própria roda sozinho ao abrir: espera a resposta antes de sair da página (senão o POST é abortado).
-    await page.getByText('o consultor ganha').first().waitFor({ timeout: 15000 });
-    check('Consultor: o simulador da regra própria responde pela mesma função do servidor', (await corpo(page)).includes('num dia, o consultor ganha'));
+    await page.getByText('o representante ganha').first().waitFor({ timeout: 15000 });
+    check('Consultor: o simulador da regra própria responde pela mesma função do servidor', (await corpo(page)).includes('num dia, o representante ganha'));
   }
 
   // ── Restante da Lovable, lote A (contrato §33/§34): links e telas só com as flags; desligadas, nada é sondado (sem 404) ──

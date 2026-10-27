@@ -79,7 +79,7 @@ export type RelatorioDeclarados = z.infer<typeof relatorioSchema>;
 export const textoPagamento = (l: Pick<LinhaDeclaracao, 'paid_by' | 'status' | 'over_cap'>): string => {
   if (l.status === 'voided') return 'Anulado: não entra na conta.';
   if (l.over_cap) return 'Acima do limite diário: não entra na conta.';
-  return l.paid_by === 'declared' ? 'Paga ao consultor pela declaração.' : 'Só registrada: a regra do dia paga pelo Freela.';
+  return l.paid_by === 'declared' ? 'Paga ao representante pela declaração.' : 'Só registrada: a regra do dia paga pelo Freela.';
 };
 
 export const textoDivergencia = (t: Pick<TotaisDeclaracao, 'declared' | 'voided' | 'unmatched' | 'divergence_pct'>): string => {

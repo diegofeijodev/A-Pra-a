@@ -61,7 +61,7 @@ export function useAcoesCupom() {
       mutationFn: (v: { id: string; reason: string | null }) => reprovarCupom(v.id, { client_id: crypto.randomUUID(), reason: v.reason }),
       onSuccess: () => {
         depois();
-        toast.success('Pedido reprovado. O consultor vê o motivo.');
+        toast.success('Pedido reprovado. O representante vê o motivo.');
       },
       onError: erro('Não foi possível reprovar agora.'),
     }),

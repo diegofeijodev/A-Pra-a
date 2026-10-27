@@ -142,7 +142,7 @@ export function RemuneracaoConfig({ consultor, embutido = false }: { consultor?:
   if (cfg.isError || !cfg.data || !atual || !form || (consultor && (regras.isError || !regras.data))) {
     return (
       <section className="mt-8 space-y-2">
-        <h2 className="tag text-muted-foreground">Remuneração do consultor</h2>
+        <h2 className="tag text-muted-foreground">Remuneração do representante</h2>
         <p className="text-sm text-destructive">Não conseguimos carregar a regra de remuneração. Tente de novo.</p>
         <Button variant="outline" className="h-11" onClick={() => void cfg.refetch()}>
           Tentar de novo
@@ -196,16 +196,16 @@ export function RemuneracaoConfig({ consultor, embutido = false }: { consultor?:
             Hoje vale: <span className="font-bold">{regras.data?.current.label}</span>.
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Por padrão o consultor segue a regra geral. Uma regra própria vale só para ele a partir da data de início, que pode cair numa semana ainda aberta (a partir de {diaMes(minData)}/
+            Por padrão o representante segue a regra geral. Uma regra própria vale só para ele a partir da data de início, que pode cair numa semana ainda aberta (a partir de {diaMes(minData)}/
             {minData.slice(0, 4)}); semana fechada não muda. Nunca as duas somadas. O calendário (início da semana, dia do Pix, fechamento e prazo tardio) é sempre o da regra geral.
           </p>
         </div>
       ) : (
         <div>
           {/* `embutido`: o cartão recolhido das Configurações já tem o título ("Remuneração dos representantes", UX §4.11). */}
-          {!embutido && <h2 className="tag text-muted-foreground">Remuneração do consultor</h2>}
+          {!embutido && <h2 className="tag text-muted-foreground">Remuneração do representante</h2>}
           <p className="mt-1 text-sm text-muted-foreground">
-            Quanto o consultor ganha por cadastro (confirmado pelo Freela ou declarado por ele na visita, você escolhe). Cada mudança cria uma versão nova a partir da data de início: semanas já fechadas nunca são
+            Quanto o representante ganha por cadastro (confirmado pelo Freela ou declarado por ele na visita, você escolhe). Cada mudança cria uma versão nova a partir da data de início: semanas já fechadas nunca são
             recalculadas.
           </p>
         </div>
@@ -249,12 +249,12 @@ export function RemuneracaoConfig({ consultor, embutido = false }: { consultor?:
             <Campo
               id="rem-source"
               titulo="De onde vem o cadastro que paga"
-              ajuda={declaradoOff && !declarado ? 'Para usar o cadastro declarado, o administrador do sistema precisa ligar FIELD_DECLARED_SIGNUPS_ENABLED.' : 'Declarado: vale quando o consultor marca “Cadastrou agora” na visita; o relatório compara com o Freela.'}
+              ajuda={declaradoOff && !declarado ? 'Para usar o cadastro declarado, o administrador do sistema precisa ligar FIELD_DECLARED_SIGNUPS_ENABLED.' : 'Declarado: vale quando o representante marca “Cadastrou agora” na visita; o relatório compara com o Freela.'}
             >
               <select id="rem-source" className={campo} value={form.signup_source} onChange={(e) => set('signup_source', e.target.value as FormRegra['signup_source'])}>
                 <option value="freela_confirmed">Confirmado pelo Freela (padrão)</option>
                 <option value="declared" disabled={declaradoOff && !declarado}>
-                  Declarado pelo consultor na visita
+                  Declarado pelo representante na visita
                 </option>
               </select>
             </Campo>
@@ -339,7 +339,7 @@ export function RemuneracaoConfig({ consultor, embutido = false }: { consultor?:
                   ajuda={rotasOff ? 'A opção “rota da equipe” precisa de FIELD_ROUTES_ENABLED ligada no servidor; sem ela a diária pagaria R$ 0.' : 'Rota da equipe: só conta rota montada pela equipe para aquele dia (a que o próprio consultor gera não conta).'}
                 >
                   <select id="rem-dcond" className={campo} value={form.daily_condition} onChange={(e) => set('daily_condition', e.target.value as FormRegra['daily_condition'])}>
-                    <option value="none">Todo dia de consultor ativo</option>
+                    <option value="none">Todo dia de representante ativo</option>
                     <option value="route_assigned" disabled={rotasOff && form.daily_condition !== 'route_assigned'}>
                       Dia com rota da equipe atribuída
                     </option>
@@ -354,7 +354,7 @@ export function RemuneracaoConfig({ consultor, embutido = false }: { consultor?:
                 )}
                 <label className="flex min-h-11 items-center gap-2 text-sm sm:col-span-2">
                   <input type="checkbox" className="size-5" checked={form.daily_requires_journey} onChange={(e) => set('daily_requires_journey', e.target.checked)} />
-                  Só paga a diária se o consultor tiver iniciado a jornada no dia (evita pagar dia sem trabalho)
+                  Só paga a diária se o representante tiver iniciado a jornada no dia (evita pagar dia sem trabalho)
                 </label>
                 {(intervaloOn || form.daily_min_worked.trim() !== '') && (
                   <Campo
@@ -370,7 +370,7 @@ export function RemuneracaoConfig({ consultor, embutido = false }: { consultor?:
             <Campo id="rem-floor" titulo="Piso por diária (R$)" ajuda="0 = sem piso. Garante esse valor no dia quando a condição abaixo vale.">
               <Input id="rem-floor" inputMode="decimal" className="h-11" value={form.floor} onChange={(e) => set('floor', e.target.value)} />
             </Campo>
-            <Campo id="rem-fcond" titulo="Condição do piso" ajuda="“Nenhuma” paga o piso todo dia para consultor ativo, até sem visitas.">
+            <Campo id="rem-fcond" titulo="Condição do piso" ajuda="“Nenhuma” paga o piso todo dia para representante ativo, até sem visitas.">
               <select id="rem-fcond" className={campo} value={form.floor_condition} onChange={(e) => set('floor_condition', e.target.value as FormRegra['floor_condition'])}>
                 <option value="none">Nenhuma (todo dia)</option>
                 <option value="journey_open">Houve jornada iniciada no dia</option>
@@ -422,7 +422,7 @@ export function RemuneracaoConfig({ consultor, embutido = false }: { consultor?:
             <Campo
               id="rem-from"
               titulo="Vale a partir de"
-              ajuda={consultor ? `De ${diaMes(minData)}/${minData.slice(0, 4)} em diante (semana ainda aberta deste consultor). O que já foi fechado não muda.` : 'Hoje ou depois. O passado não é reescrito.'}
+              ajuda={consultor ? `De ${diaMes(minData)}/${minData.slice(0, 4)} em diante (semana ainda aberta deste representante). O que já foi fechado não muda.` : 'Hoje ou depois. O passado não é reescrito.'}
             >
               <Input id="rem-from" type="date" className="h-11" min={minData} value={validoDe} onChange={(e) => e.target.value && setValidoDe(e.target.value)} />
             </Campo>
@@ -498,7 +498,7 @@ export function RemuneracaoConfig({ consultor, embutido = false }: { consultor?:
           {simular.data?.week && corpo?.days && (
             <div className="mt-2 space-y-1">
               <p className="text-base font-bold">
-                Em {corpo.days.length} {corpo.days.length === 1 ? 'dia' : 'dias'}, o consultor ganha {brl(simular.data.week.total_cents)} na semana.
+                Em {corpo.days.length} {corpo.days.length === 1 ? 'dia' : 'dias'}, o representante ganha {brl(simular.data.week.total_cents)} na semana.
               </p>
               <ul className="list-disc space-y-0.5 pl-5 text-sm text-muted-foreground">
                 {simular.data.week.days.map((d) => (

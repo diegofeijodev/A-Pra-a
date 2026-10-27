@@ -47,7 +47,7 @@ export function CupomCartao({ c }: { c: CampoCupom }) {
               Copiar código
             </button>
             <a
-              href={linkWhatsApp(mensagemWhatsApp(c, nome || 'seu consultor'))}
+              href={linkWhatsApp(mensagemWhatsApp(c, nome || 'seu representante'))}
               target="_blank"
               rel="noreferrer"
               className="flex h-14 items-center justify-center rounded-md border border-primary text-base font-bold"

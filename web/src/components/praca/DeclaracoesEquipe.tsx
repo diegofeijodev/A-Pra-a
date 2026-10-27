@@ -43,7 +43,7 @@ function AnularDialog({ l, onFechar }: { l: LinhaDeclaracao; onFechar: () => voi
         </DialogHeader>
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Declarado por {l.consultant_name} em {rotuloDia(l.declared_day)}. A declaração não é apagada: a anulação fica registrada com o seu nome e o motivo, e o valor sai da conta do consultor (um lançamento negativo aparece nos
+            Declarado por {l.consultant_name} em {rotuloDia(l.declared_day)}. A declaração não é apagada: a anulação fica registrada com o seu nome e o motivo, e o valor sai da conta do representante (um lançamento negativo aparece nos
             ganhos dele no próximo fechamento ou ao reconciliar). Se anular por engano, lance um ajuste positivo com motivo.
           </p>
           <label htmlFor="an-motivo" className={rotulo}>
@@ -145,8 +145,8 @@ export function DeclaracoesEquipe() {
           </section>
 
           {d.by_consultant.length > 0 && (
-            <section className="card-surface space-y-2 p-4" aria-label="Por consultor">
-              <h2 className="font-display text-lg font-extrabold">Por consultor</h2>
+            <section className="card-surface space-y-2 p-4" aria-label="Por representante">
+              <h2 className="font-display text-lg font-extrabold">Por representante</h2>
               <ul className="space-y-2">
                 {d.by_consultant.map((c) => (
                   <li key={c.consultant_id} className="rounded-md border border-border p-3 text-sm">
@@ -178,7 +178,7 @@ export function DeclaracoesEquipe() {
                       {l.over_cap && l.status !== 'voided' ? ' · acima do limite diário' : ''}
                     </p>
                     <p className="text-sm text-muted-foreground">{textoPagamento(l)}</p>
-                    {l.confirmed_by_other_consultant && <p className="text-sm text-muted-foreground">O cadastro deste estabelecimento no Freela foi feito por outro consultor.</p>}
+                    {l.confirmed_by_other_consultant && <p className="text-sm text-muted-foreground">O cadastro deste estabelecimento no Freela foi feito por outro representante.</p>}
                     {l.void && (
                       <p className="text-sm text-muted-foreground">
                         Anulado por {l.void.voided_by ?? 'sistema'}: {ROTULO_MOTIVO[l.void.reason as MotivoAnulacao] ?? l.void.reason}. {l.void.note}

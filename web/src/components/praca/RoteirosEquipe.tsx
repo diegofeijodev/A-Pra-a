@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -7,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAreas } from '@/modules/areas/application/use-areas';
 import { podeOperar } from '@/modules/acesso/domain/acesso';
+import { rotaDaPraca } from '@/modules/acesso/domain/enderecos';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { ConfigLovable } from '@/components/praca/ConfigLovable';
 import { ConfigLoteB } from '@/components/praca/ConfigLoteB';
@@ -195,11 +197,11 @@ function Configuracao({ admin }: { admin: boolean }) {
         </div>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" disabled={!admin} checked={!!form.gerar_ao_iniciar} onChange={(e) => set('gerar_ao_iniciar', e.target.checked)} />
-          Montar o roteiro sozinho quando o consultor iniciar a jornada (se ainda não houver)
+          Montar o roteiro sozinho quando o representante iniciar a jornada (se ainda não houver)
         </label>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" disabled={!admin} checked={!!form.consultor_pode_gerar} onChange={(e) => set('consultor_pode_gerar', e.target.checked)} />
-          Deixar o consultor montar o próprio dia no celular
+          Deixar o representante montar o próprio dia no celular
         </label>
         <p className="text-sm text-muted-foreground">
           Conta do tempo: (janela − almoço) ÷ meta = minutos por visita, já com o deslocamento. Hoje: {data.meta_diaria} visitas, {data.minutos_por_visita} min parado em cada.
@@ -235,8 +237,8 @@ function FluxoVisitaConfig({ admin }: { admin: boolean }) {
       <summary className="cursor-pointer text-sm font-bold">Modo da visita do representante</summary>
       <div className="mt-3 space-y-3">
         <p className="text-sm text-muted-foreground">
-          <strong>Simples</strong> = jeito do Diego: o consultor escolhe como foi a visita em 1 toque. <strong>Completo</strong> = o nosso, com mais perguntas. Vale para as visitas abertas daqui em diante;
-          a exceção por consultor fica na ficha dele. Só funciona com a chave “escolha do modo da visita” ligada no servidor; desligada, todos usam o completo.
+          <strong>Simples</strong> = jeito do Diego: o representante escolhe como foi a visita em 1 toque. <strong>Completo</strong> = o nosso, com mais perguntas. Vale para as visitas abertas daqui em diante;
+          a exceção por representante fica na ficha dele. Só funciona com a chave “escolha do modo da visita” ligada no servidor; desligada, todos usam o completo.
         </p>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" disabled={!admin} onClick={() => setForm(data.presets.chefe)} className="h-10">
@@ -299,7 +301,7 @@ function FluxoVisitaConfig({ admin }: { admin: boolean }) {
           <div className="space-y-1">
             <p className="text-sm font-bold">Alerta de divergência dos cadastros declarados</p>
             <p className="text-sm text-muted-foreground">
-              Aparece em “Atenção agora” quando, nos últimos 7 dias (até ontem), um consultor tem pelo menos este número de declarações sem correspondência no Freela E pelo menos esta porcentagem das declaradas. Só vale com o ganho
+              Aparece em “Atenção agora” quando, nos últimos 7 dias (até ontem), um representante tem pelo menos este número de declarações sem correspondência no Freela E pelo menos esta porcentagem das declaradas. Só vale com o ganho
               declarado ligado no servidor.
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -381,7 +383,7 @@ export function RoteirosEquipe({ praca }: { praca: PracaView }) {
                 <Input id="rot-dia" type="date" min={hoje} value={day} onChange={(e) => e.target.value && setDay(e.target.value)} />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="rot-consultor">Consultor</Label>
+                <Label htmlFor="rot-consultor">Representante</Label>
                 <select id="rot-consultor" className="h-10 w-full rounded-md border border-border bg-background px-2 text-sm" value={consultantId} onChange={(e) => setConsultantId(e.target.value)}>
                   <option value="">Escolha…</option>
                   {doPraca.map((c) => (
@@ -405,7 +407,7 @@ export function RoteirosEquipe({ praca }: { praca: PracaView }) {
             </div>
 
             <fieldset className="space-y-1">
-              <legend className="text-sm font-medium">Como o consultor se desloca</legend>
+              <legend className="text-sm font-medium">Como o representante se desloca</legend>
               <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Modo de deslocamento">
                 {MODOS_DESLOCAMENTO.map((m) => (
                   <button
@@ -428,17 +430,21 @@ export function RoteirosEquipe({ praca }: { praca: PracaView }) {
             </fieldset>
 
             {candidatos.isPending ? (
-              <p className="text-sm text-muted-foreground">Carregando estabelecimentos…</p>
+              <p className="text-sm text-muted-foreground">Carregando os clientes…</p>
             ) : candidatos.isError ? (
               <div className="space-y-2">
-                <p className="text-sm text-destructive">{apiErrorMessage(candidatos.error, 'Não foi possível carregar os estabelecimentos.')}</p>
+                <p className="text-sm text-destructive">{apiErrorMessage(candidatos.error, 'Não foi possível carregar os clientes.')}</p>
                 <Button variant="outline" onClick={() => void candidatos.refetch()}>
                   Tentar de novo
                 </Button>
               </div>
             ) : (candidatos.data ?? []).length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                Ainda não há estabelecimentos com localização exata nesta área. Use “Buscar estabelecimentos” e adicione os achados como leads.
+                Ainda não há clientes com localização exata nesta área. Use “Buscar clientes no mapa” em{' '}
+                <Link href={rotaDaPraca(praca.id)} className="font-medium text-primary underline underline-offset-2">
+                  Praças › {praca.name}
+                </Link>{' '}
+                e adicione os achados à praça.
               </p>
             ) : (
               <>
@@ -478,7 +484,7 @@ export function RoteirosEquipe({ praca }: { praca: PracaView }) {
               <p className="text-sm text-muted-foreground">Só administradores montam roteiros.</p>
             )}
             <p className="text-sm text-muted-foreground">
-              Só entram estabelecimentos com localização exata, fora do roteiro de outro consultor no dia. A ordem sai do caminho mais curto em linha reta × {String(rotas.data?.[0]?.params.fator_desvio ?? 1.3).replace('.', ',')}, dentro da janela de trabalho e do almoço; o que não couber vira reserva.
+              Só entram clientes com localização exata, fora do roteiro de outro representante no dia. A ordem sai do caminho mais curto em linha reta × {String(rotas.data?.[0]?.params.fator_desvio ?? 1.3).replace('.', ',')}, dentro da janela de trabalho e do almoço; o que não couber vira reserva.
             </p>
           </section>
 
@@ -507,7 +513,7 @@ export function RoteirosEquipe({ praca }: { praca: PracaView }) {
           <DialogHeader>
             <DialogTitle>Publicar o roteiro?</DialogTitle>
             <DialogDescription>
-              Publicar o roteiro de {day.split('-').reverse().join('/')} para {consultor?.name ?? 'o consultor'} com {marcados.size} estabelecimentos ({modo === 'carro' ? 'de carro' : 'a pé'})? Ele vê na tela Hoje ao abrir o aplicativo. Se já havia um roteiro, o conjunto é substituído (o que já foi visitado fica).
+              Publicar o roteiro de {day.split('-').reverse().join('/')} para {consultor?.name ?? 'o representante'} com {marcados.size} clientes ({modo === 'carro' ? 'de carro' : 'a pé'})? Ele vê na tela Hoje ao abrir o aplicativo. Se já havia um roteiro, o conjunto é substituído (o que já foi visitado fica).
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">

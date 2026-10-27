@@ -26,7 +26,7 @@ export function ResumoDiaConteudo({ r, paraEquipe = false, quadros }: { r: Resum
         </div>
       )}
       {!comNota && r.display !== 'nota' && paraEquipe && (
-        <p className="text-sm text-muted-foreground">{r.display === 'numeros' ? 'Configurado para mostrar só os números (sem nota).' : 'O consultor não vê o resumo (desligado na configuração).'}</p>
+        <p className="text-sm text-muted-foreground">{r.display === 'numeros' ? 'Configurado para mostrar só os números (sem nota).' : 'O representante não vê o resumo (desligado na configuração).'}</p>
       )}
       <dl className="divide-y divide-border rounded-md border border-border">
         {linhasDoResumo(r).map(([k, v]) => (

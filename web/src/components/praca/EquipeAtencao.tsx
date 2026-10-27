@@ -265,7 +265,7 @@ export function AlertasConfig() {
           </fieldset>
           <label className="flex min-h-12 items-center gap-2 text-sm">
             <input type="checkbox" disabled={!admin} checked={form.retornos_no_roteiro} onChange={(e) => setForm({ ...form, retornos_no_roteiro: e.target.checked })} />
-            Retornos vencidos entram sozinhos no roteiro automático do consultor
+            Retornos vencidos entram sozinhos no roteiro automático do representante
           </label>
           <p className="text-sm text-muted-foreground">
             Os horários e a meta são os de &quot;Meta e horários do roteiro&quot;. Os alertas ficam só nesta tela: nada sai por WhatsApp, e-mail ou push.

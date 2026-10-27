@@ -42,10 +42,10 @@ export function ConfigLovable({ admin }: { admin: boolean }) {
 
         {features.day_summary && (
           <fieldset className="space-y-3">
-            <legend className="text-sm font-bold">Resultado do dia do consultor</legend>
+            <legend className="text-sm font-bold">Resultado do dia do representante</legend>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1">
-                <Label htmlFor="cl-ui">O que o consultor vê ao encerrar o dia</Label>
+                <Label htmlFor="cl-ui">O que o representante vê ao encerrar o dia</Label>
                 <select id="cl-ui" disabled={!admin} className={sel} value={form.ui_resumo_dia} onChange={(e) => set({ ui_resumo_dia: e.target.value as ConfigLovableCampos['ui_resumo_dia'] })}>
                   <option value="nota">A nota de 0 a 10, com a conta (padrão)</option>
                   <option value="numeros">Só os números, sem nota (nosso)</option>

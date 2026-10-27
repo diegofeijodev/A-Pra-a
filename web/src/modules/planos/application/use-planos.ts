@@ -92,7 +92,7 @@ export function useArquivarPlano() {
     mutationFn: (id: string) => arquivarPlano(id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['planos'] });
-      toast.success('Geração arquivada. As rotas publicadas continuam com os consultores.');
+      toast.success('Geração arquivada. As rotas publicadas continuam com os representantes.');
     },
     onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível arquivar.')),
   });

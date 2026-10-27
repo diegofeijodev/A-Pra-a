@@ -311,10 +311,14 @@ export function ShoppingsRotas({ praca }: { praca: PracaView }) {
         )}
       </section>
 
-      {operar && grandes.length > 0 && (
+      {/* O passo 2 aparece sempre para quem opera (sem shopping grande, só explica): a numeração não pula do 1 para o 3. */}
+      {operar && (
         <section className="card-surface space-y-3 p-4" aria-label="Mapear clientes dentro dos shoppings">
           <h2 className="text-base font-bold">2. Mapear clientes dentro dos shoppings</h2>
-          {segmentos.data && (
+          {grandes.length === 0 && (
+            <p className="text-sm text-muted-foreground">Nenhum shopping grande nesta praça ainda. Quando houver um no passo 1, as lojas de dentro se buscam aqui.</p>
+          )}
+          {grandes.length > 0 && segmentos.data && (
             <p className="text-sm">
               {lojas.length
                 ? `Busca ${lojas.map((a) => a.label).join(' e ')} dentro de cada shopping grande.`
@@ -324,14 +328,16 @@ export function ShoppingsRotas({ praca }: { praca: PracaView }) {
           {grandes.map((s) => (
             <LojasDoShopping key={s.lead_id} praca={praca} s={s} tipos={tipos} />
           ))}
-          <p className="text-sm text-muted-foreground">
-            Dentro do polígono do shopping no mapa aberto; sem resultado (ou shopping só como ponto), em volta até {cfg?.raio_lojas_m ?? 300} m — menos confiável.
-          </p>
+          {grandes.length > 0 && (
+            <p className="text-sm text-muted-foreground">
+              Dentro do polígono do shopping no mapa aberto; sem resultado (ou shopping só como ponto), em volta até {cfg?.raio_lojas_m ?? 300} m — menos confiável.
+            </p>
+          )}
         </section>
       )}
 
       <section className="card-surface space-y-3 p-4" aria-label="Rotas dos shoppings">
-        <h2 className="text-base font-bold">3. Rotas</h2>
+        <h2 className="text-base font-bold">{operar ? '3' : '2'}. Rotas</h2>
         {operar && (
           <div className="flex flex-col flex-wrap gap-2 sm:flex-row">
             <Button className="h-12" disabled={criar.isPending || grandes.length === 0} onClick={() => criar.mutate({ praca_id: praca.id, kind: 'shoppings', travel_mode: 'carro' })}>

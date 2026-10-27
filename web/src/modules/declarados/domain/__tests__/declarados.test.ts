@@ -14,7 +14,7 @@ describe('declarados', () => {
     expect(r.rows[0]?.company_name).toBe('Bar 1');
   });
   it('o texto de pagamento diz o que acontece com a declaração', () => {
-    expect(textoPagamento({ paid_by: 'declared', status: 'unmatched', over_cap: false })).toBe('Paga ao consultor pela declaração.');
+    expect(textoPagamento({ paid_by: 'declared', status: 'unmatched', over_cap: false })).toBe('Paga ao representante pela declaração.');
     expect(textoPagamento({ paid_by: 'freela_confirmed', status: 'pending', over_cap: false })).toContain('só registrada'.replace('só', 'Só'));
     expect(textoPagamento({ paid_by: 'declared', status: 'unmatched', over_cap: true })).toContain('Acima do limite');
     expect(textoPagamento({ paid_by: 'declared', status: 'voided', over_cap: false })).toContain('Anulado');

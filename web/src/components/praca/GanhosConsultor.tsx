@@ -49,8 +49,8 @@ function AjusteDialog({ consultantId, onFechar }: { consultantId: string; onFech
             Tipo
           </label>
           <select id="aj-sinal" className="h-11 w-full rounded-md border border-input bg-transparent px-3 text-base" value={sinal} onChange={(e) => setSinal(e.target.value as '1' | '-1')}>
-            <option value="1">Acréscimo (soma ao consultor)</option>
-            <option value="-1">Desconto (tira do consultor)</option>
+            <option value="1">Acréscimo (soma ao representante)</option>
+            <option value="-1">Desconto (tira do representante)</option>
           </select>
           <label htmlFor="aj-valor" className="text-sm font-medium text-muted-foreground">
             Valor (R$)
@@ -110,7 +110,7 @@ export function GanhosConsultor({ consultantId, nome }: { consultantId: string; 
   const ehAtual = week.from <= hoje && hoje <= week.to;
 
   return (
-    <section className="mt-6 space-y-3" aria-label="Ganhos do consultor">
+    <section className="mt-6 space-y-3" aria-label="Ganhos do representante">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="tag text-muted-foreground">Ganhos</h2>
         <Button variant="outline" className="h-11" aria-label="Semana anterior" onClick={() => setDia(addDays(week.from, -7))}>
@@ -123,7 +123,7 @@ export function GanhosConsultor({ consultantId, nome }: { consultantId: string; 
       </div>
 
       {!c ? (
-        <p className="text-sm text-muted-foreground">Este consultor ainda não existia nesta semana.</p>
+        <p className="text-sm text-muted-foreground">Este representante ainda não existia nesta semana.</p>
       ) : (
         <div className="card-surface space-y-3 p-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -134,7 +134,7 @@ export function GanhosConsultor({ consultantId, nome }: { consultantId: string; 
             </p>
           </div>
           <p className="text-sm text-muted-foreground">
-            Conta: {c.confirmed_signups} {q.data.signup_source === 'declared' ? 'cadastros declarados pelo consultor na visita' : 'cadastros confirmados pelo Freela'} na semana. Fonte: {q.data.source}.
+            Conta: {c.confirmed_signups} {q.data.signup_source === 'declared' ? 'cadastros declarados pelo representante na visita' : 'cadastros confirmados pelo Freela'} na semana. Fonte: {q.data.source}.
           </p>
           {c.rule && (
             <p className="text-sm">
@@ -181,7 +181,7 @@ export function GanhosConsultor({ consultantId, nome }: { consultantId: string; 
                 className="h-12"
                 disabled={c.status === 'closed' || !encerrada || fechar.isPending}
                 onClick={() => {
-                  if (window.confirm(`Fechar a semana ${rotuloSemana(week.from, week.to)} deste consultor em ${brl(c.total_cents)}? Semana fechada não reabre.`)) {
+                  if (window.confirm(`Fechar a semana ${rotuloSemana(week.from, week.to)} deste representante em ${brl(c.total_cents)}? Semana fechada não reabre.`)) {
                     fechar.mutate({ week_start: week.from, consultant_id: consultantId });
                   }
                 }}
@@ -247,8 +247,8 @@ export function GanhosConsultor({ consultantId, nome }: { consultantId: string; 
       {ajuste && <AjusteDialog consultantId={consultantId} onFechar={() => setAjuste(false)} />}
       {regraPropriaOn && (
         <details className="card-surface p-4" onToggle={(e) => setRegraAberta(e.currentTarget.open)}>
-          <summary className="min-h-12 cursor-pointer text-sm font-bold leading-[3rem]">Regra de pagamento deste consultor</summary>
-          {regraAberta && <RemuneracaoConfig consultor={{ id: consultantId, name: nome ?? c?.name ?? 'o consultor' }} />}
+          <summary className="min-h-12 cursor-pointer text-sm font-bold leading-[3rem]">Regra de pagamento deste representante</summary>
+          {regraAberta && <RemuneracaoConfig consultor={{ id: consultantId, name: nome ?? c?.name ?? 'o representante' }} />}
         </details>
       )}
     </section>

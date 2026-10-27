@@ -132,7 +132,7 @@ describe('resumoRegra (a regra em palavras)', () => {
     expect(t).toContain('Piso por diária: R$ 80,00, nos dias com ao menos 1 visita (contadas só com checkout).');
   });
   it('piso sem condição avisa que paga todo dia', () => {
-    expect(resumoRegra({ ...PADRAO, floor_cents: 10000 })).toContain('Piso por diária: R$ 100,00, todo dia, para consultor ativo (mesmo sem visitas).');
+    expect(resumoRegra({ ...PADRAO, floor_cents: 10000 })).toContain('Piso por diária: R$ 100,00, todo dia, para representante ativo (mesmo sem visitas).');
   });
 });
 
@@ -146,8 +146,8 @@ describe('simulador', () => {
     expect(corpoSimulacao({ ...f, unit: 'x' }, { signups: '3', visits: '0', journey_open: true })).toBeNull();
   });
   it('título', () => {
-    expect(tituloSimulacao(12, 12000)).toBe('Com 12 cadastros confirmados num dia, o consultor ganha R$ 120,00.');
-    expect(tituloSimulacao(1, 1000)).toBe('Com 1 cadastro confirmado num dia, o consultor ganha R$ 10,00.');
+    expect(tituloSimulacao(12, 12000)).toBe('Com 12 cadastros confirmados num dia, o representante ganha R$ 120,00.');
+    expect(tituloSimulacao(1, 1000)).toBe('Com 1 cadastro confirmado num dia, o representante ganha R$ 10,00.');
   });
 });
 
@@ -223,7 +223,7 @@ describe('modo do chefe (S2/S3, contrato §32)', () => {
   });
   it('a regra em palavras diz declarado, diária e metas que somam', () => {
     const t = resumoRegra(CHEFE).join(' ');
-    expect(t).toContain('declarado pelo consultor na visita vale R$ 10,00 (até 30 por dia)');
+    expect(t).toContain('declarado pelo representante na visita vale R$ 10,00 (até 30 por dia)');
     expect(t).toContain('Todas as metas atingidas somam');
     expect(t).toContain('Diária de R$ 100,00, nos dias com rota da equipe atribuída');
   });

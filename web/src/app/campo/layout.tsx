@@ -7,7 +7,7 @@ import type { Metadata, Viewport } from 'next';
  */
 export const metadata: Metadata = {
   title: 'Praça Campo',
-  description: 'Jornada, visitas e QR code do consultor de campo da Freela.',
+  description: 'Jornada, visitas e QR code do representante da Freela.',
   manifest: '/campo/manifest.webmanifest',
   appleWebApp: { capable: true, title: 'Praça Campo', statusBarStyle: 'black-translucent' },
   icons: { icon: '/campo/icone/192', apple: '/campo/icone/180' },

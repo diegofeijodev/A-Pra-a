@@ -25,7 +25,7 @@ export function useAnularDeclaracao() {
       void qc.invalidateQueries({ queryKey: CHAVE });
       void qc.invalidateQueries({ queryKey: ['remuneracao'] });
       void qc.invalidateQueries({ queryKey: ['consultores', 'atencao'] });
-      toast.success('Declaração anulada. O ajuste aparece nos ganhos do consultor no próximo fechamento ou ao reconciliar.');
+      toast.success('Declaração anulada. O ajuste aparece nos ganhos do representante no próximo fechamento ou ao reconciliar.');
     },
     onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível anular a declaração.')),
   });

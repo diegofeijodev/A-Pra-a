@@ -161,7 +161,7 @@ export function ordenarFila<T extends Pick<Pagamento, 'status' | 'blocked' | 'co
 
 /** Confirmação com a consequência escrita (antes de gravar). */
 export function textoConfirmarPagamento(p: Pick<Pagamento, 'consultant_name' | 'due_cents'>, pagoCents: number): string[] {
-  const nome = p.consultant_name ?? 'o consultor';
+  const nome = p.consultant_name ?? 'o representante';
   const linhas = [
     `Registrar que você JÁ pagou ${brl(pagoCents)} em Pix para ${nome}. O Praça não envia dinheiro: isso só anota o pagamento feito no seu banco.`,
   ];

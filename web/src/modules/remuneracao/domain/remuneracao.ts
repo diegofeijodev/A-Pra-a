@@ -511,7 +511,7 @@ export function resumoRegra(r: RegraRemuneracao): string[] {
   else
     linhas.push(
       declarado
-        ? `Cada cadastro declarado pelo consultor na visita vale ${brl(r.unit_cents)}${r.declared_daily_cap ? ` (até ${r.declared_daily_cap} por dia)` : ''}.`
+        ? `Cada cadastro declarado pelo representante na visita vale ${brl(r.unit_cents)}${r.declared_daily_cap ? ` (até ${r.declared_daily_cap} por dia)` : ''}.`
         : `Cada cadastro confirmado pelo Freela vale ${brl(r.unit_cents)}.`,
     );
   if (r.tiers.length) {
@@ -527,7 +527,7 @@ export function resumoRegra(r: RegraRemuneracao): string[] {
   if (r.floor_cents > 0) {
     const cond =
       r.floor_condition === 'none'
-        ? 'todo dia, para consultor ativo (mesmo sem visitas)'
+        ? 'todo dia, para representante ativo (mesmo sem visitas)'
         : r.floor_condition === 'journey_open'
           ? 'nos dias em que houve jornada iniciada'
           : `nos dias com ao menos ${r.floor_min_visits} ${r.floor_min_visits === 1 ? 'visita' : 'visitas'} (${r.visits_count === 'checkin' ? 'contadas no check-in' : 'contadas só com checkout'})`;
@@ -537,7 +537,7 @@ export function resumoRegra(r: RegraRemuneracao): string[] {
   }
   if ((r.daily_base_cents ?? 0) > 0) {
     const cond: Record<string, string> = {
-      none: 'todo dia de consultor ativo',
+      none: 'todo dia de representante ativo',
       journey_open: 'nos dias com jornada iniciada',
       min_visits: `nos dias com ao menos ${r.daily_base_min_visits ?? 0} visita(s)`,
       route_assigned: 'nos dias com rota da equipe atribuída',
@@ -597,9 +597,9 @@ export function corpoSimulacao(f: FormRegra, p: ParamsSimulacao): CorpoSimulacao
   return corpo;
 }
 
-/** "Com 12 cadastros num dia, o consultor ganha R$ 120,00." */
+/** "Com 12 cadastros num dia, o representante ganha R$ 120,00." */
 export const tituloSimulacao = (signups: number, totalCents: number): string =>
-  `Com ${cadastros(signups)} ${signups === 1 ? 'confirmado' : 'confirmados'} num dia, o consultor ganha ${brl(totalCents)}.`;
+  `Com ${cadastros(signups)} ${signups === 1 ? 'confirmado' : 'confirmados'} num dia, o representante ganha ${brl(totalCents)}.`;
 
 export function rotuloStatus(s: 'open' | 'closed'): string {
   return s === 'closed' ? 'Fechada' : 'Aberta';

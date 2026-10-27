@@ -2,6 +2,7 @@
 
 import { Archive, Route as RouteIcon } from 'lucide-react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
 import { RotaPlanoCard } from '@/components/praca/RotaPlanoCard';
 import {
@@ -19,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAreas } from '@/modules/areas/application/use-areas';
 import { podeOperar } from '@/modules/acesso/domain/acesso';
+import { rotaDaPraca } from '@/modules/acesso/domain/enderecos';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { useConsultores } from '@/modules/consultores/application/use-consultores';
 import { atuaNaPraca } from '@/modules/consultores/domain/pracas';
@@ -154,7 +156,22 @@ export function DividirRotas({ praca, seletorPraca }: { praca: PracaView; seleto
           </>
         )}
         <p className="w-full text-sm text-muted-foreground" aria-live="polite" data-testid="previa-divisao">
-          {previa.isPending ? 'Contando os clientes…' : previa.isError ? 'Não conseguimos contar agora.' : previa.data?.conta}
+          {previa.isPending ? (
+            'Contando os clientes…'
+          ) : previa.isError ? (
+            'Não conseguimos contar agora.'
+          ) : areas && ativas.length === 0 ? (
+            // As áreas moram no detalhe da praça desde o redesenho (a frase da API ainda cita as Configurações).
+            <>
+              Nenhuma área de atuação ativa nesta praça. Cadastre uma em{' '}
+              <Link href={rotaDaPraca(praca.id)} className="font-medium text-primary underline underline-offset-2">
+                Praças › {praca.name} › Áreas de atuação
+              </Link>{' '}
+              para dividir em rotas.
+            </>
+          ) : (
+            previa.data?.conta
+          )}
         </p>
         <details className="w-full text-xs text-muted-foreground">
           <summary className="cursor-pointer py-1 text-sm">ⓘ Como contamos</summary>
