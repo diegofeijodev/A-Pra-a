@@ -1,8 +1,11 @@
-import { Inject, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
+import { senhaConfere } from '../../common/auth/senha-falsa';
 import { PrismaService } from '../../common/database/prisma.service';
 import { LOVABLE_E_FLAGS, type FlagsLovableE } from '../../common/flags/lovable-e.flags';
+import { PasswordPolicyService } from '../password-policy/password-policy.service';
+import type { ChangeOwnPasswordDto } from './dto/auth.dto';
 
 export interface UserView {
   id: string;
@@ -26,6 +29,8 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     @Optional() @Inject(LOVABLE_E_FLAGS) private readonly flags?: FlagsLovableE,
+    // Por último: os testes montam o serviço à mão com os três primeiros (redesenho E3, troca da própria senha).
+    @Optional() private readonly senhas?: PasswordPolicyService,
   ) {}
 
   // Compartilhado com o UsersModule: uma única projeção de `users` para fora,
@@ -71,7 +76,8 @@ export class AuthService {
 
   async login(email: string, password: string) {
     const user = await this.prisma.users.findUnique({ where: { email: email.trim().toLowerCase() } });
-    if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+    // Sem a conta, compara com o hash fixo: e-mail inexistente e senha errada levam o mesmo tempo (contrato §2).
+    if (!(await senhaConfere(password, user?.password_hash)) || !user) {
       throw new UnauthorizedException({ code: 'INVALID_CREDENTIALS', message: 'E-mail ou senha inválidos' });
     }
     // Senha certa mas conta desativada: não é "credencial inválida" (o
@@ -82,6 +88,25 @@ export class AuthService {
     }
     const view = this.toUserView(user);
     return { access_token: await this.issueToken(view), user: view };
+  }
+
+  /**
+   * Troca da PRÓPRIA senha (contrato §2, redesenho E3). Erros 400, nunca 401 (o `http.ts` do web trata 401 como sessão morta):
+   * `WRONG_PASSWORD` → `SAME_PASSWORD` → `WEAK_PASSWORD` (a regra do §41.2 só na senha NOVA e só com a flag).
+   * O JWT da equipe não tem `token_version`: o token de antes vale até expirar (D2, leva própria).
+   */
+  async changePassword(userId: string, dto: ChangeOwnPasswordDto): Promise<{ ok: true }> {
+    const user = await this.prisma.users.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException({ code: 'UNAUTHORIZED', message: 'Usuário não encontrado' });
+    if (!(await bcrypt.compare(dto.current_password, user.password_hash))) {
+      throw new BadRequestException({ code: 'WRONG_PASSWORD', message: 'A senha atual não confere.' });
+    }
+    if (dto.new_password === dto.current_password) {
+      throw new BadRequestException({ code: 'SAME_PASSWORD', message: 'A senha nova precisa ser diferente da atual.' });
+    }
+    await this.senhas?.exigir(dto.new_password);
+    await this.prisma.users.update({ where: { id: userId }, data: { password_hash: await bcrypt.hash(dto.new_password, 10) } });
+    return { ok: true };
   }
 
   async me(userId: string) {

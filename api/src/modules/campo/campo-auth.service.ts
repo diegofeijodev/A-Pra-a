@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
+import { senhaConfere } from '../../common/auth/senha-falsa';
 import { PrismaService } from '../../common/database/prisma.service';
 import { CAMPO_AUDIENCE, type CampoTokenPayload } from '../../common/guards/campo-auth.guard';
 import { PasswordPolicyService } from '../password-policy/password-policy.service';
@@ -64,7 +65,8 @@ export class CampoAuthService {
       where: { email: email.trim().toLowerCase() },
       include: COM_PRACA,
     });
-    if (!c || !(await bcrypt.compare(password, c.password_hash))) {
+    // Sem a conta, compara com o hash fixo: e-mail inexistente e senha errada levam o mesmo tempo (contrato §2 e §20).
+    if (!(await senhaConfere(password, c?.password_hash)) || !c) {
       throw new UnauthorizedException({ code: 'INVALID_CREDENTIALS', message: 'E-mail ou senha inválidos' });
     }
     if (!c.active) throw new UnauthorizedException({ code: 'UNAUTHORIZED', message: 'Conta desativada' });

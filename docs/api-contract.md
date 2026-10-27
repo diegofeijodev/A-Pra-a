@@ -49,7 +49,9 @@ aqui primeiro. Swagger interativo em `/docs` (fora de produção).
   `404 NOT_FOUND`, nunca `500`.
 - Throttle: 300 req/min **por rota** e por IP — o `@nestjs/throttler` monta a
   chave com classe + handler, então cada rota tem o seu balde. O formulário
-  público tem teto próprio (§11).
+  público tem teto próprio (§11), e as duas entradas também: `POST /v1/auth/login`
+  (equipe, §2) e `POST /v1/campo/auth/login` (consultor, §20), **20/min por IP**
+  cada uma.
 - O IP é o `req.ip` do Fastify. Atrás de proxy reverso (nginx) isso é o IP do
   proxy — e aí o mundo inteiro divide um balde só. Por isso existe
   `TRUST_PROXY=true` (ver README, "Produção"), que faz o Fastify ler
@@ -62,12 +64,38 @@ aqui primeiro. Swagger interativo em `/docs` (fora de produção).
 
 | Método | Rota | Corpo | Resposta |
 |---|---|---|---|
-| POST | `/login` | `{email, password}` | `{access_token, user}` |
+| POST | `/login` | `{email, password}` | `{access_token, user}` — público, **20/min por IP** (`@Throttle`) |
 | GET | `/me` | — | `{user}` |
+| POST | `/change-password` | `{current_password, new_password}` (atual: 6–72; nova: 8–72) | `200 {ok: true}` — a própria conta (`@Equipe()`) |
 
-`user` é sempre um `UserView` (ver §3). Erros: `INVALID_CREDENTIALS` (e-mail
-ou senha não batem), `UNAUTHORIZED` (senha certa, conta desativada — mesmo
-código que o guard usa quando a conta é desativada depois do token emitido).
+`user` é sempre um `UserView` (ver §3). Erros do login: `INVALID_CREDENTIALS`
+(e-mail ou senha não batem), `UNAUTHORIZED` (senha certa, conta desativada —
+mesmo código que o guard usa quando a conta é desativada depois do token
+emitido). E-mail que não existe e senha errada respondem igual **e levam o
+mesmo tempo**: sem a conta, o login compara a senha com um hash fixo de mesmo
+custo (`common/auth/senha-falsa.ts`), também no login do consultor (§20). A tela
+única de entrada (redesenho de 26/10, E3) tenta a equipe e, só num 401, o
+consultor: nenhuma das duas revela se o e-mail existe.
+
+**`POST /change-password`** (redesenho de 26/10, E3) — a pessoa logada troca a
+**própria** senha:
+
+- O id vem **do token**, nunca do corpo (`user_id` no corpo = `400
+  VALIDATION_ERROR`, pelo `forbidNonWhitelisted`).
+- Senha atual errada = `400 WRONG_PASSWORD` "A senha atual não confere." —
+  **não** 401, que o web trata como sessão morta (mesma regra do campo, §20).
+- Nova igual à atual = `400 SAME_PASSWORD`.
+- Com `PASSWORD_POLICY_ENABLED`, a nova passa pela regra do §41.2 (`400
+  WEAK_PASSWORD`); desligada, valem só os 8–72 do DTO. A senha atual nunca passa
+  pela regra.
+- Ordem: `WRONG_PASSWORD` → `SAME_PASSWORD` → `WEAK_PASSWORD`.
+- Limite conhecido: o JWT da equipe não tem `token_version`, então o token de
+  antes da troca vale até expirar (≤ 12 h), como no `PUT /v1/users/:id/password`.
+  Troca obrigatória da equipe e derrubar o token antigo ficam para uma leva
+  própria (decisão D2 do redesenho).
+- `PUT /v1/users/:id/password` (§3) não muda: continua sendo o admin (ou o
+  próprio, sem a senha atual) definindo a senha; a tela "Trocar senha" da equipe
+  usa só esta rota.
 
 <a id="3-pessoas"></a>
 
@@ -99,7 +127,7 @@ Nunca inclui `password_hash`.
 | POST | `/` | admin | `{email, password, name, role_label?, color?, phone?, is_admin?}` | `201`; `409 EMAIL_IN_USE` |
 | PATCH | `/me` | qualquer autenticado | `{name?, color?, phone?, theme?, active_praca_id?}` | atualiza a própria conta |
 | PATCH | `/:id` | admin | `{name?, role_label?, color?, phone?, is_admin?, active?, sort?}` | ver regras abaixo |
-| PUT | `/:id/password` | admin, ou o próprio | `{password}` | `{ok:true}`; senão `403 FORBIDDEN` |
+| PUT | `/:id/password` | admin, ou o próprio | `{password}` | `{ok:true}`; senão `403 FORBIDDEN`. A troca da própria senha pela tela pede a atual: `POST /v1/auth/change-password` (§2) |
 | DELETE | `/:id` | admin | — | soft delete: `active=false`; `{ok:true}` |
 
 Regras de desativação (`active:false`, via `PATCH /:id` ou `DELETE /:id`):
@@ -2771,7 +2799,7 @@ login, token e telas próprios). Desenho: `docs/superpowers/specs/2026-10-08-con
 
 | Método | Rota | Corpo | Resposta |
 |---|---|---|---|
-| POST | `/v1/campo/auth/login` | `{email, password}` | `200 {access_token, consultant, must_change_password}` — público, 20/min por IP |
+| POST | `/v1/campo/auth/login` | `{email, password}` | `200 {access_token, consultant, must_change_password}` — público, 20/min por IP; e-mail inexistente leva o mesmo tempo (hash fixo, §2) |
 | POST | `/v1/campo/auth/change-password` | `{current_password, new_password}` (nova: 8–72) | `200 {access_token, consultant, must_change_password: false}` |
 | GET | `/v1/campo/me` | — | `{consultant, channels}` |
 
@@ -5129,8 +5157,8 @@ Política `{ min_length, require_upper, require_digit }` (o máximo é sempre 72
 | GET | `/v1/password-policy` | `@Public()` (não é segredo) | ligada: `{ enabled: true, min_length, max_length: 72, require_upper, require_digit, is_default, rules: [{ key, label }] }` (`rules` na ordem da tela: `min_length` "8 caracteres ou mais", `upper` "Uma letra maiúscula", `digit` "Um número") |
 | PUT | `/v1/password-policy` | só admin | parcial `{ min_length?, require_upper?, require_digit? }` (`null` = ausente); devolve o GET. Fora da faixa → `400 VALIDATION_ERROR` |
 
-- **Onde vale (só senha NOVA, com a flag ligada):** `new_password` de `POST /v1/campo/auth/change-password`, `password` de `PUT /v1/users/:id/password` e de `POST /v1/users` (senha
-  inicial definida pelo admin). **Nunca** no login nem no `current_password`; nenhuma senha atual é invalidada. Os limites dos DTOs não mudam.
+- **Onde vale (só senha NOVA, com a flag ligada):** `new_password` de `POST /v1/campo/auth/change-password` e de `POST /v1/auth/change-password` (§2, redesenho E3),
+  `password` de `PUT /v1/users/:id/password` e de `POST /v1/users` (senha inicial definida pelo admin). **Nunca** no login nem no `current_password`; nenhuma senha atual é invalidada. Os limites dos DTOs não mudam.
 - **Erro:** `400 WEAK_PASSWORD` com o que falta, nesta ordem: "A senha precisa de: 8 caracteres ou mais, 1 letra maiúscula, 1 número." (só os itens que faltam; a senha nunca aparece
   no erro nem no log).
 - **Senha provisória** (`POST /v1/consultores` e `POST /v1/consultores/:id/reset-password`, com ou sem a flag): 12 caracteres de `ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789`
