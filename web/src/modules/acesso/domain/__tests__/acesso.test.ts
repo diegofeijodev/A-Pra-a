@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { corpoDoPerfil, ehGestor, featuresMenuSchema, itemAtivo, montarMenu, paginaInicial, perfilDe, podeOperar, SEM_FEATURES_MENU, type FeaturesMenu } from '../acesso';
-import { destinoDoRepresentante, destinoDoRepresentantePorEndereco, ROTA, ROTA_CAMPO } from '../enderecos';
+import { destinoDoRepresentante, destinoDoRepresentantePorEndereco, rotaDaPraca, ROTA, ROTA_CAMPO } from '../enderecos';
 import { conferirRegras, senhaCumpre, type PoliticaLigada } from '../senha';
 import { emailContatoValido, linkWhatsappAcesso, mascararEmail } from '../cadastro';
 
@@ -81,8 +81,10 @@ describe('menu da equipe (casca da Lovable)', () => {
     expect(ativo('/consultores/clientes')).toBe('Clientes');
     expect(ativo('/consultores/clientes', 'lista')).toBe('Clientes');
     expect(ativo('/consultores/clientes', 'mapa')).toBe('Mapa');
-    expect(ativo('/praca')).toBe('Praças');
-    expect(ativo('/pracas')).toBeNull();
+    // E5.2: "Praças" é a lista nova (`/pracas`) e acende no detalhe; `/praca` (o plano de antes, até a E7) não acende nada.
+    expect(ativo('/pracas')).toBe('Praças');
+    expect(ativo(rotaDaPraca('3f2b8c1e-6a7d-4e0f-9b1a-2c3d4e5f6a7b'))).toBe('Praças');
+    expect(ativo('/praca')).toBeNull();
     // E5.8: "Usuários" é uma tela própria (saiu de Configurações > Pessoas).
     expect(ativo('/configuracoes')).toBe('Configurações');
     expect(ativo('/usuarios')).toBe('Usuários');

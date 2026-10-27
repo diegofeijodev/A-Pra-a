@@ -6,7 +6,8 @@
 export const ROTA = {
   entrar: '/entrar',
   inicio: '/consultores/painel',
-  pracas: '/praca',
+  // E5.2: a lista nasce no endereço da Lovable; `/praca` (o plano da praça ativa) continua abrindo até a E7.
+  pracas: '/pracas',
   clientes: '/consultores/clientes',
   mapa: '/consultores/clientes?modo=mapa',
   rotas: '/consultores/roteiros',
@@ -19,6 +20,9 @@ export const ROTA = {
   // Fora do menu: a troca da própria senha (E3), aberta pelo rodapé da casca.
   trocarSenha: '/trocar-senha',
 } as const;
+
+/** Detalhe de uma praça (E5.2): clientes, busca no mapa, áreas e o plano de abertura. */
+export const rotaDaPraca = (id: string): string => `${ROTA.pracas}/${id}`;
 
 /**
  * Endereços do consultor (arquitetura §3.4): ficam dentro de `/campo` porque o atalho instalado tem `scope: '/campo'` — a entrada e a

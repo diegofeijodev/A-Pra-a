@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { ehGestor, podeOperar } from '@/modules/acesso/domain/acesso';
+import { rotaDaPraca } from '@/modules/acesso/domain/enderecos';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { useAreas } from '@/modules/areas/application/use-areas';
 import { rotuloRaio } from '@/modules/areas/domain/area-form';
@@ -174,9 +175,9 @@ export function BuscaEstabelecimentos({ praca }: { praca: PracaView }) {
             </div>
           ) : ativas.length === 0 ? (
             <p className="mt-2 text-sm text-muted-foreground">
-              Esta praça ainda não tem uma área de atuação. Crie uma em{' '}
-              <Link href="/configuracoes" className="text-primary underline">Configurações</Link>
-              {' '}(centro no mapa e raio) e volte aqui.
+              Esta praça ainda não tem uma área de atuação. Crie uma no{' '}
+              <Link href={rotaDaPraca(praca.id)} className="text-primary underline">detalhe da praça</Link>
+              {' '}(&quot;Áreas de atuação&quot;: centro no mapa e raio) e volte aqui.
             </p>
           ) : (
             <label className="mt-2 block text-xs text-muted-foreground">

@@ -25,6 +25,8 @@ export interface PracaView {
   cobertura: Cobertura | null;
   steps: Record<string, StepState>;
   created_at: string;
+  /** Redesenho E5.2, G2 (§6): clientes da praça (leads não arquivados, fora os de teste). API antiga não manda = ausente. */
+  leads_count?: number;
 }
 
 /** No `POST`, `cobertura` entra como `{ibge, km?}` — UF, lat/lon e vizinhas

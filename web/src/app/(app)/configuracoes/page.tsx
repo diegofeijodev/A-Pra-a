@@ -1,8 +1,6 @@
 'use client';
 
-import { AreasAtuacao } from '@/components/praca/AreasAtuacao';
 import { CanaisCampo } from '@/components/praca/CanaisCampo';
-import { DadosDaPraca } from '@/components/praca/DadosDaPraca';
 import { RemuneracaoConfig } from '@/components/praca/RemuneracaoConfig';
 import { SegmentosBusca } from '@/components/praca/SegmentosBusca';
 import Link from 'next/link';
@@ -71,24 +69,9 @@ export default function ConfiguracoesPage() {
           <SegurancaSenha />
         </Secao>
       )}
-      <AreasEDadosDaPraca />
       {/* Casca da Lovable (contrato §46): as seções do Comercial (mensagens, roteiro-modelo e impressão do plano) só com a chave. */}
       {features.commercial && <BlocosComercial />}
     </div>
-  );
-}
-
-/** Áreas de atuação e dados da praça ativa: ficam aqui até o detalhe da praça existir (E5.2), que é para onde vão (UX §4.11). */
-function AreasEDadosDaPraca() {
-  const { praca } = useActivePraca();
-  if (!praca) return null;
-  return (
-    <>
-      <AreasAtuacao praca={praca} />
-      <Secao titulo="Dados da praça">
-        <DadosDaPraca praca={praca} />
-      </Secao>
-    </>
   );
 }
 

@@ -94,7 +94,7 @@ function Descobrir({ praca, minimo }: { praca: PracaView; minimo: number }) {
   return (
     <div className="space-y-3">
       {opcoes.length === 0 ? (
-        <p className="text-sm">Cadastre uma área de atuação em Configurações: a busca dos shoppings parte do centro dela.</p>
+        <p className="text-sm">Cadastre uma área de atuação no detalhe da praça: a busca dos shoppings parte do centro dela.</p>
       ) : (
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
           <div className="space-y-1">

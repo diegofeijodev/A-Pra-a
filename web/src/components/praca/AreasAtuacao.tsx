@@ -24,14 +24,15 @@ const AreaMapa = dynamic(() => import('./AreaMapa'), { ssr: false });
 const VAZIO = { name: '', lat: null as number | null, lng: null as number | null, radius_m: RAIO_PADRAO_M };
 
 /**
- * Configurações → "Áreas de atuação" (F1 da prospecção, §21 do contrato).
+ * "Áreas de atuação" (F1 da prospecção, §21 do contrato) — no detalhe da praça desde o redesenho (E5.2, UX §4.3; Rotas lê as áreas
+ * daqui). `embutido` = dentro do cartão recolhido do detalhe, que já tem o título.
  *
  * Círculo (centro + raio) dentro da praça, usado pelo trabalho de campo. Uma
  * praça sem cobertura do IBGE (ex.: "São Paulo – Moema") funciona só com
  * áreas. Mapa nunca é o único jeito de ver: a lista traz o mesmo conteúdo.
  * Leitura para toda a equipe; criar e editar é de admin (e do gestor, com o perfil ligado — §42.3).
  */
-export function AreasAtuacao({ praca }: { praca: PracaView }) {
+export function AreasAtuacao({ praca, embutido = false }: { praca: PracaView; embutido?: boolean }) {
   const { user } = useAuth();
   // Lote E §42.3: criar e editar área também para o gestor (com a flag).
   const admin = podeOperar(user);
@@ -78,10 +79,10 @@ export function AreasAtuacao({ praca }: { praca: PracaView }) {
   };
 
   return (
-    <section className="mt-8">
-      <h2 className="tag text-muted-foreground">Áreas de atuação</h2>
+    <section className={embutido ? '' : 'mt-8'}>
+      {!embutido && <h2 className="tag text-muted-foreground">Áreas de atuação</h2>}
       <p className="mt-1 text-xs text-muted-foreground">
-        Onde o consultor de campo trabalha nesta praça: um ponto no mapa e um raio. A praça pode ter várias áreas (ex.: Moema, Itaim).
+        Onde o representante trabalha nesta praça: um ponto no mapa e um raio. A praça pode ter várias áreas (ex.: Moema, Itaim).
       </p>
 
       {isPending && <p className="mt-3 text-sm text-muted-foreground">Carregando áreas…</p>}

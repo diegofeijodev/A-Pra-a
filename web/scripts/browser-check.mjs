@@ -459,15 +459,31 @@ try {
     if (!sobrou) acaoConcluida = null;
   }
 
-  // ── 3. Praça ──────────────────────────────────────────────────
-  console.log('-- Praça --');
-  await page.goto(`${BASE}/praca`, { waitUntil: 'networkidle' });
-  await espera(1500);
+  // ── 3. Praças (lista + detalhe, E5.2) ─────────────────────────
+  console.log('-- Praças --');
+  // Abrir o detalhe torna a praça a ativa da conta: guarda a de antes e devolve no fim do bloco (o seed já usa a PRACA).
+  const ativaAntesDoDetalhe = (await api('GET', '/v1/auth/me').catch(() => null))?.user?.active_praca_id ?? null;
+  await page.goto(`${BASE}/pracas`, { waitUntil: 'networkidle' });
+  await page.getByRole('heading', { name: 'Praças', exact: true }).waitFor({ timeout: 20000 });
+  const cartaoSeed = page.locator(`a[href="/pracas/${PRACA}"]`);
+  await cartaoSeed.waitFor({ timeout: 20000 });
+  const textoCartao = (await cartaoSeed.innerText()).toLowerCase();
+  check('Praças: cartão do seed com Cidade/UF, situação pelas datas e "N clientes"', textoCartao.includes('belo horizonte + contagem') && /(planejamento|em andamento|concluída)/.test(textoCartao) && /\d+ clientes?/.test(textoCartao), textoCartao.replace(/\s+/g, ' '));
+  check('Praças: botão "Nova praça"', (await page.getByRole('button', { name: 'Nova praça' }).count()) >= 1);
+  await cartaoSeed.click();
+  await page.waitForURL(`**/pracas/${PRACA}`, { timeout: 20000 });
+  await page.getByRole('heading', { name: /belo horizonte \+ contagem/i }).waitFor({ timeout: 20000 });
+  check('Detalhe da praça: "Editar praça", "Importar planilha" e "Buscar clientes no mapa" (admin)', (await page.getByRole('button', { name: 'Editar praça' }).count()) === 1 && (await page.getByRole('link', { name: 'Importar planilha' }).count()) === 1 && (await page.getByRole('button', { name: 'Buscar clientes no mapa' }).count()) >= 1);
+  // O plano de abertura (o conteúdo de `/praca`) mora recolhido no detalhe: abre e espera as etapas.
+  await abrirSecao(page, 'Plano de abertura (11 etapas)');
+  await page.getByText('Mapear a região', { exact: false }).first().waitFor({ timeout: 20000 });
+  await espera(800);
   const praca = await corpo(page);
   check('praça do seed no cabeçalho', praca.includes('belo horizonte + contagem'));
   check('faixa de etapas do roteiro', praca.includes('mapear a região') && praca.includes('preparar'));
   check('etapa travada pelo portão aparece', praca.includes('🔒'));
   check('contagem de ações por etapa', /\d+ de \d+/.test(praca));
+  if (ativaAntesDoDetalhe && ativaAntesDoDetalhe !== PRACA) await tentar('praça ativa do admin devolvida (detalhe)', () => api('PATCH', '/v1/users/me', { active_praca_id: ativaAntesDoDetalhe }));
 
   // ── 4. Calendário ─────────────────────────────────────────────
   console.log('-- Calendário --');
@@ -645,7 +661,8 @@ try {
   await espera(1600);
   const cfg = await corpo(page);
   check('Configurações: sem o bloco de pessoas (foi para Usuários)', (await page.getByRole('heading', { name: 'Pessoas' }).count()) === 0 && !cfg.includes('+ adicionar'));
-  check('dados da praça', cfg.includes('dados da praça'));
+  // E5.2: "Dados da praça" e "Áreas de atuação" foram para o detalhe da praça ("Editar praça" e o cartão recolhido).
+  check('Configurações: sem "Dados da praça" nem "Áreas de atuação" (foram para o detalhe da praça)', !cfg.includes('dados da praça') && !cfg.includes('áreas de atuação'));
   // Casca da Lovable (contrato §46): as seções do Comercial só com a chave (`TEAM_COMMERCIAL_ENABLED`).
   check('variáveis padrão das mensagens só com o Comercial ligado', cfg.includes('variáveis padrão das mensagens') === !!featIni.commercial);
   check('roteiro-modelo das próximas praças só com o Comercial ligado', cfg.includes('roteiro-modelo') === !!featIni.commercial);
@@ -1277,7 +1294,7 @@ console.log('-- Campo: GPS negado --');
     // Sem centro na praça nem área ativa (o seed), a tela pede uma área no lugar do botão.
     check(
       'Shoppings: "Descobrir shoppings da cidade" para o admin, ou o pedido de uma área (não clicado)',
-      (await page.getByRole('button', { name: 'Descobrir shoppings da cidade' }).count()) === 1 || (await page.getByText('Cadastre uma área de atuação em Configurações').count()) === 1,
+      (await page.getByRole('button', { name: 'Descobrir shoppings da cidade' }).count()) === 1 || (await page.getByText('Cadastre uma área de atuação no detalhe da praça').count()) === 1,
     );
   }
   if (lov.route_plans) {
@@ -1366,6 +1383,11 @@ console.log('-- Campo: GPS negado --');
       await g.goto(`${BASE}/prospeccao`, { waitUntil: 'networkidle' });
       await g.getByText('2. O que buscar').first().waitFor({ timeout: 20000 });
       check('gestor: abre a busca de estabelecimentos', (await g.getByText('Só administradores podem buscar estabelecimentos').count()) === 0);
+      // E5.2 (UX §6.2): a busca do gestor também está no detalhe da praça, sem depender do Comercial. A praça ativa da Rebeca no seed
+      // já é a PRACA, então abrir o detalhe não muda nada dela.
+      await g.goto(`${BASE}/pracas/${PRACA}`, { waitUntil: 'networkidle' });
+      await g.getByRole('button', { name: 'Editar praça' }).waitFor({ timeout: 20000 });
+      check('gestor: "Buscar clientes no mapa" no detalhe da praça', (await g.getByRole('button', { name: 'Buscar clientes no mapa' }).count()) >= 1);
       const comoGestor = await (await fetch(`${API}/v1/consultores/settings/config`, { method: 'PUT', headers: { Authorization: `Bearer ${await g.evaluate(() => JSON.parse(localStorage.getItem('authUser')).access_token)}`, 'Content-Type': 'application/json' }, body: '{}' })).status;
       check('gestor: configuração continua só do admin (PUT settings/config = 403)', comoGestor === 403);
     } finally {
