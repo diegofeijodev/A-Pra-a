@@ -49,7 +49,8 @@ Lovable "PRAÇA" para a stack do Freela.
   a página não pode montar (e disparar `useQuery`) sem sessão.
 - **Casca da equipe (Lovable, contrato §46):** menu lateral azul-marinho com os nomes e a ordem da Lovable, montado por
   `modules/acesso/montarMenu` só pelo `features` do `GET settings/config` (nunca sondando 404); item ativo = o de prefixo
-  mais longo (`itemAtivo`). Endereços num lugar só: `modules/acesso/domain/enderecos.ts` (`ROTA`, ainda os de hoje até a E7).
+  mais longo (`itemAtivo`). Endereços num lugar só: `modules/acesso/domain/enderecos.ts` (`ROTA`, ainda os de hoje até a E7, menos as
+  telas NOVAS da E5, que já nascem no endereço da Lovable: `/pracas` e `/pracas/[id]` (`rotaDaPraca`), `/usuarios`, `/desempenho`).
   Página inicial da equipe = SEMPRE o Dashboard (`ROTA.inicio`; sem `FIELD_DASHBOARD_ENABLED` ele mostra o aviso e a
   "Atenção agora"), nunca mais `/hoje`. **Chave do Comercial `TEAM_COMMERCIAL_ENABLED`** (padrão `false`, módulo GLOBAL
   `common/flags/ui.flags.ts`, que também dá `routes`/`earnings`/`payouts`/`declared_signups` ao `features`): desligada, o
@@ -78,6 +79,15 @@ Lovable "PRAÇA" para a stack do Freela.
   "Resultado do dia" moram na Carteira; retornos, vouchers e "Visitados" (`GET /v1/campo/map/list`, só com `features.map_pins`) em Clientes; Desempenho
   é "Em construção" (`components/ui/EmBreve.tsx`) com atalho para o resultado do dia (D5). `destinoDoRepresentantePorEndereco` leva cada endereço
   compartilhado à visão equivalente (`/mapa` e `/consultores/mapa` → `?v=mapa`, `/financeiro` e `/consultores/pagamentos` → `?v=carteira`…).
+- **Telas da equipe no desenho da Lovable (redesenho E5a: 5.1, 5.2, 5.8, 5.9, 5.10):** Dashboard abre em "7 dias" (nomes dos cartões da
+  Lovable em `cartoesDoPainel`). Praças: lista em cartões com a situação **pelas datas** (`modules/pracas/domain/status-praca.ts`, `todaySp`;
+  nunca à mão) e `leads_count` do `GET /v1/pracas` (contrato §6: leads `archived = false`, `is_test = false`; um `groupBy` na lista, um `count`
+  no resto); o detalhe `/pracas/[id]` **torna a praça a ativa** (`active_praca_id`, uma vez) e guarda, recolhidos e montados só ao abrir,
+  "Áreas de atuação" e o "Plano de abertura" (`PlanoAbertura`, o mesmo de `/praca`); "Dados da praça" é o "Editar praça". Usuários
+  (`/usuarios`, só admin) saiu das Configurações: a senha provisória da equipe é **gerada no navegador** (`gerarSenhaProvisoria` em
+  `modules/acesso/domain/cadastro.ts`, a mesma regra do servidor, `crypto.getRandomValues`), mostrada uma vez, sem troca obrigatória (D2).
+  Configurações: "Segmentos da busca" no topo; os outros blocos em cartões `<details>` RECOLHIDOS — o `browser-check` abre com `abrirSecao`
+  antes de ler (texto de `<details>` fechado não entra no `innerText`). Desempenho da equipe = `EmBreve`, fora do menu.
 - **Consultor de campo ≠ equipe.** Token com `aud: "campo"`; rotas `/v1/campo/*`
   marcadas com `@CampoRoute()` (o `JwtAuthGuard` global delega ao
   `CampoAuthGuard`). Rota nova do consultor SEM `@CampoRoute()` fica fechada
@@ -140,13 +150,13 @@ npm run start:dev | build | typecheck | lint | test | seed
 npm run start:smoke                # sobe sem watcher (ts-node --transpile-only), pra smoke
 npm run smoke                      # scripts/smoke.sh contra a API viva — 923 checagens com as flags desligadas (928 só com FIELD_EARNINGS_ENABLED), repetível sem resíduo
                                    # (menos sem o container `praca-postgres`: a limpeza final é por psql)
-npm test                           # jest maxWorkers 1 — 137 suítes, 2102 testes (antes da E3 e da E4, que somaram 1 suíte/15 testes e 7 testes sem rodar a suíte inteira)
+npm test                           # jest maxWorkers 1 — 137 suítes, 2102 testes (antes da E3, E4 e E5a, que somaram 1 suíte/15 testes, 7 testes e 1 suíte/5 testes sem rodar a suíte inteira)
 npm run prisma:migrate:dev | prisma:generate | prisma:studio
 
 # web/
 yarn dev | typecheck | lint        # `build` só se o dono pedir (ver abaixo)
-yarn test                          # vitest run (fork único) — 37 arquivos, 401 testes
-yarn browser-check                 # scripts/browser-check.mjs — 213 checagens na configuração de produção antiga (ROUTES, VISIT_FLOW_SELECT, EARNINGS, DECLARED_SIGNUPS, PAYOUTS; fluxo simples e completo); 263 com as flags dos lotes A–F ligadas (menos VOUCHER_COUPONS), com um passo logado como gestor e um consultor em duas praças; 263 também com TEAM_COMMERCIAL_ENABLED (mesmas checagens, outro ramo) — rodado depois da E4 (27/10)
+yarn test                          # vitest run (fork único) — 39 arquivos, 413 testes (depois da E5a)
+yarn browser-check                 # scripts/browser-check.mjs — 213 checagens na configuração de produção antiga (ROUTES, VISIT_FLOW_SELECT, EARNINGS, DECLARED_SIGNUPS, PAYOUTS; fluxo simples e completo); 263 com as flags dos lotes A–F ligadas (menos VOUCHER_COUPONS), com um passo logado como gestor e um consultor em duas praças; 263 também com TEAM_COMMERCIAL_ENABLED (mesmas checagens, outro ramo) — rodado depois da E4 (27/10); a E5a (sem rodar) soma ≈ +6 desligadas / +8 ligadas
                                    # precisa da API na 3014 (start:smoke) e do web na 3024 (yarn dev)
                                    # conta: PRACA_CHECK_EMAIL/PASSWORD (padrão = seed), login pelo formulário
 ```

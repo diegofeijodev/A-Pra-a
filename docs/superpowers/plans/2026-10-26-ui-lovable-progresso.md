@@ -101,6 +101,15 @@ Endereços novos com redirecionamento dos antigos (vídeos, favoritos e o browse
       do mapa do representante antes de trocar de aba (`esperarLadrilhos`; sem isso, `ERR_ABORTED` em `tile.openstreetmap.org` às vezes).
 - [ ] 5. Telas, uma a uma, no desenho da Lovable (Dashboard, Praças, Clientes, Mapa, Rotas, Roteiro, Representantes,
       Vouchers, Financeiro, Usuários, Configurações, Desempenho)
+  - E5a (5.1, 5.2, 5.8, 5.9, 5.10): feito — API `5400da7` (G2 `leads_count` em todo `PracaView`, contrato §6: um `groupBy` na lista, um
+    `count` no resto) + web `2eecd34` (Desempenho `EmBreve`), `00bbdaa` (Dashboard: 7 dias, cartões da Lovable, ranking em tabela),
+    `8f464db` (Usuários em `/usuarios` com a senha gerada no navegador, 5.000 amostras no vitest; Configurações com Segmentos no topo e
+    cartões recolhidos), `10b30a2` (Praças: lista `/pracas` + detalhe `/pracas/[id]`, situação pelas datas, Áreas e Plano recolhidos;
+    `ROTA.pracas`/`ROTA.usuarios` nos endereços novos; `/praca` continua). Jest pracas 3 suítes/18, `tsc` 0; web lint 0, typecheck 0,
+    vitest 39/413. browser-check atualizado sem rodar (`abrirSecao` para os `<details>`; ≈ +6 desligadas / +8 ligadas). Desvios:
+    rótulos dos cartões mudaram em `painel.ts` (o teste acompanha); sem a coluna "Origem" no detalhe (G3 mexe em `pinos.service.ts`);
+    a senha da equipe é gerada (a UX dizia digitada; o admin ainda pode trocar o texto); Configurações segue aberta a toda a equipe
+    (arquitetura §2.3) em vez do "Apenas administradores" da UX §4.11.
 - [ ] 6. Filtro "Perfil dos clientes" na rota geral (API + contrato + tela)
 - [ ] 7. Endereços da Lovable + redirecionamentos
 - [ ] 8. Verificação: lint, typecheck, vitest, jest das partes tocadas, browser-check (um processo por vez, `nice`)
