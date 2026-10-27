@@ -75,9 +75,10 @@ function RoteiroCartao({ r, admin }: { r: RouteView; admin: boolean }) {
 
       <ol className="space-y-1">
         {feitas.map((s) => (
-          <li key={s.id} className="flex items-center justify-between gap-2 text-sm">
+          // `flex-wrap`: no celular o rótulo desce para a linha de baixo em vez de espremer o nome em três linhas.
+          <li key={s.id} className="flex flex-wrap items-baseline justify-between gap-x-2 text-sm">
             <span className="min-w-0 break-words">✓ {s.name}</span>
-            <span className="shrink-0 text-right text-muted-foreground">{rotuloParadaVisitada(s.eta)}</span>
+            <span className="ml-auto text-right text-muted-foreground">{rotuloParadaVisitada(s.eta)}</span>
           </li>
         ))}
         {ordem.map((it, i) => {
