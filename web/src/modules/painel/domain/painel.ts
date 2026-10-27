@@ -145,19 +145,22 @@ export interface Cartao {
 
 const n = (x: number): string => x.toLocaleString('pt-BR');
 
-/** Os 8 cartões, na ordem da Lovable, cada um com a conta e a fonte (UX §3.1; "Não ligado" nunca vira "0"). */
+/**
+ * Os 8 cartões, na ordem e com os nomes da Lovable (UX §4.1), cada um com a conta e a fonte ("Não ligado" nunca vira "0"). O tempo
+ * se chama "Tempo médio de visita" nas duas medidas: o que foi medido (intervalo entre chegadas ou chegada → conclusão) vem na conta.
+ */
 export function cartoesDoPainel(p: PainelView): Cartao[] {
   const k = p.kpis;
   const tempo = k.time_headline === 'intervalo' ? k.avg_gap_min : k.avg_duration_min;
   return [
     { id: 'pct_done', titulo: 'Visitas concluídas', numero: k.pct_done == null ? '—' : `${k.pct_done}%`, conta: p.conta.pct_done, fonte: p.fonte.pct_done },
     { id: 'positivation', titulo: 'Positivação', numero: k.positivation_pct == null ? '—' : `${k.positivation_pct}%`, conta: p.conta.positivation, fonte: p.fonte.positivation },
-    { id: 'time', titulo: k.time_headline === 'intervalo' ? 'Tempo entre visitas' : 'Tempo dentro do local', numero: tempo == null ? '—' : `${tempo} min`, conta: p.conta.time, fonte: p.fonte.time },
+    { id: 'time', titulo: 'Tempo médio de visita', numero: tempo == null ? '—' : `${tempo} min`, conta: p.conta.time, fonte: p.fonte.time },
     { id: 'visits', titulo: 'Visitas realizadas', numero: n(k.visits), conta: p.conta.visits, fonte: p.fonte.visits },
     { id: 'signups', titulo: 'Cadastros', numero: n(k.signups), conta: p.conta.signups, fonte: p.fonte.signups },
-    { id: 'vouchers', titulo: 'Cupons', numero: k.vouchers == null ? '—' : n(k.vouchers.approved), conta: p.conta.vouchers, fonte: p.fonte.vouchers },
+    { id: 'vouchers', titulo: 'Vouchers', numero: k.vouchers == null ? '—' : n(k.vouchers.approved), conta: p.conta.vouchers, fonte: p.fonte.vouchers },
     { id: 'pracas_open', titulo: 'Praças abertas', numero: n(k.pracas_open), conta: p.conta.pracas_open, fonte: p.fonte.pracas_open },
-    { id: 'leads_mapped', titulo: 'Estabelecimentos mapeados', numero: n(k.leads_mapped), conta: p.conta.leads_mapped, fonte: p.fonte.leads_mapped },
+    { id: 'leads_mapped', titulo: 'Clientes mapeados', numero: n(k.leads_mapped), conta: p.conta.leads_mapped, fonte: p.fonte.leads_mapped },
   ];
 }
 
@@ -167,7 +170,7 @@ export const posicao = (i: number): string => `${i + 1}º`;
 /** CSV do ranking (`;` e vírgula decimal, como o Excel em pt-BR abre). */
 export function csvRanking(p: PainelView): string {
   const esc = (s: string) => (/[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
-  const linhas = [`Posição;Consultor;Visitas;Cadastros;Positivação (%)`];
+  const linhas = [`Posição;Representante;Visitas;Cadastros;Positivação (%)`];
   p.ranking.forEach((r, i) => linhas.push([posicao(i), esc(r.name), r.visits, r.signups, r.positivation_pct ?? ''].join(';')));
   linhas.push(`Período;${p.from} a ${p.to}`);
   linhas.push(`Ordem;cadastros, depois positivação`);

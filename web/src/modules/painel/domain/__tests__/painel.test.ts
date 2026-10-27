@@ -42,7 +42,10 @@ describe('painel do gestor (UX §3.1)', () => {
   });
   it('I1: os 8 cartões na ordem, cada um com conta e fonte; cupom desligado mostra "—", nunca 0', () => {
     const c = cartoesDoPainel(PAINEL);
-    expect(c.map((x) => x.titulo)).toEqual(['Visitas concluídas', 'Positivação', 'Tempo entre visitas', 'Visitas realizadas', 'Cadastros', 'Cupons', 'Praças abertas', 'Estabelecimentos mapeados']);
+    // Nomes da Lovable (UX §4.1): "Vouchers", "Clientes mapeados" e "Tempo médio de visita" (a medida vem na conta).
+    expect(c.map((x) => x.titulo)).toEqual(['Visitas concluídas', 'Positivação', 'Tempo médio de visita', 'Visitas realizadas', 'Cadastros', 'Vouchers', 'Praças abertas', 'Clientes mapeados']);
+    const porDuracao = painelSchema.parse({ ...PAINEL, kpis: { ...PAINEL.kpis, time_headline: 'duracao' } });
+    expect(cartoesDoPainel(porDuracao).find((x) => x.id === 'time')).toMatchObject({ titulo: 'Tempo médio de visita', numero: '7 min' });
     expect(c.every((x) => x.conta && x.fonte)).toBe(true);
     expect(c.find((x) => x.id === 'vouchers')?.numero).toBe('—');
     // Lote C (§38.8): com os cupons ligados o cartão mostra os aprovados (Lovable) e a conta vem do servidor.
@@ -57,7 +60,7 @@ describe('painel do gestor (UX §3.1)', () => {
   it('medalha com texto e CSV do ranking com ; e aspas', () => {
     expect(posicao(0)).toBe('1º');
     const csv = csvRanking(PAINEL).split('\n');
-    expect(csv[0]).toBe('Posição;Consultor;Visitas;Cadastros;Positivação (%)');
+    expect(csv[0]).toBe('Posição;Representante;Visitas;Cadastros;Positivação (%)');
     expect(csv[2]).toBe('2º;"Bruno; Lima";75;15;20');
   });
 });

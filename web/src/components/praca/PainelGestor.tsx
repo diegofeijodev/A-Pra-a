@@ -1,19 +1,53 @@
 'use client';
 
+import {
+  CheckCircle2,
+  Clock,
+  Loader2,
+  Map as MapIcon,
+  MapPin,
+  Ticket,
+  TrendingUp,
+  Trophy,
+  UserCheck,
+  Users,
+  type LucideIcon,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { todaySp } from '@/lib/dates';
+import { ROTA } from '@/modules/acesso/domain/enderecos';
 import { useAuth } from '@/modules/auth/application/use-auth';
-import { hora } from '@/modules/campo/domain/formatos';
 import { useAtencao } from '@/modules/consultores/application/use-consultores';
 import { useFeaturesLovable, useConfigLovable, usePainel } from '@/modules/painel/application/use-painel';
-import { cartoesDoPainel, csvRanking, intervaloDoPeriodo, PERIODOS, posicao, type Periodo } from '@/modules/painel/domain/painel';
+import { cartoesDoPainel, csvRanking, intervaloDoPeriodo, PERIODOS, posicao, type Cartao, type Periodo } from '@/modules/painel/domain/painel';
 import { usePracas } from '@/modules/pracas/application/use-pracas';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 
-const chip = (ativo: boolean) =>
-  `h-12 min-w-[5.25rem] rounded-md border px-3 text-sm font-bold ${ativo ? 'border-primary bg-primary/15 text-foreground' : 'border-border text-muted-foreground'}`;
+/** Ícones dos 8 cartões, os da Lovable (`inicio.tsx`). */
+const ICONE: Record<Cartao['id'], LucideIcon> = {
+  pct_done: CheckCircle2,
+  positivation: TrendingUp,
+  time: Clock,
+  visits: Users,
+  signups: UserCheck,
+  vouchers: Ticket,
+  pracas_open: MapPin,
+  leads_mapped: MapIcon,
+};
+
+/** Medalha nos 3 primeiros, como na Lovable; o leitor de tela ouve a posição ("1º"). */
+const MEDALHA = ['🥇', '🥈', '🥉'];
+function Posicao({ i }: { i: number }) {
+  return i < 3 ? (
+    <span role="img" aria-label={posicao(i)}>
+      {MEDALHA[i]}
+    </span>
+  ) : (
+    <>{i + 1}</>
+  );
+}
 
 function baixarCsv(nome: string, texto: string) {
   const url = URL.createObjectURL(new Blob([`﻿${texto}`], { type: 'text/csv;charset=utf-8' }));
@@ -24,15 +58,18 @@ function baixarCsv(nome: string, texto: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+const CARTAO = 'rounded-2xl bg-card p-5 shadow-card';
+
 /**
- * Início — painel do gestor (contrato §33.4, UX §3.1; Lovable `inicio.tsx`). 8 cartões, cada um com a conta e a fonte;
- * ranking (cadastros, depois positivação) e resultado das visitas. Atualiza de 60 em 60 s; dia de Brasília.
+ * Dashboard — painel do gestor no desenho da Lovable (`inicio.tsx`; contrato §33.4, UX §4.1). Cabeçalho com o período (abre em
+ * "7 dias"), a faixa "Atenção agora" (nossa), 8 cartões com a conta e a fonte (regra do dono de 08/10), ranking (cadastros, depois
+ * positivação) e o resultado das visitas em barras. Atualiza de 60 em 60 s; dia de Brasília.
  */
 export function PainelGestor() {
   const { user } = useAuth();
   const cfg = useConfigLovable();
   const features = useFeaturesLovable();
-  const [periodo, setPeriodo] = useState<Periodo>('hoje');
+  const [periodo, setPeriodo] = useState<Periodo>('7');
   const [pracaId, setPracaId] = useState('');
   const { data: pracas } = usePracas();
   const faixa = intervaloDoPeriodo(periodo, todaySp());
@@ -40,127 +77,182 @@ export function PainelGestor() {
   const { data: atencao } = useAtencao();
   const precisam = new Set((atencao?.alerts ?? []).map((a) => a.consultant_id)).size;
 
-  if (cfg.isPending) return <div aria-busy="true" className="mt-4 h-40 animate-pulse rounded-lg bg-muted" />;
+  if (cfg.isPending) return <div aria-busy="true" className="h-40 animate-pulse rounded-2xl bg-muted" />;
   if (!features.dashboard) {
-    return <p className="card-surface mt-4 p-4 text-sm">Este recurso ainda não está ligado neste servidor.</p>;
+    return <p className={`${CARTAO} text-sm`}>Este recurso ainda não está ligado neste servidor.</p>;
   }
   const p = painel.data;
-  const primeiroNome = user?.name?.split(' ')[0] ?? '';
+  const primeiroNome = user?.name?.trim().split(/\s+/)[0] ?? '';
   const maxBarra = Math.max(1, ...(p?.by_result.map((b) => b.n) ?? [1]));
 
   return (
-    <div className="mt-2 space-y-4">
-      <div className="space-y-1">
-        <h1 className="font-display text-xl font-extrabold">Olá{primeiroNome ? `, ${primeiroNome}` : ''}</h1>
-        <p className="text-sm text-muted-foreground" aria-live="polite">
-          Painel ao vivo da operação{p ? ` · atualizado às ${hora(p.generated_at)}` : ''}
-        </p>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-semibold">Olá{primeiroNome ? `, ${primeiroNome}` : ''}</h1>
+          <p className="flex items-center gap-2 text-muted-foreground" aria-live="polite">
+            Painel ao vivo da operação · atualiza a cada minuto
+            {painel.isFetching && <Loader2 className="h-3 w-3 animate-spin" aria-label="Atualizando" />}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex gap-1 rounded-lg bg-muted p-1" role="group" aria-label="Período">
+            {PERIODOS.map((x) => (
+              <Button key={x.id} size="sm" variant={periodo === x.id ? 'default' : 'ghost'} aria-pressed={periodo === x.id} onClick={() => setPeriodo(x.id)}>
+                {x.rotulo}
+              </Button>
+            ))}
+          </div>
+          <select
+            aria-label="Praça"
+            value={pracaId}
+            onChange={(e) => setPracaId(e.target.value)}
+            className="h-11 min-w-40 rounded-md border border-input bg-background px-3 text-sm md:h-9"
+          >
+            <option value="">Praça: todas</option>
+            {(pracas ?? []).map((pr) => (
+              <option key={pr.id} value={pr.id}>
+                {pr.name}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
-      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Período">
-        {PERIODOS.map((x) => (
-          <button key={x.id} type="button" aria-pressed={periodo === x.id} onClick={() => setPeriodo(x.id)} className={chip(periodo === x.id)}>
-            {x.rotulo}
-          </button>
-        ))}
-        <label htmlFor="painel-praca" className="sr-only">
-          Praça
-        </label>
-        <select id="painel-praca" value={pracaId} onChange={(e) => setPracaId(e.target.value)} className="h-12 min-w-40 rounded-md border border-border bg-background px-3 text-sm">
-          <option value="">Praça: todas</option>
-          {(pracas ?? []).map((pr) => (
-            <option key={pr.id} value={pr.id}>
-              {pr.name}
-            </option>
-          ))}
-        </select>
-      </div>
+
       {precisam > 0 && (
-        <Link href="/consultores" className="flex min-h-14 items-center justify-between rounded-md border border-warning bg-warning/10 px-4 text-sm font-bold">
-          <span>⚠ Atenção agora: {precisam} {precisam === 1 ? 'consultor precisa' : 'consultores precisam'} de você</span>
+        <Link
+          href={ROTA.representantes}
+          className="flex min-h-11 items-center justify-between rounded-xl border border-warning/40 bg-warning/10 px-4 text-sm font-semibold"
+        >
+          <span>
+            ⚠ Atenção agora: {precisam} {precisam === 1 ? 'representante precisa' : 'representantes precisam'} de você
+          </span>
           <span aria-hidden>›</span>
         </Link>
       )}
 
       {painel.isError ? (
-        <div className="card-surface space-y-2 p-4">
+        <div className={`${CARTAO} space-y-2`}>
           <p role="alert" className="text-sm text-destructive">
             {apiErrorMessage(painel.error, 'Não foi possível carregar o painel.')}
           </p>
-          <Button variant="outline" onClick={() => void painel.refetch()} className="h-12">
+          <Button variant="outline" onClick={() => void painel.refetch()}>
             Tentar de novo
           </Button>
         </div>
       ) : !p ? (
-        <div aria-busy="true" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div aria-busy="true" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 8 }, (_, i) => (
-            <div key={i} className="h-32 animate-pulse rounded-lg bg-muted" />
+            <div key={i} className="h-36 animate-pulse rounded-2xl bg-muted" />
           ))}
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {cartoesDoPainel(p).map((c) => (
-              <section key={c.id} className="card-surface min-w-0 space-y-1 p-3" aria-label={c.titulo}>
-                <p className="text-sm font-bold text-muted-foreground">{c.titulo}</p>
-                <p className="font-display text-2xl font-extrabold">{c.numero}</p>
-                <p className="break-words text-xs text-muted-foreground">{c.conta}</p>
-                <details className="text-xs text-muted-foreground">
-                  <summary className="cursor-pointer py-1">ⓘ De onde vem</summary>
-                  <p className="break-words">{c.fonte}</p>
-                </details>
-              </section>
-            ))}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {cartoesDoPainel(p).map((c) => {
+              const Icone = ICONE[c.id];
+              return (
+                <section key={c.id} className={`${CARTAO} min-w-0`} aria-label={c.titulo}>
+                  <div className="mb-2 flex items-center justify-between text-sm text-muted-foreground">
+                    {c.titulo}
+                    <Icone className="h-4 w-4 text-primary" aria-hidden />
+                  </div>
+                  <div className="text-3xl font-semibold">{c.numero}</div>
+                  <div className="break-words text-xs text-muted-foreground">{c.conta}</div>
+                  <details className="mt-1 text-xs text-muted-foreground">
+                    <summary className="cursor-pointer py-1">ⓘ De onde vem</summary>
+                    <p className="break-words">{c.fonte}</p>
+                  </details>
+                </section>
+              );
+            })}
           </div>
 
-          {p.kpis.visits === 0 ? (
-            <div className="card-surface space-y-2 p-4">
-              <p className="text-sm">Ainda não há visitas nesse período. Escolha outro período ou veja os roteiros de hoje.</p>
-              <Link href="/consultores/roteiros" className="inline-flex h-12 items-center rounded-md border border-border px-4 text-sm font-bold">
-                Rotas
-              </Link>
-            </div>
-          ) : (
-            <div className="grid gap-4 lg:grid-cols-2">
-              <section className="card-surface min-w-0 space-y-3 p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <h2 className="text-base font-bold">🏆 Ranking dos consultores</h2>
-                  <Button variant="outline" className="h-12" onClick={() => baixarCsv(`ranking-${p.from}-${p.to}.csv`, csvRanking(p))}>
+          <div className="grid gap-4 lg:grid-cols-5">
+            <section className={`${CARTAO} min-w-0 lg:col-span-3`}>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="flex items-center gap-2 text-lg font-semibold">
+                  <Trophy className="h-5 w-5 text-primary" aria-hidden />
+                  Ranking dos representantes
+                </h2>
+                {p.ranking.length > 0 && (
+                  <Button variant="outline" size="sm" onClick={() => baixarCsv(`ranking-${p.from}-${p.to}.csv`, csvRanking(p))}>
                     Baixar CSV
                   </Button>
-                </div>
-                <ol className="space-y-1">
-                  {p.ranking.map((r, i) => (
-                    <li key={r.consultant_id}>
-                      <Link href={`/consultores/${r.consultant_id}`} className="flex min-h-14 items-center justify-between gap-3 rounded-md px-2 hover:bg-secondary/60">
-                        <span className="min-w-0">
-                          <span className="font-bold">{posicao(i)}</span> {r.name}
-                        </span>
-                        <span className="shrink-0 text-right text-sm text-muted-foreground">
-                          {r.signups} {r.signups === 1 ? 'cadastro' : 'cadastros'} · {r.visits} {r.visits === 1 ? 'visita' : 'visitas'} · {r.positivation_pct ?? 0}%
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ol>
-                <p className="text-xs text-muted-foreground">Ordem: cadastros, depois positivação (cadastros ÷ visitas).</p>
-              </section>
-              <section className="card-surface min-w-0 space-y-2 p-4">
-                <h2 className="text-base font-bold">Resultado das visitas</h2>
-                <ul className="space-y-2">
-                  {p.by_result.map((b) => (
-                    <li key={b.code} className="grid grid-cols-[minmax(0,9rem)_3rem_1fr] items-center gap-2 text-sm">
-                      <span className="truncate">{b.label}</span>
-                      <span className="text-right font-bold">{b.n.toLocaleString('pt-BR')}</span>
-                      <span className="h-3 rounded-sm" style={{ width: `${Math.round((100 * b.n) / maxBarra)}%`, backgroundColor: b.color }} aria-hidden />
-                    </li>
-                  ))}
-                </ul>
-                <p className="text-xs text-muted-foreground">
-                  Total {p.by_result.reduce((a, b) => a + b.n, 0).toLocaleString('pt-BR')} = visitas realizadas. Situação pela última conclusão de cada visita.
-                </p>
-              </section>
-            </div>
-          )}
+                )}
+              </div>
+              {p.ranking.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">Sem visitas registradas no período.</p>
+              ) : (
+                <>
+                  {/* A partir de `sm`, a tabela da Lovable; abaixo, uma linha por pessoa (5 colunas não cabem em 328 px, UX §4.1). */}
+                  <table className="hidden w-full text-sm sm:table">
+                    <thead className="text-muted-foreground">
+                      <tr className="text-left">
+                        <th className="py-1">#</th>
+                        <th>Representante</th>
+                        <th className="text-right">Visitas</th>
+                        <th className="text-right">Cadastros</th>
+                        <th className="text-right">Positivação</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {p.ranking.map((r, i) => (
+                        <tr key={r.consultant_id} className="border-t">
+                          <td className="py-2 font-semibold">
+                            <Posicao i={i} />
+                          </td>
+                          <td>
+                            <Link href={`${ROTA.representantes}/${r.consultant_id}`} className="hover:underline">
+                              {r.name}
+                            </Link>
+                          </td>
+                          <td className="text-right">{r.visits.toLocaleString('pt-BR')}</td>
+                          <td className="text-right font-semibold">{r.signups.toLocaleString('pt-BR')}</td>
+                          <td className="text-right">{r.positivation_pct == null ? '—' : `${r.positivation_pct}%`}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <ol className="space-y-1 sm:hidden">
+                    {p.ranking.map((r, i) => (
+                      <li key={r.consultant_id}>
+                        <Link href={`${ROTA.representantes}/${r.consultant_id}`} className="flex min-h-11 items-center gap-2 rounded-md px-1 text-sm hover:bg-secondary/60">
+                          <span className="w-6 shrink-0 font-semibold">
+                            <Posicao i={i} />
+                          </span>
+                          <span className="min-w-0 break-words">
+                            {r.name} · {r.signups} {r.signups === 1 ? 'cadastro' : 'cadastros'} · {r.visits} {r.visits === 1 ? 'visita' : 'visitas'} ·{' '}
+                            {r.positivation_pct ?? 0}%
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ol>
+                  <p className="mt-2 text-xs text-muted-foreground">Ordem: cadastros, depois positivação (cadastros ÷ visitas).</p>
+                </>
+              )}
+            </section>
+            <section className={`${CARTAO} min-w-0 lg:col-span-2`}>
+              <h2 className="mb-3 text-lg font-semibold">Resultado das visitas</h2>
+              <ul className="space-y-2">
+                {p.by_result.map((b) => (
+                  <li key={b.code}>
+                    <div className="flex justify-between text-sm">
+                      <span>{b.label}</span>
+                      <span className="font-medium">{b.n.toLocaleString('pt-BR')}</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-muted" aria-hidden>
+                      <div className="h-2 rounded-full" style={{ width: `${(100 * b.n) / maxBarra}%`, background: b.color }} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 text-xs text-muted-foreground">
+                Total {p.by_result.reduce((a, b) => a + b.n, 0).toLocaleString('pt-BR')} = visitas realizadas. Situação pela última conclusão de cada visita.
+              </p>
+            </section>
+          </div>
         </>
       )}
     </div>

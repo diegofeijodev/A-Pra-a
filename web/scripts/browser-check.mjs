@@ -1169,6 +1169,8 @@ console.log('-- Campo: GPS negado --');
     await page.getByText('Painel ao vivo da operação').first().waitFor({ timeout: 20000 });
     await page.getByText('Visitas concluídas').first().waitFor({ timeout: 20000 });
     check('Painel: os 8 cartões, cada um com "De onde vem"', (await page.getByText('ⓘ De onde vem').count()) === 8);
+    // E5.1 (UX §4.1): o período abre em "7 dias" (Lovable) e o ranking leva o nome da Lovable.
+    check('Dashboard: abre em "7 dias", com "Ranking dos representantes"', (await page.getByRole('button', { name: '7 dias', exact: true }).getAttribute('aria-pressed')) === 'true' && (await page.getByText('Ranking dos representantes').count()) === 1);
   } else {
     check('Painel desligado: avisa, sem chamar a rota', (await corpo(page)).includes('ainda não está ligado neste servidor'));
   }
@@ -1209,7 +1211,7 @@ console.log('-- Campo: GPS negado --');
   if (lov.dashboard) {
     await page.goto(`${BASE}/consultores/painel`, { waitUntil: 'networkidle' });
     await page.getByText('Visitas concluídas').first().waitFor({ timeout: 20000 });
-    check('Painel: cartão "Cupons" com número só com os cupons ligados ("Não ligado" sem eles)', (await corpo(page)).includes('não ligado neste servidor') === !lov.vouchers);
+    check('Painel: cartão "Vouchers" com número só com os cupons ligados ("Não ligado" sem eles)', (await corpo(page)).includes('não ligado neste servidor') === !lov.vouchers);
   }
   await page.goto(`${BASE}/configuracoes`, { waitUntil: 'networkidle' });
   await page.getByText('Configurações').first().waitFor({ timeout: 20000 });
