@@ -4995,20 +4995,41 @@ sem cadastro declarado, `location_precision` `point`/`address`) **e fora de rote
 Com `lead_ids` (1–2.000): cada um da praça, não arquivado e com coordenada (senão `400 VALIDATION_ERROR`). Com `FIELD_MALLS_ENABLED` e `field_config.shopping.fora_da_rota_geral`
 (§40.2), o plano `geral` deixa de fora shoppings e lojas de dentro de shopping.
 
+**Perfil dos clientes (`types`, redesenho E6 — Lovable `rotas.tsx`, aba geral: "Nenhum selecionado = todos os clientes").** Só no plano `geral` sem `lead_ids`.
+O perfil de um estabelecimento é a `category` dos achados da busca ligados a ele (`place_candidates.lead_id`; o `slug` do segmento com `FIELD_SEGMENTS_ENABLED`, senão um dos 5
+tipos de hoje). Com `types`, entra quem tiver **algum** achado com `category` na lista (`place_candidates: { some: { category: { in: types } } }`, no banco, antes do corte de
+2.000); quem foi achado como Bar numa busca e como Restaurante noutra entra nos dois perfis. Estabelecimento **sem achado** (cadastrado à mão, importado ou aberto na visita) fica
+**fora** quando há filtro. `types` ausente, `null` ou `[]` = todos: a consulta e a resposta de hoje, byte a byte (o `where` não ganha chave). Perfis válidos (lista branca):
+com `FIELD_SEGMENTS_ENABLED`, todos os `slug` de `app_settings.place_segments` (§36.5; nulo = os 10 padrão), **ativos ou não**; desligada, os 5 tipos de hoje com os rótulos no
+singular (`Bar`, `Café`, `Lanchonete`, `Padaria`, `Restaurante`). Ordem canônica = pelo rótulo (pt-BR), sem repetição. Regras em `domain/perfil-rota-rules.ts`; a cláusula
+fica em `filtroPerfis` (`rotas/rotas-plano.ts`), ao lado de `filtroElegivel`, que **não muda** (é o `where` do "Dia de cada consultor", da seleção automática e da cadência).
+**Sem flag nova:** é um parâmetro opcional de rotas que já têm a trava do §39.1 (e ausente = hoje).
+
+| Caso | Resposta |
+|---|---|
+| `types` com `lead_ids` | `400 VALIDATION_ERROR` "types: escolha os estabelecimentos ou o perfil, não os dois." |
+| `types` com `kind` ≠ `geral` | `400 VALIDATION_ERROR` "types: o perfil vale só para a rota geral." (depois do `404 MALLS_DISABLED`, que continua primeiro) |
+| `slug` fora da lista branca ou do formato `^[a-z0-9_]{2,30}$` | `400 VALIDATION_ERROR` "types: 'x' não é um perfil de cliente." |
+| mais de 40 | `400 VALIDATION_ERROR` "types: no máximo 40 perfis." |
+
+Tudo é conferido **antes** de ler os estabelecimentos. **Divergência anotada:** a categoria mostrada nos candidatos do "Dia de cada consultor" (§23.4) é a do achado **mais
+antigo**; o perfil casa **qualquer** achado (um lead "restaurante" numa busca antiga e "pizzaria" depois aparece como Restaurante lá e entra no perfil Pizzaria aqui).
+
 ### 39.5 Rotas (leitura: equipe; escrita: **só admin**; token de consultor → `401`; estáticas antes de `:id`)
 
 | Método | Rota | Corpo / query | Resposta |
 |---|---|---|---|
 | GET | `/v1/route-plans/config` | — | `ConfigDivisao` (§39.2) |
 | PUT | `/v1/route-plans/config` | parcial | `ConfigDivisao` |
-| GET | `/v1/route-plans/preview?praca_id=&area_id=&por_rota=` | — | `{ lead_count, truncated, por_rota, rotas_min, conta }`: a conta de antes de gerar (UX R1), com os mesmos elegíveis do §39.4 |
+| GET | `/v1/route-plans/preview?praca_id=&area_id=&por_rota=&types=` | `types` opcional: `slug`s separados por vírgula (até 1.300 caracteres; espaços e vírgulas vazias ignorados) | `{ lead_count, lead_count_total, truncated, por_rota, rotas_min, conta }`: a conta de antes de gerar (UX R1), com os mesmos elegíveis do §39.4. Sem `types`: a resposta de sempre e `lead_count_total = lead_count`. Com `types`: `lead_count`, `truncated` e `rotas_min` sobre os do perfil, `lead_count_total` = os elegíveis sem o filtro, e a `conta` diz quantos têm o perfil e por que os outros ficaram fora ("38 dos 120 estabelecimentos elegíveis têm o perfil Bar ou Restaurante. Os outros 82 são de outro perfil ou não têm perfil (cadastrados à mão, importados ou abertos na visita)."); nenhum do perfil = "Nenhum estabelecimento com o perfil Bar, com localização exata e fora de roteiro publicado nesta área." + quantos elegíveis existem. Duas consultas só quando há filtro |
 | GET | `/v1/route-plans?praca_id=&kind=` | `praca_id` obrigatório; `kind` padrão `geral` | `PlanSummary[]` não arquivados, mais novos primeiro (até 50) |
-| POST | `/v1/route-plans` | `{praca_id, area_id?, kind?, parent_lead_id?, lead_ids?, por_rota?, travel_mode?, modelo_tempo?}` | `201 PlanView`. Determinístico. Ausentes = `field_config.divisao`. Nenhum elegível → `422 PLAN_NO_LEADS` |
+| POST | `/v1/route-plans` | `{praca_id, area_id?, kind?, parent_lead_id?, lead_ids?, por_rota?, travel_mode?, modelo_tempo?, types?}` (`types`: lista de `slug`, até 40, ou `null`; §39.4) | `201 PlanView`. Determinístico. Ausentes = `field_config.divisao`. Nenhum elegível → `422 PLAN_NO_LEADS` (com perfil: "Nenhum estabelecimento com o perfil Bar ou Restaurante, com localização exata e fora de roteiro publicado nesta área."). Com `types`, a foto (`params.types`) guarda `[{ slug, label }]`: renomear o segmento depois não muda o que o plano diz |
 | GET | `/v1/route-plans/:id` | — | `PlanView` (também arquivado) |
 | POST | `/v1/route-plans/:id/items/:itemId/assign` | `{consultant_id, day, confirm_replace?}` | `200 { item: PlanItemView, route: RouteView, dropped: n }` |
 | POST | `/v1/route-plans/:id/archive` | — | `200 PlanView` (idempotente) |
 
-`PlanSummary`: `{ id, praca_id, area_id, area_name, kind, parent_lead_id, travel_mode, modelo_tempo, item_count, assigned_count, lead_count, truncated, created_at, created_by, archived_at }`.
+`PlanSummary`: `{ id, praca_id, area_id, area_name, kind, parent_lead_id, travel_mode, modelo_tempo, item_count, assigned_count, lead_count, truncated, created_at, created_by, archived_at, types }`.
+`types` (aditivo, redesenho E6) = `[{ slug, label }]` lidos da foto do plano, ou `null` (gerado sem perfil = todos; também os planos de antes).
 
 `PlanView` = `PlanSummary` + `params` (a foto de `field_config.divisao` e do relógio usados) + `items: PlanItemView[]` (ordem `seq`):
 

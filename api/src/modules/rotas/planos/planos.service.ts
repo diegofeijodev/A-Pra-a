@@ -30,14 +30,23 @@ import {
   type ModoPlano,
   type PontoDivisao,
 } from '../../../domain/divisao-rotas-rules';
+import {
+  contaPerfil,
+  lerTiposDaQuery,
+  normalizarPerfis,
+  perfisConhecidos,
+  perfisDaFoto,
+  semLeadsComPerfil,
+  type PerfilCliente,
+} from '../../../domain/perfil-rota-rules';
 import { paramsDaConfig, type ParamsPlano } from '../../../domain/rota-rules';
 import { CONFIG_SHOPPING, ehGrande, type ConfigShopping } from '../../../domain/shopping-rules';
 import { RotasConfigService } from '../rotas-config.service';
 import { RotasEquipeService } from '../rotas-equipe.service';
-import { filtroElegivel, SEGURA_LUGAR } from '../rotas-plano';
+import { filtroElegivel, filtroPerfis, SEGURA_LUGAR } from '../rotas-plano';
 import { ModoCampoService } from '../modo-campo.service';
 import { COM_PARADAS, routeView, type RouteView } from '../rotas-views';
-import { LOVABLE_D_FLAGS, velocidadeCarroKmh, type FlagsLovableD } from '../rotas.tokens';
+import { LOVABLE_C_FLAGS, LOVABLE_D_FLAGS, velocidadeCarroKmh, type FlagsLovableC, type FlagsLovableD } from '../rotas.tokens';
 import {
   MAX_LEADS_PLANO,
   type AtribuirItemDto,
@@ -80,6 +89,8 @@ export interface PlanSummary {
   created_at: string;
   created_by: string;
   archived_at: string | null;
+  /** "Perfil dos clientes" da geração (redesenho E6, §39.5): a foto `[{ slug, label }]`, ou `null` = todos (e os planos de antes). */
+  types: PerfilCliente[] | null;
 }
 
 export interface PlanView extends PlanSummary {
@@ -126,6 +137,8 @@ export class PlanosService {
     @Optional() @Inject(LOVABLE_D_FLAGS) private readonly flags?: FlagsLovableD,
     @Optional() private readonly modo?: ModoCampoService,
     @Optional() private readonly pracas?: PracasDoConsultorService,
+    /** Lote C: com `FIELD_SEGMENTS_ENABLED` a lista branca do perfil são os segmentos salvos; sem ela, os 5 tipos de hoje (§39.4). */
+    @Optional() @Inject(LOVABLE_C_FLAGS) private readonly flagsC?: FlagsLovableC,
   ) {}
 
   get ligado(): boolean {
@@ -172,12 +185,30 @@ export class PlanosService {
     return CONFIG_SHOPPING.ler((await this.bruto()).shopping);
   }
 
+  /**
+   * "Perfil dos clientes" pedido (§39.4, redesenho E6). Ausente, `null` ou `[]` = todos (`null`), SEM leitura nova: a consulta é a de
+   * hoje. Com perfil: as combinações e a lista branca são conferidas aqui, antes de qualquer leitura de estabelecimento.
+   */
+  private async perfisPedidos(entrada: readonly string[] | null | undefined, ctx?: { kind: string; comLeads: boolean }): Promise<PerfilCliente[] | null> {
+    if (!entrada?.length) return null;
+    if (ctx && ctx.kind !== 'geral') throw invalido('types: o perfil vale só para a rota geral.');
+    if (ctx?.comLeads) throw invalido('types: escolha os estabelecimentos ou o perfil, não os dois.');
+    const segmentos = this.flagsC?.segments === true;
+    const raw = segmentos
+      ? (await this.prisma.app_settings.findUnique({ where: { id: 1 }, select: { place_segments: true } }))?.place_segments
+      : null;
+    const r = normalizarPerfis(entrada, perfisConhecidos(segmentos, raw));
+    if (!r.ok) throw invalido(r.erro);
+    return r.perfis;
+  }
+
   // ── criar (§39.4, §39.5) ──────────────────────────────────
 
   async criar(dto: CriarPlanoDto, user: AuthUser, agora = new Date()): Promise<PlanView> {
     this.exigir();
     const kind = (dto.kind ?? 'geral') as KindPlano;
     if (kind !== 'geral' && !this.shoppingsLigado) throw shoppingsDesligado();
+    const perfis = await this.perfisPedidos(dto.types, { kind, comLeads: !!dto.lead_ids?.length });
     const praca = await this.prisma.pracas.findUnique({ where: { id: dto.praca_id }, select: { id: true } });
     if (!praca) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Praça não encontrada.' });
     const area = dto.area_id ? await this.prisma.field_areas.findFirst({ where: { id: dto.area_id, praca_id: dto.praca_id } }) : null;
@@ -198,7 +229,7 @@ export class PlanosService {
     if (kind === 'geral') {
       const r = dto.lead_ids?.length
         ? { pontos: await this.leadsEscolhidos(dto.praca_id, dto.lead_ids), truncated: false }
-        : await this.elegiveis(dto.praca_id, area, agora);
+        : await this.elegiveis(dto.praca_id, area, agora, perfis?.map((x) => x.slug) ?? null);
       pontos = r.pontos;
       truncated = r.truncated;
     } else if (kind === 'shoppings') {
@@ -224,13 +255,16 @@ export class PlanosService {
             ? 'Nenhum shopping grande com localização nesta praça. Descubra os shoppings primeiro.'
             : kind === 'shopping_interno'
               ? 'Nenhuma loja cadastrada dentro deste shopping. Busque as lojas primeiro.'
-              : 'Nenhum estabelecimento com localização exata e fora de roteiro publicado nesta área.',
+              : perfis
+                ? semLeadsComPerfil(perfis)
+                : 'Nenhum estabelecimento com localização exata e fora de roteiro publicado nesta área.',
       });
     }
 
     const plano = await this.relogio(cfg.travel_mode);
     const grupos = dividirPorVarredura(pontos, paramsDivisao({ ...cfg, por_rota: porRota }, plano));
-    const params = { ...cfg, por_rota: porRota, relogio: plano };
+    // A foto guarda os rótulos do perfil (renomear o segmento depois não muda o que o plano diz); sem perfil, a foto de sempre.
+    const params = { ...cfg, por_rota: porRota, relogio: plano, ...(perfis ? { types: perfis } : {}) };
     const criado = await this.prisma.$transaction(async (tx) => {
       const p = await tx.field_route_plans.create({
         data: {
@@ -263,9 +297,16 @@ export class PlanosService {
     return this.get(criado.id);
   }
 
-  /** A conta de antes de gerar (UX R1): quantos entram e o mínimo de rotas. Mesmos elegíveis do `criar`. */
-  async previa(q: PreviaPlanoDto, agora = new Date()): Promise<{ lead_count: number; truncated: boolean; por_rota: number; rotas_min: number; conta: string }> {
+  /**
+   * A conta de antes de gerar (UX R1): quantos entram e o mínimo de rotas. Mesmos elegíveis do `criar`. Com perfil (§39.5): duas
+   * consultas (com o filtro e sem), `lead_count_total` = os elegíveis sem o filtro e a conta explica quem ficou fora.
+   */
+  async previa(
+    q: PreviaPlanoDto,
+    agora = new Date(),
+  ): Promise<{ lead_count: number; lead_count_total: number; truncated: boolean; por_rota: number; rotas_min: number; conta: string }> {
     this.exigir();
+    const perfis = await this.perfisPedidos(lerTiposDaQuery(q.types));
     const praca = await this.prisma.pracas.findUnique({ where: { id: q.praca_id }, select: { id: true } });
     if (!praca) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Praça não encontrada.' });
     const area = q.area_id ? await this.prisma.field_areas.findFirst({ where: { id: q.area_id, praca_id: q.praca_id } }) : null;
@@ -273,17 +314,20 @@ export class PlanosService {
     const porRota = q.por_rota ?? CONFIG_DIVISAO.ler((await this.bruto()).divisao).por_rota;
     const semArea = !area && (await this.prisma.field_areas.count({ where: { praca_id: q.praca_id, active: true } })) === 0;
     if (semArea) {
-      return { lead_count: 0, truncated: false, por_rota: porRota, rotas_min: 0, conta: 'Nenhuma área de atuação ativa nesta praça. Cadastre uma em Configurações para dividir em rotas.' };
+      return { lead_count: 0, lead_count_total: 0, truncated: false, por_rota: porRota, rotas_min: 0, conta: 'Nenhuma área de atuação ativa nesta praça. Cadastre uma em Configurações para dividir em rotas.' };
     }
-    const { pontos, truncated } = await this.elegiveis(q.praca_id, area, agora);
+    // Ordem fixa: o filtrado primeiro, o total depois (só com perfil).
+    const { pontos, truncated } = await this.elegiveis(q.praca_id, area, agora, perfis?.map((x) => x.slug) ?? null);
     const n = pontos.length;
+    const total = perfis ? (await this.elegiveis(q.praca_id, area, agora)).pontos.length : n;
     const rotasMin = Math.ceil(n / porRota);
     const div = (n / porRota).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
-    const conta =
+    const base =
       n === 0
         ? 'Nenhum estabelecimento com localização exata e fora de roteiro publicado nesta área.'
         : `${n.toLocaleString('pt-BR')} ${n === 1 ? 'estabelecimento' : 'estabelecimentos'} com localização exata, fora de roteiro publicado → pelo menos ${rotasMin} ${rotasMin === 1 ? 'rota' : 'rotas'} de até ${porRota} paradas (${n.toLocaleString('pt-BR')} ÷ ${porRota} = ${div}; arredonda para cima; o teto de tempo pode criar mais)`;
-    return { lead_count: n, truncated, por_rota: porRota, rotas_min: rotasMin, conta };
+    const conta = !perfis || total === 0 ? base : n === 0 ? `${semLeadsComPerfil(perfis)} ${contaPerfil({ n, total, perfis })}` : `${base}. ${contaPerfil({ n, total, perfis })}`;
+    return { lead_count: n, lead_count_total: total, truncated, por_rota: porRota, rotas_min: rotasMin, conta };
   }
 
   /** Os parâmetros do nosso relógio para o modo (a pé: a configuração; carro: a velocidade do ambiente). */
@@ -292,11 +336,15 @@ export class PlanosService {
     return paramsDaConfig(c, modo === 'carro' ? velocidadeCarroKmh() : undefined);
   }
 
-  /** Os candidatos do §23.4 na área (ou nas áreas ativas), fora de roteiro publicado de hoje em diante. */
+  /**
+   * Os candidatos do §23.4 na área (ou nas áreas ativas), fora de roteiro publicado de hoje em diante. `perfis` (E6) entra no `where`
+   * do banco, antes do corte de 2.000; vazio = a consulta de sempre.
+   */
   private async elegiveis(
     pracaId: string,
     area: { id: string; lat: number; lng: number; radius_m: number } | null,
     agora: Date,
+    perfis: string[] | null = null,
   ): Promise<{ pontos: PontoDivisao[]; truncated: boolean }> {
     const areas = area ? [area] : await this.prisma.field_areas.findMany({ where: { praca_id: pracaId, active: true } });
     if (areas.length === 0) return { pontos: [], truncated: false };
@@ -313,6 +361,7 @@ export class PlanosService {
         OR: caixas,
         route_stops: { none: { day: { gte: todaySp(agora) }, status: { in: [...SEGURA_LUGAR] } } },
         ...(semShopping ? { place_kind: null, parent_lead_id: null } : {}),
+        ...filtroPerfis(perfis),
       },
       select: { id: true, lat: true, lng: true },
       orderBy: { id: 'asc' },
@@ -415,6 +464,7 @@ export class PlanosService {
       created_at: p.created_at.toISOString(),
       created_by: p.created_by,
       archived_at: p.archived_at?.toISOString() ?? null,
+      types: perfisDaFoto(p.params_snapshot),
     };
   }
 

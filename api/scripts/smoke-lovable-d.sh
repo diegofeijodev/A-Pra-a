@@ -35,6 +35,8 @@ faxina(){
          delete from field_routes where consultant_id in (select id from field_consultants where email like 'lovd%@praca.local');
          delete from place_candidates where run_id in (select id from place_import_runs where kind <> 'lugares' and (parent_lead_id in (select id from leads where name like 'LovD %') or area_name like 'LovD %' or (kind = 'shoppings' and praca_id = '$PRACA_SEED')));
          delete from place_import_runs where kind <> 'lugares' and (parent_lead_id in (select id from leads where name like 'LovD %') or area_name like 'LovD %' or (kind = 'shoppings' and praca_id = '$PRACA_SEED'));
+         delete from place_candidates where run_id in (select id from place_import_runs where area_name like 'LovD %');
+         delete from place_import_runs where area_name like 'LovD %';
          update leads set parent_lead_id = null where name like 'LovD %';
          delete from lead_events where lead_id in (select id from leads where name like 'LovD %');
          delete from leads where name like 'LovD %';
@@ -91,6 +93,22 @@ check "praça A × B: estabelecimento de outra praça = 400 VALIDATION_ERROR" "4
   "$(curl -s -o $T -w '%{http_code}' -X POST $API/v1/route-plans -H "$J" -H "$HD" -d "{\"praca_id\":\"$PRACA_SEED\",\"lead_ids\":[\"$FORA\"]}")|$(jq -r .error.code $T)"
 check "lista: as duas gerações, mais nova primeiro" "$PLANO2|$PLANO1" \
   "$(curl -s "$API/v1/route-plans?praca_id=$PRACA_SEED" -H "$HD" | jq -r --arg a "$PLANO1" --arg b "$PLANO2" '[.[] | select(.id==$a or .id==$b) | .id] | join("|")')"
+
+echo "── perfil dos clientes (§39.4, redesenho E6) ──"
+# Achados de uma busca 'lugares' já feita (inserida por psql, sem rede): LovD 1 achado como bar, LovD 2 como padaria; os outros LovD
+# não têm achado (= sem perfil). Antes de publicar qualquer rota: depois, os publicados saem dos elegíveis.
+RUN_P=$($PSQL "insert into place_import_runs (id, praca_id, area_id, area_name, source, types, lat, lng, radius_m, cache_key, status, requested_by, kind) values (gen_random_uuid(), '$PRACA_SEED', '$AREA', 'LovD $SUF perfil', 'osm', '{bar,padaria}', $LAT, $LNG, 800, 'lovd-perfil-$SUF', 'done', (select id from users where email = 'diego@praca.local'), 'lugares') returning id" | head -1 | tr -d '[:space:]')
+L1=$(echo "$IDS" | jq -r '.[0]'); L2=$(echo "$IDS" | jq -r '.[1]'); L3=$(echo "$IDS" | jq -r '.[2]')
+$PSQL "insert into place_candidates (run_id, source, source_ref, name, category, lat, lng, distance_m, status, lead_id) values ('$RUN_P', 'osm', 'node/lovdp1$SUF', 'LovD $SUF 1', 'bar', $LAT, $LNG, 0, 'adicionado', '$L1'), ('$RUN_P', 'osm', 'node/lovdp2$SUF', 'LovD $SUF 2', 'padaria', $LAT, $LNG, 0, 'adicionado', '$L2')" > /dev/null
+PV(){ curl -s "$API/v1/route-plans/preview?praca_id=$PRACA_SEED&area_id=$AREA&por_rota=3$1" -H "$HD"; }
+SEM_FILTRO=$(PV '' | jq .lead_count)
+check "prévia types=bar: total = o de sem filtro, quem não tem achado fica fora, a conta diz o perfil; bar,padaria conta mais que só bar" "true|true|true|true" \
+  "$(PV '&types=bar' | jq -r --argjson t "$SEM_FILTRO" '"\(.lead_count_total == $t)|\(.lead_count < .lead_count_total)|\(.conta | test("perfil Bar"))"')|$([ "$(PV '&types=bar,padaria' | jq .lead_count)" -gt "$(PV '&types=bar' | jq .lead_count)" ] && echo true || echo false)"
+P3=$(curl -s -o $T -w '%{http_code}' -X POST $API/v1/route-plans -H "$J" -H "$HD" -d "{\"praca_id\":\"$PRACA_SEED\",\"area_id\":\"$AREA\",\"por_rota\":50,\"types\":[\"bar\"]}")
+check "gerar com types [bar]: 201, leva o do bar e não o da padaria nem o sem achado; o plano diz o perfil" "201|true|false|false|Bar" \
+  "$P3|$(jq -r --arg a "$L1" --arg b "$L2" --arg c "$L3" '[.items[].lead_ids[]] as $l | "\($l | any(. == $a))|\($l | any(. == $b))|\($l | any(. == $c))|\(.types[0].label)"' $T)"
+check "types fora da lista branca = 400 VALIDATION_ERROR; types com lead_ids = 400" "400|VALIDATION_ERROR|400" \
+  "$(curl -s -o $T -w '%{http_code}' -X POST $API/v1/route-plans -H "$J" -H "$HD" -d "{\"praca_id\":\"$PRACA_SEED\",\"area_id\":\"$AREA\",\"types\":[\"nao_existe\"]}")|$(jq -r .error.code $T)|$(curl -s -o /dev/null -w '%{http_code}' -X POST $API/v1/route-plans -H "$J" -H "$HD" -d "{\"praca_id\":\"$PRACA_SEED\",\"lead_ids\":$IDS,\"types\":[\"bar\"]}")"
 
 echo "── publicar pelo mesmo serviço do POST /v1/routes (§39.6) ──"
 A1=$(curl -s -o $T -w '%{http_code}' -X POST $API/v1/route-plans/$PLANO1/items/$ITEM1/assign -H "$J" -H "$HD" -d "{\"consultant_id\":\"$CONS_A\",\"day\":\"$AMANHA\"}")
@@ -173,7 +191,7 @@ curl -s -o /dev/null -X PUT $API/v1/route-plans/config -H "$J" -H "$HD" -d '{"po
 faxina
 rm -f $T
 check "planos, roteiros, consultores, estabelecimentos, área, buscas e configuração de teste removidos" "0|0|0|0|0|false|false" \
-  "$(q "select count(*) from field_route_plans where id in ('$PLANO1','$PLANO2')")|$(q "select count(*) from field_consultants where email like 'lovd%@praca.local'")|$(q "select count(*) from leads where name like 'LovD %'")|$(q "select count(*) from field_areas where name like 'LovD %'")|$(q "select count(*) from place_import_runs where id='$RUN_S'")|$(q "select field_config ? 'divisao' from app_settings where id=1" | sed 's/^f$/false/;s/^t$/true/')|$(q "select field_config ? 'shopping' from app_settings where id=1" | sed 's/^f$/false/;s/^t$/true/')"
+  "$(q "select count(*) from field_route_plans where id in ('$PLANO1','$PLANO2')")|$(q "select count(*) from field_consultants where email like 'lovd%@praca.local'")|$(q "select count(*) from leads where name like 'LovD %'")|$(q "select count(*) from field_areas where name like 'LovD %'")|$(q "select count(*) from place_import_runs where id in ('$RUN_S','$RUN_P')")|$(q "select field_config ? 'divisao' from app_settings where id=1" | sed 's/^f$/false/;s/^t$/true/')|$(q "select field_config ? 'shopping' from app_settings where id=1" | sed 's/^f$/false/;s/^t$/true/')"
 
 echo
 echo "$PASS ok, $FAIL falha(s)"

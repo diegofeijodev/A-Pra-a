@@ -35,6 +35,13 @@ export const filtroElegivel = (estagioMaximo: number) => ({
   location_precision: { in: ['point', 'address'] },
 });
 
+/**
+ * Filtro "Perfil dos clientes" da rota geral (redesenho E6, contrato §39.4): entra quem tem ALGUM achado da busca com a categoria pedida;
+ * sem achado fica fora. Vazio/ausente = `{}` (o `where` não ganha chave nenhuma). Só os planos usam: `filtroElegivel` NÃO muda.
+ */
+export const filtroPerfis = (perfis: readonly string[] | null | undefined) =>
+  perfis?.length ? { place_candidates: { some: { category: { in: [...perfis] } } } } : {};
+
 export const conflitoVersao = () =>
   new ConflictException({ code: 'ROUTE_VERSION_CONFLICT', message: 'O roteiro mudou enquanto você editava. Recarregue e tente de novo.' });
 

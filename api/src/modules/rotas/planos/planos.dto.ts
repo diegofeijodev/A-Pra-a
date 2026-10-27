@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min } from 'class-validator';
 import { IsDayString } from '../../../common/validation/is-day.decorator';
 import { KINDS_PLANO, MODELOS_TEMPO, MODOS_PLANO } from '../../../domain/divisao-rotas-rules';
 
@@ -16,6 +16,8 @@ export class CriarPlanoDto {
   @IsOptional() @IsInt() @Min(1) @Max(100) por_rota?: number;
   @IsOptional() @IsIn([...MODOS_PLANO]) travel_mode?: string;
   @IsOptional() @IsIn([...MODELOS_TEMPO]) modelo_tempo?: string;
+  /** "Perfil dos clientes" (§39.4, redesenho E6): `slug`s; ausente, `null` ou `[]` = todos. Lista branca conferida no serviço. */
+  @IsOptional() @IsArray() @ArrayMaxSize(40) @Matches(/^[a-z0-9_]{2,30}$/, { each: true }) types?: string[] | null;
 }
 
 /** `GET /v1/route-plans/preview` (§39.5): a conta de antes de gerar (UX R1). */
@@ -23,6 +25,8 @@ export class PreviaPlanoDto {
   @IsUUID() praca_id!: string;
   @IsOptional() @IsUUID() area_id?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) por_rota?: number;
+  /** "Perfil dos clientes" (§39.4): `slug`s separados por vírgula (como o `codes` dos pinos); conferidos no serviço. */
+  @IsOptional() @IsString() @MaxLength(1300) types?: string;
 }
 
 export class PlanosQueryDto {
