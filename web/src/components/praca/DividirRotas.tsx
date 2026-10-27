@@ -22,8 +22,10 @@ import { podeOperar } from '@/modules/acesso/domain/acesso';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { useConsultores } from '@/modules/consultores/application/use-consultores';
 import { atuaNaPraca } from '@/modules/consultores/domain/pracas';
+import { useFeaturesLoteC } from '@/modules/cupons/application/use-cupons';
+import { useSegmentos } from '@/modules/places/application/use-places';
 import { useArquivarPlano, useConfigDivisao, useCriarPlano, usePlano, usePlanos, usePrevia } from '@/modules/planos/application/use-planos';
-import { rotuloGeracao } from '@/modules/planos/domain/planos';
+import { alternarPerfil, opcoesDePerfil, rotuloGeracao, textoPerfil, tiposParaEnviar } from '@/modules/planos/domain/planos';
 import type { PracaView } from '@/modules/pracas/application/use-pracas';
 
 const RotasMapa = dynamic(() => import('./RotasMapa'), { ssr: false });
@@ -42,9 +44,13 @@ function useTelaLarga(): boolean {
 }
 
 /**
- * Rotas > "Clientes" (Lovable `rotas.tsx`, aba geral; UX §4.6, contrato §39): a barra da Lovable (praça, área, clientes por rota, os dois
- * botões de gerar e a nossa prévia com a conta ANTES de gerar), as gerações salvas (arquivar, nunca apagar) e os cartões compactos
- * à esquerda com o mapa à direita. Tocar num cartão escolhe a rota: destaca no mapa e mostra os clientes e a nossa conta.
+ * Rotas > "Clientes" (Lovable `rotas.tsx`, aba geral; UX §4.6, contrato §39): a barra da Lovable (praça, área, "Perfil dos clientes",
+ * clientes por rota, os dois botões de gerar e a nossa prévia com a conta ANTES de gerar), as gerações salvas (arquivar, nunca apagar) e os
+ * cartões compactos à esquerda com o mapa à direita. Tocar num cartão escolhe a rota: destaca no mapa e mostra os clientes e a nossa conta.
+ *
+ * "Perfil dos clientes" (redesenho E6, arquitetura §4.7): pílulas de vários, "Nenhum selecionado = todos os clientes"; filtra a prévia e quem
+ * entra nas rotas geradas (`types`, §39.4). Só para quem gera (`podeOperar`): a lista dos segmentos é do gestor/admin e só é lida com
+ * `features.segments` (desligada, os 5 tipos de hoje; nunca sonda rota desligada).
  */
 export function DividirRotas({ praca, seletorPraca }: { praca: PracaView; seletorPraca?: ReactNode }) {
   const { user } = useAuth();
@@ -59,7 +65,13 @@ export function DividirRotas({ praca, seletorPraca }: { praca: PracaView; seleto
     if (porRota === null && config.data) setPorRota(config.data.por_rota);
   }, [config.data, porRota]);
   const por = porRota ?? config.data?.por_rota ?? 20;
-  const previa = usePrevia({ praca_id: praca.id, area_id: areaId || undefined, por_rota: por, ligado: por >= 1 && por <= 100 });
+  const loteC = useFeaturesLoteC();
+  const segmentos = useSegmentos(admin && !loteC.carregando && loteC.segments);
+  // `null` = sem pílulas (quem só vê, flags ainda carregando, ou a lista dos segmentos indisponível): a prévia vai sem filtro.
+  const perfis = !admin || loteC.carregando ? null : loteC.segments ? (segmentos.data ? opcoesDePerfil(segmentos.data.segments) : null) : opcoesDePerfil(null);
+  const [marcados, setMarcados] = useState<string[]>([]);
+  const tipos = tiposParaEnviar(marcados, perfis ?? []);
+  const previa = usePrevia({ praca_id: praca.id, area_id: areaId || undefined, por_rota: por, types: tipos, ligado: por >= 1 && por <= 100 });
   const planos = usePlanos(praca.id, 'geral', true);
   const [escolhido, setEscolhido] = useState<string | null>(null);
   const atual = escolhido ?? planos.data?.[0]?.id ?? null;
@@ -77,7 +89,7 @@ export function DividirRotas({ praca, seletorPraca }: { praca: PracaView; seleto
 
   function gerar(modo: 'carro' | 'a_pe') {
     criar.mutate(
-      { praca_id: praca.id, ...(areaId ? { area_id: areaId } : {}), por_rota: por, travel_mode: modo },
+      { praca_id: praca.id, ...(areaId ? { area_id: areaId } : {}), ...(tipos.length ? { types: tipos } : {}), por_rota: por, travel_mode: modo },
       {
         onSuccess: (v) => {
           setEscolhido(v.id);
@@ -109,7 +121,22 @@ export function DividirRotas({ praca, seletorPraca }: { praca: PracaView; seleto
             </select>
           </div>
         )}
-        {/* E6: o filtro "Perfil dos clientes" (segmentos, vários; "Nenhum selecionado = todos os clientes") entra aqui (arquitetura §4). */}
+        {perfis && perfis.length > 0 && (
+          <fieldset className="min-w-0 max-w-full">
+            <legend className="mb-1 text-sm font-medium leading-none">Perfil dos clientes</legend>
+            <div className="flex flex-wrap gap-1">
+              {perfis.map((p) => {
+                const on = tipos.includes(p.slug);
+                return (
+                  <Button key={p.slug} type="button" size="sm" variant={on ? 'default' : 'outline'} aria-pressed={on} onClick={() => setMarcados((m) => alternarPerfil(m, p.slug))}>
+                    {p.label}
+                  </Button>
+                );
+              })}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">Nenhum selecionado = todos os clientes.</p>
+          </fieldset>
+        )}
         <div className="w-36 space-y-1">
           <Label htmlFor="div-por">Clientes por rota</Label>
           <Input id="div-por" type="number" min={1} max={100} value={por} onChange={(e) => setPorRota(Math.max(1, Math.min(100, Number(e.target.value) || 1)))} />
@@ -132,8 +159,9 @@ export function DividirRotas({ praca, seletorPraca }: { praca: PracaView; seleto
         <details className="w-full text-xs text-muted-foreground">
           <summary className="cursor-pointer py-1 text-sm">ⓘ Como contamos</summary>
           <p>
-            Fonte: clientes da praça com localização exata, até o estágio do roteiro, sem cadastro declarado e fora de rota já publicada. Padrão da
-            Lovable:{' '}
+            Fonte: clientes da praça com localização exata, até o estágio do roteiro, sem cadastro declarado e fora de rota já publicada. Perfil: o
+            segmento com que o cliente foi achado na busca de estabelecimentos (vale qualquer busca); cliente cadastrado à mão, importado ou aberto na
+            visita não tem perfil e fica de fora quando há perfil marcado. Padrão da Lovable:{' '}
             {config.data
               ? `${config.data.minutos_por_cliente} min por cliente + ${config.data.intervalo_min} min de intervalo + deslocamento, até ${Math.round(config.data.limite_min / 60)} h`
               : '…'}
@@ -161,7 +189,7 @@ export function DividirRotas({ praca, seletorPraca }: { praca: PracaView; seleto
                 >
                   {planos.data.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {rotuloGeracao(p)}
+                      {`${rotuloGeracao(p)}${p.types?.length ? ` · ${textoPerfil(p.types)}` : ''}`}
                     </option>
                   ))}
                 </select>
@@ -171,6 +199,7 @@ export function DividirRotas({ praca, seletorPraca }: { praca: PracaView; seleto
                   </Button>
                 )}
               </div>
+              {resumo && <p className="text-xs text-muted-foreground">{textoPerfil(resumo.types)}</p>}
             </div>
           )}
           {planos.isSuccess && planos.data.length === 0 && (

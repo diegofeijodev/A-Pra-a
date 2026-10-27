@@ -46,7 +46,8 @@ export async function putConfigDivisao(body: Partial<ConfigDivisao>): Promise<Co
   return configDivisaoSchema.parse(data);
 }
 
-export async function getPrevia(p: { praca_id: string; area_id?: string; por_rota?: number }): Promise<Previa> {
+/** `types` (E6, §39.5): os `slug`s do perfil separados por vírgula; vazio = todos (não vai na query). */
+export async function getPrevia(p: { praca_id: string; area_id?: string; por_rota?: number; types?: string }): Promise<Previa> {
   const { data } = await api.get('/v1/route-plans/preview', { params: Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined && v !== '')) });
   return previaSchema.parse(data);
 }
@@ -68,6 +69,8 @@ export interface CriarPlanoInput {
   parent_lead_id?: string;
   por_rota?: number;
   travel_mode?: 'carro' | 'a_pe';
+  /** "Perfil dos clientes" (E6, §39.4): só no plano geral sem `lead_ids`; ausente = todos. */
+  types?: string[];
 }
 
 export async function criarPlano(body: CriarPlanoInput): Promise<PlanView> {

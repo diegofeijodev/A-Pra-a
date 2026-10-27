@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useCampoMe } from '@/modules/campo/application/use-campo';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
-import type { ConfigDivisao, ConfigShopping } from '../domain/planos';
+import { chavePrevia, type ConfigDivisao, type ConfigShopping } from '../domain/planos';
 import {
   arquivarPlano,
   atribuirItem,
@@ -45,10 +45,11 @@ export function useSalvarConfigDivisao() {
   });
 }
 
-export function usePrevia(p: { praca_id?: string; area_id?: string; por_rota?: number; ligado: boolean }) {
+/** `types` já canônicos (`tiposParaEnviar`): entram na chave e na query (E6). */
+export function usePrevia(p: { praca_id?: string; area_id?: string; por_rota?: number; types?: string[]; ligado: boolean }) {
   return useQuery({
-    queryKey: ['planos', 'previa', p.praca_id, p.area_id ?? '', p.por_rota ?? 0],
-    queryFn: () => getPrevia({ praca_id: p.praca_id!, area_id: p.area_id, por_rota: p.por_rota }),
+    queryKey: chavePrevia(p),
+    queryFn: () => getPrevia({ praca_id: p.praca_id!, area_id: p.area_id, por_rota: p.por_rota, types: (p.types ?? []).join(',') }),
     enabled: p.ligado && !!p.praca_id && (p.por_rota ?? 1) >= 1,
   });
 }

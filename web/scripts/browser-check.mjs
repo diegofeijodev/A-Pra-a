@@ -1315,12 +1315,28 @@ console.log('-- Campo: GPS negado --');
     check('Rotas > Clientes: a prévia com a conta aparece antes de gerar (R1)', /÷|Nenhum estabelecimento|Nenhum cliente|Nenhuma área/.test(previa));
     check('Rotas > Clientes: dois botões de gerar (carro/moto e a pé)', (await page.getByRole('button', { name: 'Gerar rota de carro/moto' }).count()) === 1 && (await page.getByRole('button', { name: 'Gerar rota a pé' }).count()) === 1);
     check('Rotas > Clientes: "Clientes por rota" e o seletor "Praça" na barra', (await page.getByLabel('Clientes por rota').count()) === 1 && (await page.getByLabel('Praça', { exact: true }).count()) === 1);
+    // E6 (arquitetura §4.7, contrato §39.4): "Perfil dos clientes" (pílulas, vários; os segmentos com a flag, senão os 5 de hoje no singular).
+    // Marcar "Bar" pede a prévia com types=bar — só a prévia; NADA gera plano. Desmarca no fim (estado só da tela).
+    const perfil = page.locator('section[aria-label="Dividir a área em rotas"]').getByRole('group', { name: 'Perfil dos clientes' });
+    const pilulaBar = perfil.getByRole('button', { name: 'Bar', exact: true });
+    await pilulaBar.waitFor({ timeout: 20000 });
+    check(
+      'Rotas > Clientes: "Perfil dos clientes" com as pílulas desmarcadas e "Nenhum selecionado = todos os clientes."',
+      (await pilulaBar.getAttribute('aria-pressed')) === 'false' && (await perfil.getByText('Nenhum selecionado = todos os clientes.').count()) === 1,
+    );
+    const previaBar = page
+      .waitForResponse((r) => r.url().includes('/v1/route-plans/preview') && new URL(r.url()).searchParams.get('types') === 'bar', { timeout: 20000 })
+      .then((r) => r.status(), () => 0);
+    await pilulaBar.click();
+    check('Rotas > Clientes: marcar "Bar" pede a prévia com types=bar (200) e a pílula fica marcada', (await previaBar) === 200 && (await pilulaBar.getAttribute('aria-pressed')) === 'true');
+    await pilulaBar.click();
   }
   if (lov.malls) {
     await page.getByRole('tab', { name: 'Shoppings' }).click();
     await page.getByTestId('criterio-shopping').waitFor({ timeout: 20000 });
     const crit = await page.getByTestId('criterio-shopping').innerText();
     check('Shoppings: o ⓘ descreve o critério que vale (área) e a marcação à mão', crit.includes('m² de área no mapa aberto') && crit.includes('marque à mão'));
+    check('Shoppings: sem o seletor "Perfil dos clientes" (Lovable: as lojas de dentro ficam em Bar + Restaurante)', (await page.getByRole('group', { name: 'Perfil dos clientes' }).count()) === 0);
     // Sem centro na praça nem área ativa (o seed), a tela pede uma área no lugar do botão.
     check(
       'Shoppings: "Mapear shoppings da cidade" para o admin, ou o pedido de uma área (não clicado)',

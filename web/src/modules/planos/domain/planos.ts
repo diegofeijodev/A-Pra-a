@@ -27,12 +27,18 @@ export type ConfigDivisao = z.infer<typeof configDivisaoSchema>;
 
 export const previaSchema = z.object({
   lead_count: z.number(),
+  /** Os elegíveis sem o filtro de perfil (redesenho E6, §39.5); servidor antigo não manda. */
+  lead_count_total: z.number().optional(),
   truncated: z.boolean(),
   por_rota: z.number(),
   rotas_min: z.number(),
   conta: z.string(),
 });
 export type Previa = z.infer<typeof previaSchema>;
+
+/** Um perfil dos clientes (§39.4): o `slug` do segmento (ou de um dos 5 tipos) e o rótulo. */
+export const perfilSchema = z.object({ slug: z.string(), label: z.string() });
+export type Perfil = z.infer<typeof perfilSchema>;
 
 const contaSchema = z.object({ minutos: z.number(), texto: z.string() });
 
@@ -77,6 +83,8 @@ export const planSummarySchema = z.object({
   created_at: z.string(),
   created_by: z.string(),
   archived_at: z.string().nullable(),
+  /** "Perfil dos clientes" da geração (redesenho E6): `null`/ausente = todos (e os planos de antes do E6). */
+  types: z.array(perfilSchema).nullish(),
 });
 export type PlanSummary = z.infer<typeof planSummarySchema>;
 
@@ -158,6 +166,49 @@ export const candidatoShoppingSchema = z.object({
   metrics: z.object({ geometry_kind: z.string(), area_m2: z.number().nullable(), levels: z.number().nullable() }).partial().optional(),
 });
 export type CandidatoShopping = z.infer<typeof candidatoShoppingSchema>;
+
+// ── perfil dos clientes (redesenho E6, arquitetura §4.7; Lovable `rotas.tsx`: "Nenhum selecionado = todos os clientes") ──
+
+/**
+ * Sem os segmentos editáveis: os 5 tipos de hoje com o rótulo no SINGULAR, os mesmos que a API grava na foto do plano (§39.4) — a pílula
+ * e o "Perfil: Bar" da geração dizem a mesma coisa (o `TIPOS` da busca está no plural).
+ */
+export const PERFIS_SEM_SEGMENTOS: readonly Perfil[] = [
+  { slug: 'bar', label: 'Bar' },
+  { slug: 'cafe', label: 'Café' },
+  { slug: 'lanchonete', label: 'Lanchonete' },
+  { slug: 'padaria', label: 'Padaria' },
+  { slug: 'restaurante', label: 'Restaurante' },
+];
+
+/** Pílulas: os segmentos ATIVOS pelo rótulo (a Lovable ordena por nome); sem a lista (flag desligada), os 5 de hoje. */
+export function opcoesDePerfil(segmentos: { slug: string; label: string; active: boolean }[] | null | undefined): Perfil[] {
+  if (!segmentos) return [...PERFIS_SEM_SEGMENTOS];
+  return segmentos
+    .filter((s) => s.active)
+    .map((s) => ({ slug: s.slug, label: s.label }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
+}
+
+/** Marca ou desmarca uma pílula. */
+export const alternarPerfil = (selecionados: readonly string[], slug: string): string[] =>
+  selecionados.includes(slug) ? selecionados.filter((s) => s !== slug) : [...selecionados, slug];
+
+/**
+ * O que vai para a API: só os marcados que ainda são opções, na ordem das opções (a mesma ordem pelo rótulo da API), sem repetição — o
+ * mesmo conjunto dá a mesma chave de cache da prévia, em qualquer ordem de clique.
+ */
+export const tiposParaEnviar = (selecionados: readonly string[], opcoes: readonly Perfil[]): string[] =>
+  opcoes.filter((o) => selecionados.includes(o.slug)).map((o) => o.slug);
+
+/** Chave da prévia (`usePrevia`): os `types` entram já canônicos. */
+export const chavePrevia = (p: { praca_id?: string; area_id?: string; por_rota?: number; types?: readonly string[] }) =>
+  ['planos', 'previa', p.praca_id, p.area_id ?? '', p.por_rota ?? 0, (p.types ?? []).join(',')] as const;
+
+/** "Perfil: Bar, Restaurante" ou "Todos os perfis" (a geração salva diz com que filtro foi feita). */
+export function textoPerfil(types: readonly Pick<Perfil, 'label'>[] | null | undefined): string {
+  return types?.length ? `Perfil: ${types.map((t) => t.label).join(', ')}` : 'Todos os perfis';
+}
 
 // ── textos (regra "todo número diz o que é e a conta") ──
 

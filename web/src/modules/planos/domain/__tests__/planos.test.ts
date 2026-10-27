@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { diaCurto, featuresLoteDSchema, formatarDuracao, planViewSchema, rotuloGeracao, semanasDoMes, textoCriterio, textoPublicada } from '../planos';
+import {
+  alternarPerfil,
+  chavePrevia,
+  diaCurto,
+  featuresLoteDSchema,
+  formatarDuracao,
+  opcoesDePerfil,
+  PERFIS_SEM_SEGMENTOS,
+  planSummarySchema,
+  planViewSchema,
+  previaSchema,
+  rotuloGeracao,
+  semanasDoMes,
+  textoCriterio,
+  textoPerfil,
+  textoPublicada,
+  tiposParaEnviar,
+} from '../planos';
 
 const plano = {
   id: 'p1', praca_id: 'pr', area_id: null, area_name: null, kind: 'geral' as const, parent_lead_id: null, travel_mode: 'a_pe' as const,
@@ -40,5 +57,55 @@ describe('planos — wire (§39) e textos (UX §3.4)', () => {
         do_centro_m: null, conta_lovable: { minutos: 80, texto: 'x' }, conta_roteiro: { minutos: 8, texto: 'y', coube: true, fora: 0 }, assigned: null }],
     });
     expect(v.items[0]!.assigned).toBeNull();
+  });
+});
+
+describe('perfil dos clientes (redesenho E6, §39.4/§39.5)', () => {
+  const previa = { lead_count: 38, truncated: false, por_rota: 20, rotas_min: 2, conta: 'x' };
+
+  it('prévia e geração com e sem os campos novos (servidor antigo não manda)', () => {
+    expect(previaSchema.parse(previa).lead_count_total).toBeUndefined();
+    expect(previaSchema.parse({ ...previa, lead_count_total: 120 }).lead_count_total).toBe(120);
+    expect(planSummarySchema.parse(plano).types).toBeUndefined();
+    expect(planSummarySchema.parse({ ...plano, types: null }).types).toBeNull();
+    expect(planSummarySchema.parse({ ...plano, types: [{ slug: 'bar', label: 'Bar' }] }).types).toEqual([{ slug: 'bar', label: 'Bar' }]);
+  });
+
+  it('texto da geração: "Perfil: Bar, Restaurante" ou "Todos os perfis"', () => {
+    expect(textoPerfil([{ label: 'Bar' }, { label: 'Restaurante' }])).toBe('Perfil: Bar, Restaurante');
+    expect(textoPerfil([{ label: 'Bar' }])).toBe('Perfil: Bar');
+    expect(textoPerfil(null)).toBe('Todos os perfis');
+    expect(textoPerfil(undefined)).toBe('Todos os perfis');
+    expect(textoPerfil([])).toBe('Todos os perfis');
+  });
+
+  it('pílulas: segmentos ATIVOS pelo rótulo; sem a lista, os 5 de hoje no singular (iguais aos da foto da API)', () => {
+    const segs = [
+      { slug: 'restaurante', label: 'Restaurante', active: true },
+      { slug: 'hotel', label: 'Hotel', active: false },
+      { slug: 'bar', label: 'Bar', active: true },
+      { slug: 'cafe', label: 'Café', active: true },
+    ];
+    expect(opcoesDePerfil(segs).map((p) => p.slug)).toEqual(['bar', 'cafe', 'restaurante']);
+    expect(opcoesDePerfil(null)).toEqual([...PERFIS_SEM_SEGMENTOS]);
+    expect(opcoesDePerfil(undefined).map((p) => p.label)).toEqual(['Bar', 'Café', 'Lanchonete', 'Padaria', 'Restaurante']);
+  });
+
+  it('marcar e desmarcar; o que vai para a API sai na ordem das opções, sem o que deixou de ser opção', () => {
+    expect(alternarPerfil([], 'bar')).toEqual(['bar']);
+    expect(alternarPerfil(['bar', 'padaria'], 'bar')).toEqual(['padaria']);
+    const opcoes = opcoesDePerfil(null);
+    expect(tiposParaEnviar(['restaurante', 'bar'], opcoes)).toEqual(['bar', 'restaurante']);
+    expect(tiposParaEnviar(['bar', 'pizzaria'], opcoes)).toEqual(['bar']);
+    expect(tiposParaEnviar([], opcoes)).toEqual([]);
+  });
+
+  it('chave da prévia: o mesmo conjunto em qualquer ordem de clique dá a mesma chave; sem perfil, a parte vazia', () => {
+    const opcoes = opcoesDePerfil(null);
+    const a = chavePrevia({ praca_id: 'pr', por_rota: 20, types: tiposParaEnviar(['restaurante', 'bar'], opcoes) });
+    const b = chavePrevia({ praca_id: 'pr', por_rota: 20, types: tiposParaEnviar(['bar', 'restaurante'], opcoes) });
+    expect(a).toEqual(b);
+    expect(a).toEqual(['planos', 'previa', 'pr', '', 20, 'bar,restaurante']);
+    expect(chavePrevia({ praca_id: 'pr', area_id: 'ar', por_rota: 20 })).toEqual(['planos', 'previa', 'pr', 'ar', 20, '']);
   });
 });

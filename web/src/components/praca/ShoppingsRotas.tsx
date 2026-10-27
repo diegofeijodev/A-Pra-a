@@ -29,6 +29,12 @@ import { atuaNaPraca } from '@/modules/consultores/domain/pracas';
 
 const m2 = (x: number | null) => (x == null ? 'sem área (só um ponto no mapa)' : `${x.toLocaleString('pt-BR')} m²`);
 
+/**
+ * Lojas de dentro do shopping: fixas em Bar + Restaurante, como na Lovable depois de 26/10 (o seletor de perfil saiu desta aba e foi para a
+ * aba Clientes, redesenho E6). Só os que estão ativos nos Segmentos da busca entram.
+ */
+const LOJAS_DO_SHOPPING = ['bar', 'restaurante'] as const;
+
 /** Acompanha uma busca de shoppings/lojas a cada 2 s até terminar. */
 function useBusca(id: string | null, pracaId: string) {
   return useQuery({
@@ -147,7 +153,7 @@ function Descobrir({ praca, minimo }: { praca: PracaView; minimo: number }) {
   );
 }
 
-/** Passo 2 de um shopping: buscar as lojas de dentro com os segmentos escolhidos e adicioná-las. */
+/** Passo 2 de um shopping: buscar as lojas de dentro (Bar + Restaurante, os ativos) e adicioná-las. */
 function LojasDoShopping({ praca, s, tipos }: { praca: PracaView; s: Shopping; tipos: string[] }) {
   const qc = useQueryClient();
   const [runId, setRunId] = useState<string | null>(null);
@@ -217,8 +223,8 @@ function UltimoPlano({ planos, admin, consultores }: { planos: PlanSummary[] | u
 
 /**
  * Rotas > "Shoppings" (contrato §40, UX §3.7; Lovable `rotas.tsx`, aba Shoppings): três passos explícitos — descobrir os
- * shoppings (mapa aberto, critério de "grande" editável com a marcação à mão), buscar as lojas de dentro com os segmentos
- * como perfil e gerar a rota dos shoppings e uma rota "Dentro do X" por shopping, publicadas como em "Dividir em rotas".
+ * shoppings (mapa aberto, critério de "grande" editável com a marcação à mão), buscar as lojas de dentro (Bar + Restaurante, sem seletor,
+ * como na Lovable) e gerar a rota dos shoppings e uma rota "Dentro do X" por shopping, publicadas como em "Dividir em rotas".
  */
 export function ShoppingsRotas({ praca }: { praca: PracaView }) {
   const { user } = useAuth();
@@ -231,7 +237,8 @@ export function ShoppingsRotas({ praca }: { praca: PracaView }) {
   const marcar = useMarcarShopping();
   const segmentos = useSegmentos(operar);
   const ativos = (segmentos.data?.segments ?? []).filter((s) => s.active);
-  const [tipos, setTipos] = useState<string[]>(['bar', 'restaurante']);
+  const lojas = ativos.filter((a) => (LOJAS_DO_SHOPPING as readonly string[]).includes(a.slug));
+  const tipos = lojas.map((a) => a.slug);
   const [minimo, setMinimo] = useState<number | null>(null);
   const cfg = config.data ?? lista.data?.config;
   const criar = useCriarPlano();
@@ -307,27 +314,15 @@ export function ShoppingsRotas({ praca }: { praca: PracaView }) {
       {operar && grandes.length > 0 && (
         <section className="card-surface space-y-3 p-4" aria-label="Mapear clientes dentro dos shoppings">
           <h2 className="text-base font-bold">2. Mapear clientes dentro dos shoppings</h2>
-          <fieldset className="space-y-1">
-            <legend className="text-sm">Que lojas buscar (segmentos da busca)</legend>
-            <div className="flex flex-wrap gap-2">
-              {ativos.map((sg) => {
-                const on = tipos.includes(sg.slug);
-                return (
-                  <Button
-                    key={sg.slug}
-                    variant={on ? 'default' : 'outline'}
-                    className="h-12"
-                    aria-pressed={on}
-                    onClick={() => setTipos(on ? tipos.filter((t) => t !== sg.slug) : [...tipos, sg.slug].slice(0, 10))}
-                  >
-                    {sg.label}
-                  </Button>
-                );
-              })}
-            </div>
-          </fieldset>
+          {segmentos.data && (
+            <p className="text-sm">
+              {lojas.length
+                ? `Busca ${lojas.map((a) => a.label).join(' e ')} dentro de cada shopping grande.`
+                : 'Bar e Restaurante estão desativados nos Segmentos da busca (Configurações): ative um deles para mapear as lojas de dentro.'}
+            </p>
+          )}
           {grandes.map((s) => (
-            <LojasDoShopping key={s.lead_id} praca={praca} s={s} tipos={tipos.filter((t) => ativos.some((a) => a.slug === t))} />
+            <LojasDoShopping key={s.lead_id} praca={praca} s={s} tipos={tipos} />
           ))}
           <p className="text-sm text-muted-foreground">
             Dentro do polígono do shopping no mapa aberto; sem resultado (ou shopping só como ponto), em volta até {cfg?.raio_lojas_m ?? 300} m — menos confiável.
