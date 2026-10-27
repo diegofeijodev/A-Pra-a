@@ -632,6 +632,11 @@ try {
   check('variáveis padrão das mensagens só com o Comercial ligado', cfg.includes('variáveis padrão das mensagens') === !!featIni.commercial);
   check('roteiro-modelo das próximas praças só com o Comercial ligado', cfg.includes('roteiro-modelo') === !!featIni.commercial);
 
+  // Desempenho da equipe (E5.10): "Em construção" como na Lovable; o endereço abre, fora do menu.
+  await page.goto(`${BASE}/desempenho`, { waitUntil: 'networkidle' });
+  await page.getByText('Em construção').first().waitFor({ timeout: 20000 });
+  check('Desempenho (equipe): "Em construção", fora do menu', (await page.locator('aside nav').getByRole('link', { name: 'Desempenho' }).count()) === 0);
+
   // ── 11. Freela (sem conexão) ──────────────────────────────────
   console.log('-- Freela --');
   await page.goto(`${BASE}/freela`, { waitUntil: 'networkidle' });
