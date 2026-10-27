@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button';
 import { todaySp } from '@/lib/dates';
 import { useAreas } from '@/modules/areas/application/use-areas';
 import { visaoInicial } from '@/modules/areas/domain/area-form';
-import { useAuth } from '@/modules/auth/application/use-auth';
 import { useCalor } from '@/modules/calor/application/use-calor';
 import {
   AVISO_PASSAGEM,
@@ -47,8 +46,6 @@ const selectCls = 'h-9 rounded-md border border-input bg-background px-2 text-sm
 export function MapaDeCalor() {
   const router = useRouter();
   const params = useSearchParams();
-  const { user } = useAuth();
-  const dark = user?.theme !== 'light';
   const hoje = todaySp();
   const f = useMemo(() => lerFiltros(params, hoje), [params, hoje]);
   const { praca: ativa, isPending: carregandoPracas } = useActivePraca();
@@ -191,7 +188,7 @@ export function MapaDeCalor() {
                 cells={dados?.cells ?? []}
                 cell={dados?.cell ?? { dlat: 0, dlng: 0 }}
                 max={dados?.max ?? 0}
-                dark={dark}
+                dark={false}
                 inicio={inicio}
                 chaveEnquadre={chaveEnquadre}
                 onVista={setVista}
@@ -213,7 +210,7 @@ export function MapaDeCalor() {
                 </button>
               </p>
             )}
-            {dados && <Legenda dados={dados} dark={dark} />}
+            {dados && <Legenda dados={dados} dark={false} />}
             {dados && dados.cells.length > 0 && <Quadras dados={dados} />}
           </div>
           <Resumo dados={dados} />

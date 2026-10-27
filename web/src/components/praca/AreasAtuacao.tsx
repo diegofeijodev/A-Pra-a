@@ -35,7 +35,6 @@ export function AreasAtuacao({ praca }: { praca: PracaView }) {
   const { user } = useAuth();
   // Lote E §42.3: criar e editar área também para o gestor (com a flag).
   const admin = podeOperar(user);
-  const dark = user?.theme !== 'light';
   const { data: areas, isPending, isError, refetch } = useAreas(praca.id);
   const criar = useCreateArea(praca.id);
   const atualizar = useUpdateArea(praca.id);
@@ -174,7 +173,7 @@ export function AreasAtuacao({ praca }: { praca: PracaView }) {
           </p>
           <AreaMapa
             visao={visao}
-            dark={dark}
+            dark={false}
             existentes={(areas ?? []).filter((a) => a.id !== editando)}
             atual={{ lat: form.lat, lng: form.lng, radius_m: Number.isFinite(form.radius_m) ? form.radius_m : RAIO_PADRAO_M }}
             onPick={(lat, lng) => setForm((f) => ({ ...f, lat, lng }))}

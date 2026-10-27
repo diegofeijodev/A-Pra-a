@@ -14,7 +14,8 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#1d1d1b',
+  // `--primary-deep` da Lovable, oklch(0.3 0.12 262), convertido pelo CSS Color 4 (OKLCH → sRGB).
+  themeColor: '#072869',
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',

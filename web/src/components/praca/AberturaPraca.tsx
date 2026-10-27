@@ -5,7 +5,6 @@ import { useMemo, useState } from 'react';
 import { MapPin, Rocket, X } from 'lucide-react';
 import { addDays, todaySp } from '@/lib/dates';
 import { fmtPop, RADIUS_KM, UF_NOME } from '@/lib/geo';
-import { useAuth } from '@/modules/auth/application/use-auth';
 import { useEstados, useMunicipios, useVizinhas } from '@/modules/geo/application/use-geo';
 import { useCreatePraca, useSetActivePraca } from '@/modules/pracas/application/use-pracas';
 
@@ -21,8 +20,6 @@ const AberturaMapa = dynamic(() => import('./AberturaMapa'), { ssr: false });
  * dita cobertura.
  */
 export function AberturaPraca({ onClose }: { onClose: () => void }) {
-  const { user } = useAuth();
-  const dark = user?.theme !== 'light';
   const [uf, setUf] = useState("");
   const [cidadeId, setCidadeId] = useState("");
   const [busca, setBusca] = useState("");
@@ -122,7 +119,7 @@ export function AberturaPraca({ onClose }: { onClose: () => void }) {
           {/* mapa + vizinhas */}
           {centro && cobertura ? (
             <>
-              <AberturaMapa centro={cobertura.centro} vizinhas={vizinhas} dark={dark} />
+              <AberturaMapa centro={cobertura.centro} vizinhas={vizinhas} dark={false} />
               <div className="rounded-md border border-border bg-secondary/40 p-3">
                 <p className="tag text-muted-foreground">Cobertura no raio de {RADIUS_KM} km</p>
                 <p className="mt-1 text-sm">

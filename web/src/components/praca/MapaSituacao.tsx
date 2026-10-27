@@ -4,7 +4,6 @@ import dynamic from 'next/dynamic';
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useUiStore } from '@/lib/ui-store';
-import { useAuth } from '@/modules/auth/application/use-auth';
 import { useFeaturesLovable, useConfigLovable } from '@/modules/painel/application/use-painel';
 import { useDetalhePino, useMapaPinos } from '@/modules/pinos/application/use-pinos';
 import { alternarCodigo, linhasDoBalao, pinosVisiveis, SIMBOLO, type ModoMapa } from '@/modules/pinos/domain/pinos';
@@ -18,8 +17,6 @@ const chip = (ativo: boolean) =>
 
 /** Mapa por situação (contrato §34, UX §3.3; Lovable `mapa.tsx`): filtro por praça, legenda clicável com contagem. */
 export function MapaSituacao() {
-  const { user } = useAuth();
-  const dark = user?.theme !== 'light';
   const cfg = useConfigLovable();
   const features = useFeaturesLovable();
   const { data: todasPracas } = usePracas();
@@ -98,7 +95,7 @@ export function MapaSituacao() {
             {m.without_location.toLocaleString('pt-BR')} sem localização não aparecem no mapa.
             {m.truncado ? ` Mostrando ${m.pins.length.toLocaleString('pt-BR')} de ${m.total.toLocaleString('pt-BR')}: escolha uma praça para ver todos.` : ''}
           </p>
-          <PinosMapa pins={visiveis} cores={cores} dark={dark} chaveEnquadre={`${pracaId}|${modo}`} onPino={setSelecionado} balao={balao} />
+          <PinosMapa pins={visiveis} cores={cores} dark={false} chaveEnquadre={`${pracaId}|${modo}`} onPino={setSelecionado} balao={balao} />
           {selecionado && detalhe.data?.id === selecionado && (
             <div className="card-surface flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
               <span className="min-w-0 break-words">{linhasDoBalao(detalhe.data).slice(0, 2).join(' · ')}</span>

@@ -11,7 +11,6 @@ import {
   useNotifications,
 } from '@/modules/notifications/application/use-notifications';
 import { useActivePraca } from '@/modules/pracas/application/use-pracas';
-import { useUpdateMe } from '@/modules/users/application/use-users';
 
 const I = {
   hoje: "M8 2v3M16 2v3M3.5 9h17M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z",
@@ -133,13 +132,11 @@ function ItensMenu({ onEscolher }: { onEscolher: () => void }) {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const { user, signOut } = useAuth();
+  const { signOut } = useAuth();
   // Página inicial (UX §3.1): "Início" (o painel) só com FIELD_DASHBOARD_ENABLED; desligado, `/hoje`, como sempre.
   const inicio = paginaInicial(useFeaturesMenu().features);
   const { praca } = useActivePraca();
-  const updateMe = useUpdateMe();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const theme = user?.theme ?? 'dark';
 
   const sidebar = (
     <div className="flex h-full flex-col">
@@ -155,15 +152,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       </nav>
       <div className="space-y-0.5 border-t border-border p-2">
         <Bell pracaId={praca?.id} />
-        <button
-          onClick={() => updateMe.mutate({ theme: theme === "dark" ? "light" : "dark" })}
-          disabled={updateMe.isPending}
-          className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
-          aria-label="Alternar tema"
-        >
-          <span className="w-4 text-center">{theme === "dark" ? "☀" : "☾"}</span>
-          {theme === "dark" ? "Tema claro" : "Tema escuro"}
-        </button>
         <button
           onClick={async () => {
             await signOut();

@@ -44,6 +44,11 @@ Lovable "PRAÇA" para a stack do Freela.
   malformado vira 500 em vez de 404.
 - Guarda de sessão do web vive em `app/(app)/layout.tsx`, não no `AppShell`:
   a página não pode montar (e disparar `useQuery`) sem sessão.
+- **Visual da Lovable (redesenho de 26/10, `docs/superpowers/plans/2026-10-26-ui-lovable-progresso.md`):** tema ÚNICO, claro —
+  tokens de `garden-v2/src/styles.css` em `web/src/app/globals.css` (com os 4 ajustes de contraste da UX §1.2: `--destructive`,
+  `--success`, `--warning`, `--input`), Manrope + Sora por `next/font` (variáveis no `<html>`), `bg-brand`, `shadow-card` e
+  `card-surface` = cartão da Lovable. Sem `.light`, sem `ThemeSync` e sem botão de tema: `users.theme` segue no banco e no
+  `PATCH /v1/users/me`, sem efeito na tela; mapas com `dark={false}`. Não reintroduza tema escuro sem pedido do dono.
 - **Consultor de campo ≠ equipe.** Token com `aud: "campo"`; rotas `/v1/campo/*`
   marcadas com `@CampoRoute()` (o `JwtAuthGuard` global delega ao
   `CampoAuthGuard`). Rota nova do consultor SEM `@CampoRoute()` fica fechada

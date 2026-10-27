@@ -7,8 +7,9 @@ export function GET() {
     scope: '/campo',
     display: 'standalone',
     orientation: 'portrait',
-    background_color: '#1d1d1b',
-    theme_color: '#1d1d1b',
+    // `--primary-deep` (oklch(0.3 0.12 262) → #072869). Escopo e início iguais: o atalho instalado não quebra.
+    background_color: '#072869',
+    theme_color: '#072869',
     icons: [
       { src: '/campo/icone/192', sizes: '192x192', type: 'image/png' },
       { src: '/campo/icone/512', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },

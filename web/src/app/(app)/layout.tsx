@@ -7,7 +7,6 @@ import { AppShell } from '@/components/praca/AppShell';
 import { LeadPanel } from '@/components/praca/LeadPanel';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { useMe } from '@/modules/auth/application/use-me';
-import { ThemeSync } from './ThemeSync';
 
 /**
  * Guarda de sessão das telas internas.
@@ -37,7 +36,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <ThemeSync />
       <AppShell>{children}</AppShell>
       {/* Painéis globais: abrem por `openActionId` / `openLeadId` do
           `lib/ui-store.ts`, de qualquer tela. Ficam FORA do `AppShell` porque

@@ -34,7 +34,6 @@ export default function ConsultorDetalhePage() {
   // Lote E §42.3: editar, desativar, senha provisória e o código no Freela também para o gestor (com a flag); apagar segue só admin.
   const operar = podeOperar(user);
   const { features } = useFeaturesMenu();
-  const dark = user?.theme !== 'light';
   const [dia, setDia] = useState(todaySp());
   const { data: c, isError: consultorErro, error: erroConsultor, refetch: recarregarConsultor } = useConsultor(id);
   const { data: diaDados, isPending, isError: diaErro, error: erroDia, refetch: recarregarDia } = useDiaConsultor(id, dia);
@@ -125,7 +124,7 @@ export default function ConsultorDetalhePage() {
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
             <ConsultorLinhaDoTempo dia={diaDados} />
-            {(trilhas.some((t) => t.length > 0) || diaDados.visits.length > 0) && <ConsultorMapa trilhas={trilhas} visitas={diaDados.visits} dark={dark} />}
+            {(trilhas.some((t) => t.length > 0) || diaDados.visits.length > 0) && <ConsultorMapa trilhas={trilhas} visitas={diaDados.visits} dark={false} />}
           </div>
         )}
         <ResumoDiaEquipe consultantId={id} dia={dia} />

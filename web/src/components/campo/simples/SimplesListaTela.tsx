@@ -30,7 +30,7 @@ export function SimplesListaTela() {
       <FaixaFila />
       {mapaLigado && <AlternarListaMapa modo={modo} onModo={setModo} />}
       {mapaLigado && modo === 'mapa' ? (
-        <MapaCampo paradas={pendentes} escuro={!sol} />
+        <MapaCampo paradas={pendentes} escuro={false} />
       ) : rot.carregando ? (
         <div aria-busy="true" className="space-y-2">
           <div className="h-20 animate-pulse rounded-lg bg-muted" />

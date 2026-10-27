@@ -16,10 +16,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ tamanho
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: '#1d1d1b',
-          color: '#ECA826',
+          // Faixa da Lovable: `--primary-deep` (#072869) com a letra em `--primary-foreground`.
+          background: '#072869',
+          color: '#FCFCFC',
           fontSize: Math.round(n * 0.5),
-          fontWeight: 900,
+          fontWeight: 700,
         }}
       >
         P.

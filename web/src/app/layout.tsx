@@ -1,29 +1,29 @@
 import type { Metadata } from 'next';
-import { Inter, Montserrat } from 'next/font/google';
+import { Manrope, Sora } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
 
-// O protótipo puxava as fontes por <link> do Google; aqui vêm por
-// `next/font/google` (mesmas famílias e pesos), servidas do próprio domínio.
-const montserrat = Montserrat({
-  subsets: ['latin'],
-  weight: ['700', '800', '900'],
-  variable: '--font-montserrat',
-});
-
-const inter = Inter({
+// As fontes da Lovable (Manrope no texto, Sora nos títulos) vêm por `next/font/google`, servidas do próprio domínio (sem <link>
+// para o Google). Sora só nos pesos que o desenho usa (500/600/700): `font-extrabold`/`font-black` caem no 700.
+const manrope = Manrope({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700'],
-  variable: '--font-inter',
+  variable: '--font-manrope',
+});
+
+const sora = Sora({
+  subsets: ['latin'],
+  weight: ['500', '600', '700'],
+  variable: '--font-sora',
 });
 
 export const metadata: Metadata = {
-  title: 'PRAÇA — Checklist de abertura de praças',
+  title: 'Praça',
   description:
     'Transforme o manual de 11 etapas da Freela Serviços em ações do dia a dia, com dono, prazo e acompanhamento.',
   authors: [{ name: 'Freela Serviços' }],
   openGraph: {
-    title: 'PRAÇA — Checklist de abertura de praças',
+    title: 'Praça',
     description: 'Transforme o manual de 11 etapas em ações do dia a dia.',
     type: 'website',
   },
@@ -31,11 +31,11 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  // O tema escuro é o padrão (`:root` no globals.css); a classe `light` é
-  // ligada em runtime pelo `ThemeSync` do `(app)/layout.tsx`.
+  // Tema único, claro (o da Lovable). As variáveis das fontes ficam no `<html>` (= `:root`): é lá que o `@theme` define
+  // `--font-sans`/`--font-display` com `var(--font-manrope)`/`var(--font-sora)`, e a variável tem de existir no mesmo elemento.
   return (
-    <html lang="pt-BR">
-      <body className={`${montserrat.variable} ${inter.variable}`}>
+    <html lang="pt-BR" className={`${manrope.variable} ${sora.variable}`}>
+      <body>
         <Providers>{children}</Providers>
       </body>
     </html>

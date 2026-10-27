@@ -44,7 +44,6 @@ export function DividirRotas({ praca }: { praca: PracaView }) {
   const [confirmarArquivo, setConfirmarArquivo] = useState(false);
   const [verMapa, setVerMapa] = useState(false);
   const [destaque, setDestaque] = useState<string | null>(null);
-  const dark = user?.theme !== 'light';
   const { data: consultores } = useConsultores();
   const doPraca = (consultores ?? []).filter((c) => atuaNaPraca(c, praca.id) && c.active).map((c) => ({ id: c.id, name: c.name }));
   const resumo = planos.data?.find((p) => p.id === atual);
@@ -185,7 +184,7 @@ export function DividirRotas({ praca }: { praca: PracaView }) {
                     ))}
                   </select>
                 </label>
-                <RotasMapa itens={plano.data.items} destaque={destaque} dark={dark} />
+                <RotasMapa itens={plano.data.items} destaque={destaque} dark={false} />
               </>
             )}
           </div>
