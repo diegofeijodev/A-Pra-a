@@ -29,6 +29,20 @@ Pedido do Denner (26/10): "refaça o praça pra ser seguindo totalmente esse aqu
 5. Continuam fora (já aceito pelo dono 23/10): senha fixa do `bootstrapAdmin`, Google Places gravando dados, pagamento sem
    ledger/"Desfazer" apagando, login `@praca.local`, chave do Google no bundle, dia em UTC, gestor redefinindo senha de admin.
 
+## Padrões adotados para as perguntas em aberto (26/10, noite; Denner dormindo)
+
+- Arquitetura §7: D1 = A (representante segue em `/campo?v=…`; links da Lovable levam para lá; atalho instalado não quebra);
+  D2 = troca obrigatória de senha da equipe fica para depois (admin gera, mostra uma vez); D3 = rota nova `GET /v1/campo/map/list`
+  atrás da trava do mapa; D4 = endereço direto do Comercial abre normalmente, só sem item no menu; D5 = Desempenho "Em construção"
+  com atalho para "Resultado do seu dia"; D6 = Rotas abre na aba "Clientes" quando os planos estão ligados.
+- UX §7 (dono): "Iniciar/Encerrar o dia"; nossos resultados da visita ("Como foi a visita?"); situação da praça pelas datas;
+  Desempenho "Em construção"; voucher só nasce na visita.
+- UX §7 (arquiteto), o que a spec de arquitetura não fechou: rótulos dos pinos só no web; coluna Remuneração por representante
+  fica de fora (G4 opcional); CEP sem preencher sozinho (sem ViaCEP no navegador); mensagens da API que dizem "consultor" ficam
+  como estão nesta leva.
+- Execução: uma etapa por subagente, um de cada vez; lint/typecheck/vitest/jest com `nice`, um processo por vez; o
+  `browser-check` (pesado) roda depois da E4 e na E8 — as etapas atualizam as linhas dele no mesmo commit.
+
 ## Mapa Lovable → nosso
 
 | Lovable | Nosso hoje | Destino |
@@ -53,7 +67,9 @@ Endereços novos com redirecionamento dos antigos (vídeos, favoritos e o browse
 
 ## Etapas
 
-- [ ] 0. Arquiteto + designer (regra 11/10): `docs/superpowers/specs/2026-10-26-ui-lovable-arquitetura.md` e `-ux.md`
+- [x] 0. Arquiteto + designer (regra 11/10): `docs/superpowers/specs/2026-10-26-ui-lovable-arquitetura.md` (plano E1–E9, §5)
+      e `-ux.md` (telas, §4; troca do browser-check, §6.2). Decisões em aberto: adotados os PADRÕES das duas specs (lista abaixo),
+      todos reversíveis; o Denner revê de manhã.
 - [ ] 1. Tokens, fontes e fim do botão de tema (commit próprio)
 - [ ] 2. Casca da equipe (menu lateral azul-marinho, nomes da Lovable, chave do Comercial)
 - [ ] 3. Entrada única + trocar senha no layout Lovable
