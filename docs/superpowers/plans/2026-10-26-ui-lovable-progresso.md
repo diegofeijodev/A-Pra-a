@@ -170,6 +170,9 @@ Endereços novos com redirecionamento dos antigos (vídeos, favoritos e o browse
       - Prévia (build da Vercel com lint): `praca-1gmddyer2-freelas-projects-ccf14064.vercel.app` (Ready, web de `6a818fe` =
         web de hoje; as 15 páginas novas respondem 200). A prévia NÃO fala com a API (o `NEXT_PUBLIC_API_URL` só existe em
         Production), então serve para provar o build; o design se confere nas capturas `~/Downloads/praca-telas-novas/`.
+      - Fechamento (27/10 manhã): jest da API inteira 142 suítes / 2171 testes / 80 snapshots depois do acabamento; prévia final
+        `praca-6a6mf37gv-freelas-projects-ccf14064.vercel.app` (Ready; `/consultores/painel` → 307 `/inicio`). Cópia limpa da API
+        para o rsync: `/tmp/claude-1000/-home-doutor-coding-freela/afbdab81-1f14-4838-9037-9eec9f310175/scratchpad/deploy-api-<sha final>/api/`.
       - **Subida (Denner, via `!`), nesta ordem — API antes do web; nenhuma migração; nenhuma flag nova a ligar
         (`TEAM_COMMERCIAL_ENABLED` ausente = Comercial escondido):**
         1. backup: `ssh ubuntu@56.124.127.54 "docker exec praca-postgres pg_dump -U praca praca | gzip > /opt/praca/backup-pre-ui-lovable-\$(date +%Y%m%d-%H%M).sql.gz && ls -la /opt/praca/backup-pre-ui-lovable-*"`
