@@ -99,7 +99,7 @@ Endereços novos com redirecionamento dos antigos (vídeos, favoritos e o browse
       browser-check depois da E4: 213/213 (flags desligadas), 263/263 (ligadas), 263/263 (Comercial). Duas correções: `devIndicators: false`
       no `next.config.ts` (a bolinha do `next dev` ficava por cima da aba "Hoje" e o toque não chegava nela) e o script espera os ladrilhos
       do mapa do representante antes de trocar de aba (`esperarLadrilhos`; sem isso, `ERR_ABORTED` em `tile.openstreetmap.org` às vezes).
-- [ ] 5. Telas, uma a uma, no desenho da Lovable (Dashboard, Praças, Clientes, Mapa, Rotas, Roteiro, Representantes,
+- [x] 5. Telas, uma a uma, no desenho da Lovable (Dashboard, Praças, Clientes, Mapa, Rotas, Roteiro, Representantes,
       Vouchers, Financeiro, Usuários, Configurações, Desempenho)
   - E5a (5.1, 5.2, 5.8, 5.9, 5.10): feito — API `5400da7` (G2 `leads_count` em todo `PracaView`, contrato §6: um `groupBy` na lista, um
     `count` no resto) + web `2eecd34` (Desempenho `EmBreve`), `00bbdaa` (Dashboard: 7 dias, cartões da Lovable, ranking em tabela),
@@ -120,6 +120,23 @@ Endereços novos com redirecionamento dos antigos (vídeos, favoritos e o browse
     Mapa em `/consultores/mapa`; seletor de Vouchers por `#vouchers-situacao`; bloco novo do Financeiro. Desvios: rótulos de situação ainda os
     da API (etapa própria com o §34.3); sem G3/G4 (Origem, Remuneração); lixeira = "Desativar" (o contrato §20.9 item 7 tira o apagar da tela);
     a praça do cadastro é a principal (as outras, F2, na ficha); "Esta semana"/"Semana passada" no lugar de De/Até/15 dias/mês.
+  - E5c (5.11, 5.12 + sobras da E4): feito — web `efe6f2e` (topo da casca: Sol na faixa azul só em Hoje/Roteiro, `useSol` num estado só e
+    `data-sol` na raiz, `FaixaFila` fixa no topo em todas as visões, `--campo-topo`, `CampoTopo` só h1; Hoje nos dois fluxos com "Bom trabalho,
+    {primeiro nome}!" + "Hoje, seg 26/10 · praça", `CardRotaHoje` no lugar do `RoteiroCard`, "Nenhuma rota hoje", quadros `bg-muted`,
+    "Iniciar/Encerrar intervalo"; `useJornada`; `montarDia.encerradaHoje`), `0c5456d` (Roteiro: um componente para os dois fluxos, cartão fixo com
+    selo/barra/linha da Lovable e os botões da jornada, "Resultado do seu dia" ao encerrar (encerrar cai em `?v=roteiro`), "Visita em andamento",
+    "Próximo sugerido", lista numerada com Google Maps/Waze/"Cheguei no cliente", sem "Lista | Mapa"; visita com o cabeçalho da Lovable, "Roteiro da
+    visita", voucher no lugar de cupom, "Confirmar chegada e iniciar visita"/"Finalizar visita", "Novo cliente"), `b72c802` (Carteira: três cartões
+    Hoje/Esta semana/Próximo Pix com a conta). Web lint 0, typecheck 0, vitest 42/455 (+2 arquivos/+28: `hoje-tela`, `carteira`); sem API.
+    browser-check atualizado sem rodar (≈ ±0 nas duas configurações): saudação pelo primeiro nome, "Nenhuma rota hoje", "Iniciar/Encerrar
+    intervalo", "Novo cliente"/"É outro cliente", "Confirmar chegada e iniciar visita", "Finalizar visita", "Roteiro da visita", voucher, o roteiro
+    do simples por "← Minhas rotas" + cartão "Em rota" (mapa pela aba de baixo), encerrar → `?v=roteiro` com "Resultado do seu dia" e "Encerrada".
+    Desvios: o cartão da rota diz "Rota de hoje" com a bolinha azul (o `RouteView` não traz o nome nem a cor do plano; só o `/v1/campo/routes`);
+    "Tempo previsto" = abertura da janela → fim da última parada pelo relógio do roteiro (com a conta no "ⓘ"); o "Resultado do seu dia" usa os
+    NOSSOS rótulos em quadros (não os 6 da Lovable; o L4 procura "Tempo trabalhado (dia − intervalo)"); o checklist segue com [Anotar] (a
+    observação não fica sempre aberta); o diálogo "Chegada" da Lovable não entra (a foto é a chegada); no sugerido, "Cheguei no cliente" só no quadro
+    de cima (dois campos de foto com o mesmo nome confundiriam leitor de tela e o Playwright); "Refazer rota a partir daqui" segue só no completo;
+    rótulos de situação da §4.4 continuam os da API (etapa própria com o contrato §34.3).
 - [ ] 6. Filtro "Perfil dos clientes" na rota geral (API + contrato + tela)
 - [ ] 7. Endereços da Lovable + redirecionamentos
 - [ ] 8. Verificação: lint, typecheck, vitest, jest das partes tocadas, browser-check (um processo por vez, `nice`)

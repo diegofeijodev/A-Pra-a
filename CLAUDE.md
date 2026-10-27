@@ -73,12 +73,23 @@ Lovable "PRAÇA" para a stack do Freela.
 - **Casca do representante (redesenho E4, arquitetura §3.6):** `campo/(sessao)/layout.tsx` monta a faixa azul (`FaixaRepresentante`: "Praça" + "Sair",
   que saiu do `CampoTopo`) e as 5 abas da Lovable (`AbasRepresentante`: Hoje, Mapa, Clientes, Desempenho, Carteira). Cada aba é uma VISÃO de `/campo`
   (`?v=mapa|clientes|desempenho|carteira`), trocada por `irPara` (`pushState`) num `<button>` — **nunca `Link`** (sem sinal a navegação do Next falha) e
-  **sem `role="tab"`** (o "Lista | Mapa" das paradas usa esse papel no `browser-check`). `abaDaTela(tela)` (`use-tela.ts`) diz qual acende; `null`
+  **sem `role="tab"`** (as abas "Perto de mim | Buscar | Novo cliente" da chegada usam esse papel no `browser-check`). `abaDaTela(tela)` (`use-tela.ts`) diz qual acende; `null`
   (nova, visita, cadastro, pedir-cupom, parada) esconde a barra, e o botão fixo da tela fica em `bottom-0`. Nas visões com abas, barra fixa de tela fica
   em `bottom-[calc(3.5rem+env(safe-area-inset-bottom))]`. As URLs das visões de antes não mudam (o teste confere). Ganhos, Pix, cadastros confirmados e
   "Resultado do dia" moram na Carteira; retornos, vouchers e "Visitados" (`GET /v1/campo/map/list`, só com `features.map_pins`) em Clientes; Desempenho
   é "Em construção" (`components/ui/EmBreve.tsx`) com atalho para o resultado do dia (D5). `destinoDoRepresentantePorEndereco` leva cada endereço
   compartilhado à visão equivalente (`/mapa` e `/consultores/mapa` → `?v=mapa`, `/financeiro` e `/consultores/pagamentos` → `?v=carteira`…).
+- **Hoje e Roteiro do representante no desenho da Lovable (redesenho E5c: 5.11, 5.12):** o topo fixo da casca é a faixa azul (com o interruptor
+  Sol, `role="switch"` "Contraste para sol forte", só em Hoje e Roteiro; `useSol` é um estado só do aparelho e o `data-sol` fica na raiz da casca)
+  + a `FaixaFila`, em TODAS as visões (nenhuma tela monta a sua); a altura do topo vai para `--campo-topo`. `CampoTopo` é só o h1. Hoje: "Bom
+  trabalho, {primeiro nome}!" + "Hoje, seg 26/10 · {praça ativa}" num `header` do `main` (o `browser-check` lê a praça ali), o `CardRotaHoje` (o
+  `CardRota` da Lovable) e a barra de ação de sempre; iniciar/encerrar em `useJornada` (mesmos corpos de `start`/`end`). O Roteiro é UM componente
+  para os dois fluxos (`RoteiroTela simples={…}`; muda só o que "Cheguei no cliente" faz): cartão fixo com o selo pelo `estadoDoDia` (`montarDia`
+  ganhou `encerradaHoje`), "Próximo sugerido", lista numerada com Google Maps/Waze; sem "Lista | Mapa" (o mapa é a aba de baixo). Encerrar o dia
+  (com `day_summary`) cai em `?v=roteiro` com o "Resultado do seu dia" (`ResultadoDoDiaCartao`, o `ResumoDiaConteudo` em quadros); `?v=resumo`
+  segue para os outros dias. Visita: cabeçalho "Visita em andamento" (cronômetro só com o checklist), "Roteiro da visita", "Pedir voucher…",
+  "Confirmar chegada e iniciar visita"/"Finalizar visita" no completo. Carteira: três cartões (`cartoesCarteira`: Hoje, Esta semana, Próximo Pix).
+  Texto fixo dessas telas nunca diz "pendente" (o `browser-check` espera a palavra sumir da página para saber que a fila esvaziou).
 - **Telas da equipe no desenho da Lovable (redesenho E5a: 5.1, 5.2, 5.8, 5.9, 5.10):** Dashboard abre em "7 dias" (nomes dos cartões da
   Lovable em `cartoesDoPainel`). Praças: lista em cartões com a situação **pelas datas** (`modules/pracas/domain/status-praca.ts`, `todaySp`;
   nunca à mão) e `leads_count` do `GET /v1/pracas` (contrato §6: leads `archived = false`, `is_test = false`; um `groupBy` na lista, um `count`
@@ -167,8 +178,8 @@ npm run prisma:migrate:dev | prisma:generate | prisma:studio
 
 # web/
 yarn dev | typecheck | lint        # `build` só se o dono pedir (ver abaixo)
-yarn test                          # vitest run (fork único) — 40 arquivos, 427 testes (depois da E5b)
-yarn browser-check                 # scripts/browser-check.mjs — 213 checagens na configuração de produção antiga (ROUTES, VISIT_FLOW_SELECT, EARNINGS, DECLARED_SIGNUPS, PAYOUTS; fluxo simples e completo); 263 com as flags dos lotes A–F ligadas (menos VOUCHER_COUPONS), com um passo logado como gestor e um consultor em duas praças; 263 também com TEAM_COMMERCIAL_ENABLED (mesmas checagens, outro ramo) — rodado depois da E4 (27/10); a E5a (sem rodar) soma ≈ +6 desligadas / +8 ligadas e a E5b (sem rodar) ≈ +1 / +8
+yarn test                          # vitest run (fork único) — 42 arquivos, 455 testes (depois da E5c)
+yarn browser-check                 # scripts/browser-check.mjs — 213 checagens na configuração de produção antiga (ROUTES, VISIT_FLOW_SELECT, EARNINGS, DECLARED_SIGNUPS, PAYOUTS; fluxo simples e completo); 263 com as flags dos lotes A–F ligadas (menos VOUCHER_COUPONS), com um passo logado como gestor e um consultor em duas praças; 263 também com TEAM_COMMERCIAL_ENABLED (mesmas checagens, outro ramo) — rodado depois da E4 (27/10); a E5a (sem rodar) soma ≈ +6 desligadas / +8 ligadas, a E5b (sem rodar) ≈ +1 / +8 e a E5c (sem rodar) ±0 (só textos e passos trocados)
                                    # precisa da API na 3014 (start:smoke) e do web na 3024 (yarn dev)
                                    # conta: PRACA_CHECK_EMAIL/PASSWORD (padrão = seed), login pelo formulário
 ```
