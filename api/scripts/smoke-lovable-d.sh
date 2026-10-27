@@ -99,7 +99,8 @@ echo "── perfil dos clientes (§39.4, redesenho E6) ──"
 # não têm achado (= sem perfil). Antes de publicar qualquer rota: depois, os publicados saem dos elegíveis.
 RUN_P=$($PSQL "insert into place_import_runs (id, praca_id, area_id, area_name, source, types, lat, lng, radius_m, cache_key, status, requested_by, kind) values (gen_random_uuid(), '$PRACA_SEED', '$AREA', 'LovD $SUF perfil', 'osm', '{bar,padaria}', $LAT, $LNG, 800, 'lovd-perfil-$SUF', 'done', (select id from users where email = 'diego@praca.local'), 'lugares') returning id" | head -1 | tr -d '[:space:]')
 L1=$(echo "$IDS" | jq -r '.[0]'); L2=$(echo "$IDS" | jq -r '.[1]'); L3=$(echo "$IDS" | jq -r '.[2]')
-$PSQL "insert into place_candidates (run_id, source, source_ref, name, category, lat, lng, distance_m, status, lead_id) values ('$RUN_P', 'osm', 'node/lovdp1$SUF', 'LovD $SUF 1', 'bar', $LAT, $LNG, 0, 'adicionado', '$L1'), ('$RUN_P', 'osm', 'node/lovdp2$SUF', 'LovD $SUF 2', 'padaria', $LAT, $LNG, 0, 'adicionado', '$L2')" > /dev/null
+# `place_candidates.id` não tem default no banco (o Prisma gera o uuid no cliente): o psql passa o seu.
+$PSQL "insert into place_candidates (id, run_id, source, source_ref, name, category, lat, lng, distance_m, status, lead_id) values (gen_random_uuid(), '$RUN_P', 'osm', 'node/lovdp1$SUF', 'LovD $SUF 1', 'bar', $LAT, $LNG, 0, 'adicionado', '$L1'), (gen_random_uuid(), '$RUN_P', 'osm', 'node/lovdp2$SUF', 'LovD $SUF 2', 'padaria', $LAT, $LNG, 0, 'adicionado', '$L2')" > /dev/null
 PV(){ curl -s "$API/v1/route-plans/preview?praca_id=$PRACA_SEED&area_id=$AREA&por_rota=3$1" -H "$HD"; }
 SEM_FILTRO=$(PV '' | jq .lead_count)
 check "prévia types=bar: total = o de sem filtro, quem não tem achado fica fora, a conta diz o perfil; bar,padaria conta mais que só bar" "true|true|true|true" \
