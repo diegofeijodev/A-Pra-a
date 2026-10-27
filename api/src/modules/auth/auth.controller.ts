@@ -14,10 +14,11 @@ import { ChangeOwnPasswordDto, LoginDto } from './dto/auth.dto';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  // Login aberto à internet: o mesmo teto por IP do consultor (contrato §2). A entrada única do web gasta uma tentativa aqui e,
-  // no 401, outra no campo; nenhum smoke nem o browser-check passa de 6 logins da equipe por minuto.
+  // Login aberto à internet (contrato §2): 40/min por IP, o dobro do consultor, porque a entrada única do web passa por aqui
+  // ANTES do campo — cada login de consultor gasta uma tentativa neste balde e outra no dele (20/min). Nenhum smoke nem o
+  // browser-check passa de 6 logins da equipe por minuto.
   @Public()
-  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Throttle({ default: { limit: 40, ttl: 60_000 } })
   @HttpCode(200)
   @Post('login')
   login(@Body() dto: LoginDto) {
@@ -30,7 +31,9 @@ export class AuthController {
   }
 
   /** A PRÓPRIA senha, pedindo a atual (contrato §2). O id vem do token, nunca do corpo. */
+  // Teto próprio: com um token roubado, a senha atual não pode ser adivinhada no balde geral de 300/min.
   @Equipe()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @HttpCode(200)
   @Post('change-password')
   changePassword(@CurrentUser() user: AuthUser, @Body() dto: ChangeOwnPasswordDto) {

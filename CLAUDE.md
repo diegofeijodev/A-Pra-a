@@ -39,8 +39,9 @@ Lovable "PRAÇA" para a stack do Freela.
 - A API roda em **uma** instância: os dois `@Cron` (motor de cadências e outbox
   do Freela) duplicariam mensagem com duas réplicas. Ver README, "Produção".
 - Throttle é por rota + IP, e `req.ip` atrás de nginx é o IP do proxy: flag
-  `TRUST_PROXY`. Os dois logins (`POST /v1/auth/login` e `/v1/campo/auth/login`)
-  têm teto de **20/min por IP**; nenhum `smoke*.sh` passa de 6 logins da equipe
+  `TRUST_PROXY`. Teto por IP: login da equipe (`POST /v1/auth/login`) **40/min** (a entrada única
+  passa por ele antes do campo), login do consultor (`/v1/campo/auth/login`) **20/min**, troca da própria
+  senha (equipe e consultor) **10/min**; nenhum `smoke*.sh` passa de 6 logins da equipe
   (`smoke.sh` e `smoke-lovable-e.sh`) nem o `browser-check` (≈ 6 espalhados em
   minutos). Rodar vários smokes colados no mesmo minuto pode bater no teto (429).
 - Id que vem da URL passa por `isUuid()` antes do Prisma: sem isso, id

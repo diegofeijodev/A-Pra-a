@@ -24,7 +24,9 @@ export class CampoAuthController {
     return this.auth.login(dto.email, dto.password);
   }
 
+  // Mesmo teto da troca de senha da equipe (§2): a senha atual não pode ser adivinhada no balde geral.
   @AllowPendingPassword()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @HttpCode(200)
   @Post('change-password')
   changePassword(@CurrentConsultant() c: CampoConsultant, @Body() dto: ChangePasswordDto) {

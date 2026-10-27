@@ -50,8 +50,8 @@ aqui primeiro. Swagger interativo em `/docs` (fora de produção).
 - Throttle: 300 req/min **por rota** e por IP — o `@nestjs/throttler` monta a
   chave com classe + handler, então cada rota tem o seu balde. O formulário
   público tem teto próprio (§11), e as duas entradas também: `POST /v1/auth/login`
-  (equipe, §2) e `POST /v1/campo/auth/login` (consultor, §20), **20/min por IP**
-  cada uma.
+  (equipe, §2) **40/min por IP** — a entrada única do web passa por ela antes do campo — e
+  `POST /v1/campo/auth/login` (consultor, §20) **20/min por IP**. `POST /v1/auth/change-password` e `/v1/campo/auth/change-password`: **10/min** (folga para o 1º acesso de vários consultores no mesmo Wi-Fi).
 - O IP é o `req.ip` do Fastify. Atrás de proxy reverso (nginx) isso é o IP do
   proxy — e aí o mundo inteiro divide um balde só. Por isso existe
   `TRUST_PROXY=true` (ver README, "Produção"), que faz o Fastify ler
@@ -64,9 +64,9 @@ aqui primeiro. Swagger interativo em `/docs` (fora de produção).
 
 | Método | Rota | Corpo | Resposta |
 |---|---|---|---|
-| POST | `/login` | `{email, password}` | `{access_token, user}` — público, **20/min por IP** (`@Throttle`) |
+| POST | `/login` | `{email, password}` | `{access_token, user}` — público, **40/min por IP** (`@Throttle`) |
 | GET | `/me` | — | `{user}` |
-| POST | `/change-password` | `{current_password, new_password}` (atual: 6–72; nova: 8–72) | `200 {ok: true}` — a própria conta (`@Equipe()`) |
+| POST | `/change-password` | `{current_password, new_password}` (atual: 6–72; nova: 8–72) | `200 {ok: true}` — a própria conta (`@Equipe()`), **10/min por IP** |
 
 `user` é sempre um `UserView` (ver §3). Erros do login: `INVALID_CREDENTIALS`
 (e-mail ou senha não batem), `UNAUTHORIZED` (senha certa, conta desativada —
@@ -2805,7 +2805,7 @@ login, token e telas próprios). Desenho: `docs/superpowers/specs/2026-10-08-con
 | Método | Rota | Corpo | Resposta |
 |---|---|---|---|
 | POST | `/v1/campo/auth/login` | `{email, password}` | `200 {access_token, consultant, must_change_password}` — público, 20/min por IP; e-mail inexistente leva o mesmo tempo (hash fixo, §2) |
-| POST | `/v1/campo/auth/change-password` | `{current_password, new_password}` (nova: 8–72) | `200 {access_token, consultant, must_change_password: false}` |
+| POST | `/v1/campo/auth/change-password` | `{current_password, new_password}` (nova: 8–72) | `200 {access_token, consultant, must_change_password: false}` — 10/min por IP |
 | GET | `/v1/campo/me` | — | `{consultant, channels}` |
 
 Erros: `401 INVALID_CREDENTIALS`, `401 UNAUTHORIZED` (conta desativada),
