@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { corpoDoPerfil, ehGestor, itemAtivo, menuDeHoje, montarMenu, paginaInicial, perfilDe, podeOperar, SEM_FEATURES_MENU, type FeaturesMenu } from '../acesso';
+import { corpoDoPerfil, ehGestor, featuresMenuSchema, itemAtivo, montarMenu, paginaInicial, perfilDe, podeOperar, SEM_FEATURES_MENU, type FeaturesMenu } from '../acesso';
+import { destinoDoRepresentante, ROTA } from '../enderecos';
 import { conferirRegras, senhaCumpre, type PoliticaLigada } from '../senha';
 import { emailContatoValido, linkWhatsappAcesso, mascararEmail } from '../cadastro';
 
 const ADMIN = { is_admin: true };
 const GESTOR = { is_admin: false, is_gestor: true };
 const EQUIPE = { is_admin: false };
-const tudo: FeaturesMenu = { ...SEM_FEATURES_MENU, dashboard: true, map_pins: true, vouchers: true, route_plans: true, team_gestor: true };
+// As flags que acendem itens do menu (Comercial desligado, como em produção).
+const tudo: FeaturesMenu = { ...SEM_FEATURES_MENU, dashboard: true, map_pins: true, routes: true, vouchers: true, earnings: true, payouts: true, route_plans: true, team_gestor: true };
 
 describe('perfis', () => {
   it('gestor efetivo e quem opera', () => {
@@ -26,38 +28,81 @@ describe('perfis', () => {
   });
 });
 
-describe('menu da equipe', () => {
-  it('módulos desligados (produção hoje): o menu de hoje, plano e na mesma ordem', () => {
-    expect(montarMenu(SEM_FEATURES_MENU, ADMIN)).toEqual([{ titulo: null, itens: menuDeHoje(true) }]);
-    expect(montarMenu(SEM_FEATURES_MENU, ADMIN)[0]!.itens.map((i) => i.label)).toEqual([
-      'Praça', 'Funil', 'Consultores', 'Entrada', 'Buscar estabelecimentos', 'Mensagens', 'Campanhas', 'Calendário', 'Indicadores', 'Ações', 'Configurações', 'Freela',
-    ]);
-    expect(montarMenu(SEM_FEATURES_MENU, EQUIPE)[0]!.itens.map((i) => i.label)).not.toContain('Buscar estabelecimentos');
-    // Só regra de senha/cadastro/e-mail ligados também não mexem no menu.
-    expect(montarMenu({ ...SEM_FEATURES_MENU, password_policy: true, consultant_profile: true, contact_email: true }, ADMIN)[0]!.titulo).toBeNull();
-  });
-  it('ligados: três grupos com os nomes e a ordem da Lovable', () => {
+describe('menu da equipe (casca da Lovable)', () => {
+  const rotulos = (m: ReturnType<typeof montarMenu>, i = 0) => m[i]!.itens.map((x) => x.label);
+  const LOVABLE = ['Dashboard', 'Praças', 'Clientes', 'Mapa', 'Rotas', 'Representantes', 'Vouchers', 'Financeiro', 'Configurações', 'Usuários'];
+  const COMERCIAL = ['Funil', 'Entrada', 'Buscar estabelecimentos', 'Mensagens', 'Campanhas', 'Calendário', 'Indicadores', 'Ações', 'Freela'];
+
+  it('admin com os módulos ligados e o Comercial desligado: um grupo sem título, nomes e ordem da Lovable', () => {
     const m = montarMenu(tudo, ADMIN);
-    expect(m.map((g) => g.titulo)).toEqual(['Operação de campo', 'Comercial', 'Administração']);
-    expect(m[0]!.itens.map((i) => i.label)).toEqual(['Início', 'Praças', 'Clientes', 'Mapa', 'Rotas', 'Consultores', 'Cupons']);
-    expect(m[1]!.itens.map((i) => i.label)).toContain('Buscar estabelecimentos');
+    expect(m).toHaveLength(1);
+    expect(m[0]!.titulo).toBeNull();
+    expect(rotulos(m)).toEqual(LOVABLE);
   });
-  it('o gestor vê Configurações (as áreas de atuação são dele, §42.3) e a busca (só mapa aberto, no servidor)', () => {
-    const m = montarMenu(tudo, GESTOR);
-    expect(m.map((g) => g.titulo)).toEqual(['Operação de campo', 'Comercial', 'Administração']);
-    expect(m[1]!.itens.map((i) => i.label)).toContain('Buscar estabelecimentos');
-    expect(montarMenu(tudo, EQUIPE)[1]!.itens.map((i) => i.label)).not.toContain('Buscar estabelecimentos');
+  it('gestor e equipe: a mesma lista sem "Usuários" (Configurações fica: as áreas de atuação são do gestor, §42.3)', () => {
+    const semUsuarios = LOVABLE.filter((l) => l !== 'Usuários');
+    expect(rotulos(montarMenu(tudo, GESTOR))).toEqual(semUsuarios);
+    expect(rotulos(montarMenu(tudo, EQUIPE))).toEqual(semUsuarios);
   });
-  it('item ativo considera o modo de Clientes', () => {
-    const [lista, mapa] = [{ to: '/consultores/clientes', label: 'Clientes', icon: 'clientes' as const }, { to: '/consultores/clientes?modo=mapa', label: 'Mapa', icon: 'mapa' as const }];
-    expect(itemAtivo(lista, '/consultores/clientes', null)).toBe(true);
-    expect(itemAtivo(mapa, '/consultores/clientes', null)).toBe(false);
-    expect(itemAtivo(mapa, '/consultores/clientes', 'mapa')).toBe(true);
-    expect(itemAtivo({ to: '/funil', label: 'Funil', icon: 'funil' }, '/funil', null)).toBe(true);
+  it('tudo desligado (admin): só os itens sem flag', () => {
+    expect(montarMenu(SEM_FEATURES_MENU, ADMIN).map((g) => g.titulo)).toEqual([null]);
+    expect(rotulos(montarMenu(SEM_FEATURES_MENU, ADMIN))).toEqual(['Dashboard', 'Praças', 'Representantes', 'Configurações', 'Usuários']);
+    // Regra de senha, cadastro, e-mail, planos e várias praças não mexem no menu.
+    const naoMexem = { ...SEM_FEATURES_MENU, password_policy: true, consultant_profile: true, contact_email: true, route_plans: true, multi_praca: true, team_gestor: true };
+    expect(rotulos(montarMenu(naoMexem, ADMIN))).toEqual(['Dashboard', 'Praças', 'Representantes', 'Configurações', 'Usuários']);
   });
-  it('página inicial: Início só com o painel ligado', () => {
-    expect(paginaInicial(SEM_FEATURES_MENU)).toBe('/hoje');
-    expect(paginaInicial({ dashboard: true })).toBe('/consultores/painel');
+  it('cada item com flag só com a sua: Clientes e Mapa (mapa), Rotas (rotas), Vouchers (cupons), Financeiro (Pix)', () => {
+    expect(rotulos(montarMenu({ ...SEM_FEATURES_MENU, map_pins: true }, EQUIPE))).toEqual(['Dashboard', 'Praças', 'Clientes', 'Mapa', 'Representantes', 'Configurações']);
+    expect(rotulos(montarMenu({ ...SEM_FEATURES_MENU, routes: true }, EQUIPE))).toContain('Rotas');
+    expect(rotulos(montarMenu({ ...SEM_FEATURES_MENU, vouchers: true }, EQUIPE))).toContain('Vouchers');
+    expect(rotulos(montarMenu({ ...SEM_FEATURES_MENU, earnings: true }, EQUIPE))).not.toContain('Financeiro');
+    expect(rotulos(montarMenu({ ...SEM_FEATURES_MENU, earnings: true, payouts: true }, EQUIPE))).toContain('Financeiro');
+  });
+  it('Comercial ligado: 2º grupo "Comercial" com os itens de antes; "Buscar estabelecimentos" só para quem opera', () => {
+    const comCom = { ...tudo, commercial: true };
+    for (const u of [ADMIN, GESTOR]) {
+      const m = montarMenu(comCom, u);
+      expect(m.map((g) => g.titulo)).toEqual([null, 'Comercial']);
+      expect(rotulos(m, 1)).toEqual(COMERCIAL);
+    }
+    expect(rotulos(montarMenu(comCom, ADMIN))).toEqual(LOVABLE);
+    expect(rotulos(montarMenu(comCom, EQUIPE), 1)).toEqual(COMERCIAL.filter((l) => l !== 'Buscar estabelecimentos'));
+    expect(montarMenu(comCom, ADMIN)[1]!.itens.find((i) => i.label === 'Ações')!.to).toBe('/hoje');
+  });
+  it('item ativo: um só, o de prefixo mais longo; Clientes e Mapa pelo modo', () => {
+    const itens = montarMenu({ ...tudo, commercial: true }, ADMIN).flatMap((g) => g.itens);
+    const ativo = (path: string, modo: string | null = null) => itemAtivo(itens, path, modo)?.label ?? null;
+    expect(ativo('/consultores/3f2b8c1e-6a7d-4e0f-9b1a-2c3d4e5f6a7b')).toBe('Representantes');
+    expect(ativo('/consultores')).toBe('Representantes');
+    expect(ativo('/consultores/painel')).toBe('Dashboard');
+    expect(ativo('/consultores/roteiros')).toBe('Rotas');
+    expect(ativo('/consultores/cupons')).toBe('Vouchers');
+    expect(ativo('/consultores/pagamentos')).toBe('Financeiro');
+    expect(ativo('/consultores/clientes')).toBe('Clientes');
+    expect(ativo('/consultores/clientes', 'lista')).toBe('Clientes');
+    expect(ativo('/consultores/clientes', 'mapa')).toBe('Mapa');
+    expect(ativo('/praca')).toBe('Praças');
+    expect(ativo('/pracas')).toBeNull();
+    // "Usuários" divide a tela com "Configurações" até a E5: acende uma só.
+    expect(ativo('/configuracoes')).toBe('Configurações');
+    expect(ativo('/funil')).toBe('Funil');
+    expect(ativo('/formulario/x')).toBeNull();
+    // Endereço do Comercial com a chave desligada abre normalmente, sem item aceso (§2.2).
+    expect(itemAtivo(montarMenu(tudo, ADMIN)[0]!.itens, '/funil', null)).toBeNull();
+  });
+  it('página inicial: sempre o Dashboard (nunca mais /hoje)', () => {
+    expect(paginaInicial()).toBe(ROTA.inicio);
+    expect(ROTA.inicio).toBe('/consultores/painel');
+  });
+  it('features: servidor antigo (sem as chaves novas) = desligado; o representante mora em /campo', () => {
+    const f = featuresMenuSchema.parse({ dashboard: true });
+    expect([f.commercial, f.routes, f.earnings, f.payouts, f.declared_signups]).toEqual([false, false, false, false, false]);
+    expect(destinoDoRepresentante()).toBe('/campo');
+    expect(destinoDoRepresentante('carteira')).toBe('/campo');
+  });
+  it('as chaves dos links são únicas (o React reclamaria no console)', () => {
+    const itens = montarMenu({ ...tudo, commercial: true }, ADMIN).flatMap((g) => g.itens);
+    expect(new Set(itens.map((i) => i.to)).size).toBe(itens.length);
   });
 });
 

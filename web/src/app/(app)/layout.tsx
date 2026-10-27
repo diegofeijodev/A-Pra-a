@@ -1,5 +1,6 @@
 'use client';
 
+import { Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { ActionPanel } from '@/components/praca/ActionPanel';
@@ -31,7 +32,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [loading, user, router]);
 
   if (loading || !user) {
-    return <div className="grid min-h-screen place-items-center text-sm text-muted-foreground">Carregando…</div>;
+    // UX §2.4 (Lovable): o giro azul no meio da tela enquanto lê a sessão (leitura local, < 1 s).
+    return (
+      <div className="flex min-h-screen items-center justify-center" role="status" aria-label="Carregando">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" aria-hidden />
+      </div>
+    );
   }
 
   return (

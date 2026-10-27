@@ -297,19 +297,17 @@ try {
   await page.locator('#email').fill(EMAIL);
   await page.locator('#senha').fill(SENHA);
   check('formulário de entrada preenchido', (await page.locator('#email').inputValue()) === EMAIL);
-  // Lote E (UX §3.1): com FIELD_DASHBOARD_ENABLED a página inicial da equipe é o Início (o painel); desligado, /hoje, como sempre.
-  const inicioPainel = !!(await api('GET', '/v1/consultores/settings/config')).features?.dashboard;
+  // Casca da Lovable (E2, arquitetura §2.3): a página inicial da equipe é SEMPRE o Dashboard (sem o painel ligado, ele mostra o
+  // aviso e a "Atenção agora"); `/hoje` (Ações) é do Comercial e continua abrindo pelo endereço. As `features` ficam guardadas:
+  // as seções do Comercial nas Configurações (passo 10) dependem da chave.
+  const featIni = (await api('GET', '/v1/consultores/settings/config')).features ?? {};
   await page.getByRole('button', { name: 'Entrar', exact: true }).click();
-  await page.waitForURL(inicioPainel ? '**/consultores/painel' : '**/hoje', { timeout: 20000 });
+  await page.waitForURL('**/consultores/painel', { timeout: 20000 });
   await espera(1500);
   const tokenDoNavegador = await page.evaluate(() => JSON.parse(localStorage.getItem('authUser')).access_token);
-  if (inicioPainel) {
-    check('login leva ao Início (o painel) com sessão guardada', page.url().includes('/consultores/painel') && tokenDoNavegador.length > 20);
-    await page.goto(`${BASE}/hoje`, { waitUntil: 'networkidle' });
-    await espera(1000);
-  } else {
-    check('login leva para /hoje com sessão guardada', page.url().includes('/hoje') && tokenDoNavegador.length > 20);
-  }
+  check('login leva ao Dashboard com sessão guardada', page.url().includes('/consultores/painel') && tokenDoNavegador.length > 20);
+  await page.goto(`${BASE}/hoje`, { waitUntil: 'networkidle' });
+  await espera(1000);
   token = tokenDoNavegador;
 
   // ── 2. Hoje ───────────────────────────────────────────────────
@@ -547,8 +545,9 @@ try {
     valores.filter(Boolean).slice(0, 8).join(' | '),
   );
   check('dados da praça', cfg.includes('dados da praça'));
-  check('variáveis padrão das mensagens', cfg.includes('variáveis padrão das mensagens'));
-  check('roteiro-modelo das próximas praças', cfg.includes('roteiro-modelo'));
+  // Casca da Lovable (contrato §46): as seções do Comercial só com a chave (`TEAM_COMMERCIAL_ENABLED`).
+  check('variáveis padrão das mensagens só com o Comercial ligado', cfg.includes('variáveis padrão das mensagens') === !!featIni.commercial);
+  check('roteiro-modelo das próximas praças só com o Comercial ligado', cfg.includes('roteiro-modelo') === !!featIni.commercial);
 
   // ── 11. Freela (sem conexão) ──────────────────────────────────
   console.log('-- Freela --');
@@ -897,7 +896,7 @@ console.log('-- Campo: GPS negado --');
 
   console.log('-- Equipe: Consultores --');
   await page.goto(`${BASE}/consultores`, { waitUntil: 'networkidle' });
-  check('menu tem "Consultores"', (await page.getByRole('link', { name: 'Consultores' }).count()) > 0);
+  check('menu tem "Representantes"', (await page.getByRole('link', { name: 'Representantes', exact: true }).count()) > 0);
   check('lista mostra o consultor do roteiro, encerrado hoje', (await corpo(page)).includes(CAMPO_NOME.toLowerCase()) && (await corpo(page)).includes('encerrou'));
   await page.getByRole('link', { name: CAMPO_NOME }).click();
   await page.waitForURL(`**/consultores/${consultorId}`, { timeout: 20000 });
@@ -1051,7 +1050,7 @@ console.log('-- Campo: GPS negado --');
   // ── Lote C (contrato §36/§38): só leitura e presença; NADA cria pedido de cupom (o pedido é um fato: não sai pela API) ──
   console.log('-- Equipe: lote C da Lovable (segmentos da busca e cupons) --');
   await page.goto(`${BASE}/consultores`, { waitUntil: 'networkidle' });
-  // O link do topo de /consultores (o menu agrupado do lote E também tem "Cupons": a conta é só no conteúdo da página).
+  // O link do topo de /consultores (a conta é só no conteúdo da página; no menu o item se chama "Vouchers").
   check('Consultores: link "Cupons" só com os cupons ligados', ((await page.locator('main').getByRole('link', { name: 'Cupons', exact: true }).count()) === 1) === !!lov.vouchers);
   await page.goto(`${BASE}/consultores/cupons`, { waitUntil: 'networkidle' });
   if (lov.vouchers) {
@@ -1122,19 +1121,25 @@ console.log('-- Campo: GPS negado --');
     check('Rotas: "Dia de cada consultor" continua o roteiro do dia de hoje', (await page.getByText('Chegada ao local').count()) >= 1);
   }
 
-  // ── Lote E (contrato §34.6, §41, §42; UX §2.1, §3.3, §3.8, §3.9): menu, Clientes, Segurança, Pessoas, ficha do consultor ──
-  console.log('-- Equipe: lote E da Lovable (menu agrupado, Clientes, senha, cadastro, gestor) --');
-  const agrupado = !!(lov.dashboard || lov.map_pins || lov.vouchers || lov.route_plans || lov.team_gestor);
+  // ── Lote E (contrato §34.6, §41, §42; UX §3.3, §3.8, §3.9) + casca da Lovable (E2, contrato §46): menu, Clientes, Segurança, Pessoas ──
+  console.log('-- Equipe: casca da Lovable (menu) e lote E (Clientes, senha, cadastro, gestor) --');
+  // Endereço do Comercial com a chave desligada abre normalmente, só sem item no menu (arquitetura §2.2, D4).
   await page.goto(`${BASE}/funil`, { waitUntil: 'networkidle' });
-  await page.getByRole('link', { name: 'Funil', exact: true }).first().waitFor({ timeout: 20000 });
-  if (agrupado) await page.getByRole('group', { name: 'Operação de campo' }).first().waitFor({ timeout: 20000 });
-  check(
-    agrupado ? 'Menu agrupado: Operação de campo, Comercial e Administração' : 'Menu de hoje: plano, sem grupos (módulos novos desligados)',
-    agrupado
-      ? (await page.getByRole('group', { name: 'Comercial' }).count()) >= 1 && (await page.getByRole('group', { name: 'Administração' }).count()) >= 1
-      : (await page.getByRole('group', { name: 'Operação de campo' }).count()) === 0 && (await page.getByRole('link', { name: 'Praça', exact: true }).count()) >= 1,
-  );
-  check('Menu: "Início" só com o painel ligado', ((await page.getByRole('link', { name: 'Início', exact: true }).count()) >= 1) === !!lov.dashboard);
+  await page.locator('aside nav').getByRole('link', { name: 'Praças', exact: true }).waitFor({ timeout: 20000 });
+  if (lov.commercial) await page.locator('aside nav').getByRole('group', { name: 'Comercial' }).waitFor({ timeout: 20000 });
+  // Nomes e ordem da Lovable (o browser-check entra como admin): cada item de módulo só com a sua flag; Dashboard sempre.
+  const menuEsperado = [
+    'Dashboard', 'Praças', ...(lov.map_pins ? ['Clientes', 'Mapa'] : []), ...(lov.routes ? ['Rotas'] : []), 'Representantes',
+    ...(lov.vouchers ? ['Vouchers'] : []), ...(lov.payouts ? ['Financeiro'] : []), 'Configurações', 'Usuários',
+    ...(lov.commercial ? ['Funil', 'Entrada', 'Buscar estabelecimentos', 'Mensagens', 'Campanhas', 'Calendário', 'Indicadores', 'Ações', 'Freela'] : []),
+  ];
+  // Os itens com flag chegam depois de `features` (o `goto` zera o cache): espera a contagem antes de ler (se não bater, o check mostra o que veio).
+  await page.waitForFunction((n) => document.querySelectorAll('aside nav a').length === n, menuEsperado.length, { timeout: 20000 }).catch(() => {});
+  const menuNaTela = (await page.locator('aside nav a').allInnerTexts()).map((t) => t.trim());
+  check('Menu: nomes e ordem da Lovable, cada item com a sua flag', JSON.stringify(menuNaTela) === JSON.stringify(menuEsperado), menuNaTela.join(' | '));
+  check('Menu: grupo "Comercial" só com a chave ligada', ((await page.getByRole('group', { name: 'Comercial' }).count()) >= 1) === !!lov.commercial);
+  check('Menu: sem os grupos antigos (Operação de campo, Administração)', (await page.getByRole('group', { name: 'Operação de campo' }).count()) === 0 && (await page.getByRole('group', { name: 'Administração' }).count()) === 0);
+  check('Menu: "Funil" aceso só com a chave (endereço direto abre sem item no menu)', ((await page.locator('aside nav a[aria-current="page"]').count()) === 1) === !!lov.commercial);
   if (lov.map_pins) {
     await page.goto(`${BASE}/consultores/clientes`, { waitUntil: 'networkidle' });
     await page.getByRole('tab', { name: 'Lista' }).waitFor({ timeout: 20000 });
@@ -1173,10 +1178,16 @@ console.log('-- Campo: GPS negado --');
       await g.locator('#email').fill('rebeca@praca.local');
       await g.locator('#senha').fill('praca123');
       await g.getByRole('button', { name: 'Entrar', exact: true }).click();
-      await g.waitForURL(lov.dashboard ? '**/consultores/painel' : '**/hoje', { timeout: 20000 });
-      check('gestor: entra na página inicial da equipe', true);
-      await g.getByRole('link', { name: 'Buscar estabelecimentos', exact: true }).first().waitFor({ timeout: 20000 });
-      check('gestor: o menu tem "Buscar estabelecimentos" (só mapa aberto)', true);
+      await g.waitForURL('**/consultores/painel', { timeout: 20000 });
+      check('gestor: entra no Dashboard', true);
+      // A busca é do grupo Comercial (contrato §46): no menu só com a chave; sem ela, o endereço continua abrindo (abaixo).
+      if (lov.commercial) {
+        await g.getByRole('link', { name: 'Buscar estabelecimentos', exact: true }).first().waitFor({ timeout: 20000 });
+        check('gestor: o menu tem "Buscar estabelecimentos" (só mapa aberto)', true);
+      } else {
+        await g.locator('aside nav').getByRole('link', { name: 'Representantes', exact: true }).waitFor({ timeout: 20000 });
+        check('gestor: sem o Comercial, o menu não tem "Buscar estabelecimentos"', (await g.getByRole('link', { name: 'Buscar estabelecimentos', exact: true }).count()) === 0);
+      }
       await g.goto(`${BASE}/consultores`, { waitUntil: 'networkidle' });
       await g.getByRole('button', { name: 'Novo consultor' }).waitFor({ timeout: 20000 });
       check('gestor: cria consultor ("Novo consultor")', true);

@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { paginaInicial } from '@/modules/acesso/domain/acesso';
-import { getFeaturesMenu } from '@/modules/acesso/infrastructure/acesso.api';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 
@@ -39,14 +38,6 @@ const entrarSchema = z.object({
 
 type EntrarForm = z.infer<typeof entrarSchema>;
 
-/** Página inicial (UX §3.1): "Início" só com o painel ligado; sem ele (ou se a leitura falhar), `/hoje`, como sempre. */
-async function destinoInicial(): Promise<string> {
-  try {
-    return paginaInicial(await getFeaturesMenu());
-  } catch {
-    return '/hoje';
-  }
-}
 
 function Entrar() {
   const router = useRouter();
@@ -68,7 +59,8 @@ function Entrar() {
   const irParaInicio = async () => {
     if (indo.current) return;
     indo.current = true;
-    router.replace(await destinoInicial());
+    // Sempre o Dashboard (arquitetura §2.3): sem leitura de `features` antes de sair daqui.
+    router.replace(paginaInicial());
   };
   useEffect(() => {
     if (!loading && user) void irParaInicio();

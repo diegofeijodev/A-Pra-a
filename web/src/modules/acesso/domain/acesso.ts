@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import type { AuthUser } from '@/modules/auth/domain/auth.types';
+import { ROTA } from './enderecos';
 
 /**
- * Lote E (contrato §41, §42) + navegação agrupada (UX §2.1). Regras puras do web: o que cada perfil pode fazer na tela, o menu
- * da equipe e a página inicial. O servidor decide de verdade (guard + serviço); aqui é só o que aparece.
+ * Lote E (contrato §41, §42) + casca da Lovable (contrato §46). Regras puras do web: o que cada perfil pode fazer na tela, o
+ * menu da equipe e a página inicial. O servidor decide de verdade (guard + serviço); aqui é só o que aparece.
  */
 
 /** `features` do `GET /v1/consultores/settings/config` (todas as que mexem no menu). Servidor antigo não manda = desligado. */
@@ -19,6 +20,16 @@ export const featuresMenuSchema = z.object({
   team_gestor: z.boolean().default(false),
   /** Lote F2 (contrato §44.1): consultor em várias praças (não mexe no menu). */
   multi_praca: z.boolean().default(false),
+  /** Casca da Lovable (contrato §46): grupo "Comercial", sino e as seções do Comercial nas Configurações. */
+  commercial: z.boolean().default(false),
+  /** §46: item "Rotas" (`FIELD_ROUTES_ENABLED`). */
+  routes: z.boolean().default(false),
+  /** §46: remuneração (`FIELD_EARNINGS_ENABLED`). */
+  earnings: z.boolean().default(false),
+  /** §46: item "Financeiro" (Pix, só com a remuneração). */
+  payouts: z.boolean().default(false),
+  /** §46: link "Declarados" do Financeiro (só com a remuneração). */
+  declared_signups: z.boolean().default(false),
 });
 export type FeaturesMenu = z.infer<typeof featuresMenuSchema>;
 export const SEM_FEATURES_MENU: FeaturesMenu = featuresMenuSchema.parse({});
@@ -37,69 +48,53 @@ export const perfilDe = (u: { is_admin: boolean; is_gestor?: boolean }): Perfil 
 export const corpoDoPerfil = (p: Perfil): { is_admin: boolean; is_gestor: boolean } => ({ is_admin: p === 'admin', is_gestor: p === 'gestor' });
 export const ROTULO_PERFIL: Record<Perfil, string> = { admin: 'Admin', gestor: 'Gestor', equipe: 'Equipe' };
 
-// ── menu da equipe (UX §2.1) ─────────────────────────────────
+// ── menu da equipe (casca da Lovable: arquitetura §2.3, UX §2.3) ─────────────
 
 export type ChaveIcone =
-  | 'inicio' | 'praca' | 'clientes' | 'mapa' | 'rotas' | 'consultores' | 'cupons' | 'funil' | 'entrada' | 'busca'
-  | 'mensagens' | 'campanhas' | 'calendario' | 'indicadores' | 'hoje' | 'config' | 'freela';
+  | 'inicio' | 'praca' | 'clientes' | 'mapa' | 'rotas' | 'consultores' | 'cupons' | 'financeiro' | 'config' | 'usuarios'
+  | 'funil' | 'entrada' | 'busca' | 'mensagens' | 'campanhas' | 'calendario' | 'indicadores' | 'hoje' | 'freela';
 export interface ItemMenu {
   to: string;
   label: string;
   icon: ChaveIcone;
 }
 export interface GrupoMenu {
-  /** `null` = sem título (o menu de sempre, plano). */
+  /** `null` = sem título (o menu da Lovable, plano). */
   titulo: string | null;
   itens: ItemMenu[];
 }
 
-/** O menu de hoje, na ordem do protótipo — o que vale com todos os módulos novos desligados (produção hoje). */
-export function menuDeHoje(admin: boolean, buscaLiberada = admin): ItemMenu[] {
-  return [
-    { to: '/praca', label: 'Praça', icon: 'praca' },
-    { to: '/funil', label: 'Funil', icon: 'funil' },
-    { to: '/consultores', label: 'Consultores', icon: 'consultores' },
-    { to: '/entrada', label: 'Entrada', icon: 'entrada' },
-    ...(buscaLiberada ? [{ to: '/prospeccao', label: 'Buscar estabelecimentos', icon: 'busca' as const }] : []),
-    { to: '/mensagens', label: 'Mensagens', icon: 'mensagens' },
-    { to: '/campanhas', label: 'Campanhas', icon: 'campanhas' },
-    { to: '/calendario', label: 'Calendário', icon: 'calendario' },
-    { to: '/indicadores', label: 'Indicadores', icon: 'indicadores' },
-    { to: '/hoje', label: 'Ações', icon: 'hoje' },
-    { to: '/configuracoes', label: 'Configurações', icon: 'config' },
-    { to: '/freela', label: 'Freela', icon: 'freela' },
-  ];
-}
-
-/** O menu agrupado só aparece quando algum módulo novo de navegação está ligado (desligados: o menu de hoje, sem mudança). */
-export const menuAgrupadoLigado = (f: FeaturesMenu): boolean => f.dashboard || f.map_pins || f.vouchers || f.route_plans || f.team_gestor;
-
 /**
- * Menu da equipe (UX §2.1): Operação de campo (nomes e ordem da Lovable), Comercial (nosso) e Administração (só admin). O
- * gestor vê Operação e Comercial (e "Buscar estabelecimentos", só no mapa aberto). Desligados os módulos = um grupo sem título
- * com o menu de hoje.
+ * Menu da equipe: os nomes e a ordem da Lovable (`staffNav` + `adminNav`), num grupo sem título; com a chave do Comercial
+ * (`TEAM_COMMERCIAL_ENABLED`), um 2º grupo "Comercial" com os itens de antes, na ordem de antes. Os itens de módulo com flag só
+ * aparecem com ela (lida do `features`, nunca sondando 404). Desvios da Lovable, decididos na arquitetura §2.3: "Dashboard"
+ * sempre (é a página inicial; sem o painel ela mostra a Atenção agora) e "Configurações" para toda a equipe (as áreas de
+ * atuação são do gestor, §42.3); "Usuários" só para o admin.
  */
 export function montarMenu(f: FeaturesMenu, u: { is_admin: boolean; is_gestor?: boolean } | null | undefined): GrupoMenu[] {
   const admin = !!u?.is_admin;
-  const operar = podeOperar(u);
-  if (!menuAgrupadoLigado(f)) return [{ titulo: null, itens: menuDeHoje(admin, operar) }];
-  const operacao: ItemMenu[] = [
-    ...(f.dashboard ? [{ to: '/consultores/painel', label: 'Início', icon: 'inicio' as const }] : []),
-    { to: '/praca', label: 'Praças', icon: 'praca' },
+  const principal: ItemMenu[] = [
+    { to: ROTA.inicio, label: 'Dashboard', icon: 'inicio' },
+    { to: ROTA.pracas, label: 'Praças', icon: 'praca' },
     ...(f.map_pins
       ? [
-          { to: '/consultores/clientes', label: 'Clientes', icon: 'clientes' as const },
-          { to: '/consultores/clientes?modo=mapa', label: 'Mapa', icon: 'mapa' as const },
+          { to: ROTA.clientes, label: 'Clientes', icon: 'clientes' as const },
+          { to: ROTA.mapa, label: 'Mapa', icon: 'mapa' as const },
         ]
       : []),
-    { to: '/consultores/roteiros', label: 'Rotas', icon: 'rotas' },
-    { to: '/consultores', label: 'Consultores', icon: 'consultores' },
-    ...(f.vouchers ? [{ to: '/consultores/cupons', label: 'Cupons', icon: 'cupons' as const }] : []),
+    ...(f.routes ? [{ to: ROTA.rotas, label: 'Rotas', icon: 'rotas' as const }] : []),
+    { to: ROTA.representantes, label: 'Representantes', icon: 'consultores' },
+    ...(f.vouchers ? [{ to: ROTA.vouchers, label: 'Vouchers', icon: 'cupons' as const }] : []),
+    ...(f.payouts ? [{ to: ROTA.financeiro, label: 'Financeiro', icon: 'financeiro' as const }] : []),
+    { to: ROTA.configuracoes, label: 'Configurações', icon: 'config' },
+    ...(admin ? [{ to: ROTA.usuarios, label: 'Usuários', icon: 'usuarios' as const }] : []),
   ];
+  if (!f.commercial) return [{ titulo: null, itens: principal }];
   const comercial: ItemMenu[] = [
     { to: '/funil', label: 'Funil', icon: 'funil' },
     { to: '/entrada', label: 'Entrada', icon: 'entrada' },
-    ...(operar ? [{ to: '/prospeccao', label: 'Buscar estabelecimentos', icon: 'busca' as const }] : []),
+    // Como sempre: a busca é de quem opera (admin e gestor; o gestor só no mapa aberto, no servidor).
+    ...(podeOperar(u) ? [{ to: '/prospeccao', label: 'Buscar estabelecimentos', icon: 'busca' as const }] : []),
     { to: '/mensagens', label: 'Mensagens', icon: 'mensagens' },
     { to: '/campanhas', label: 'Campanhas', icon: 'campanhas' },
     { to: '/calendario', label: 'Calendário', icon: 'calendario' },
@@ -107,23 +102,38 @@ export function montarMenu(f: FeaturesMenu, u: { is_admin: boolean; is_gestor?: 
     { to: '/hoje', label: 'Ações', icon: 'hoje' },
     { to: '/freela', label: 'Freela', icon: 'freela' },
   ];
-  // "Configurações" continua para toda a equipe, como hoje (os controles de admin ficam desligados para os outros). O gestor
-  // também a vê: é lá que ficam as ÁREAS de atuação, que a tabela do §42.3 dá a ele (a UX P1 a escondia — divergência anotada).
   return [
-    { titulo: 'Operação de campo', itens: operacao },
+    { titulo: null, itens: principal },
     { titulo: 'Comercial', itens: comercial },
-    { titulo: 'Administração', itens: [{ to: '/configuracoes', label: 'Configurações', icon: 'config' }] },
   ];
 }
 
-/** Item ativo: o caminho exato (e, para Clientes/Mapa, o modo da URL). */
-export function itemAtivo(item: ItemMenu, path: string, modo: string | null): boolean {
-  const [rota, qs] = item.to.split('?');
-  if (rota !== path) return false;
-  const modoItem = qs ? new URLSearchParams(qs).get('modo') : null;
-  if (rota === '/consultores/clientes') return (modoItem ?? 'lista') === (modo ?? 'lista');
-  return true;
+/** O caminho é o da rota ou fica abaixo dela (prefixo por pedaço: `/praca` não acende em `/pracas`). */
+const abaixoDe = (rota: string, path: string): boolean => path === rota || path.startsWith(`${rota}/`);
+
+/**
+ * O item ativo do menu (um só, ou nenhum): o de prefixo MAIS LONGO, como o `Link` do TanStack na Lovable — `/consultores/<id>`
+ * acende "Representantes" e `/consultores/painel` acende "Dashboard". Clientes e Mapa dividem a rota e se separam pelo `modo`
+ * da URL. Empate exato: vale o primeiro da lista.
+ */
+export function itemAtivo(itens: ItemMenu[], path: string, modo: string | null): ItemMenu | null {
+  let melhor: ItemMenu | null = null;
+  let pontos = -1;
+  for (const item of itens) {
+    const [rotaQs = ''] = item.to.split('#');
+    const [rota = '', qs] = rotaQs.split('?');
+    if (!abaixoDe(rota, path)) continue;
+    const modoItem = qs ? new URLSearchParams(qs).get('modo') : null;
+    // Item com `modo` só vale com o mesmo `modo` na URL; e ganha do irmão sem `modo` quando os dois casam.
+    if (modoItem !== null && modoItem !== modo) continue;
+    const p = rota.length + (modoItem !== null ? 0.5 : 0);
+    if (p > pontos) {
+      melhor = item;
+      pontos = p;
+    }
+  }
+  return melhor;
 }
 
-/** Página inicial da equipe (UX §3.1): "Início" (o painel) só com `FIELD_DASHBOARD_ENABLED`; desligado, a de hoje (`/hoje`). */
-export const paginaInicial = (f: Pick<FeaturesMenu, 'dashboard'>): string => (f.dashboard ? '/consultores/painel' : '/hoje');
+/** Página inicial da equipe: sempre o Dashboard (sem o painel, ele mostra a Atenção agora), nunca mais `/hoje` (Comercial). */
+export const paginaInicial = (): string => ROTA.inicio;

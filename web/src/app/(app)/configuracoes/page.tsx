@@ -88,6 +88,8 @@ function useFieldResync() {
 
 export default function ConfiguracoesPage() {
   const { praca, isPending: pracasPending } = useActivePraca();
+  // Casca da Lovable (contrato §46): as seções do Comercial (mensagens, roteiro-modelo e impressão do plano) só com a chave.
+  const { features } = useFeaturesMenu();
 
   if (pracasPending) return <p className="text-sm text-muted-foreground">Carregando…</p>;
   if (!praca) {
@@ -108,12 +110,16 @@ export default function ConfiguracoesPage() {
       <AreasAtuacao praca={praca} />
       <SegmentosAdmin />
       <DadosDaPraca praca={praca} />
-      <VariaveisPadrao />
-      <RoteiroModelo praca={praca} />
-      <Impressao praca={praca} />
-      <div className="no-print mt-8 text-[11px] text-muted-foreground">
-        Lembretes por e-mail (resumo diário às 7h, resumo semanal na segunda) ficam preparados para ativação — hoje os avisos aparecem no sino de notificações.
-      </div>
+      {features.commercial && (
+        <>
+          <VariaveisPadrao />
+          <RoteiroModelo praca={praca} />
+          <Impressao praca={praca} />
+          <div className="no-print mt-8 text-[11px] text-muted-foreground">
+            Lembretes por e-mail (resumo diário às 7h, resumo semanal na segunda) ficam preparados para ativação — hoje os avisos aparecem no sino de notificações.
+          </div>
+        </>
+      )}
     </>
   );
 }
@@ -148,7 +154,8 @@ function Pessoas() {
   const [perfilNovo, setPerfilNovo] = useState<Perfil>('equipe');
 
   return (
-    <section className="mt-6">
+    // `id`: o item "Usuários" do menu aponta para cá até a tela própria (E5).
+    <section id="pessoas" className="mt-6 scroll-mt-4">
       <h2 className="tag text-muted-foreground">Pessoas</h2>
       {features.team_gestor && (
         <details className="mt-1 text-xs text-muted-foreground">

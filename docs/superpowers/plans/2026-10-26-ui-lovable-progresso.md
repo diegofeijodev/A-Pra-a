@@ -70,8 +70,16 @@ Endereços novos com redirecionamento dos antigos (vídeos, favoritos e o browse
 - [x] 0. Arquiteto + designer (regra 11/10): `docs/superpowers/specs/2026-10-26-ui-lovable-arquitetura.md` (plano E1–E9, §5)
       e `-ux.md` (telas, §4; troca do browser-check, §6.2). Decisões em aberto: adotados os PADRÕES das duas specs (lista abaixo),
       todos reversíveis; o Denner revê de manhã.
-- [ ] 1. Tokens, fontes e fim do botão de tema (commit próprio)
-- [ ] 2. Casca da equipe (menu lateral azul-marinho, nomes da Lovable, chave do Comercial)
+- [x] 1. Tokens, fontes e fim do botão de tema (commit próprio) — `49031be`. Tokens da Lovable + 4 ajustes de contraste (UX §1.2),
+      Manrope/Sora (variáveis no `<html>`), `bg-brand`/`shadow-card`/`card-surface`, sem `.light`/`ThemeSync`/botão, mapas claros,
+      `min-h-11` no Button/Input abaixo de `md`, atalho do campo em `#072869`. Web: lint 0, typecheck 0, vitest 35 arquivos/360.
+      Fica para depois: `font-black`/`font-extrabold` caem no 700 do Sora (troca nas telas da E5); ✓ do chip escolhido (E4).
+- [x] 2. Casca da equipe (menu lateral azul-marinho, nomes da Lovable, chave do Comercial) — API `c9d3559` (§46, `TEAM_COMMERCIAL_ENABLED`,
+      `features.commercial/routes/earnings/payouts/declared_signups`) + web (este commit: `AppShell`, `montarMenu`/`itemAtivo`/`ROTA`,
+      Dashboard sempre como início, Comercial nas Configurações atrás da chave, browser-check atualizado sem rodar). Jest 7 suítes/130,
+      `tsc` 0; web lint 0, typecheck 0, vitest 35/364. Fica para depois: "Trocar senha" no rodapé (E3), `not-found`/`error` da Lovable
+      (UX §2.4), "Usuários" aponta para `/configuracoes#pessoas` até a tela própria (E5), sondagem de "Pagamentos"/"Declarados" na
+      tela Consultores trocada pelo `features` junto da tela Financeiro (E5).
 - [ ] 3. Entrada única + trocar senha no layout Lovable
 - [ ] 4. Casca do representante (5 abas) por cima do campo atual
 - [ ] 5. Telas, uma a uma, no desenho da Lovable (Dashboard, Praças, Clientes, Mapa, Rotas, Roteiro, Representantes,
