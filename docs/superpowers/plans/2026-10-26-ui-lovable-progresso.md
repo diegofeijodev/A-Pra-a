@@ -164,3 +164,20 @@ Endereços novos com redirecionamento dos antigos (vídeos, favoritos e o browse
       `87e9abe` o `smoke-lovable-f1` sondava os CHECKs do razão na semana fixa 2026-10-26, que virou a semana corrente (4100 em vez de 4000).
       Nenhum bug de produto. Não feito: capturas desktop/celular de cada tela para o Denner (E8.9).
 - [ ] 9. Prévia na Vercel → Denner aprova → subida
+      - Revisão de código do diff inteiro (27/10 ~03:20): nada alto/médio; 3 baixos — teto próprio na troca de senha e
+        login da equipe 40/min por causa da entrada única (`40a7f5f`, jest auth+permissões 84/84, tsc 0); o nome do colega
+        na última visita do `GET /v1/campo/map/list` é intencional (contrato §34.7) e ficou.
+      - Prévia (build da Vercel com lint): `praca-1gmddyer2-freelas-projects-ccf14064.vercel.app` (Ready, web de `6a818fe` =
+        web de hoje; as 15 páginas novas respondem 200). A prévia NÃO fala com a API (o `NEXT_PUBLIC_API_URL` só existe em
+        Production), então serve para provar o build; o design se confere nas capturas `~/Downloads/praca-telas-novas/`.
+      - **Subida (Denner, via `!`), nesta ordem — API antes do web; nenhuma migração; nenhuma flag nova a ligar
+        (`TEAM_COMMERCIAL_ENABLED` ausente = Comercial escondido):**
+        1. backup: `ssh ubuntu@56.124.127.54 "docker exec praca-postgres pg_dump -U praca praca | gzip > /opt/praca/backup-pre-ui-lovable-\$(date +%Y%m%d-%H%M).sql.gz && ls -la /opt/praca/backup-pre-ui-lovable-*"`
+        2. master + GitHub: `cd /home/doutor/coding/freela/praca && git checkout master && git merge --ff-only feat/ui-lovable && git push origin master:stack-freela`
+        3. código da API a partir da CÓPIA LIMPA do commit (o working tree tem arquivos só reformatados por um formatador externo):
+           `rsync -a --delete --exclude node_modules --exclude dist --exclude .env --exclude '.env.*' --exclude coverage --exclude uploads <cópia>/api/ ubuntu@56.124.127.54:/opt/praca/api/ && echo RSYNC_OK`
+        4. (Claude) `docker tag praca-api:latest praca-api:pre-ui-lovable` + `docker build -t praca-api:<sha> -t praca-api:latest .` no EC2
+        5. `ssh ubuntu@56.124.127.54 "cd /opt/praca && docker compose -f docker-compose.prod.yml up -d --no-deps --no-build api"`
+        6. (Claude) `/health`, `features` novos no `settings/config`, `POST /v1/auth/change-password` 401 sem token, logs sem erro
+        7. (Claude) web: cópia sem git do commit + `vercel deploy --prod`; conferir aberturademercado.com.br/entrar
+      - Volta: API `praca-api:pre-ui-lovable` (`docker tag` + compose up); web: promover o deploy anterior na Vercel; git: tag `pre-ui-lovable`.
