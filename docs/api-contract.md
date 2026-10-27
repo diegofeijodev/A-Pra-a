@@ -287,10 +287,15 @@ aberta em ~98 dias, com o roteiro-modelo (§8) instanciado como ações (§7) e 
     "vizinhas": ["Contagem", "Betim", "..."]
   },
   "steps": { "2": { "actual": 22, "unlock": null } },
-  "created_at": "2026-09-09T11:00:00.000Z"
+  "created_at": "2026-09-09T11:00:00.000Z",
+  "leads_count": 3406
 }
 ```
 
+- `leads_count` (redesenho de 26/10, E5.2, lacuna G2 — aditivo, sem migração): quantos clientes a praça tem = leads da praça com
+  `archived = false` e `is_test = false` (a mesma base da lista do §34.6). Vem em **todo** `PracaView` (`GET /`, `GET /:id`, `POST`, `PATCH`); no
+  `GET /` sai de **um** `groupBy` por `praca_id` para a lista inteira (sem N+1), no resto de um `count`. Praça sem lead = `0`. Cliente antigo que
+  não conhece a chave a ignora; o web novo contra a API velha (sem a chave) mostra o período da praça no lugar do número.
 - `cobertura` é `null` quando a praça foi aberta sem cidade-sede do IBGE. Essa praça funciona normalmente no trabalho de campo: ela ganha **áreas de atuação** (§21), que dão o centro e o raio do que se visita.
 - `steps` só traz as etapas que já têm estado (resultado lançado ou destrave);
   a chave é o número da etapa. `unlock` é `{by, at, reason}` ou `null`.

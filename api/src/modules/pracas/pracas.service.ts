@@ -24,7 +24,12 @@ export interface PracaView {
   } | null;
   steps: Record<number, { actual: number | null; unlock: { by: string; at: string; reason: string } | null }>;
   created_at: string;
+  /** Redesenho E5.2, G2 (§6): leads da praça com `archived = false` e `is_test = false` (a base do §34.6). */
+  leads_count: number;
 }
+
+/** Quem conta como cliente da praça (§6 `leads_count`): a mesma base da lista do §34.6. */
+const LEAD_DE_CLIENTE = { archived: false, is_test: false } as const;
 
 // Linha de `pracas` + estados das etapas, como sai do Prisma.
 type PracaRow = {
@@ -61,11 +66,21 @@ export class PracasService {
       include: { step_states: true },
       orderBy: { created_at: 'asc' },
     });
-    return rows.map((p) => this.toView(p));
+    if (rows.length === 0) return [];
+    // Um `groupBy` só para a lista inteira (sem N+1); praça que não aparece nele tem 0 clientes.
+    const grupos = await this.prisma.leads.groupBy({
+      by: ['praca_id'],
+      where: { ...LEAD_DE_CLIENTE, praca_id: { in: rows.map((p) => p.id) } },
+      _count: { _all: true },
+    });
+    const porPraca = new Map(grupos.map((g) => [g.praca_id, g._count._all]));
+    return rows.map((p) => this.toView(p, porPraca.get(p.id) ?? 0));
   }
 
   async get(id: string): Promise<PracaView> {
-    return this.toView(await this.findOrFail(id));
+    const row = await this.findOrFail(id);
+    const leads = await this.prisma.leads.count({ where: { ...LEAD_DE_CLIENTE, praca_id: id } });
+    return this.toView(row, leads);
   }
 
   /**
@@ -226,7 +241,8 @@ export class PracasService {
       where: { praca_id: id },
       include: { completions: { select: { date: true } } },
     });
-    const view = this.toView(row);
+    // Só as etapas interessam aqui: a contagem de clientes não é lida (0 de propósito, sem consulta a mais).
+    const view = this.toView(row, 0);
     const praca: StepPraca = { start_date: row.start_date, steps: view.steps };
     const actions = rows.map((a) => ({
       step: a.step,
@@ -282,7 +298,7 @@ export class PracasService {
     return praca;
   }
 
-  private toView(p: PracaRow): PracaView {
+  private toView(p: PracaRow, leads_count: number): PracaView {
     const steps: PracaView['steps'] = {};
     for (const s of p.step_states) {
       steps[s.step_n] = {
@@ -311,6 +327,7 @@ export class PracasService {
         : null,
       steps,
       created_at: p.created_at.toISOString(),
+      leads_count,
     };
   }
 }
