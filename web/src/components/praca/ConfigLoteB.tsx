@@ -47,7 +47,7 @@ function ConfigChecklist({ admin }: { admin: boolean }) {
 
   return (
     <details className="card-surface p-4">
-      <summary className="cursor-pointer text-sm font-bold">Roteiro da conversa (checklist da visita)</summary>
+      <summary className="cursor-pointer text-sm font-bold">Roteiro da visita (checklist)</summary>
       <div className="mt-3 space-y-4">
         <div className="flex flex-wrap gap-x-6 gap-y-3 text-sm">
           <label className="flex min-h-12 items-center gap-2">
@@ -148,7 +148,7 @@ function ConfigIntervalo({ admin }: { admin: boolean }) {
   const num = (v: string) => (v === '' ? Number.NaN : Number(v));
   return (
     <details className="card-surface p-4">
-      <summary className="cursor-pointer text-sm font-bold">Intervalo e almoço do consultor</summary>
+      <summary className="cursor-pointer text-sm font-bold">Intervalo e almoço do representante</summary>
       <div className="mt-3 space-y-4">
         <label className="flex min-h-12 items-center gap-2 text-sm">
           <input type="checkbox" className={caixa} disabled={!admin} checked={f.ativo} onChange={(e) => setF({ ...f, ativo: e.target.checked })} />

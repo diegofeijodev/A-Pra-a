@@ -42,7 +42,7 @@ function useBusca(id: string | null, pracaId: string) {
   });
 }
 
-/** Passo 1: "Descobrir shoppings da cidade" — busca no mapa aberto, revisão com "Incluir" e "Adicionar". */
+/** Passo 1: "Mapear shoppings da cidade" (Lovable) — busca no mapa aberto, revisão com "Incluir" e "Adicionar". */
 function Descobrir({ praca, minimo }: { praca: PracaView; minimo: number }) {
   const qc = useQueryClient();
   const { data: areas } = useAreas(praca.id);
@@ -108,7 +108,7 @@ function Descobrir({ praca, minimo }: { praca: PracaView; minimo: number }) {
             </select>
           </div>
           <Button className="h-12" disabled={iniciando || busca.data?.status === 'running' || busca.data?.status === 'queued'} onClick={() => void descobrir()}>
-            {busca.data?.status === 'running' || busca.data?.status === 'queued' ? 'Buscando no mapa aberto…' : 'Descobrir shoppings da cidade'}
+            {busca.data?.status === 'running' || busca.data?.status === 'queued' ? 'Buscando no mapa aberto…' : 'Mapear shoppings da cidade'}
           </Button>
           <span className="text-sm text-muted-foreground">Mapa aberto (OpenStreetMap), sem custo; até 15 km do centro escolhido.</span>
         </div>
@@ -186,7 +186,7 @@ function LojasDoShopping({ praca, s, tipos }: { praca: PracaView; s: Shopping; t
   return (
     <div className="space-y-1 text-sm">
       <Button variant="outline" className="h-12" disabled={ocupado || tipos.length === 0 || busca.data?.status === 'running' || busca.data?.status === 'queued'} onClick={() => void buscar()}>
-        {busca.data?.status === 'running' || busca.data?.status === 'queued' ? 'Buscando lojas…' : `Buscar lojas dentro do ${s.name}`}
+        {busca.data?.status === 'running' || busca.data?.status === 'queued' ? 'Buscando clientes…' : `Mapear clientes dentro do ${s.name}`}
       </Button>
       {pronta && cands.data && (
         <p>
@@ -243,7 +243,7 @@ export function ShoppingsRotas({ praca }: { praca: PracaView }) {
 
   return (
     <div className="space-y-4">
-      <section className="card-surface space-y-3 p-4" aria-label="Descobrir shoppings">
+      <section className="card-surface space-y-3 p-4" aria-label="Mapear shoppings da cidade">
         <h2 className="text-base font-bold">1. Shoppings da cidade</h2>
         {cfg && (
           <p className="text-sm text-muted-foreground" data-testid="criterio-shopping">
@@ -305,8 +305,8 @@ export function ShoppingsRotas({ praca }: { praca: PracaView }) {
       </section>
 
       {operar && grandes.length > 0 && (
-        <section className="card-surface space-y-3 p-4" aria-label="Lojas dentro dos shoppings">
-          <h2 className="text-base font-bold">2. Lojas lá dentro</h2>
+        <section className="card-surface space-y-3 p-4" aria-label="Mapear clientes dentro dos shoppings">
+          <h2 className="text-base font-bold">2. Mapear clientes dentro dos shoppings</h2>
           <fieldset className="space-y-1">
             <legend className="text-sm">Que lojas buscar (segmentos da busca)</legend>
             <div className="flex flex-wrap gap-2">

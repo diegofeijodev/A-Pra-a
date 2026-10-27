@@ -232,7 +232,7 @@ function FluxoVisitaConfig({ admin }: { admin: boolean }) {
 
   return (
     <details className="card-surface p-4">
-      <summary className="cursor-pointer text-sm font-bold">Modo da visita do consultor</summary>
+      <summary className="cursor-pointer text-sm font-bold">Modo da visita do representante</summary>
       <div className="mt-3 space-y-3">
         <p className="text-sm text-muted-foreground">
           <strong>Simples</strong> = jeito do Diego: o consultor escolhe como foi a visita em 1 toque. <strong>Completo</strong> = o nosso, com mais perguntas. Vale para as visitas abertas daqui em diante;

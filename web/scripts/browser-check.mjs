@@ -1217,10 +1217,12 @@ console.log('-- Campo: GPS negado --');
     check('Painel desligado: avisa, sem chamar a rota', (await corpo(page)).includes('ainda não está ligado neste servidor'));
   }
   // Lote B (contrato §35.2/§37.2): as seções de configuração só existem com as flags (a leitura é a mesma, 200 sempre).
+  // E5.4 (D6): com os planos ligados, Rotas abre em "Clientes"; as seções de configuração ficam em "Dia de cada representante".
   await page.goto(`${BASE}/consultores/roteiros`, { waitUntil: 'networkidle' });
+  if (lov.route_plans) await page.getByRole('tab', { name: 'Dia de cada representante' }).click();
   await page.getByText('Chegada ao local').first().waitFor({ timeout: 20000 });
-  check('Roteiros: "Roteiro da conversa" só com o checklist ligado', ((await page.getByText('Roteiro da conversa (checklist da visita)').count()) === 1) === !!lov.checklist);
-  check('Roteiros: "Intervalo e almoço do consultor" só com o intervalo ligado', ((await page.getByText('Intervalo e almoço do consultor').count()) === 1) === !!lov.breaks);
+  check('Rotas: "Roteiro da visita (checklist)" só com o checklist ligado', ((await page.getByText('Roteiro da visita (checklist)').count()) === 1) === !!lov.checklist);
+  check('Rotas: "Intervalo e almoço do representante" só com o intervalo ligado', ((await page.getByText('Intervalo e almoço do representante').count()) === 1) === !!lov.breaks);
   // E5.3 (UX §4.5): o Mapa é página própria (`/consultores/mapa` até a E7), com a legenda num grupo e as pílulas de praça (a do seed é aberta).
   await page.goto(`${BASE}/consultores/mapa`, { waitUntil: 'networkidle' });
   if (lov.map_pins) {
@@ -1280,18 +1282,20 @@ console.log('-- Campo: GPS negado --');
 
   // ── Lote D (contrato §39/§40): só leitura e presença; NADA gera plano nem busca shopping (a busca chamaria o Overpass) ──
   console.log('-- Equipe: lote D da Lovable (dividir em rotas e shoppings) --');
+  // E5.4 (D6, UX §4.6): com os planos ligados a tela abre na aba "Clientes" (a divisão em rotas); sem eles, é o dia, sem abas.
   await page.goto(`${BASE}/consultores/roteiros`, { waitUntil: 'networkidle' });
-  await page.getByText('Chegada ao local').first().waitFor({ timeout: 20000 });
-  if (lov.route_plans) await page.getByRole('tab', { name: 'Dividir em rotas' }).waitFor({ timeout: 20000 });
-  check('Rotas: aba "Dividir em rotas" só com os planos ligados', ((await page.getByRole('tab', { name: 'Dividir em rotas' }).count()) === 1) === !!lov.route_plans);
+  if (lov.route_plans) await page.getByRole('tab', { name: 'Clientes', exact: true }).waitFor({ timeout: 20000 });
+  else await page.getByText('Chegada ao local').first().waitFor({ timeout: 20000 });
+  check('Rotas: aba "Clientes" só com os planos ligados', ((await page.getByRole('tab', { name: 'Clientes', exact: true }).count()) === 1) === !!lov.route_plans);
   check('Rotas: aba "Shoppings" só com os shoppings ligados', ((await page.getByRole('tab', { name: 'Shoppings' }).count()) === 1) === !!lov.malls);
-  check('Rotas: sem as flags, a tela é a de antes ("Roteiros do dia", sem abas)', !lov.route_plans || (await page.getByRole('tablist', { name: 'Rotas' }).count()) === 1);
+  check('Rotas: sem os planos, a tela é o dia de cada representante, sem abas', !!lov.route_plans === ((await page.getByRole('tablist', { name: 'Rotas' }).count()) === 1));
   if (lov.route_plans) {
-    await page.getByRole('tab', { name: 'Dividir em rotas' }).click();
-    await page.getByTestId('previa-divisao').filter({ hasText: /÷|Nenhum estabelecimento|Nenhuma área/ }).waitFor({ timeout: 20000 });
+    check('Rotas: abre na aba "Clientes" (Lovable, D6)', (await page.getByRole('tab', { name: 'Clientes', exact: true }).getAttribute('aria-selected')) === 'true');
+    await page.getByTestId('previa-divisao').filter({ hasText: /÷|Nenhum estabelecimento|Nenhum cliente|Nenhuma área/ }).waitFor({ timeout: 20000 });
     const previa = await page.getByTestId('previa-divisao').innerText();
-    check('Dividir em rotas: a prévia com a conta aparece antes de gerar (R1)', /÷|Nenhum estabelecimento|Nenhuma área/.test(previa));
-    check('Dividir em rotas: dois botões de gerar (carro/moto e a pé)', (await page.getByRole('button', { name: 'Gerar rotas de carro/moto' }).count()) === 1 && (await page.getByRole('button', { name: 'Gerar rotas a pé' }).count()) === 1);
+    check('Rotas > Clientes: a prévia com a conta aparece antes de gerar (R1)', /÷|Nenhum estabelecimento|Nenhum cliente|Nenhuma área/.test(previa));
+    check('Rotas > Clientes: dois botões de gerar (carro/moto e a pé)', (await page.getByRole('button', { name: 'Gerar rota de carro/moto' }).count()) === 1 && (await page.getByRole('button', { name: 'Gerar rota a pé' }).count()) === 1);
+    check('Rotas > Clientes: "Clientes por rota" e o seletor "Praça" na barra', (await page.getByLabel('Clientes por rota').count()) === 1 && (await page.getByLabel('Praça', { exact: true }).count()) === 1);
   }
   if (lov.malls) {
     await page.getByRole('tab', { name: 'Shoppings' }).click();
@@ -1300,14 +1304,14 @@ console.log('-- Campo: GPS negado --');
     check('Shoppings: o ⓘ descreve o critério que vale (área) e a marcação à mão', crit.includes('m² de área no mapa aberto') && crit.includes('marque à mão'));
     // Sem centro na praça nem área ativa (o seed), a tela pede uma área no lugar do botão.
     check(
-      'Shoppings: "Descobrir shoppings da cidade" para o admin, ou o pedido de uma área (não clicado)',
-      (await page.getByRole('button', { name: 'Descobrir shoppings da cidade' }).count()) === 1 || (await page.getByText('Cadastre uma área de atuação no detalhe da praça').count()) === 1,
+      'Shoppings: "Mapear shoppings da cidade" para o admin, ou o pedido de uma área (não clicado)',
+      (await page.getByRole('button', { name: 'Mapear shoppings da cidade' }).count()) === 1 || (await page.getByText('Cadastre uma área de atuação no detalhe da praça').count()) === 1,
     );
   }
   if (lov.route_plans) {
-    await page.getByRole('tab', { name: 'Dia de cada consultor' }).click();
+    await page.getByRole('tab', { name: 'Dia de cada representante' }).click();
     await page.getByText('Chegada ao local').first().waitFor({ timeout: 20000 });
-    check('Rotas: "Dia de cada consultor" continua o roteiro do dia de hoje', (await page.getByText('Chegada ao local').count()) >= 1);
+    check('Rotas: "Dia de cada representante" continua o roteiro do dia de hoje', (await page.getByText('Chegada ao local').count()) >= 1);
   }
 
   // ── Lote E (contrato §34.6, §41, §42; UX §3.3, §3.8, §3.9) + casca da Lovable (E2, contrato §46): menu, Clientes, Segurança, Pessoas ──
@@ -1388,6 +1392,7 @@ console.log('-- Campo: GPS negado --');
       await g.getByRole('button', { name: 'Novo consultor' }).waitFor({ timeout: 20000 });
       check('gestor: cria consultor ("Novo consultor")', true);
       await g.goto(`${BASE}/consultores/roteiros`, { waitUntil: 'networkidle' });
+      if (lov.route_plans) await g.getByRole('tab', { name: 'Dia de cada representante' }).click();
       await g.getByText('Chegada ao local').first().waitFor({ timeout: 20000 });
       check('gestor: monta roteiro (botão no lugar de "Só administradores montam roteiros")', (await g.getByText('Só administradores montam roteiros.').count()) === 0);
       await g.goto(`${BASE}/prospeccao`, { waitUntil: 'networkidle' });

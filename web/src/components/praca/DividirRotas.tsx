@@ -1,8 +1,19 @@
 'use client';
 
+import { Archive, Route as RouteIcon } from 'lucide-react';
 import dynamic from 'next/dynamic';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { RotaPlanoCard } from '@/components/praca/RotaPlanoCard';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,24 +21,38 @@ import { useAreas } from '@/modules/areas/application/use-areas';
 import { podeOperar } from '@/modules/acesso/domain/acesso';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { useConsultores } from '@/modules/consultores/application/use-consultores';
+import { atuaNaPraca } from '@/modules/consultores/domain/pracas';
 import { useArquivarPlano, useConfigDivisao, useCriarPlano, usePlano, usePlanos, usePrevia } from '@/modules/planos/application/use-planos';
 import { rotuloGeracao } from '@/modules/planos/domain/planos';
 import type { PracaView } from '@/modules/pracas/application/use-pracas';
-import { atuaNaPraca } from '@/modules/consultores/domain/pracas';
 
 const RotasMapa = dynamic(() => import('./RotasMapa'), { ssr: false });
 
+/** A partir de `lg` o mapa fica sempre à vista (Lovable); abaixo, só quando a pessoa pede (economiza dados no celular). */
+function useTelaLarga(): boolean {
+  const [larga, setLarga] = useState(false);
+  useEffect(() => {
+    const mql = window.matchMedia('(min-width: 1024px)');
+    const mudar = () => setLarga(mql.matches);
+    mudar();
+    mql.addEventListener('change', mudar);
+    return () => mql.removeEventListener('change', mudar);
+  }, []);
+  return larga;
+}
+
 /**
- * Rotas > "Dividir em rotas" (contrato §39, UX §3.4; Lovable `rotas.tsx`, aba "Clientes"): praça, área e paradas por rota, a
- * prévia com a conta ANTES de gerar, dois botões de gerar (1 toque), gerações salvas (arquivar, nunca apagar) e os cartões com
- * as duas contas e a publicação para consultor + dia. O "Montar roteiro" de hoje continua em "Dia de cada consultor".
+ * Rotas > "Clientes" (Lovable `rotas.tsx`, aba geral; UX §4.6, contrato §39): a barra da Lovable (praça, área, clientes por rota, os dois
+ * botões de gerar e a nossa prévia com a conta ANTES de gerar), as gerações salvas (arquivar, nunca apagar) e os cartões compactos
+ * à esquerda com o mapa à direita. Tocar num cartão escolhe a rota: destaca no mapa e mostra os clientes e a nossa conta.
  */
-export function DividirRotas({ praca }: { praca: PracaView }) {
+export function DividirRotas({ praca, seletorPraca }: { praca: PracaView; seletorPraca?: ReactNode }) {
   const { user } = useAuth();
   // Lote E §42.3: gerar, arquivar e publicar também para o gestor (com a flag); a configuração da divisão segue só do admin.
   const admin = podeOperar(user);
   const config = useConfigDivisao(true);
   const { data: areas } = useAreas(praca.id);
+  const ativas = (areas ?? []).filter((a) => a.active);
   const [areaId, setAreaId] = useState('');
   const [porRota, setPorRota] = useState<number | null>(null);
   useEffect(() => {
@@ -43,158 +68,171 @@ export function DividirRotas({ praca }: { praca: PracaView }) {
   const arquivar = useArquivarPlano();
   const [confirmarArquivo, setConfirmarArquivo] = useState(false);
   const [verMapa, setVerMapa] = useState(false);
-  const [destaque, setDestaque] = useState<string | null>(null);
+  const [rotaEscolhida, setRotaEscolhida] = useState<string | null>(null);
+  const larga = useTelaLarga();
   const { data: consultores } = useConsultores();
   const doPraca = (consultores ?? []).filter((c) => atuaNaPraca(c, praca.id) && c.active).map((c) => ({ id: c.id, name: c.name }));
   const resumo = planos.data?.find((p) => p.id === atual);
+  const itens = plano.data?.items ?? [];
 
   function gerar(modo: 'carro' | 'a_pe') {
     criar.mutate(
       { praca_id: praca.id, ...(areaId ? { area_id: areaId } : {}), por_rota: por, travel_mode: modo },
-      { onSuccess: (v) => setEscolhido(v.id) },
+      {
+        onSuccess: (v) => {
+          setEscolhido(v.id);
+          setRotaEscolhida(null);
+        },
+      },
     );
   }
 
   return (
     <div className="space-y-4">
-      <section className="card-surface space-y-3 p-4" aria-label="Dividir a área em rotas">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_10rem]">
+      <section className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card p-4" aria-label="Dividir a área em rotas">
+        {seletorPraca}
+        {ativas.length > 0 && (
           <div className="space-y-1">
             <Label htmlFor="div-area">Área</Label>
-            <select id="div-area" value={areaId} onChange={(e) => setAreaId(e.target.value)} className="h-12 w-full rounded-md border border-border bg-background px-3 text-sm">
-              <option value="">Todas as áreas ativas</option>
-              {(areas ?? [])
-                .filter((a) => a.active)
-                .map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-            </select>
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="div-por">Paradas por rota</Label>
-            <Input
-              id="div-por"
-              type="number"
-              min={1}
-              max={100}
-              value={por}
-              onChange={(e) => setPorRota(Math.max(1, Math.min(100, Number(e.target.value) || 1)))}
-              className="h-12"
-            />
-          </div>
-        </div>
-        <p className="text-sm" aria-live="polite" data-testid="previa-divisao">
-          {previa.isPending ? 'Contando os estabelecimentos…' : previa.isError ? 'Não conseguimos contar agora.' : previa.data?.conta}
-        </p>
-        <p className="text-sm text-muted-foreground">
-          Fonte: estabelecimentos da praça com localização exata, até o estágio do roteiro, sem cadastro declarado e fora de roteiro já publicado.
-          Padrão da Lovable: {config.data ? `${config.data.minutos_por_cliente} min por estabelecimento + ${config.data.intervalo_min} min de intervalo + deslocamento, até ${Math.round(config.data.limite_min / 60)} h` : '…'}.
-        </p>
-        {admin && (
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Button className="h-12" disabled={criar.isPending || !previa.data?.lead_count} onClick={() => gerar('carro')}>
-              {criar.isPending ? 'Gerando…' : 'Gerar rotas de carro/moto'}
-            </Button>
-            <Button variant="outline" className="h-12" disabled={criar.isPending || !previa.data?.lead_count} onClick={() => gerar('a_pe')}>
-              Gerar rotas a pé
-            </Button>
-          </div>
-        )}
-      </section>
-
-      {planos.data && planos.data.length > 0 ? (
-        <section className="card-surface space-y-2 p-4" aria-label="Gerações salvas">
-          <Label htmlFor="div-geracao">Gerações salvas ({planos.data.length})</Label>
-          <div className="flex flex-col gap-2 sm:flex-row">
             <select
-              id="div-geracao"
-              value={atual ?? ''}
-              onChange={(e) => {
-                setEscolhido(e.target.value);
-                setConfirmarArquivo(false);
-              }}
-              className="h-12 flex-1 rounded-md border border-border bg-background px-3 text-sm"
+              id="div-area"
+              value={areaId}
+              onChange={(e) => setAreaId(e.target.value)}
+              className="h-11 w-full min-w-44 rounded-md border border-input bg-background px-2 text-sm md:h-9"
             >
-              {planos.data.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {rotuloGeracao(p)}
+              <option value="">Todas as áreas ativas</option>
+              {ativas.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
                 </option>
               ))}
             </select>
-            {admin && atual && (
-              <Button variant="outline" className="h-12" onClick={() => setConfirmarArquivo(true)}>
-                Arquivar
-              </Button>
-            )}
           </div>
-          {confirmarArquivo && resumo && (
-            <div role="alert" className="space-y-2 rounded-md border border-border p-3 text-sm">
-              <p>
-                Arquivar a geração de {rotuloGeracao(resumo).split(' · ')[0]}? As {resumo.item_count - resumo.assigned_count} rotas ainda não publicadas saem da lista. As{' '}
-                {resumo.assigned_count} publicadas continuam com os consultores.
-              </p>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Button
-                  className="h-12"
-                  disabled={arquivar.isPending}
-                  onClick={() =>
-                    arquivar.mutate(resumo.id, {
-                      onSuccess: () => {
-                        setEscolhido(null);
-                        setConfirmarArquivo(false);
-                      },
-                    })
-                  }
+        )}
+        {/* E6: o filtro "Perfil dos clientes" (segmentos, vários; "Nenhum selecionado = todos os clientes") entra aqui (arquitetura §4). */}
+        <div className="w-36 space-y-1">
+          <Label htmlFor="div-por">Clientes por rota</Label>
+          <Input id="div-por" type="number" min={1} max={100} value={por} onChange={(e) => setPorRota(Math.max(1, Math.min(100, Number(e.target.value) || 1)))} />
+        </div>
+        {admin && (
+          <>
+            <Button disabled={criar.isPending || !previa.data?.lead_count} onClick={() => gerar('carro')}>
+              <RouteIcon className="h-4 w-4" aria-hidden />
+              {criar.isPending ? 'Gerando…' : 'Gerar rota de carro/moto'}
+            </Button>
+            <Button variant="outline" disabled={criar.isPending || !previa.data?.lead_count} onClick={() => gerar('a_pe')}>
+              <RouteIcon className="h-4 w-4" aria-hidden />
+              Gerar rota a pé
+            </Button>
+          </>
+        )}
+        <p className="w-full text-sm text-muted-foreground" aria-live="polite" data-testid="previa-divisao">
+          {previa.isPending ? 'Contando os clientes…' : previa.isError ? 'Não conseguimos contar agora.' : previa.data?.conta}
+        </p>
+        <details className="w-full text-xs text-muted-foreground">
+          <summary className="cursor-pointer py-1 text-sm">ⓘ Como contamos</summary>
+          <p>
+            Fonte: clientes da praça com localização exata, até o estágio do roteiro, sem cadastro declarado e fora de rota já publicada. Padrão da
+            Lovable:{' '}
+            {config.data
+              ? `${config.data.minutos_por_cliente} min por cliente + ${config.data.intervalo_min} min de intervalo + deslocamento, até ${Math.round(config.data.limite_min / 60)} h`
+              : '…'}
+            .
+          </p>
+        </details>
+      </section>
+
+      <div className="grid gap-4 lg:grid-cols-[380px_1fr]">
+        <div className="space-y-2 lg:max-h-[640px] lg:overflow-y-auto">
+          {planos.data && planos.data.length > 0 && (
+            <div className="space-y-1 rounded-lg border border-border bg-card p-3">
+              <Label htmlFor="div-geracao">
+                Rotas salvas ({planos.data.length} {planos.data.length === 1 ? 'geração' : 'gerações'})
+              </Label>
+              <div className="flex gap-2">
+                <select
+                  id="div-geracao"
+                  value={atual ?? ''}
+                  onChange={(e) => {
+                    setEscolhido(e.target.value);
+                    setRotaEscolhida(null);
+                  }}
+                  className="h-11 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm md:h-9"
                 >
-                  Arquivar a geração
-                </Button>
-                <Button variant="ghost" className="h-12" onClick={() => setConfirmarArquivo(false)}>
-                  Cancelar
-                </Button>
+                  {planos.data.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {rotuloGeracao(p)}
+                    </option>
+                  ))}
+                </select>
+                {admin && atual && (
+                  <Button size="icon" variant="ghost" aria-label="Arquivar esta geração" onClick={() => setConfirmarArquivo(true)}>
+                    <Archive className="h-4 w-4" aria-hidden />
+                  </Button>
+                )}
               </div>
             </div>
           )}
-        </section>
-      ) : (
-        planos.isSuccess && (
-          <p className="card-surface p-4 text-sm text-muted-foreground">
-            Nenhuma geração ainda. {admin ? 'Escolha a área e toque em gerar: as rotas ficam salvas aqui para publicar para cada consultor.' : 'Um administrador gera as rotas.'}
-          </p>
-        )
-      )}
-
-      {plano.data && plano.data.items.length > 0 && (
-        <>
-          <div className="space-y-2">
-            <button type="button" aria-expanded={verMapa} onClick={() => setVerMapa((v) => !v)} className="h-12 w-full rounded-md border border-border px-4 text-sm font-bold sm:w-auto">
-              {verMapa ? 'Esconder o mapa' : 'Ver no mapa'}
-            </button>
-            {verMapa && (
-              <>
-                <label className="flex flex-col gap-1 text-sm sm:max-w-sm">
-                  <span>Destacar a rota</span>
-                  <select value={destaque ?? ''} onChange={(e) => setDestaque(e.target.value || null)} className="h-12 rounded-md border border-border bg-background px-3">
-                    <option value="">Nenhuma</option>
-                    {plano.data.items.map((it) => (
-                      <option key={it.id} value={it.id}>
-                        {it.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <RotasMapa itens={plano.data.items} destaque={destaque} dark={false} />
-              </>
-            )}
-          </div>
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {plano.data.items.map((it) => (
-              <RotaPlanoCard key={it.id} plano={plano.data!} item={it} admin={admin} consultores={doPraca} />
+          {planos.isSuccess && planos.data.length === 0 && (
+            <p className="rounded-lg border border-border p-4 text-sm text-muted-foreground">
+              Nenhuma rota ainda. {admin ? 'Clique em Gerar rotas.' : 'Um administrador ou gestor gera as rotas.'}
+            </p>
+          )}
+          {plano.data &&
+            itens.map((it) => (
+              <RotaPlanoCard
+                key={it.id}
+                plano={plano.data!}
+                item={it}
+                admin={admin}
+                consultores={doPraca}
+                escolhido={rotaEscolhida === it.id}
+                onEscolher={() => setRotaEscolhida((r) => (r === it.id ? null : it.id))}
+              />
             ))}
+        </div>
+        {itens.length > 0 && (
+          <div className="space-y-2">
+            {!larga && (
+              <Button variant="outline" aria-expanded={verMapa} onClick={() => setVerMapa((v) => !v)} className="w-full sm:w-auto">
+                {verMapa ? 'Esconder o mapa' : 'Ver no mapa'}
+              </Button>
+            )}
+            {(larga || verMapa) && <RotasMapa itens={itens} destaque={rotaEscolhida} dark={false} />}
           </div>
-        </>
-      )}
+        )}
+      </div>
+
+      <AlertDialog open={confirmarArquivo && !!resumo} onOpenChange={(o) => !o && setConfirmarArquivo(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Arquivar a geração de {resumo ? rotuloGeracao(resumo).split(' · ')[0] : ''}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {resumo
+                ? `As ${resumo.item_count - resumo.assigned_count} rotas ainda não publicadas saem da lista. As ${resumo.assigned_count} publicadas continuam com os representantes.`
+                : ''}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={arquivar.isPending}
+              onClick={() =>
+                resumo &&
+                arquivar.mutate(resumo.id, {
+                  onSuccess: () => {
+                    setEscolhido(null);
+                    setRotaEscolhida(null);
+                    setConfirmarArquivo(false);
+                  },
+                })
+              }
+            >
+              Arquivar a geração
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
