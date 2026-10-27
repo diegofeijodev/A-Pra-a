@@ -163,7 +163,7 @@ Endereços novos com redirecionamento dos antigos (vídeos, favoritos e o browse
       tinham passado; `e027c2b` o passo do gestor do `browser-check` saía do Dashboard antes do GET do painel responder (`ERR_ABORTED` em (b));
       `87e9abe` o `smoke-lovable-f1` sondava os CHECKs do razão na semana fixa 2026-10-26, que virou a semana corrente (4100 em vez de 4000).
       Nenhum bug de produto. Não feito: capturas desktop/celular de cada tela para o Denner (E8.9).
-- [ ] 9. Prévia na Vercel → Denner aprova → subida
+- [x] 9. Prévia na Vercel → Denner aprova → subida (**NO AR 27/10 ~10:45**)
       - Revisão de código do diff inteiro (27/10 ~03:20): nada alto/médio; 3 baixos — teto próprio na troca de senha e
         login da equipe 40/min por causa da entrada única (`40a7f5f`, jest auth+permissões 84/84, tsc 0); o nome do colega
         na última visita do `GET /v1/campo/map/list` é intencional (contrato §34.7) e ficou.
@@ -185,6 +185,15 @@ Endereços novos com redirecionamento dos antigos (vídeos, favoritos e o browse
         5. `ssh ubuntu@56.124.127.54 "cd /opt/praca && docker compose -f docker-compose.prod.yml up -d --no-deps --no-build api"`
         6. (Claude) `/health`, `features` novos no `settings/config`, `POST /v1/auth/change-password` 401 sem token, logs sem erro
         7. (Claude) web: cópia sem git do commit + `vercel deploy --prod`; conferir aberturademercado.com.br/entrar
+      - **Subida feita 27/10:** backup `/opt/praca/backup-pre-ui-lovable-20261027-1036.sql.gz` (57,5 KB); GitHub `stack-freela`
+        `6b4962f..7b70adf` (avanço normal); rsync da cópia limpa `7025447`; imagem `praca-api:7025447` = `latest` (a anterior
+        `ad0412a`/`6b4962f` guardada como `praca-api:pre-ui-lovable`); compose up 10:40 — 28 migrations, nenhuma pendente, boot sem erro.
+        Conferido: `/health` 200; `change-password` (equipe e campo) e `campo/map/list` 401 sem token; login falso 401
+        `INVALID_CREDENTIALS`; CORS de aberturademercado.com.br ok; no container ROUTES/EARNINGS/PAYOUTS/DECLARED_SIGNUPS = true,
+        `TEAM_COMMERCIAL_ENABLED` ausente (Comercial escondido), AUTOCLOSE ausente. Web: `vercel deploy --prod` da cópia sem git de
+        `7b70adf` → `praca-blrurk2pq-freelas-projects-ccf14064.vercel.app` (READY); aberturademercado.com.br `/entrar` 200 com
+        Manrope/Sora, `/consultores/painel` 307 → `/inicio`, bundle aponta para a API de prod. Deploy de prod anterior (para a volta):
+        `praca-1dt1hwn9j-freelas-projects-ccf14064.vercel.app`. Não testado com login real (sem senha aqui) — falta o Denner/Diego entrar.
       - Armadilha de data: `web/scripts/browser-check.mjs:1782` cria a praça B com `end_date: '2026-12-31'` fixo — depois dessa data o passo
         das duas praças (configurações com as flags ligadas) deve quebrar; trocar por uma data relativa.
       - Volta: API `praca-api:pre-ui-lovable` (`docker tag` + compose up); web: promover o deploy anterior na Vercel; git: tag `pre-ui-lovable`.
