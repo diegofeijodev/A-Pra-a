@@ -51,7 +51,7 @@ export function contornoDaForma(forma: Forma, r: number): [number, number][] | n
     case 'circulo':
       return null;
     case 'quadrado':
-      return pontos([[-0.85, -0.85], [0.85, -0.85], [0.85, 0.85], [-0.85, 0.85]]);
+      return pontos([[-0.84, -0.84], [0.84, -0.84], [0.84, 0.84], [-0.84, 0.84]]);
     case 'losango':
       return pontos([[0, -1.15], [1.15, 0], [0, 1.15], [-1.15, 0]]);
     case 'triangulo':
