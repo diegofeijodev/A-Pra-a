@@ -132,7 +132,7 @@ export function HojeTela() {
                 {[...dia.visitas].reverse().map((v) => {
                   const min = duracaoMin(v.checkin_at, v.checkout_at);
                   return (
-                    <li key={v.ref} className="flex items-center justify-between gap-3 rounded-2xl bg-card p-3 shadow-card">
+                    <li key={v.ref} className="flex items-center justify-between gap-3 card-surface p-3">
                       <div>
                         <p className="font-medium">{v.nome}</p>
                         <p className="text-xs text-muted-foreground">

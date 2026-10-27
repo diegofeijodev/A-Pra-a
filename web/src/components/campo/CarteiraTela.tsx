@@ -20,7 +20,7 @@ function ResumoDaCarteira() {
     <section aria-label="Resumo da carteira" className="space-y-2">
       <div className="grid gap-3 sm:grid-cols-3">
         {cartoes.map((c) => (
-          <div key={c.rotulo} className="rounded-2xl bg-card p-4 shadow-card">
+          <div key={c.rotulo} className="card-surface p-4">
             <p className="text-sm text-muted-foreground">{c.rotulo}</p>
             <p className="text-2xl font-semibold">{c.valor}</p>
             <p className="text-xs text-muted-foreground">{c.apoio}</p>

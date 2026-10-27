@@ -95,7 +95,7 @@ function LinhaParada({
   const selo = visitada ? seloDaParada(visita) : null;
   const dados = { lat: s.lat, lng: s.lng, address: s.address, name: s.name };
   return (
-    <li className={`rounded-2xl bg-card p-3 shadow-card ${sugerida ? 'ring-2 ring-primary' : ''} ${visitada ? 'opacity-70' : ''}`}>
+    <li className={`card-surface p-3 ${sugerida ? 'ring-2 ring-primary' : ''} ${visitada ? 'opacity-70' : ''}`}>
       <div className="flex items-start gap-3">
         <span aria-hidden className="mt-2.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
           {n}
@@ -220,7 +220,7 @@ export function RoteiroTela({ simples }: { simples: boolean }) {
       <AvisosDoRoteiro />
 
       {/* Cartão fixo da Lovable: gruda logo abaixo do topo da casca (faixa azul + fila), qualquer que seja a altura dele. */}
-      <section aria-label="Andamento do dia" className="sticky top-[var(--campo-topo)] z-10 space-y-2 rounded-2xl bg-card p-4 shadow-card">
+      <section aria-label="Andamento do dia" className="sticky top-[var(--campo-topo)] z-10 space-y-2 card-surface p-4">
         <div className="flex items-center justify-between gap-2">
           <h1 className="flex items-center gap-2 text-lg font-semibold">
             <span aria-hidden className="h-3 w-3 shrink-0 rounded-full bg-primary" />

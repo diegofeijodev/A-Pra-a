@@ -26,7 +26,7 @@ export function ResultadoDoDiaCartao({ dia }: { dia?: string }) {
   if (!ligado || q.data?.display === 'desligado') return null;
   const titulo = dia && dia !== todaySp() ? `Resultado do dia · ${rotuloDia(dia)}` : 'Resultado do seu dia';
   return (
-    <section aria-label={titulo} className="space-y-4 rounded-2xl border-2 border-primary bg-card p-5 shadow-card">
+    <section aria-label={titulo} className="space-y-4 card-surface border-2 border-primary p-5">
       {q.isError ? (
         <>
           <h2 className="text-lg font-semibold">{titulo}</h2>

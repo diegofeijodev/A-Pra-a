@@ -50,7 +50,7 @@ export function VisitaEmAndamento({
 }) {
   const Nome = titulo ? 'h1' : 'p';
   return (
-    <section aria-label={encerrada ? 'Visita finalizada' : 'Visita em andamento'} className="space-y-3 rounded-2xl border-2 border-primary bg-card p-4 shadow-card">
+    <section aria-label={encerrada ? 'Visita finalizada' : 'Visita em andamento'} className="space-y-3 card-surface border-2 border-primary p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs text-muted-foreground">{encerrada ? 'Visita finalizada' : 'Visita em andamento'}</p>

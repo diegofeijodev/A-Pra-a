@@ -100,7 +100,7 @@ export function CardRotaHoje({ fechadoContaNaMeta = false }: { fechadoContaNaMet
     }
     // O vazio da Lovable ("Nenhuma rota neste dia") com o nosso texto: sem rota, a visita é livre.
     return (
-      <section className="space-y-3 rounded-2xl bg-card p-8 text-center shadow-card">
+      <section className="space-y-3 card-surface p-8 text-center">
         <p className="font-medium">Nenhuma rota hoje</p>
         <p className="text-sm text-muted-foreground">Você pode visitar quem estiver no caminho. Quando a equipe montar sua rota, ela aparece aqui.</p>
         <BotaoProximosDias />
@@ -118,7 +118,7 @@ export function CardRotaHoje({ fechadoContaNaMeta = false }: { fechadoContaNaMet
   return (
     <div className="space-y-3">
       <AvisosDoRoteiro />
-      <section aria-label="Rota de hoje" className="space-y-2 rounded-2xl bg-card p-4 shadow-card">
+      <section aria-label="Rota de hoje" className="space-y-2 card-surface p-4">
         <div className="flex items-center justify-between gap-2">
           <p className="flex items-center gap-2 font-medium">
             <span aria-hidden className="h-3 w-3 rounded-full bg-primary" /> Rota de hoje
