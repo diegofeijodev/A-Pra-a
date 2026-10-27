@@ -172,17 +172,21 @@ Endereços novos com redirecionamento dos antigos (vídeos, favoritos e o browse
         Production), então serve para provar o build; o design se confere nas capturas `~/Downloads/praca-telas-novas/`.
       - Fechamento (27/10 manhã): jest da API inteira 142 suítes / 2171 testes / 80 snapshots depois do acabamento; prévia final
         `praca-6a6mf37gv-freelas-projects-ccf14064.vercel.app` (Ready; `/consultores/painel` → 307 `/inicio`). Cópia limpa da API
-        para o rsync: `/tmp/claude-1000/-home-doutor-coding-freela/afbdab81-1f14-4838-9037-9eec9f310175/scratchpad/deploy-api-<sha final>/api/`.
+        para o rsync: `/tmp/claude-1000/-home-doutor-coding-freela/afbdab81-1f14-4838-9037-9eec9f310175/scratchpad/deploy-api-7025447/api/`.
       - **Subida (Denner, via `!`), nesta ordem — API antes do web; nenhuma migração; nenhuma flag nova a ligar
         (`TEAM_COMMERCIAL_ENABLED` ausente = Comercial escondido):**
         1. backup: `ssh ubuntu@56.124.127.54 "docker exec praca-postgres pg_dump -U praca praca | gzip > /opt/praca/backup-pre-ui-lovable-\$(date +%Y%m%d-%H%M).sql.gz && ls -la /opt/praca/backup-pre-ui-lovable-*"`
-        2. master + GitHub: `cd /home/doutor/coding/freela/praca && git checkout master && git merge --ff-only feat/ui-lovable && git push origin master:stack-freela`
-        3. código da API a partir da CÓPIA LIMPA do commit (o working tree tem arquivos só reformatados por um formatador externo):
+        2. master + GitHub, SEM tocar no working tree (o `checkout master` seria recusado pelos arquivos reformatados):
+           `cd /home/doutor/coding/freela/praca && git merge-base --is-ancestor master feat/ui-lovable && git branch -f master feat/ui-lovable && git push origin master:stack-freela`
+        3. código da API a partir da CÓPIA LIMPA do commit (o working tree tem arquivos só reformatados por um formatador externo).
+           Se a cópia sumiu (o `/tmp` não sobrevive a reinício), refazer: `C=~/praca-deploy-api && rm -rf $C && mkdir -p $C && git -C /home/doutor/coding/freela/praca archive 7025447 api | tar -x -C $C` (a API de qualquer commit de docs depois do `7025447` é idêntica).
            `rsync -a --delete --exclude node_modules --exclude dist --exclude .env --exclude '.env.*' --exclude coverage --exclude uploads <cópia>/api/ ubuntu@56.124.127.54:/opt/praca/api/ && echo RSYNC_OK`
         4. (Claude) `docker tag praca-api:latest praca-api:pre-ui-lovable` + `docker build -t praca-api:<sha> -t praca-api:latest .` no EC2
         5. `ssh ubuntu@56.124.127.54 "cd /opt/praca && docker compose -f docker-compose.prod.yml up -d --no-deps --no-build api"`
         6. (Claude) `/health`, `features` novos no `settings/config`, `POST /v1/auth/change-password` 401 sem token, logs sem erro
         7. (Claude) web: cópia sem git do commit + `vercel deploy --prod`; conferir aberturademercado.com.br/entrar
+      - Armadilha de data: `web/scripts/browser-check.mjs:1782` cria a praça B com `end_date: '2026-12-31'` fixo — depois dessa data o passo
+        das duas praças (configurações com as flags ligadas) deve quebrar; trocar por uma data relativa.
       - Volta: API `praca-api:pre-ui-lovable` (`docker tag` + compose up); web: promover o deploy anterior na Vercel; git: tag `pre-ui-lovable`.
       - Acabamento das capturas (27/10 ~04:30): `bb55fd1` "Lovable" fora dos textos de tela (web + a fonte do "Tempo médio" na API);
         `1dc462c` textos no lugar certo (área → detalhe da praça, com link; "Buscar clientes no mapa"; Shoppings 1-2-3) + varredura
