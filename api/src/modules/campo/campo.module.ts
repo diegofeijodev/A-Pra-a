@@ -33,7 +33,7 @@ import { CadastrosDoDiaService } from './painel/cadastros-do-dia.service';
 import { DashboardLigadoGuard, DaySummaryLigadoGuard, MapPinsLigadoGuard } from './painel/lovable.guards';
 import { PainelEquipeController, ResumoDiaCampoController, ResumoDiaEquipeController } from './painel/painel.controller';
 import { PainelService } from './painel/painel.service';
-import { PinosCampoController, PinosEquipeController, PinosListaController } from './pinos/pinos.controller';
+import { PinosCampoController, PinosEquipeController, PinosListaCampoController, PinosListaController } from './pinos/pinos.controller';
 import { PinosService } from './pinos/pinos.service';
 import { ResumoDiaService } from './painel/resumo-dia.service';
 import { HeatmapService } from './heatmap.service';
@@ -75,6 +75,8 @@ import { voucherIssuerProvider } from './vouchers/vouchers.tokens';
     PinosEquipeController,
     PinosListaController,
     PinosCampoController,
+    // Redesenho E4 (contrato §34.7): a Lista do representante, mesma trava do mapa.
+    PinosListaCampoController,
     // Lote C (contrato §38): `/v1/consultores/vouchers` antes do `:id` de ConsultoresController.
     VouchersEquipeController,
     VouchersCampoController,

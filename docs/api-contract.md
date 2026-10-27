@@ -4533,11 +4533,26 @@ praças abertas), **com e sem localização** (a Lista é a forma equivalente do
 - `counts` = o filtro inteiro (praça + busca), **antes** do filtro `codes` (os chips mostram quantos há de cada situação); `total` = a soma de `counts`; `without_location` = dos `total`, os
   sem `lat`/`lng`. O telefone vem **só mascarado** (§34.2). Nunca e-mail do contato, nem o telefone completo.
 
+### 34.7 Lista do representante (aba "Clientes" do celular, redesenho E4) — `GET /v1/campo/map/list?codes=&q=&cursor=&limit=` (`@CampoRoute()`)
+
+Mesma trava (`FIELD_MAP_PINS_ENABLED`, desligada → `404 MAP_PINS_DISABLED`); o web descobre pela `features.map_pins` do `GET /v1/campo/me` (nunca sondando). Token da equipe → `401`.
+Base = a do §34.4: leads `archived = false`, `is_test = false` **da praça ativa do consultor** (`request.campo.praca_id`, §44.4: com várias praças, a da jornada aberta; senão a
+principal) que estão num roteiro dele (qualquer dia) **ou** que ele visitou. Lead de outro consultor que não passou por ele não aparece; lead de outra praça, também não. Com e sem
+localização, como no §34.6.
+
+| Parâmetro | Regra |
+|---|---|
+| `codes` / `q` / `cursor` / `limit` | como no §34.6 (`codes` desconhecido → `400 VALIDATION_ERROR`; `q` 2–80; `limit` 1–500, padrão 200; `ORDER BY name, id`) |
+| `praca_id` | **não existe** aqui (a praça vem do token): mandar → `400` do `forbidNonWhitelisted` |
+
+Resposta = a do §34.6 **sem `pracas`**: `{ counts, total, without_location, items, next_cursor, conta }`, com a MESMA `categoriaDoLead` (§34.3). Telefone só mascarado; nunca e-mail do
+contato. `last_visit.consultant_name` é de quem fez a última visita concluída (pode ser outro consultor, num lead do roteiro dele que outro já visitou).
+
 ### 34.5 Variáveis
 
 | Variável | Padrão | Efeito |
 |---|---|---|
-| `FIELD_MAP_PINS_ENABLED` | `false` | liga as três rotas e a tela "Mapa por situação"; com o lote E também a Lista (§34.6) e o mapa do consultor no celular (usa o §34.4) |
+| `FIELD_MAP_PINS_ENABLED` | `false` | liga as três rotas e a tela "Mapa por situação"; com o lote E também a Lista (§34.6) e o mapa do consultor no celular (usa o §34.4); com o redesenho E4 também a lista do representante (§34.7) |
 
 ## 35. Checklist de abordagem e cronômetro da visita (restante da Lovable, fase L3)
 

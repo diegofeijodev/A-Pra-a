@@ -4,7 +4,7 @@ import { CampoConsultant } from '../../../common/auth/campo-consultant';
 import { CampoRoute } from '../../../common/decorators/campo-route.decorator';
 import { CurrentConsultant } from '../../../common/decorators/current-consultant.decorator';
 import { MapPinsLigadoGuard } from '../painel/lovable.guards';
-import { PinosCampoQueryDto, PinosListaQueryDto, PinosQueryDto } from './pinos.dto';
+import { PinosCampoQueryDto, PinosListaCampoQueryDto, PinosListaQueryDto, PinosQueryDto } from './pinos.dto';
 import { PinosService } from './pinos.service';
 
 /** Mapa por situação — equipe (contrato §34.1–§34.2). Sem `@CampoRoute()`: token de consultor = 401. Antes do `:id`. */
@@ -37,6 +37,24 @@ export class PinosListaController {
   @Get()
   list(@Query() q: PinosListaQueryDto) {
     return this.pinos.lista(q);
+  }
+}
+
+/**
+ * Aba "Clientes" do representante (contrato §34.7, redesenho E4): a Lista do §34.6 com o recorte do §34.4 (roteiro dele ou visitado
+ * por ele, na praça ATIVA do token). Mesma trava do mapa; o web descobre pela `features.map_pins` do `/campo/me`.
+ */
+@ApiTags('Campo')
+@ApiBearerAuth()
+@CampoRoute()
+@UseGuards(MapPinsLigadoGuard)
+@Controller('v1/campo/map/list')
+export class PinosListaCampoController {
+  constructor(private readonly pinos: PinosService) {}
+
+  @Get()
+  list(@CurrentConsultant() c: CampoConsultant, @Query() q: PinosListaCampoQueryDto) {
+    return this.pinos.listaConsultor(c, q);
   }
 }
 

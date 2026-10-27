@@ -11,7 +11,7 @@ import { isUuid } from '../../../common/ids/uuid';
 import { todaySp } from '../../../common/time/dates';
 import { validarBbox, type Bbox } from '../../../domain/heat-grid';
 import { CATEGORIAS_PINO, categoriaDaVisita, categoriaDoLead, classificarTelefone, legenda, META_CATEGORIA, rotuloEtapa, type CategoriaPino, type ModoPinos } from '../../../domain/pin-rules';
-import type { PinosCampoQueryDto, PinosListaQueryDto, PinosQueryDto } from './pinos.dto';
+import type { PinosCampoQueryDto, PinosListaCampoQueryDto, PinosListaQueryDto, PinosQueryDto } from './pinos.dto';
 
 const { sql, join, empty } = Prisma;
 export const LIMITE_PADRAO_PINOS = 2000;
@@ -88,10 +88,32 @@ export class PinosService {
     const limite = q.limit ?? LIMITE_PADRAO_LISTA;
     const vazio = { pracas, counts: Object.fromEntries(CATEGORIAS_PINO.map((c) => [c, 0])), total: 0, without_location: 0, items: [], next_cursor: null };
     if (pracas.length === 0) return { ...vazio, conta: this.contaLista(0, 0) };
-    const termo = q.q ? `%${q.q.trim().replace(/[\\%_]/g, (m) => `\\${m}`)}%` : null;
-    const linhas = await this.prisma.$queryRaw<
-      (InsumoPino & { id: string; name: string; address: string; city: string; praca_id: string; phone: string; lat: number | null; lng: number | null; dia: string | null; consultor: string | null })[]
-    >(sql`
+    const linhas = await this.linhasDaLista({ pracaIds: pracas.map((p) => p.id) }, q.q);
+    return montarLista({ pracas, linhas, codes, limite, cursor: q.cursor ?? null, conta: (t, s) => this.contaLista(t, s) });
+  }
+
+  /**
+   * Aba "Clientes" do representante (§34.7): a base do §34.4 (roteiro dele ou visitado por ele) na praça ATIVA do token (§44.4),
+   * com a resposta da Lista sem `pracas`. A praça nunca vem da query: o representante não escolhe outra.
+   */
+  async listaConsultor(c: CampoConsultant, q: PinosListaCampoQueryDto) {
+    const codes = this.codigos(q.codes);
+    const linhas = await this.linhasDaLista({ pracaIds: [c.praca_id], consultor: c.id }, q.q);
+    const r = montarLista({
+      pracas: [],
+      linhas,
+      codes,
+      limite: q.limit ?? LIMITE_PADRAO_LISTA,
+      cursor: q.cursor ?? null,
+      conta: (t, s) => this.contaListaConsultor(t, s),
+    });
+    return { counts: r.counts, total: r.total, without_location: r.without_location, items: r.items, next_cursor: r.next_cursor, conta: r.conta };
+  }
+
+  /** Insumos da Lista (§34.6/§34.7) do escopo, em ordem de nome, até o teto; a situação é decidida no domínio (`montarLista`). */
+  private linhasDaLista(escopo: Escopo, busca: string | undefined) {
+    const termo = busca ? `%${busca.trim().replace(/[\\%_]/g, (m) => `\\${m}`)}%` : null;
+    return this.prisma.$queryRaw<LinhaLista[]>(sql`
       SELECT l.id::text AS id, l.name, l.address, l.city, l.praca_id::text AS praca_id, l.phone, l.lat, l.lng, l.stage,
         ${DECLARADO} AS decl, (u.tem IS NOT NULL) AS tem_visita, u.outcome, u.result, u.freela_status, u.needs_followup, u.refusal_reason,
         u.dia, u.consultor
@@ -102,10 +124,9 @@ export class PinosService {
         WHERE v.lead_id = l.id AND v.checkout_at IS NOT NULL
         ORDER BY v.checkout_at DESC, v.id DESC LIMIT 1
       ) u ON true
-      WHERE l.archived = false AND l.is_test = false AND ${daPraca({ pracaIds: pracas.map((p) => p.id) })}
+      WHERE l.archived = false AND l.is_test = false AND ${daPraca(escopo)} ${doConsultor(escopo)}
         ${termo ? sql`AND (l.name ILIKE ${termo} OR l.address ILIKE ${termo} OR l.city ILIKE ${termo})` : empty}
       ORDER BY l.name, l.id LIMIT ${TETO_LISTA}`);
-    return montarLista({ pracas, linhas, codes, limite, cursor: q.cursor ?? null, conta: (t, s) => this.contaLista(t, s) });
   }
 
   private codigos(texto: string | undefined): CategoriaPino[] | null {
@@ -116,6 +137,10 @@ export class PinosService {
       throw new BadRequestException({ code: 'VALIDATION_ERROR', message: `codes: use ${CATEGORIAS_PINO.join(', ')}.` });
     }
     return lista as CategoriaPino[];
+  }
+
+  private contaListaConsultor(total: number, sem: number): string {
+    return `${total.toLocaleString('pt-BR')} clientes seus (${sem.toLocaleString('pt-BR')} sem localização exata, que não aparecem no mapa): os que estão num roteiro seu, de qualquer dia, e os que você visitou, na praça de hoje. Situação = última visita concluída; cadastro declarado (não anulado) ou etapa 5 a 7 do funil = Cadastrou; sem visita concluída = A visitar.`;
   }
 
   private contaLista(total: number, sem: number): string {
@@ -216,10 +241,24 @@ export class PinosService {
   }
 }
 
+/** Uma linha da Lista (§34.6/§34.7): os insumos da situação + o que a tela mostra. */
+export type LinhaLista = InsumoPino & {
+  id: string;
+  name: string;
+  address: string;
+  city: string;
+  praca_id: string;
+  phone: string;
+  lat: number | null;
+  lng: number | null;
+  dia: string | null;
+  consultor: string | null;
+};
+
 /** Parte pura da Lista (§34.6): contagem do filtro inteiro (antes de `codes`), filtro, página por cursor. */
 export function montarLista(p: {
   pracas: { id: string; name: string }[];
-  linhas: (InsumoPino & { id: string; name: string; address: string; city: string; praca_id: string; phone: string; lat: number | null; lng: number | null; dia: string | null; consultor: string | null })[];
+  linhas: LinhaLista[];
   codes: CategoriaPino[] | null;
   limite: number;
   cursor: string | null;

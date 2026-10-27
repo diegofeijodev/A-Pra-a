@@ -25,3 +25,12 @@ export class PinosListaQueryDto {
   @IsOptional() @IsUUID() cursor?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(500) limit?: number;
 }
+
+/** `GET /v1/campo/map/list` — aba "Clientes" do representante (contrato §34.7): sem `praca_id` (a praça vem do token). */
+export class PinosListaCampoQueryDto {
+  /** Códigos da legenda separados por vírgula; conferidos no serviço. */
+  @IsOptional() @IsString() @MaxLength(200) codes?: string;
+  @IsOptional() @IsString() @MinLength(2) @MaxLength(80) q?: string;
+  @IsOptional() @IsUUID() cursor?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(500) limit?: number;
+}
