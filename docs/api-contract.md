@@ -5012,7 +5012,7 @@ fica em `filtroPerfis` (`rotas/rotas-plano.ts`), ao lado de `filtroElegivel`, qu
 | `slug` fora da lista branca ou do formato `^[a-z0-9_]{2,30}$` | `400 VALIDATION_ERROR` "types: 'x' não é um perfil de cliente." |
 | mais de 40 | `400 VALIDATION_ERROR` "types: no máximo 40 perfis." |
 
-Tudo é conferido **antes** de ler os estabelecimentos. **Divergência anotada:** a categoria mostrada nos candidatos do "Dia de cada consultor" (§23.4) é a do achado **mais
+Tudo é conferido **antes** de ler os estabelecimentos. No `POST`, tamanho (> 40) e formato são recusados antes pelo DTO (`400` com a mensagem do class-validator); a lista branca, pelo serviço. **Divergência anotada:** a categoria mostrada nos candidatos do "Dia de cada consultor" (§23.4) é a do achado **mais
 antigo**; o perfil casa **qualquer** achado (um lead "restaurante" numa busca antiga e "pizzaria" depois aparece como Restaurante lá e entra no perfil Pizzaria aqui).
 
 ### 39.5 Rotas (leitura: equipe; escrita: **só admin**; token de consultor → `401`; estáticas antes de `:id`)

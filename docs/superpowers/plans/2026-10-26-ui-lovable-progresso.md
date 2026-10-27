@@ -137,7 +137,12 @@ Endereços novos com redirecionamento dos antigos (vídeos, favoritos e o browse
     observação não fica sempre aberta); o diálogo "Chegada" da Lovable não entra (a foto é a chegada); no sugerido, "Cheguei no cliente" só no quadro
     de cima (dois campos de foto com o mesmo nome confundiriam leitor de tela e o Playwright); "Refazer rota a partir daqui" segue só no completo;
     rótulos de situação da §4.4 continuam os da API (etapa própria com o contrato §34.3).
-- [ ] 6. Filtro "Perfil dos clientes" na rota geral (API + contrato + tela)
+- [x] 6. Filtro "Perfil dos clientes" na rota geral (API + contrato + tela) — API `c055655` (contrato §39.4/§39.5: `types` na prévia e no
+      `POST /v1/route-plans`, `lead_count_total`, `PlanSummary.types`; `domain/perfil-rota-rules.ts`, `filtroPerfis`; smoke-lovable-d +3 checagens,
+      sem rodar) + web `3423052` (pílulas em `DividirRotas`, seletor fora de `ShoppingsRotas` com Bar + Restaurante fixos; browser-check +3 ligadas,
+      sem rodar). Jest rotas + domain 53 suítes/1077 (+2 suítes/33), `tsc` 0; web lint 0, typecheck 0, vitest 42/460 (+5). Desvios: com os segmentos
+      desligados as pílulas são os 5 tipos no singular (`Bar`…, os rótulos que a API grava; o `TIPOS` da busca é plural); na aba Shoppings o seletor SAI (Lovable de 26/10),
+      não "pré-marcado e editável" como dizia a arquitetura §4.7.
 - [ ] 7. Endereços da Lovable + redirecionamentos
 - [ ] 8. Verificação: lint, typecheck, vitest, jest das partes tocadas, browser-check (um processo por vez, `nice`)
 - [ ] 9. Prévia na Vercel → Denner aprova → subida
