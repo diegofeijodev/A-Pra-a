@@ -6,8 +6,11 @@ import { Input } from '@/components/ui/input';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { useCanaisCampo, useSalvarCanaisCampo } from '@/modules/consultores/application/use-consultores';
 
-/** Configurações → "Apps e canais (campo)": a lista do questionário (1–30 itens, 1–80 caracteres, sem repetir). */
-export function CanaisCampo() {
+/**
+ * Configurações → "Canais de campo" (UX §4.11): a lista do questionário (1–30 itens, 1–80 caracteres, sem repetir). `embutido` = dentro
+ * do cartão recolhido das Configurações, que já tem o título (sem o h2 nem a margem própria).
+ */
+export function CanaisCampo({ embutido = false }: { embutido?: boolean } = {}) {
   const { user } = useAuth();
   const admin = !!user?.is_admin;
   const { data } = useCanaisCampo();
@@ -26,8 +29,8 @@ export function CanaisCampo() {
   };
 
   return (
-    <section className="mt-8">
-      <h2 className="tag text-muted-foreground">Apps e canais (campo)</h2>
+    <section className={embutido ? '' : 'mt-8'}>
+      {!embutido && <h2 className="tag text-muted-foreground">Apps e canais (campo)</h2>}
       <p className="mt-1 text-xs text-muted-foreground">Opções da pergunta “Apps e canais que usa hoje” no questionário da visita.</p>
       <ul className="mt-3 flex flex-wrap gap-2">
         {lista.map((c) => (

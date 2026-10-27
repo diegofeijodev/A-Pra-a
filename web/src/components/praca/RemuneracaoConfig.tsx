@@ -69,7 +69,7 @@ const CALENDARIO = ['week_start_weekday', 'payout_weekday', 'autoclose_hour', 'l
  * Com `consultor` (L13, §45): a regra PRÓPRIA dele — só admin e só com `features.per_consultant_enabled`; o calendário
  * é o da regra geral e a data pode cair numa semana ainda aberta dele.
  */
-export function RemuneracaoConfig({ consultor }: { consultor?: { id: string; name: string } } = {}) {
+export function RemuneracaoConfig({ consultor, embutido = false }: { consultor?: { id: string; name: string }; embutido?: boolean } = {}) {
   const { user } = useAuth();
   const admin = !!user?.is_admin;
   const cfg = useConfigRemuneracao();
@@ -188,7 +188,7 @@ export function RemuneracaoConfig({ consultor }: { consultor?: { id: string; nam
   const proximas = consultor ? (regras.data?.own ?? []).filter((v) => v.valid_from > todaySp()) : cfg.data.upcoming;
 
   return (
-    <section className={consultor ? 'mt-4 space-y-4' : 'mt-8 space-y-4'}>
+    <section className={consultor ? 'mt-4 space-y-4' : embutido ? 'space-y-4' : 'mt-8 space-y-4'}>
       {consultor ? (
         <div>
           <h2 className="tag text-muted-foreground">Regra de pagamento de {consultor.name}</h2>
@@ -202,7 +202,8 @@ export function RemuneracaoConfig({ consultor }: { consultor?: { id: string; nam
         </div>
       ) : (
         <div>
-          <h2 className="tag text-muted-foreground">Remuneração do consultor</h2>
+          {/* `embutido`: o cartão recolhido das Configurações já tem o título ("Remuneração dos representantes", UX §4.11). */}
+          {!embutido && <h2 className="tag text-muted-foreground">Remuneração do consultor</h2>}
           <p className="mt-1 text-sm text-muted-foreground">
             Quanto o consultor ganha por cadastro (confirmado pelo Freela ou declarado por ele na visita, você escolhe). Cada mudança cria uma versão nova a partir da data de início: semanas já fechadas nunca são
             recalculadas.

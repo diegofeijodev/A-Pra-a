@@ -119,6 +119,15 @@ const ko = (m, detalhe = '') => {
 };
 const check = (nome, cond, detalhe = '') => (cond ? ok(nome) : ko(nome, detalhe));
 const corpo = async (p) => (await p.locator('body').innerText()).toLowerCase();
+/**
+ * Configurações e detalhe da praça (redesenho E5): os blocos nossos ficam em cartões RECOLHIDOS (`<details>`). O texto de dentro
+ * não entra no `innerText` nem é visível para o Playwright enquanto o cartão está fechado: abre pelo `summary` antes de ler.
+ */
+const abrirSecao = async (p, titulo) => {
+  const s = p.locator('summary', { hasText: titulo }).first();
+  await s.waitFor({ timeout: 20000 });
+  if (!(await s.evaluate((el) => el.parentElement.open))) await s.click();
+};
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -614,19 +623,28 @@ try {
   const faltaDepois = depoisDelete.readings.find((r) => r.key === 'falta');
   check('apagar o lançamento devolve o indicador ao estado do seed', faltaDepois?.history.length === 0 && faltaDepois?.stale === true);
 
-  // ── 10. Configurações ─────────────────────────────────────────
+  // ── 10. Usuários e Configurações ──────────────────────────────
+  // E5.8: "Pessoas" saiu das Configurações e virou a tela Usuários (Lovable), só do admin.
+  console.log('-- Usuários --');
+  await page.goto(`${BASE}/usuarios`, { waitUntil: 'networkidle' });
+  await page.getByRole('heading', { name: 'Usuários', exact: true }).waitFor({ timeout: 20000 });
+  await page.getByRole('button', { name: /^Editar / }).first().waitFor({ timeout: 20000 });
+  const usu = await corpo(page);
+  check('Usuários: as 3 contas do seed na tabela', ['diego', 'rebeca', 'mkt externo'].every((n) => usu.includes(n)), usu.slice(0, 200));
+  check('Usuários: "Novo gestor/admin" e "Redefinir senha" (na própria conta, "Trocar senha")', (await page.getByRole('button', { name: 'Novo gestor/admin' }).count()) === 1 && (await page.getByRole('button', { name: 'Redefinir senha' }).count()) >= 2);
+  // A senha provisória nasce gerada no navegador (regra mais forte: 12, maiúscula, minúscula, número). NÃO salva: a senha do seed fica.
+  await page.getByRole('button', { name: 'Redefinir senha' }).first().click();
+  await page.locator('#r-senha').waitFor({ timeout: 10000 });
+  const gerada = await page.locator('#r-senha').inputValue();
+  check('Redefinir senha: abre com uma senha gerada que cumpre a regra mais forte', gerada.length === 12 && /[A-Z]/.test(gerada) && /[a-z]/.test(gerada) && /[0-9]/.test(gerada), gerada.length ? `${gerada.length} caracteres` : 'vazio');
+  await page.keyboard.press('Escape');
+  await page.locator('#r-senha').waitFor({ state: 'detached', timeout: 10000 });
+
   console.log('-- Configurações --');
   await page.goto(`${BASE}/configuracoes`, { waitUntil: 'networkidle' });
   await espera(1600);
   const cfg = await corpo(page);
-  check('bloco de pessoas', cfg.includes('pessoas'));
-  // Os nomes são campos editáveis: o valor está no `value` do input, não no texto.
-  const valores = await page.locator('input').evaluateAll((els) => els.map((e) => e.value));
-  check(
-    'as 3 contas do seed nos campos de pessoa',
-    ['Diego', 'Rebeca', 'Mkt externo'].every((n) => valores.includes(n)),
-    valores.filter(Boolean).slice(0, 8).join(' | '),
-  );
+  check('Configurações: sem o bloco de pessoas (foi para Usuários)', (await page.getByRole('heading', { name: 'Pessoas' }).count()) === 0 && !cfg.includes('+ adicionar'));
   check('dados da praça', cfg.includes('dados da praça'));
   // Casca da Lovable (contrato §46): as seções do Comercial só com a chave (`TEAM_COMMERCIAL_ENABLED`).
   check('variáveis padrão das mensagens só com o Comercial ligado', cfg.includes('variáveis padrão das mensagens') === !!featIni.commercial);
@@ -1086,11 +1104,16 @@ console.log('-- Campo: GPS negado --');
   check('nova senha derruba a sessão aberta no celular', cel.url().endsWith('/campo/entrar'));
 
   await page.goto(`${BASE}/configuracoes`, { waitUntil: 'networkidle' });
-  check('Configurações: seção "Apps e canais (campo)" com a lista', (await corpo(page)).includes('apps e canais (campo)') && (await corpo(page)).includes('grupos de whatsapp'));
+  // E5.9: cada bloco nosso num cartão recolhido ("Canais de campo", "Remuneração dos representantes"): abre antes de ler.
+  await abrirSecao(page, 'Canais de campo');
+  check('Configurações: cartão "Canais de campo" com a lista', (await corpo(page)).includes('apps e canais que usa hoje') && (await corpo(page)).includes('grupos de whatsapp'));
 
   // ── Modo do chefe S2/S3 (contrato §32): só quando a remuneração está ligada no servidor ──
-  if ((await corpo(page)).includes('remuneração do consultor')) {
+  // O cartão só existe com `features.earnings` (§46); o título é o porteiro deste bloco inteiro.
+  if ((await corpo(page)).includes('remuneração dos representantes')) {
     console.log('-- Equipe: Remuneração, modo do chefe (S2) --');
+    await abrirSecao(page, 'Remuneração dos representantes');
+    await page.getByRole('button', { name: 'Perfil do chefe' }).waitFor({ timeout: 20000 });
     const versoesAntes = (await api('GET', '/v1/consultores/earnings/config')).history.length;
     check('Remuneração: escolha de onde vem o cadastro que paga', (await corpo(page)).includes('de onde vem o cadastro que paga'));
     check('Remuneração: diária e "somar todas as atingidas"', (await corpo(page)).includes('diária (r$)') && (await corpo(page)).includes('quando vários valores de faixa são atingidos'));
@@ -1128,6 +1151,8 @@ console.log('-- Campo: GPS negado --');
     console.log('-- Equipe: bônus mensal (L11) --');
     const versoesAntesF1 = remCfg.history.length;
     await page.goto(`${BASE}/configuracoes`, { waitUntil: 'networkidle' });
+    await abrirSecao(page, 'Remuneração dos representantes');
+    await page.locator('#rem-period').waitFor({ timeout: 20000 });
     check('Remuneração: "Mês" entre os períodos das faixas', (await page.locator('#rem-period option[value="month"]').count()) === 1);
     await page.locator('#rem-period').selectOption('month');
     await page.getByText('O bônus do mês é pago no primeiro Pix depois do fim do mês').first().waitFor({ timeout: 10000 });
@@ -1215,10 +1240,10 @@ console.log('-- Campo: GPS negado --');
   }
   await page.goto(`${BASE}/configuracoes`, { waitUntil: 'networkidle' });
   await page.getByText('Configurações').first().waitFor({ timeout: 20000 });
-  if (lov.segments) await page.getByText('Segmentos da busca de estabelecimentos').waitFor({ timeout: 20000 });
-  check('Configurações: "Segmentos da busca" só com os segmentos ligados', ((await page.getByText('Segmentos da busca de estabelecimentos').count()) === 1) === !!lov.segments);
+  // E5.9 (UX §4.11): "Segmentos da busca" no topo, à vista (tabela da Lovable, sem cartão recolhido).
+  if (lov.segments) await page.getByRole('heading', { name: 'Segmentos da busca', exact: true }).waitFor({ timeout: 20000 });
+  check('Configurações: "Segmentos da busca" só com os segmentos ligados', ((await page.getByRole('heading', { name: 'Segmentos da busca', exact: true }).count()) === 1) === !!lov.segments);
   if (lov.segments) {
-    await page.getByText('Segmentos da busca de estabelecimentos').click();
     await page.getByText(/Busca no mapa: Restaurante ou Lanchonete com cozinha pizza/).first().waitFor({ timeout: 20000 });
     check('Segmentos: os 10 padrão descritos em português (sem etiqueta crua)', (await page.getByText(/^Busca no mapa: /).count()) >= 10);
   }
@@ -1294,11 +1319,15 @@ console.log('-- Campo: GPS negado --');
     check('Clientes > Mapa: o mapa por situação na mesma página', new URL(page.url()).searchParams.get('modo') === 'mapa' && (await page.getByRole('tab', { name: 'Mapa', exact: true }).getAttribute('aria-selected')) === 'true');
   }
   await page.goto(`${BASE}/configuracoes`, { waitUntil: 'networkidle' });
-  await page.getByText('Pessoas').first().waitFor({ timeout: 20000 });
+  await page.getByRole('heading', { name: 'Configurações', exact: true }).waitFor({ timeout: 20000 });
+  await page.getByText('Canais de campo', { exact: true }).waitFor({ timeout: 20000 });
   if (lov.password_policy) await page.getByText('Segurança', { exact: true }).waitFor({ timeout: 20000 });
   check('Configurações: "Segurança" (regra da senha nova) só com a regra ligada', ((await page.getByText('Segurança', { exact: true }).count()) === 1) === !!lov.password_policy);
+  // E5.8: o perfil de cada pessoa mudou para a tela Usuários.
+  await page.goto(`${BASE}/usuarios`, { waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: /^Editar / }).first().waitFor({ timeout: 20000 });
   if (lov.team_gestor) await page.getByText('ⓘ O que cada perfil pode fazer').waitFor({ timeout: 20000 });
-  check('Pessoas: perfil Admin / Gestor / Equipe só com o gestor ligado', ((await page.getByLabel(/^Perfil de /).count()) > 0) === !!lov.team_gestor);
+  check('Usuários: perfil Admin / Gestor / Equipe só com o gestor ligado', ((await page.getByLabel(/^Perfil de /).count()) > 0) === !!lov.team_gestor);
   await page.goto(`${BASE}/consultores`, { waitUntil: 'networkidle' });
   await page.getByRole('button', { name: 'Novo consultor' }).click();
   await page.getByText('Novo consultor', { exact: true }).last().waitFor({ timeout: 20000 });

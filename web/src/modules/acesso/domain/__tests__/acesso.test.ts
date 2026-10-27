@@ -83,8 +83,10 @@ describe('menu da equipe (casca da Lovable)', () => {
     expect(ativo('/consultores/clientes', 'mapa')).toBe('Mapa');
     expect(ativo('/praca')).toBe('Praças');
     expect(ativo('/pracas')).toBeNull();
-    // "Usuários" divide a tela com "Configurações" até a E5: acende uma só.
+    // E5.8: "Usuários" é uma tela própria (saiu de Configurações > Pessoas).
     expect(ativo('/configuracoes')).toBe('Configurações');
+    expect(ativo('/usuarios')).toBe('Usuários');
+    expect(ROTA.usuarios).toBe('/usuarios');
     expect(ativo('/funil')).toBe('Funil');
     expect(ativo('/formulario/x')).toBeNull();
     // Endereço do Comercial com a chave desligada abre normalmente, sem item aceso (§2.2).

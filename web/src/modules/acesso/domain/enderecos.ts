@@ -14,8 +14,8 @@ export const ROTA = {
   vouchers: '/consultores/cupons',
   financeiro: '/consultores/pagamentos',
   configuracoes: '/configuracoes',
-  // A tela própria "Usuários" chega na E5; até lá é o bloco "Pessoas" das Configurações.
-  usuarios: '/configuracoes#pessoas',
+  // Telas NOVAS da E5 nascem no endereço da Lovable (não há antigo a redirecionar): Usuários saiu de Configurações > Pessoas.
+  usuarios: '/usuarios',
   // Fora do menu: a troca da própria senha (E3), aberta pelo rodapé da casca.
   trocarSenha: '/trocar-senha',
 } as const;
