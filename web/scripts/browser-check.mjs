@@ -1438,6 +1438,9 @@ console.log('-- Campo: GPS negado --');
       await g.locator('#senha').fill('praca123');
       await g.getByRole('button', { name: 'Entrar', exact: true }).click();
       await g.waitForURL('**/inicio', { timeout: 20000 });
+      // O Dashboard pede o painel ao montar (E5.1): espera os cartões com os dados antes de sair da página, senão o próximo `goto`
+      // aborta o GET do painel no meio (`ERR_ABORTED`, achado na E8). "ⓘ De onde vem" só aparece depois da resposta.
+      if (lov.dashboard) await g.getByText('ⓘ De onde vem').first().waitFor({ timeout: 20000 });
       check('gestor: entra no Dashboard', true);
       // A busca é do grupo Comercial (contrato §46): no menu só com a chave; sem ela, o endereço continua abrindo (abaixo).
       if (lov.commercial) {
