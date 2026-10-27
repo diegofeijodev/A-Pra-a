@@ -121,7 +121,7 @@ export function PainelGestor() {
 
       {precisam > 0 && (
         <Link
-          href={ROTA.representantes}
+          href={`${ROTA.representantes}#em-campo`}
           className="flex min-h-11 items-center justify-between rounded-xl border border-warning/40 bg-warning/10 px-4 text-sm font-semibold"
         >
           <span>

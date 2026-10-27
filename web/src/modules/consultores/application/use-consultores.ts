@@ -62,6 +62,16 @@ export function useUpdateConsultor(id: string) {
   });
 }
 
+/** Desativar/reativar a partir da lista (o mesmo `PATCH` da ficha, com o id na hora). */
+export function useAtivarConsultor() {
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: ({ id, active }: { id: string; active: boolean }) => updateConsultor(id, { active }),
+    onSuccess: invalidar,
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível salvar.')),
+  });
+}
+
 /** Lote F2 §44.7: as praças em que o consultor atua (só admin). */
 export function useSalvarPracasConsultor(id: string) {
   const invalidar = useInvalidar();

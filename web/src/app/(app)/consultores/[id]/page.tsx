@@ -1,33 +1,43 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { QrDoFreela } from '@/components/campo/QrDoFreela';
+import { RedefinirSenhaRepresentante } from '@/components/praca/AcessoRepresentante';
 import { ConsultorDialog } from '@/components/praca/ConsultorDialog';
 import { GanhosConsultor } from '@/components/praca/GanhosConsultor';
 import { PracasDoConsultor } from '@/components/praca/PracasDoConsultor';
 import { ConsultorLinhaDoTempo } from '@/components/praca/ConsultorLinhaDoTempo';
 import { ResumoDiaEquipe } from '@/components/praca/ResumoDiaEquipe';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { todaySp } from '@/lib/dates';
 import { useFeaturesMenu } from '@/modules/acesso/application/use-acesso';
 import { podeOperar } from '@/modules/acesso/domain/acesso';
-import { linkWhatsappAcesso } from '@/modules/acesso/domain/cadastro';
+import { ROTA } from '@/modules/acesso/domain/enderecos';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
-import {
-  useConsultor,
-  useDiaConsultor,
-  useFreelaSyncConsultor,
-  useResetSenhaConsultor,
-  useUpdateConsultor,
-} from '@/modules/consultores/application/use-consultores';
+import { useConsultor, useDiaConsultor, useFreelaSyncConsultor, useUpdateConsultor } from '@/modules/consultores/application/use-consultores';
 
 const ConsultorMapa = dynamic(() => import('@/components/praca/ConsultorMapa'), { ssr: false });
 
+/**
+ * Ficha do representante (nossa; a Lovable não tem — UX §4.7): "← Representantes", os botões de sempre e o conteúdo de hoje (linha do
+ * tempo, mapa, resultado do dia, praças e ganhos). "Início/fim da jornada" continuam: a jornada é do dia.
+ */
 export default function ConsultorDetalhePage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
@@ -38,18 +48,11 @@ export default function ConsultorDetalhePage() {
   const { data: c, isError: consultorErro, error: erroConsultor, refetch: recarregarConsultor } = useConsultor(id);
   const { data: diaDados, isPending, isError: diaErro, error: erroDia, refetch: recarregarDia } = useDiaConsultor(id, dia);
   const atualizar = useUpdateConsultor(id);
-  const resetar = useResetSenhaConsultor(id);
   const sincronizar = useFreelaSyncConsultor(id);
   const [editando, setEditando] = useState(false);
   const [qr, setQr] = useState(false);
   const [senhaAberta, setSenhaAberta] = useState(false);
-  const [senha, setSenha] = useState<string | null>(null);
-
-  const fecharSenha = () => {
-    setSenhaAberta(false);
-    setSenha(null);
-    resetar.reset(); // a senha provisória não fica no cache de mutações
-  };
+  const [ligarDesligar, setLigarDesligar] = useState(false);
 
   const trilhas = useMemo(() => diaDados?.journeys.map((j) => j.points) ?? [], [diaDados]);
 
@@ -57,7 +60,7 @@ export default function ConsultorDetalhePage() {
     if (!consultorErro) return <p className="text-sm text-muted-foreground">Carregando…</p>;
     return (
       <div className="space-y-2">
-        <p className="text-sm text-destructive">{apiErrorMessage(erroConsultor, 'Não foi possível carregar o consultor.')}</p>
+        <p className="text-sm text-destructive">{apiErrorMessage(erroConsultor, 'Não foi possível carregar o representante.')}</p>
         <Button variant="outline" onClick={() => void recarregarConsultor()}>
           Tentar de novo
         </Button>
@@ -67,8 +70,11 @@ export default function ConsultorDetalhePage() {
 
   return (
     <>
-      <h1 className="font-display text-xl font-extrabold">{c.name}</h1>
-      <p className="mt-1 text-xs text-muted-foreground">
+      <Link href={ROTA.representantes} className="inline-flex min-h-11 items-center text-sm text-primary hover:underline md:min-h-0">
+        ← Representantes
+      </Link>
+      <h1 className="mt-1 text-3xl font-semibold">{c.name}</h1>
+      <p className="mt-1 text-sm text-muted-foreground">
         {c.praca_name} · {c.email} · {c.phone} · {c.active ? 'ativo' : 'desativado'}
       </p>
       <p className="mt-1 text-xs">
@@ -84,17 +90,11 @@ export default function ConsultorDetalhePage() {
             <Button variant="outline" onClick={() => setEditando(true)}>
               Editar
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                const msg = c.active ? 'Desativar? O acesso dele para na hora e o código no Freela deixa de vincular cadastros.' : 'Reativar o consultor?';
-                if (window.confirm(msg)) atualizar.mutate({ active: !c.active });
-              }}
-            >
+            <Button variant="outline" onClick={() => setLigarDesligar(true)}>
               {c.active ? 'Desativar' : 'Reativar'}
             </Button>
             <Button variant="outline" onClick={() => setSenhaAberta(true)}>
-              Nova senha provisória
+              Redefinir senha
             </Button>
             {(!c.freela_code || c.freela_sync_error) && (
               <Button variant="outline" onClick={() => sincronizar.mutate()} disabled={sincronizar.isPending}>
@@ -146,54 +146,28 @@ export default function ConsultorDetalhePage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        open={senhaAberta}
-        onOpenChange={(o) => {
-          if (!o && !resetar.isPending && !senha) fecharSenha();
-        }}
-      >
-        <DialogContent
-          className="max-h-[85vh] overflow-y-auto"
-          onInteractOutside={(e) => (senha || resetar.isPending) && e.preventDefault()}
-          onEscapeKeyDown={(e) => (senha || resetar.isPending) && e.preventDefault()}
-        >
-          <DialogHeader>
-            <DialogTitle>Nova senha provisória</DialogTitle>
-          </DialogHeader>
-          {senha ? (
-            <div className="space-y-3">
-              <p className="text-sm">Aparece só agora. O acesso aberto no celular dele caiu; ele entra com esta senha e troca.</p>
-              <p data-testid="senha-provisoria" className="rounded-md bg-secondary p-3 text-center font-mono text-lg">
-                {senha}
-              </p>
-              {features.consultant_profile &&
-                (() => {
-                  const link = linkWhatsappAcesso({ telefone: c.phone, nome: c.name, email: c.email, senha, endereco: `${window.location.origin}/campo/entrar` });
-                  return link ? (
-                    <Button asChild variant="outline" className="h-12 w-full">
-                      <a href={link} target="_blank" rel="noreferrer">
-                        Enviar pelo WhatsApp
-                      </a>
-                    </Button>
-                  ) : null;
-                })()}
-              <Button
-                onClick={fecharSenha}
-                className="w-full"
-              >
-                Fechar
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <p className="text-sm">Gera uma senha nova e derruba o acesso aberto no celular do consultor.</p>
-              <Button onClick={() => resetar.mutate(undefined, { onSuccess: (r) => setSenha(r.temp_password) })} disabled={resetar.isPending} className="w-full">
-                Gerar
-              </Button>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {senhaAberta && <RedefinirSenhaRepresentante c={c} comWhatsapp={features.consultant_profile} onFechar={() => setSenhaAberta(false)} />}
+
+      <AlertDialog open={ligarDesligar} onOpenChange={setLigarDesligar}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {c.active ? 'Desativar' : 'Reativar'} {c.name}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {c.active
+                ? 'O acesso dele para na hora e o código no Freela deixa de vincular cadastros. As visitas e os pagamentos ficam guardados.'
+                : 'Ele volta a entrar no campo e o código no Freela volta a vincular cadastros.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction disabled={atualizar.isPending} onClick={() => atualizar.mutate({ active: !c.active })}>
+              {c.active ? 'Desativar' : 'Reativar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
