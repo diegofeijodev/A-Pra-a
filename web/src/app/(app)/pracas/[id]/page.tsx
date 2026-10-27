@@ -113,20 +113,21 @@ function Detalhe({ praca }: { praca: PracaView }) {
             {cobertura}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary" title="Pelas datas de início e de previsão de fim">
+        {/* No celular, um botão por linha, todos da largura da tela; a partir de `sm`, lado a lado como na Lovable. */}
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+          <Badge variant="secondary" title="Pelas datas de início e de previsão de fim" className="self-start sm:self-auto">
             {ROTULO_SITUACAO_PRACA[situacao]}
           </Badge>
-          <Button variant="outline" onClick={() => setEditar(true)}>
+          <Button variant="outline" className="w-full sm:w-auto" onClick={() => setEditar(true)}>
             <Pencil className="h-4 w-4" aria-hidden /> Editar praça
           </Button>
-          <Button asChild variant="outline">
+          <Button asChild variant="outline" className="w-full sm:w-auto">
             <Link href={`/entrada?praca=${praca.id}`}>
               <FileSpreadsheet className="h-4 w-4" aria-hidden /> Importar planilha
             </Link>
           </Button>
           {operador && (
-            <Button onClick={() => setBuscar(true)}>
+            <Button className="w-full sm:w-auto" onClick={() => setBuscar(true)}>
               <Search className="h-4 w-4" aria-hidden /> Buscar clientes no mapa
             </Button>
           )}
@@ -185,7 +186,7 @@ function ClientesDaPraca({ pracaId, onBuscar }: { pracaId: string; onBuscar?: ()
 
   return (
     <div className="space-y-3">
-      <div className="flex justify-end">
+      <div className="flex sm:justify-end">
         <label htmlFor="praca-busca" className="sr-only">
           Buscar por nome
         </label>
@@ -198,7 +199,7 @@ function ClientesDaPraca({ pracaId, onBuscar }: { pracaId: string; onBuscar?: ()
             setBusca(e.target.value);
           }}
           placeholder="Buscar por nome"
-          className="max-w-xs"
+          className="w-full sm:max-w-xs"
         />
       </div>
       <div className="overflow-hidden rounded-2xl bg-card shadow-card">

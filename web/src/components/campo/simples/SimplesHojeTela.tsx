@@ -118,9 +118,10 @@ export function SimplesHojeTela() {
                 Continuar visita: {aberta.nome}
               </button>
             ) : proxima ? (
-              <ChegueiBotao alvo={{ nome: proxima.name, lead_id: proxima.lead_id }} className="flex-1">
-                Cheguei: tirar a foto
-              </ChegueiBotao>
+              // O item da barra é o invólucro do `ChegueiBotao` (o aviso de GPS mora nele), então o `flex-1` vai aqui.
+              <div className="min-w-0 flex-1">
+                <ChegueiBotao alvo={{ nome: proxima.name, lead_id: proxima.lead_id }}>Cheguei: tirar a foto</ChegueiBotao>
+              </div>
             ) : (
               <button
                 type="button"

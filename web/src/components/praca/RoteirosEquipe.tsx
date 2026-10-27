@@ -86,7 +86,7 @@ function RoteiroCartao({ r, admin }: { r: RouteView; admin: boolean }) {
           const s = porId.get(it.id)!;
           return (
             <li key={it.id} className="flex items-center justify-between gap-2 text-sm">
-              <span className="min-w-0 truncate">
+              <span className="min-w-0 break-words">
                 {i + 1 + feitas.length}. {s.name} {s.kind === 'reserva' && <em className="text-muted-foreground">(reserva)</em>}
                 {it.fixa && <span title="Fixa"> 📌</span>}
               </span>
@@ -117,7 +117,7 @@ function RoteiroCartao({ r, admin }: { r: RouteView; admin: boolean }) {
         })}
         {outras.map((s) => (
           <li key={s.id} className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
-            <span className="truncate">{s.name}</span>
+            <span className="min-w-0 break-words">{s.name}</span>
             <span>
               {ICONE[s.status]}
               {s.status === 'pulada' ? `: ${rotuloMotivo(s.skip_reason)}${s.skip_note ? ` — ${s.skip_note}` : ''}` : ''}

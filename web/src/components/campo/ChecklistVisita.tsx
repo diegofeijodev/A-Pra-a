@@ -44,14 +44,16 @@ export function ChecklistVisita({
         <ol className="space-y-2 border-t border-border p-2">
           {checklist.items.map((e, i) => (
             <li key={e.id} className="space-y-2 rounded-lg border border-border p-2">
-              <div className="flex items-center gap-2">
+              {/* `flex-wrap` + base de 12rem: no celular, quando o texto e os botões não cabem numa linha (etapa do voucher), os botões
+                  descem para a linha de baixo, à direita, em vez de espremer o texto e encostar "Anotar" na borda. */}
+              <div className="flex flex-wrap items-center gap-x-2">
                 <button
                   type="button"
                   role="checkbox"
                   aria-checked={e.done}
                   disabled={desabilitado}
                   onClick={() => onMarcas(marcarEtapa(checklist, e.id, { done: !e.done }))}
-                  className="flex min-h-14 flex-1 items-center gap-3 px-2 text-left text-sm disabled:opacity-50"
+                  className="flex min-h-14 min-w-0 flex-1 basis-48 items-center gap-3 px-2 text-left text-sm disabled:opacity-50"
                 >
                   <span
                     aria-hidden
@@ -61,10 +63,11 @@ export function ChecklistVisita({
                   >
                     {e.done ? '✓' : ''}
                   </span>
-                  <span className={e.done ? 'text-muted-foreground line-through' : ''}>
+                  <span className={`min-w-0 break-words ${e.done ? 'text-muted-foreground line-through' : ''}`}>
                     {i + 1}. {e.text}
                   </span>
                 </button>
+                <div className="ml-auto flex shrink-0 items-center gap-1 pr-1">
                 {aoPedirCupom && e.id === 'oferecer_cupom' && (
                   <button
                     type="button"
@@ -85,6 +88,7 @@ export function ChecklistVisita({
                 >
                   Anotar
                 </button>
+                </div>
               </div>
               {(anotando === e.id || !!e.note) && (
                 <Input
