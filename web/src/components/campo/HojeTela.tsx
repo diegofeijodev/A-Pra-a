@@ -5,15 +5,9 @@ import { toast } from 'sonner';
 import { AvisoGps } from '@/components/campo/AvisoGps';
 import { CampoTopo } from '@/components/campo/CampoTopo';
 import { FaixaFila } from '@/components/campo/FaixaFila';
-import { CadastrosConfirmadosCard } from '@/components/campo/CadastrosConfirmadosCard';
-import { GanhosCard } from '@/components/campo/GanhosCard';
 import { IntervaloFaixa } from '@/components/campo/IntervaloCampo';
 import { useIntervalo } from '@/modules/campo/application/use-intervalo';
-import { PixCard } from '@/components/campo/PixCard';
 import { MetaCard } from '@/components/campo/MetaCard';
-import { RetornosCampo } from '@/components/campo/RetornosCampo';
-import { CuponsCampo } from '@/components/campo/CuponsCampo';
-import { ResumoDiaAtalhos } from '@/components/campo/ResumoDiaTela';
 import { RoteiroCard } from '@/components/campo/RoteiroCard';
 import { PracaDoDia, PracaDoRoteiro } from '@/components/campo/PracaDoDia';
 import { mostraEscolhaDePraca, nomeDaPracaAtiva, pracaDoCorpo, pracaMarcada } from '@/modules/campo/domain/praca-do-dia';
@@ -81,16 +75,13 @@ export function HojeTela() {
   const nomeMarcada = me.data?.pracas?.find((x) => x.id === marcada)?.name ?? null;
 
   return (
-    <main className="space-y-5">
+    <main className="space-y-5 pb-32">
       <CampoTopo titulo="Hoje" />
       <FaixaFila />
       {gps && <AvisoGps motivo={gps} onFechar={() => setGps(null)} />}
 
       {!carregando && !rot.carregando && !(rot.habilitado && rot.route) && <MetaCard />}
-      {!carregando && <CadastrosConfirmadosCard />}
-      {!carregando && <GanhosCard />}
-      {!carregando && <PixCard />}
-      {!carregando && <ResumoDiaAtalhos />}
+      {/* Ganhos, Pix, cadastros confirmados e o resultado do dia moram na aba Carteira; retornos e vouchers, em Clientes (E4). */}
 
       {carregando ? (
         <p className="text-sm text-muted-foreground">Carregando…</p>
@@ -210,11 +201,8 @@ export function HojeTela() {
         </>
       )}
 
-      {!carregando && <RetornosCampo />}
-      {/* Lote C (§38): os cupons pedidos, só com a flag. */}
-      {!carregando && <CuponsCampo />}
-
-      <div className="fixed inset-x-0 bottom-0 border-t border-border bg-background/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
+      {/* Barra de ação (nossa, UX §2.5): fixa logo acima das 5 abas da casca. */}
+      <div className="fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 border-t border-border bg-card/95 px-4 py-3 backdrop-blur">
         <div className="mx-auto flex max-w-md gap-3">
           <button type="button" onClick={() => irPara({ v: 'qr' })} className="flex h-14 w-28 items-center justify-center rounded-md border border-border text-sm font-bold">
             QR code

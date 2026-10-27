@@ -35,29 +35,39 @@ export type AbaRepresentante = 'hoje' | 'mapa' | 'clientes' | 'desempenho' | 'ca
 
 /**
  * Para onde vai um link da Lovable que é do representante. O consultor mora em `/campo` (as telas são visões `?v=`, por causa
- * da fila offline e do atalho instalado, arquitetura §3.4): na E2 tudo leva a `/campo`; a E4 dá a cada aba a sua visão.
+ * da fila offline e do atalho instalado, arquitetura §3.4): cada aba é uma visão da rota única. Os valores são os de
+ * `urlDaTela` (`modules/campo/application/use-tela.ts`; o teste confere que batem).
  */
 const DESTINO_REPRESENTANTE: Record<AbaRepresentante, string> = {
   hoje: '/campo',
-  mapa: '/campo',
-  clientes: '/campo',
-  desempenho: '/campo',
-  carteira: '/campo',
+  mapa: '/campo?v=mapa',
+  clientes: '/campo?v=clientes',
+  desempenho: '/campo?v=desempenho',
+  carteira: '/campo?v=carteira',
 };
 export const destinoDoRepresentante = (aba: AbaRepresentante = 'hoje'): string => DESTINO_REPRESENTANTE[aba];
 
-/** Endereços da Lovable que servem às duas pessoas (o mesmo link na equipe e no representante, arquitetura §3.3). */
+/** Só o caminho de um endereço (`/consultores/clientes?modo=mapa` → `/consultores/clientes`), sem a barra do fim. */
+const caminho = (endereco: string): string => endereco.split(/[?#]/)[0]!.replace(/\/+$/, '') || '/';
+
+/**
+ * Endereços que servem às duas pessoas (o mesmo link na equipe e no representante, arquitetura §3.3): os da Lovable (`/inicio`,
+ * `/mapa`…, que a E7 cria) e os de HOJE da equipe para as mesmas telas (Dashboard, Clientes, Mapa por situação, Pagamentos).
+ */
 const ABA_DO_ENDERECO: Record<string, AbaRepresentante> = {
   '/inicio': 'hoje',
   '/mapa': 'mapa',
   '/clientes': 'clientes',
   '/financeiro': 'carteira',
   '/desempenho': 'desempenho',
+  [caminho(ROTA.inicio)]: 'hoje',
+  [caminho(ROTA.clientes)]: 'clientes',
+  [caminho(ROTA.financeiro)]: 'carteira',
+  '/consultores/mapa': 'mapa',
 };
 
 /**
  * O representante (só `campoSession`) que abre um endereço da equipe cai na casca DELE, na visão equivalente — nunca na entrada
  * (o `(app)/layout.tsx` usa isto). Qualquer outro endereço vai para o "Hoje".
  */
-export const destinoDoRepresentantePorEndereco = (pathname: string): string =>
-  destinoDoRepresentante(ABA_DO_ENDERECO[pathname.replace(/\/+$/, '') || '/'] ?? 'hoje');
+export const destinoDoRepresentantePorEndereco = (pathname: string): string => destinoDoRepresentante(ABA_DO_ENDERECO[caminho(pathname)] ?? 'hoje');

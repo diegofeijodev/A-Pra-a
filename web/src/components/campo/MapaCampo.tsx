@@ -44,7 +44,7 @@ export function MapaCampo({ paradas, escuro }: { paradas: StopView[]; escuro: bo
     );
   }
   if (!m) return <div aria-busy="true" className="h-[55vh] animate-pulse rounded-lg bg-muted" />;
-  if (m.total === 0) return <p className="card-surface p-4 text-sm">Nenhum estabelecimento seu com localização ainda. Eles aparecem aqui quando entram no seu roteiro.</p>;
+  if (m.total === 0) return <p className="card-surface p-4 text-sm">Nenhum cliente seu com localização ainda. Eles aparecem aqui quando entram no seu roteiro.</p>;
 
   return (
     <div className="space-y-3">

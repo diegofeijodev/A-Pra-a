@@ -89,3 +89,61 @@ export function linhasDoBalao(d: DetalhePino): string[] {
     ...(d.phone ? [`Telefone ${d.phone.masked} · ${d.phone.kind === 'whatsapp' ? 'celular (WhatsApp)' : 'fixo'}`] : []),
   ];
 }
+
+// ── Aba "Clientes" do representante > Visitados (contrato §34.7, redesenho E4) ──
+
+/** Item da Lista (§34.6/§34.7): telefone só mascarado, sem e-mail. */
+export const itemListaCampoSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  address: z.string(),
+  city: z.string(),
+  praca_id: z.string(),
+  code: z.string(),
+  label: z.string(),
+  color: z.string(),
+  has_location: z.boolean(),
+  phone: z.object({ masked: z.string(), kind: z.enum(['whatsapp', 'fixo']) }).nullable(),
+  last_visit: z.object({ day: z.string(), consultant_name: z.string() }).nullable(),
+});
+/** `GET /v1/campo/map/list`: a resposta do §34.6 sem `pracas` (a praça vem do token). */
+export const listaCampoSchema = z.object({
+  counts: z.record(z.string(), z.number()),
+  total: z.number(),
+  without_location: z.number(),
+  items: z.array(itemListaCampoSchema),
+  next_cursor: z.string().nullable(),
+  conta: z.string(),
+});
+export type ListaCampo = z.infer<typeof listaCampoSchema>;
+
+/**
+ * As situações da legenda (contrato §34.3), na ordem da legenda do mapa, com o símbolo (cor nunca sozinha). Os rótulos são os da
+ * API de hoje: a troca para os da Lovable ("Cadastrado", "Não cadastrado"…) é uma etapa própria, junto do contrato.
+ */
+export const SITUACOES_LISTA: readonly { code: string; label: string; color: string; shape: Forma }[] = [
+  { code: 'a_visitar', label: 'A visitar', color: '#2563eb', shape: 'circulo' },
+  { code: 'cadastrado', label: 'Cadastrou', color: '#16a34a', shape: 'quadrado' },
+  { code: 'ja_usa', label: 'Já usa o Freela', color: '#f97316', shape: 'losango' },
+  { code: 'retornar', label: 'Quer retorno', color: '#9333ea', shape: 'triangulo' },
+  { code: 'nao_contrata', label: 'Não contrata freelas', color: '#ca8a04', shape: 'hexagono' },
+  { code: 'nao_cadastrado', label: 'Sem interesse', color: '#dc2626', shape: 'xis' },
+  { code: 'fechado', label: 'Estabelecimento fechado', color: '#9A9A92', shape: 'traco' },
+];
+
+/** Escolha ÚNICA das pílulas de "Visitados" (Lovable `clientes.tsx`): `'todos'` ou o código de uma situação. */
+export type EscolhaVisitados = string;
+
+/** "Todos" = todas as situações menos "A visitar" (a lista é de quem ele já visitou, como na Lovable). */
+export const codigosDaEscolha = (e: EscolhaVisitados): string[] =>
+  e === 'todos' ? SITUACOES_LISTA.map((s) => s.code).filter((c) => c !== 'a_visitar') : [e];
+
+/** As pílulas com o número de cada uma (de `counts`, o filtro inteiro antes da escolha); "Todos" soma as que entram nele. */
+export function pilulasVisitados(counts: Record<string, number> | undefined): { escolha: EscolhaVisitados; rotulo: string; n: number | null; color?: string; shape?: Forma }[] {
+  const n = (c: string) => (counts ? (counts[c] ?? 0) : null);
+  const todos = counts ? codigosDaEscolha('todos').reduce((a, c) => a + (counts[c] ?? 0), 0) : null;
+  return [
+    { escolha: 'todos', rotulo: 'Todos', n: todos },
+    ...SITUACOES_LISTA.filter((s) => s.code !== 'a_visitar').map((s) => ({ escolha: s.code, rotulo: s.label, n: n(s.code), color: s.color, shape: s.shape })),
+  ];
+}

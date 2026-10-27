@@ -56,8 +56,9 @@ export function ResumoDiaTela({ dia }: { dia?: string }) {
           <ResumoDiaConteudo r={q.data} />
         </section>
       )}
-      <div className="fixed inset-x-0 bottom-0 border-t border-border bg-background/95 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur">
-        <div className="mx-auto max-w-md px-4 pt-3">
+      {/* Acima das 5 abas da casca (o resultado do dia acende "Hoje", redesenho E4). */}
+      <div className="fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 border-t border-border bg-card/95 py-3 backdrop-blur">
+        <div className="mx-auto max-w-md px-4">
           <Button onClick={fechar} className="h-14 w-full text-base">
             Fechar
           </Button>

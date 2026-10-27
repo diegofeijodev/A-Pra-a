@@ -1,6 +1,7 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
+import type { AbaRepresentante } from '@/modules/acesso/domain/enderecos';
 
 /**
  * As telas do consultor são VISÕES da rota única `/campo`, não rotas: navegação
@@ -22,7 +23,21 @@ export type Tela =
   /** Pedir o cupom da 1ª contratação da visita `ref` (lote C, contrato §38.3). */
   | { v: 'pedir-cupom'; ref: string }
   /** "Próximos dias": as rotas publicadas para ele (lote D, contrato §39.7); precisa de sinal. */
-  | { v: 'proximos' };
+  | { v: 'proximos' }
+  // Abas da casca do representante (redesenho E4, arquitetura §3.6): mesma rota, só a visão muda — funcionam sem sinal.
+  /** Mapa dos clientes dele (contrato §34.4); precisa de sinal. */
+  | { v: 'mapa' }
+  /** Retornos, vouchers e a lista dos visitados (contrato §34.7). */
+  | { v: 'clientes' }
+  /** "Em construção" + atalho para o resultado do dia (decisão D5). */
+  | { v: 'desempenho' }
+  /** Ganhos, Pix e cadastros confirmados (saíram da Hoje). */
+  | { v: 'carteira' };
+
+/** As visões sem parâmetro além do `v` (as abas novas e as que já existiam). */
+const SO_V = ['qr', 'roteiro', 'proximos', 'mapa', 'clientes', 'desempenho', 'carteira'] as const;
+type SoV = (typeof SO_V)[number];
+const ehSoV = (v: string | null): v is SoV => (SO_V as readonly (string | null)[]).includes(v);
 
 export function telaDaUrl(params: URLSearchParams): Tela {
   const v = params.get('v');
@@ -30,13 +45,11 @@ export function telaDaUrl(params: URLSearchParams): Tela {
     const parada = params.get('parada');
     return parada ? { v: 'nova', parada } : { v: 'nova' };
   }
-  if (v === 'qr') return { v: 'qr' };
+  if (ehSoV(v)) return { v };
   if (v === 'cadastro') {
     const ref = params.get('ref');
     if (ref) return { v: 'cadastro', ref };
   }
-  if (v === 'roteiro') return { v: 'roteiro' };
-  if (v === 'proximos') return { v: 'proximos' };
   if (v === 'pedir-cupom') {
     const ref = params.get('ref');
     if (ref) return { v: 'pedir-cupom', ref };
@@ -60,16 +73,18 @@ export function urlDaTela(t: Tela): string {
   switch (t.v) {
     case 'nova':
       return t.parada ? `/campo?v=nova&parada=${encodeURIComponent(t.parada)}` : '/campo?v=nova';
+    case 'qr':
     case 'roteiro':
-      return '/campo?v=roteiro';
     case 'proximos':
-      return '/campo?v=proximos';
+    case 'mapa':
+    case 'clientes':
+    case 'desempenho':
+    case 'carteira':
+      return `/campo?v=${t.v}`;
     case 'resumo':
       return t.dia ? `/campo?v=resumo&dia=${encodeURIComponent(t.dia)}` : '/campo?v=resumo';
     case 'parada':
       return `/campo?v=parada&id=${encodeURIComponent(t.id)}`;
-    case 'qr':
-      return '/campo?v=qr';
     case 'cadastro':
       return `/campo?v=cadastro&ref=${encodeURIComponent(t.ref)}`;
     case 'pedir-cupom':
@@ -80,6 +95,38 @@ export function urlDaTela(t: Tela): string {
       return '/campo';
   }
 }
+
+/**
+ * Qual das 5 abas acende em cada visão (arquitetura §3.6). `null` esconde a barra nas telas de fluxo, que têm o próprio botão
+ * fixo embaixo (a visita, a chegada, o cadastro, o pedido do voucher e a parada). Roteiro, resultado do dia, próximos dias e
+ * QR saem da Hoje e acendem "Hoje".
+ */
+export function abaDaTela(t: Tela): AbaRepresentante | null {
+  switch (t.v) {
+    case 'mapa':
+    case 'clientes':
+    case 'desempenho':
+    case 'carteira':
+      return t.v;
+    case 'nova':
+    case 'visita':
+    case 'cadastro':
+    case 'pedir-cupom':
+    case 'parada':
+      return null;
+    default:
+      return 'hoje';
+  }
+}
+
+/** As 5 abas da Lovable (`repNav`), na ordem dela; cada uma abre a sua visão por `irPara` (nunca `Link`: funciona sem sinal). */
+export const ABAS_REPRESENTANTE: readonly { aba: AbaRepresentante; rotulo: string; tela: Tela }[] = [
+  { aba: 'hoje', rotulo: 'Hoje', tela: { v: 'hoje' } },
+  { aba: 'mapa', rotulo: 'Mapa', tela: { v: 'mapa' } },
+  { aba: 'clientes', rotulo: 'Clientes', tela: { v: 'clientes' } },
+  { aba: 'desempenho', rotulo: 'Desempenho', tela: { v: 'desempenho' } },
+  { aba: 'carteira', rotulo: 'Carteira', tela: { v: 'carteira' } },
+];
 
 export function irPara(t: Tela, modo: 'push' | 'replace' = 'push'): void {
   if (modo === 'replace') window.history.replaceState(null, '', urlDaTela(t));

@@ -768,6 +768,17 @@ try {
   await cel.waitForURL(/\/campo$/, { timeout: 20000 });
   await espera(1500);
   check('depois da troca, a tela de hoje do consultor', (await corpo(cel)).includes(CAMPO_NOME.toLowerCase()));
+  // Casca do representante (redesenho E4, UX §2.5): faixa azul com "Sair" e as 5 abas da Lovable embaixo, "Hoje" acesa.
+  const secoes = cel.getByRole('navigation', { name: 'Seções' });
+  const abasRep = secoes.getByRole('button');
+  check(
+    'E4: as 5 abas do representante na Hoje (Hoje, Mapa, Clientes, Desempenho, Carteira)',
+    JSON.stringify((await abasRep.allInnerTexts()).map((t) => t.trim())) === JSON.stringify(['Hoje', 'Mapa', 'Clientes', 'Desempenho', 'Carteira']),
+  );
+  check('E4: "Hoje" é a aba acesa (aria-current)', (await secoes.getByRole('button', { name: 'Hoje', exact: true }).getAttribute('aria-current')) === 'page');
+  const alturasAbas = await abasRep.evaluateAll((bs) => bs.map((b) => b.getBoundingClientRect().height));
+  check('E4: as 5 abas com alvo de toque ≥ 44 px', alturasAbas.length === 5 && alturasAbas.every((h) => h >= 44), JSON.stringify(alturasAbas));
+  check('E4: "Sair" na faixa do topo (ícone com nome)', (await cel.getByRole('button', { name: 'Sair', exact: true }).count()) === 1);
   const chaves = await cel.evaluate(() => ({
     campo: JSON.parse(localStorage.getItem('campoSession') ?? 'null'),
     equipe: localStorage.getItem('authUser'),
@@ -937,6 +948,40 @@ console.log('-- Campo: GPS negado --');
   check('a visita B fechou com as próprias respostas (Beto Segundo / não cadastrou)', !!fechadaB?.checkout_at && fechadaB.answers.interlocutor_name === 'Beto Segundo' && fechadaB.answers.freela_status === 'nao_cadastrou');
   check('e a visita A seguiu intacta (Maria Check)', (await diaCampo()).visits.find((v) => v.lead_id === leadCampoId)?.answers.interlocutor_name === 'Maria Check');
 
+  console.log('-- Campo: abas do representante (Mapa, Clientes, Desempenho) --');
+  {
+    const meC = await cel.evaluate(async (a) => {
+      const t = JSON.parse(localStorage.getItem('campoSession') ?? 'null')?.access_token;
+      return (await fetch(`${a}/v1/campo/me`, { headers: { Authorization: `Bearer ${t}` } })).json();
+    }, API);
+    await secoes.getByRole('button', { name: 'Mapa', exact: true }).click();
+    await cel.getByRole('heading', { name: 'Mapa', exact: true }).waitFor({ timeout: 15000 });
+    check('E4: aba Mapa é a visão ?v=mapa da rota única', new URL(cel.url()).pathname === '/campo' && new URL(cel.url()).search === '?v=mapa');
+    if (meC.features?.map_pins) {
+      await cel.locator('.leaflet-container').or(cel.getByText('Nenhum cliente seu com localização ainda')).first().waitFor({ timeout: 20000 });
+      check('E4: aba Mapa mostra os clientes dele (pinos ou o aviso)', true);
+    } else {
+      check('E4: sem FIELD_MAP_PINS_ENABLED, a aba Mapa diz que não está ligado (sem chamar a rota)', (await corpo(cel)).includes('o mapa ainda não está ligado neste servidor'));
+    }
+    await secoes.getByRole('button', { name: 'Clientes', exact: true }).click();
+    await cel.getByRole('heading', { name: 'Clientes', exact: true }).waitFor({ timeout: 15000 });
+    await cel.getByText(/Retornos de hoje e atrasados|Nenhum retorno para hoje nem atrasado/).first().waitFor({ timeout: 20000 });
+    check('E4: aba Clientes (?v=clientes) abre nos retornos (os que saíram da Hoje)', new URL(cel.url()).search === '?v=clientes');
+    const visitados = cel.getByRole('button', { name: 'Visitados', exact: true });
+    check('E4: segmento "Visitados" só com o mapa ligado', ((await visitados.count()) === 1) === (meC.features?.map_pins === true));
+    if (meC.features?.map_pins) {
+      await visitados.click();
+      await cel.getByTestId('lista-campo').getByText(CAMPO_LUGAR).first().waitFor({ timeout: 20000 });
+      check('E4: Clientes > Visitados lista o lugar que ele visitou (GET /v1/campo/map/list)', (await cel.getByTestId('lista-campo').innerText()).includes(CAMPO_LUGAR));
+    }
+    await secoes.getByRole('button', { name: 'Desempenho', exact: true }).click();
+    await cel.getByText('Em construção').waitFor({ timeout: 15000 });
+    check('E4: aba Desempenho (?v=desempenho) "Em construção" (D5)', new URL(cel.url()).search === '?v=desempenho');
+    await secoes.getByRole('button', { name: 'Hoje', exact: true }).click();
+    await cel.getByRole('button', { name: 'Encerrar jornada' }).waitFor({ timeout: 15000 });
+    check('E4: aba Hoje volta para /campo', new URL(cel.url()).search === '');
+  }
+
   console.log('-- Campo: encerrar sem sinal (fila offline) --');
   offline = true;
   await celularCtx.setOffline(true);
@@ -947,6 +992,12 @@ console.log('-- Campo: GPS negado --');
   await cel.getByRole('button', { name: 'Voltar' }).click();
   await cel.getByRole('button', { name: 'Encerrar jornada' }).waitFor({ timeout: 5000 });
   check('sem sinal: voltar à tela de hoje (/campo)', new URL(cel.url()).pathname === '/campo' && new URL(cel.url()).search === '');
+  // E4: as abas são visões da mesma rota — trocar sem rede não busca nada no servidor.
+  await secoes.getByRole('button', { name: 'Carteira', exact: true }).click();
+  await cel.getByRole('heading', { name: 'Carteira', exact: true }).waitFor({ timeout: 5000 });
+  check('sem sinal: trocar para a Carteira não navega (?v=carteira)', new URL(cel.url()).search === '?v=carteira');
+  await secoes.getByRole('button', { name: 'Hoje', exact: true }).click();
+  await cel.getByRole('button', { name: 'Encerrar jornada' }).waitFor({ timeout: 5000 });
   cel.once('dialog', (d) => void d.accept());
   await cel.getByRole('button', { name: 'Encerrar jornada' }).click();
   await cel.getByText('1 envio pendente').waitFor({ timeout: 15000 });
@@ -1360,7 +1411,7 @@ try {
     check('simples: "Lista | Mapa" nas paradas só com o mapa ligado', ((await cs.getByRole('tab', { name: 'Mapa', exact: true }).count()) === 1) === (meS.features?.map_pins === true));
     if (meS.features?.map_pins) {
       await cs.getByRole('tab', { name: 'Mapa', exact: true }).click();
-      await cs.locator('.leaflet-container').or(cs.getByText('Nenhum estabelecimento seu com localização ainda')).first().waitFor({ timeout: 20000 });
+      await cs.locator('.leaflet-container').or(cs.getByText('Nenhum cliente seu com localização ainda')).first().waitFor({ timeout: 20000 });
       check('simples: o mapa do consultor abre no celular (pinos dele ou o aviso)', true);
     }
     await cs.getByRole('button', { name: 'Voltar', exact: true }).click();
@@ -1612,7 +1663,8 @@ try {
       }, API);
       check('L12: a jornada no servidor é da praça escolhida', hojeM.journey?.praca_id === pracaB);
       await cm.waitForFunction((n) => document.body.innerText.includes(`· ${n}`), NOME_B, { timeout: 20000 });
-      check('L12: o cabeçalho mostra a praça do dia', (await cm.locator('header').first().innerText()).includes(NOME_B));
+      // O 1º `header` da página é a faixa azul da casca (E4); o nome e a praça ficam no topo da tela, dentro do `main`.
+      check('L12: o cabeçalho mostra a praça do dia', (await cm.locator('main header').first().innerText()).includes(NOME_B));
       cm.once('dialog', (d) => void d.accept());
       await cm.getByRole('button', { name: /Encerrar (o dia|jornada)/ }).click();
       await cm.waitForFunction(() => !document.body.innerText.toLowerCase().includes('pendente'), null, { timeout: 30000 });

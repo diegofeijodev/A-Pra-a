@@ -98,12 +98,29 @@ describe('menu da equipe (casca da Lovable)', () => {
     const f = featuresMenuSchema.parse({ dashboard: true });
     expect([f.commercial, f.routes, f.earnings, f.payouts, f.declared_signups]).toEqual([false, false, false, false, false]);
     expect(destinoDoRepresentante()).toBe('/campo');
-    expect(destinoDoRepresentante('carteira')).toBe('/campo');
+    expect(destinoDoRepresentante('carteira')).toBe('/campo?v=carteira');
   });
-  it('representante que abre endereço da equipe cai na casca dele (E3: tudo → /campo), nunca na entrada', () => {
-    for (const p of ['/inicio', '/mapa', '/clientes', '/financeiro', '/desempenho', '/hoje', '/consultores/painel', '/praca', '/', '/mapa/']) {
-      expect(destinoDoRepresentantePorEndereco(p)).toBe('/campo');
-    }
+  it('representante que abre endereço da equipe cai na casca dele, na visão equivalente (arquitetura §3.3), nunca na entrada', () => {
+    const tabela: [string, string][] = [
+      ['/inicio', '/campo'],
+      ['/mapa', '/campo?v=mapa'],
+      ['/clientes', '/campo?v=clientes'],
+      ['/financeiro', '/campo?v=carteira'],
+      ['/desempenho', '/campo?v=desempenho'],
+      ['/mapa/', '/campo?v=mapa'],
+      // Os endereços de HOJE das mesmas telas (até a E7).
+      ['/consultores/painel', '/campo'],
+      ['/consultores/clientes', '/campo?v=clientes'],
+      ['/consultores/mapa', '/campo?v=mapa'],
+      ['/consultores/pagamentos', '/campo?v=carteira'],
+      // Qualquer outro → Hoje.
+      ['/hoje', '/campo'],
+      ['/praca', '/campo'],
+      ['/consultores', '/campo'],
+      ['/mapa/calor', '/campo'],
+      ['/', '/campo'],
+    ];
+    for (const [p, destino] of tabela) expect([p, destinoDoRepresentantePorEndereco(p)]).toEqual([p, destino]);
     // A entrada e a troca obrigatória do consultor ficam DENTRO de `/campo` (escopo do atalho instalado, arquitetura §3.4).
     expect(Object.values(ROTA_CAMPO).every((r) => r.startsWith('/campo'))).toBe(true);
     expect(ROTA.trocarSenha).toBe('/trocar-senha');

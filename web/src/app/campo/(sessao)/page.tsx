@@ -2,7 +2,11 @@
 
 import { Suspense } from 'react';
 import { CadastroEmpresaTela } from '@/components/campo/CadastroEmpresaTela';
+import { CarteiraTela } from '@/components/campo/CarteiraTela';
+import { ClientesRepresentanteTela } from '@/components/campo/ClientesRepresentanteTela';
+import { DesempenhoTela } from '@/components/campo/DesempenhoTela';
 import { HojeTela } from '@/components/campo/HojeTela';
+import { MapaRepresentanteTela } from '@/components/campo/MapaRepresentanteTela';
 import { NovaVisitaTela } from '@/components/campo/NovaVisitaTela';
 import { PedirCupomTela } from '@/components/campo/PedirCupomTela';
 import { ParadaTela } from '@/components/campo/ParadaTela';
@@ -20,8 +24,9 @@ import { useFluxo } from '@/modules/campo/application/use-fluxo';
 import { useTela } from '@/modules/campo/application/use-tela';
 
 /**
- * Roteador de visões de `/campo` (`?v=nova|visita&ref=|cadastro&ref=|qr|roteiro|parada&id=`). Nenhuma troca de
- * tela é navegação do Next: sem sinal, a rota não buscaria nada no servidor.
+ * Roteador de visões de `/campo` (`?v=nova|visita&ref=|cadastro&ref=|qr|roteiro|parada&id=|…`, e as 4 abas da casca:
+ * `mapa|clientes|desempenho|carteira`). Nenhuma troca de tela é navegação do Next: sem sinal, a rota não buscaria nada no
+ * servidor.
  */
 function Visao() {
   const tela = useTela();
@@ -51,6 +56,15 @@ function Visao() {
       return <PedirCupomTela key={tela.ref} refVisita={tela.ref} />;
     case 'proximos':
       return <ProximosDiasTela />;
+    // Abas da casca do representante (redesenho E4): iguais nos dois fluxos.
+    case 'mapa':
+      return <MapaRepresentanteTela />;
+    case 'clientes':
+      return <ClientesRepresentanteTela />;
+    case 'desempenho':
+      return <DesempenhoTela />;
+    case 'carteira':
+      return <CarteiraTela />;
     default:
       return simples ? <SimplesHojeTela /> : <HojeTela />;
   }

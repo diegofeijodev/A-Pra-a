@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alternarCodigo, juntarPaginas, linhasDoBalao, pinosSchema, pinosVisiveis, SIMBOLO, type PinosPagina } from '../pinos';
+import { alternarCodigo, codigosDaEscolha, juntarPaginas, linhasDoBalao, listaCampoSchema, pilulasVisitados, pinosSchema, pinosVisiveis, SIMBOLO, SITUACOES_LISTA, type PinosPagina } from '../pinos';
 
 const pagina = (pins: PinosPagina['pins'], next: string | null): PinosPagina =>
   pinosSchema.parse({
@@ -48,5 +48,35 @@ describe('mapa por situação (UX §3.3)', () => {
     expect(l[0]).toBe('<b>Bar</b>');
     expect(l).toContain('Telefone (31) 9****-4321 · celular (WhatsApp)');
     expect(l[2]).toBe('Última visita qui 22/10 · Ana (Quer retorno)');
+  });
+});
+
+describe('aba "Clientes" do representante > Visitados (contrato §34.7)', () => {
+  it('"Todos" = todas as situações menos "A visitar"; uma pílula = só a dela', () => {
+    expect(codigosDaEscolha('todos')).toEqual(['cadastrado', 'ja_usa', 'retornar', 'nao_contrata', 'nao_cadastrado', 'fechado']);
+    expect(codigosDaEscolha('fechado')).toEqual(['fechado']);
+  });
+
+  it('pílulas: "Todos" primeiro e soma as que entram nele (sem "A visitar"); sem resposta ainda, sem número', () => {
+    const p = pilulasVisitados({ a_visitar: 9, cadastrado: 2, nao_cadastrado: 1 });
+    expect(p.map((x) => x.rotulo)).toEqual(['Todos', 'Cadastrou', 'Já usa o Freela', 'Quer retorno', 'Não contrata freelas', 'Sem interesse', 'Estabelecimento fechado']);
+    expect(p[0]).toMatchObject({ escolha: 'todos', n: 3 });
+    expect(p.find((x) => x.escolha === 'ja_usa')?.n).toBe(0);
+    expect(pilulasVisitados(undefined).every((x) => x.n === null)).toBe(true);
+    // Cor nunca sozinha: toda situação tem símbolo.
+    expect(SITUACOES_LISTA.every((s) => !!SIMBOLO[s.shape])).toBe(true);
+  });
+
+  it('resposta sem `pracas` e telefone só mascarado', () => {
+    const r = listaCampoSchema.parse({
+      counts: { cadastrado: 1 },
+      total: 1,
+      without_location: 0,
+      items: [{ id: 'l', name: 'Bar', address: 'Rua A', city: 'BH', praca_id: 'p', code: 'cadastrado', label: 'Cadastrou', color: '#16a34a', has_location: true, phone: { masked: '(31) 9****-4321', kind: 'whatsapp' }, last_visit: null }],
+      next_cursor: null,
+      conta: 'x',
+    });
+    expect(r.items[0]!.phone?.masked).toContain('****');
+    expect('pracas' in r).toBe(false);
   });
 });

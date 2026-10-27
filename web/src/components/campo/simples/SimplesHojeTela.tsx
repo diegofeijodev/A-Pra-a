@@ -3,16 +3,10 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { AvisoGps } from '@/components/campo/AvisoGps';
-import { CadastrosConfirmadosCard } from '@/components/campo/CadastrosConfirmadosCard';
 import { CampoTopo } from '@/components/campo/CampoTopo';
 import { FaixaFila } from '@/components/campo/FaixaFila';
-import { GanhosCard } from '@/components/campo/GanhosCard';
 import { IntervaloFaixa } from '@/components/campo/IntervaloCampo';
 import { MetaCard } from '@/components/campo/MetaCard';
-import { PixCard } from '@/components/campo/PixCard';
-import { RetornosCampo } from '@/components/campo/RetornosCampo';
-import { CuponsCampo } from '@/components/campo/CuponsCampo';
-import { ResumoDiaAtalhos } from '@/components/campo/ResumoDiaTela';
 import { RoteiroCard } from '@/components/campo/RoteiroCard';
 import { ChegueiBotao } from '@/components/campo/simples/ChegueiBotao';
 import { PracaDoDia, PracaDoRoteiro } from '@/components/campo/PracaDoDia';
@@ -33,12 +27,10 @@ import { ErroGps, lerPosicao } from '@/modules/campo/infrastructure/gps';
 import { useRoteiro } from '@/modules/rotas/application/use-roteiro';
 import { proximaParada } from '@/modules/rotas/domain/rota-local';
 
-type Aba = 'hoje' | 'retornos' | 'ganhos';
-const ABAS: [Aba, string][] = [['hoje', 'Hoje'], ['retornos', 'Retornos'], ['ganhos', 'Ganhos']];
-
 /**
- * Visão `hoje` do fluxo SIMPLES (contrato §31, UX §2.2 S1). Roteiro + meta no alto; "Cheguei" fixo no rodapé, sempre
- * à vista, abrindo a câmera direto; Ganhos, Pix, cadastros confirmados e retornos saem para as abas (nada é apagado).
+ * Visão `hoje` do fluxo SIMPLES (contrato §31, UX §2.2 S1). Roteiro + meta no alto; "Cheguei" fixo logo acima das abas, sempre
+ * à vista, abrindo a câmera direto. Ganhos, Pix e cadastros confirmados moram na aba Carteira; retornos e vouchers, em Clientes
+ * (casca do representante, redesenho E4 — nada é apagado).
  */
 export function SimplesHojeTela() {
   const consultantId = useCampoSession((s) => s.session?.consultant.id ?? '');
@@ -49,7 +41,6 @@ export function SimplesHojeTela() {
   const rot = useRoteiro();
   const me = useCampoMe();
   const resumoLigado = me.data?.features?.day_summary === true;
-  const [aba, setAba] = useState<Aba>('hoje');
   const [gps, setGps] = useState<MotivoGps | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const intervalo = useIntervalo();
@@ -94,7 +85,7 @@ export function SimplesHojeTela() {
   const dataHoje = new Date().toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' });
 
   return (
-    <main data-sol={sol} className="space-y-4 pb-52">
+    <main data-sol={sol} className="space-y-4 pb-32">
       <CampoTopo titulo={`Hoje · ${dataHoje}`} />
       <div className="flex justify-end">
         <button
@@ -110,82 +101,63 @@ export function SimplesHojeTela() {
       <FaixaFila />
       {gps && <AvisoGps motivo={gps} onFechar={() => setGps(null)} />}
 
-      {aba === 'hoje' && (
+      {carregando ? (
+        <div aria-busy="true" className="space-y-3">
+          <div className="h-24 animate-pulse rounded-lg bg-muted" />
+          <div className="h-40 animate-pulse rounded-lg bg-muted" />
+        </div>
+      ) : !dia.jornada ? (
+        <section className="card-surface space-y-2 p-5">
+          <p className="text-base font-bold">Pronto para sair?</p>
+          <p className="text-sm text-muted-foreground">
+            A localização só é registrada com o dia aberto: no início, a cada 5 minutos com esta tela aberta, em cada chegada e conclusão e no
+            fim. Antes de iniciar e depois de encerrar, nada é registrado.
+          </p>
+          {escolhePraca && me.data?.pracas ? (
+            <PracaDoDia pracas={me.data.pracas} marcada={marcada} onEscolher={setPracaEscolhida} />
+          ) : me.data?.features?.multi_praca && (me.data.pracas?.length ?? 0) > 1 && rot.route ? (
+            <PracaDoRoteiro nome={nomeDaPracaAtiva(me.data, rot.route.praca_id)} />
+          ) : null}
+        </section>
+      ) : (
         <>
-          {carregando ? (
-            <div aria-busy="true" className="space-y-3">
-              <div className="h-24 animate-pulse rounded-lg bg-muted" />
-              <div className="h-40 animate-pulse rounded-lg bg-muted" />
+          {emIntervalo && <IntervaloFaixa aberto={emIntervalo} lembreteMin={intervalo.lembreteMin} />}
+          {!rot.carregando && !(rot.habilitado && rot.route) && <MetaCard fechadoContaNaMeta={config.fechado_conta_na_meta} />}
+          {rot.habilitado && <RoteiroCard fechadoContaNaMeta={config.fechado_conta_na_meta} />}
+          <p className="text-sm text-muted-foreground">
+            {dia.contadores.cadastrou_agora > 0
+              ? `${plural(dia.contadores.cadastrou_agora, 'cadastro declarado', 'cadastros declarados')} hoje. `
+              : ''}
+            {dia.contadores.fechadas > 0 && !config.fechado_conta_na_meta
+              ? `${plural(dia.contadores.fechadas, 'estabelecimento fechado', 'estabelecimentos fechados')} (fora da meta).`
+              : ''}
+          </p>
+          {!aberta && intervalo.ligado && !emIntervalo && (
+            // Lote B §37 (UX §3.6): 1 toque para começar, com "Desfazer"; só sem visita aberta (Lovable).
+            <Button variant="outline" onClick={() => void intervalo.iniciar()} className="h-12 w-full text-sm">
+              <span aria-hidden>☕ </span>Intervalo
+            </Button>
+          )}
+          {!aberta && (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => irPara({ v: 'nova' })}
+                className="flex h-12 flex-1 items-center justify-center rounded-md border border-border text-sm font-bold"
+              >
+                Visita fora do roteiro
+              </button>
+              <Button variant="outline" onClick={encerrar} disabled={ocupado} className="h-12 flex-1 text-sm">
+                Encerrar o dia
+              </Button>
             </div>
-          ) : !dia.jornada ? (
-            <section className="card-surface space-y-2 p-5">
-              <p className="text-base font-bold">Pronto para sair?</p>
-              <p className="text-sm text-muted-foreground">
-                A localização só é registrada com o dia aberto: no início, a cada 5 minutos com esta tela aberta, em cada chegada e conclusão e no
-                fim. Antes de iniciar e depois de encerrar, nada é registrado.
-              </p>
-              {escolhePraca && me.data?.pracas ? (
-                <PracaDoDia pracas={me.data.pracas} marcada={marcada} onEscolher={setPracaEscolhida} />
-              ) : me.data?.features?.multi_praca && (me.data.pracas?.length ?? 0) > 1 && rot.route ? (
-                <PracaDoRoteiro nome={nomeDaPracaAtiva(me.data, rot.route.praca_id)} />
-              ) : null}
-            </section>
-          ) : (
-            <>
-              {emIntervalo && <IntervaloFaixa aberto={emIntervalo} lembreteMin={intervalo.lembreteMin} />}
-              {!rot.carregando && !(rot.habilitado && rot.route) && <MetaCard fechadoContaNaMeta={config.fechado_conta_na_meta} />}
-              {rot.habilitado && <RoteiroCard fechadoContaNaMeta={config.fechado_conta_na_meta} />}
-              <p className="text-sm text-muted-foreground">
-                {dia.contadores.cadastrou_agora > 0
-                  ? `${plural(dia.contadores.cadastrou_agora, 'cadastro declarado', 'cadastros declarados')} hoje. `
-                  : ''}
-                {dia.contadores.fechadas > 0 && !config.fechado_conta_na_meta
-                  ? `${plural(dia.contadores.fechadas, 'estabelecimento fechado', 'estabelecimentos fechados')} (fora da meta).`
-                  : ''}
-              </p>
-              {!aberta && intervalo.ligado && !emIntervalo && (
-                // Lote B §37 (UX §3.6): 1 toque para começar, com "Desfazer"; só sem visita aberta (Lovable).
-                <Button variant="outline" onClick={() => void intervalo.iniciar()} className="h-12 w-full text-sm">
-                  <span aria-hidden>☕ </span>Intervalo
-                </Button>
-              )}
-              {!aberta && (
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => irPara({ v: 'nova' })}
-                    className="flex h-12 flex-1 items-center justify-center rounded-md border border-border text-sm font-bold"
-                  >
-                    Visita fora do roteiro
-                  </button>
-                  <Button variant="outline" onClick={encerrar} disabled={ocupado} className="h-12 flex-1 text-sm">
-                    Encerrar o dia
-                  </Button>
-                </div>
-              )}
-            </>
           )}
         </>
       )}
 
-      {aba === 'retornos' && (
-        <div className="space-y-5">
-          <RetornosCampo />
-          {/* Lote C (§38, UX §2.2): os cupons pedidos, só com a flag. */}
-          <CuponsCampo />
-        </div>
-      )}
-      {aba === 'ganhos' && (
-        <div className="space-y-4">
-          <ResumoDiaAtalhos />
-          <CadastrosConfirmadosCard />
-          <GanhosCard />
-          <PixCard />
-        </div>
-      )}
-
-      <div className="fixed inset-x-0 bottom-0 border-t border-border bg-background/95 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur">
-        <div className="mx-auto max-w-md space-y-2 px-4 pt-3">
+      {/* Barra de ação (nossa, UX §2.5): fixa logo acima das 5 abas da casca. */}
+      <div className="fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 border-t border-border bg-card/95 py-3 backdrop-blur">
+        <div className="mx-auto max-w-md px-4">
           <div className="flex gap-3">
             <button type="button" onClick={() => irPara({ v: 'qr' })} className="flex h-14 w-24 shrink-0 items-center justify-center rounded-md border border-border text-sm font-bold">
               QR code
@@ -220,20 +192,6 @@ export function SimplesHojeTela() {
               </button>
             )}
           </div>
-          <nav role="tablist" aria-label="Seções" className="grid grid-cols-3 gap-1">
-            {ABAS.map(([id, rotulo]) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={aba === id}
-                onClick={() => setAba(id)}
-                className={`h-14 rounded-md text-sm font-bold ${aba === id ? 'bg-primary/15 text-foreground underline decoration-2 underline-offset-4' : 'text-muted-foreground'}`}
-              >
-                {rotulo}
-              </button>
-            ))}
-          </nav>
         </div>
       </div>
     </main>

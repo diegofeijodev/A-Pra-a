@@ -1,7 +1,9 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
+import { AbasRepresentante } from '@/components/campo/AbasRepresentante';
+import { FaixaRepresentante } from '@/components/campo/FaixaRepresentante';
 import { useCampoSession } from '@/modules/campo/application/campo-session.store';
 import { useCampoMe, useDia } from '@/modules/campo/application/use-campo';
 import { useFilaRunner } from '@/modules/campo/application/use-fila';
@@ -20,6 +22,10 @@ function CampoMotor({ consultantId }: { consultantId: string }) {
 /**
  * Guarda das telas do consultor (mesma regra do `(app)/layout.tsx` da equipe:
  * a página nem monta sem sessão). Senha provisória pendente → `/campo/senha`.
+ *
+ * Casca do representante (redesenho E4, arquitetura §3.6, UX §2.5): faixa azul no topo ("Praça" + "Sair") e as 5 abas embaixo
+ * (Hoje, Mapa, Clientes, Desempenho, Carteira), todas visões da rota única `/campo` — a fila, o `/me` e a trilha (`CampoMotor`)
+ * continuam por baixo, iguais. O espaço de baixo é o da barra das abas; cada tela soma o do próprio botão fixo.
  */
 export default function CampoSessaoLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -43,9 +49,14 @@ export default function CampoSessaoLayout({ children }: { children: React.ReactN
   }
 
   return (
-    <div className="mx-auto min-h-dvh max-w-md px-4 pb-36 pt-[max(1rem,env(safe-area-inset-top))]">
+    <div className="min-h-dvh pb-[calc(4.5rem+env(safe-area-inset-bottom))]">
       <CampoMotor consultantId={session.consultant.id} />
-      {children}
+      <FaixaRepresentante />
+      <div className="mx-auto max-w-2xl px-4 pt-4">{children}</div>
+      {/* `useSearchParams` (a visão ativa) pede o seu próprio limite de Suspense. */}
+      <Suspense fallback={null}>
+        <AbasRepresentante />
+      </Suspense>
     </div>
   );
 }
