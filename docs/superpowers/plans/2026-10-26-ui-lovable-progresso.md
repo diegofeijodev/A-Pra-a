@@ -110,6 +110,16 @@ Endereços novos com redirecionamento dos antigos (vídeos, favoritos e o browse
     rótulos dos cartões mudaram em `painel.ts` (o teste acompanha); sem a coluna "Origem" no detalhe (G3 mexe em `pinos.service.ts`);
     a senha da equipe é gerada (a UX dizia digitada; o admin ainda pode trocar o texto); Configurações segue aberta a toda a equipe
     (arquitetura §2.3) em vez do "Apenas administradores" da UX §4.11.
+  - E5b (5.3–5.7): feito — web `10cb782` (Clientes só a lista com as pílulas de escolha única + Mapa em página própria em
+    `/consultores/mapa`, `pracasAbertas`, Mapa de calor como link), `2fbfa01` (Rotas: abre em "Clientes" com os planos, D6; "Praça" na barra;
+    cartões compactos ao lado do mapa; arquivar com AlertDialog; "Dia de cada representante" 3ª aba), `4b7990c` (Representantes: tabela,
+    busca/filtros, "Em campo hoje", cadastro em grade, "Acesso gerado" no novo e no "Redefinir senha"; sem as sondagens de 404), `a314152`
+    (Vouchers: seletor Todos/Pendente/Aprovado/Reprovado, tabela + situação fina, sem "Solicitar voucher"), `bc0c322` (Financeiro: semana
+    fechada, três cartões com a conta, tabela por representante, aba "Cadastros declarados"). Web lint 0, typecheck 0, vitest 40/427; sem API.
+    browser-check atualizado sem rodar (≈ +1 desligadas / +8 ligadas): clica em "Dia de cada representante" antes das seções de configuração;
+    Mapa em `/consultores/mapa`; seletor de Vouchers por `#vouchers-situacao`; bloco novo do Financeiro. Desvios: rótulos de situação ainda os
+    da API (etapa própria com o §34.3); sem G3/G4 (Origem, Remuneração); lixeira = "Desativar" (o contrato §20.9 item 7 tira o apagar da tela);
+    a praça do cadastro é a principal (as outras, F2, na ficha); "Esta semana"/"Semana passada" no lugar de De/Até/15 dias/mês.
 - [ ] 6. Filtro "Perfil dos clientes" na rota geral (API + contrato + tela)
 - [ ] 7. Endereços da Lovable + redirecionamentos
 - [ ] 8. Verificação: lint, typecheck, vitest, jest das partes tocadas, browser-check (um processo por vez, `nice`)

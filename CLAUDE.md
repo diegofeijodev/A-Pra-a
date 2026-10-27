@@ -88,6 +88,18 @@ Lovable "PRAÇA" para a stack do Freela.
   `modules/acesso/domain/cadastro.ts`, a mesma regra do servidor, `crypto.getRandomValues`), mostrada uma vez, sem troca obrigatória (D2).
   Configurações: "Segmentos da busca" no topo; os outros blocos em cartões `<details>` RECOLHIDOS — o `browser-check` abre com `abrirSecao`
   antes de ler (texto de `<details>` fechado não entra no `innerText`). Desempenho da equipe = `EmBreve`, fora do menu.
+- **Telas da equipe no desenho da Lovable (redesenho E5b: 5.3–5.7):** Clientes é só a lista (pílulas de escolha única de `pilulasVisitados`,
+  tabela só leitura; o nome abre o `LeadPanel`) e o Mapa é página própria em `ROTA.mapa = /consultores/mapa` até a E7 (`?modo=mapa` leva lá;
+  pílulas das praças ABERTAS por `pracasAbertas`, legenda `role=group` "Mostrar ou esconder por situação", "Etapa do funil" só com o Comercial;
+  Mapa de calor = `ROTA.mapaCalor`, link dentro dele). Os rótulos de situação ("Cadastrou"…) seguem os da API até a etapa própria com o
+  contrato §34.3. Rotas: abas "Clientes" · "Shoppings" · "Dia de cada representante" (ver lote D) e o "Praça" da barra troca a praça ATIVA só
+  no `onChange`. Representantes: tabela com busca/filtros (`filtrarRepresentantes`, `linhaDoDia`), "Em campo hoje" (`#em-campo`) embaixo,
+  cadastro na grade da Lovable e o "Acesso gerado" (`components/praca/AcessoRepresentante.tsx`) no novo e no "Redefinir senha"; a lixeira da
+  Lovable vira "Desativar" (apagar de vez fica fora da tela, contrato §20.9 item 7) e nada sonda 404 (Pix e declarados pelo `features`).
+  Vouchers: seletor Todos/Pendente/Aprovado/Reprovado (`grupoDoCupom`; "Aprovado" pede a lista inteira e filtra na tela, sem API nova) e sem
+  "Solicitar voucher" (o pedido nasce na visita). Financeiro: semana fechada, três cartões (`cartoesFinanceiro`: Pendente = `to_pay` + o
+  bloqueado, Total = pago + pendente), aba "Cadastros declarados" só com `features.declared_signups`; sem as colunas Remuneração (G4),
+  Diárias e Bônus.
 - **Consultor de campo ≠ equipe.** Token com `aud: "campo"`; rotas `/v1/campo/*`
   marcadas com `@CampoRoute()` (o `JwtAuthGuard` global delega ao
   `CampoAuthGuard`). Rota nova do consultor SEM `@CampoRoute()` fica fechada
@@ -155,8 +167,8 @@ npm run prisma:migrate:dev | prisma:generate | prisma:studio
 
 # web/
 yarn dev | typecheck | lint        # `build` só se o dono pedir (ver abaixo)
-yarn test                          # vitest run (fork único) — 39 arquivos, 413 testes (depois da E5a)
-yarn browser-check                 # scripts/browser-check.mjs — 213 checagens na configuração de produção antiga (ROUTES, VISIT_FLOW_SELECT, EARNINGS, DECLARED_SIGNUPS, PAYOUTS; fluxo simples e completo); 263 com as flags dos lotes A–F ligadas (menos VOUCHER_COUPONS), com um passo logado como gestor e um consultor em duas praças; 263 também com TEAM_COMMERCIAL_ENABLED (mesmas checagens, outro ramo) — rodado depois da E4 (27/10); a E5a (sem rodar) soma ≈ +6 desligadas / +8 ligadas
+yarn test                          # vitest run (fork único) — 40 arquivos, 427 testes (depois da E5b)
+yarn browser-check                 # scripts/browser-check.mjs — 213 checagens na configuração de produção antiga (ROUTES, VISIT_FLOW_SELECT, EARNINGS, DECLARED_SIGNUPS, PAYOUTS; fluxo simples e completo); 263 com as flags dos lotes A–F ligadas (menos VOUCHER_COUPONS), com um passo logado como gestor e um consultor em duas praças; 263 também com TEAM_COMMERCIAL_ENABLED (mesmas checagens, outro ramo) — rodado depois da E4 (27/10); a E5a (sem rodar) soma ≈ +6 desligadas / +8 ligadas e a E5b (sem rodar) ≈ +1 / +8
                                    # precisa da API na 3014 (start:smoke) e do web na 3024 (yarn dev)
                                    # conta: PRACA_CHECK_EMAIL/PASSWORD (padrão = seed), login pelo formulário
 ```
