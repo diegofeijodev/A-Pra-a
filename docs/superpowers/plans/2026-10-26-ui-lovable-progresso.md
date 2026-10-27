@@ -127,7 +127,7 @@ Endereços novos com redirecionamento dos antigos (vídeos, favoritos e o browse
     selo/barra/linha da Lovable e os botões da jornada, "Resultado do seu dia" ao encerrar (encerrar cai em `?v=roteiro`), "Visita em andamento",
     "Próximo sugerido", lista numerada com Google Maps/Waze/"Cheguei no cliente", sem "Lista | Mapa"; visita com o cabeçalho da Lovable, "Roteiro da
     visita", voucher no lugar de cupom, "Confirmar chegada e iniciar visita"/"Finalizar visita", "Novo cliente"), `b72c802` (Carteira: três cartões
-    Hoje/Esta semana/Próximo Pix com a conta). Web lint 0, typecheck 0, vitest 42/455 (+2 arquivos/+28: `hoje-tela`, `carteira`); sem API.
+    Hoje/Esta semana/Próximo Pix com a conta), `11409fe` (o Sol alcança os cartões novos: `card-surface`). Web lint 0, typecheck 0, vitest 42/455 (+2 arquivos/+28: `hoje-tela`, `carteira`); sem API.
     browser-check atualizado sem rodar (≈ ±0 nas duas configurações): saudação pelo primeiro nome, "Nenhuma rota hoje", "Iniciar/Encerrar
     intervalo", "Novo cliente"/"É outro cliente", "Confirmar chegada e iniciar visita", "Finalizar visita", "Roteiro da visita", voucher, o roteiro
     do simples por "← Minhas rotas" + cartão "Em rota" (mapa pela aba de baixo), encerrar → `?v=roteiro` com "Resultado do seu dia" e "Encerrada".
