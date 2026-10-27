@@ -96,6 +96,9 @@ Endereços novos com redirecionamento dos antigos (vídeos, favoritos e o browse
       typecheck 0, vitest 37/401. Fica para depois (E5): Hoje no desenho §4.12 (saudação, `CardRota`, quadros), Roteiro §4.13 (sem "Lista | Mapa",
       "← Minhas rotas"), Sol e `FaixaFila` na faixa do topo, `CampoTopo` só h1, renomes ("Iniciar/Encerrar intervalo", rótulos da §4.4), os 3
       cartões de resumo da Carteira; smoke da rota nova (nenhum `smoke*.sh` a chama ainda).
+      browser-check depois da E4: 213/213 (flags desligadas), 263/263 (ligadas), 263/263 (Comercial). Duas correções: `devIndicators: false`
+      no `next.config.ts` (a bolinha do `next dev` ficava por cima da aba "Hoje" e o toque não chegava nela) e o script espera os ladrilhos
+      do mapa do representante antes de trocar de aba (`esperarLadrilhos`; sem isso, `ERR_ABORTED` em `tile.openstreetmap.org` às vezes).
 - [ ] 5. Telas, uma a uma, no desenho da Lovable (Dashboard, Praças, Clientes, Mapa, Rotas, Roteiro, Representantes,
       Vouchers, Financeiro, Usuários, Configurações, Desempenho)
 - [ ] 6. Filtro "Perfil dos clientes" na rota geral (API + contrato + tela)

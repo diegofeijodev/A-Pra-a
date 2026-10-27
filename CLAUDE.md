@@ -146,7 +146,7 @@ npm run prisma:migrate:dev | prisma:generate | prisma:studio
 # web/
 yarn dev | typecheck | lint        # `build` só se o dono pedir (ver abaixo)
 yarn test                          # vitest run (fork único) — 37 arquivos, 401 testes
-yarn browser-check                 # scripts/browser-check.mjs — 195 checagens na configuração de produção (fluxo simples e completo; 244 com as flags dos lotes A–F ligadas, com um passo logado como gestor e um consultor em duas praças); a E3 somou 5 e a E4 11 (12 com o mapa ligado) — ≈ 211/261, conferir na próxima rodada
+yarn browser-check                 # scripts/browser-check.mjs — 213 checagens na configuração de produção antiga (ROUTES, VISIT_FLOW_SELECT, EARNINGS, DECLARED_SIGNUPS, PAYOUTS; fluxo simples e completo); 263 com as flags dos lotes A–F ligadas (menos VOUCHER_COUPONS), com um passo logado como gestor e um consultor em duas praças; 263 também com TEAM_COMMERCIAL_ENABLED (mesmas checagens, outro ramo) — rodado depois da E4 (27/10)
                                    # precisa da API na 3014 (start:smoke) e do web na 3024 (yarn dev)
                                    # conta: PRACA_CHECK_EMAIL/PASSWORD (padrão = seed), login pelo formulário
 ```
