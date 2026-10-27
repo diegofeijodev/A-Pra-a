@@ -30,7 +30,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { useFeaturesMenu } from '@/modules/acesso/application/use-acesso';
-import { itemAtivo, montarMenu, perfilDe, ROTULO_PERFIL, type ChaveIcone } from '@/modules/acesso/domain/acesso';
+import { itemAtivo, montarMenu, perfilDe, rolagemParaCentrar, ROTULO_PERFIL, type ChaveIcone } from '@/modules/acesso/domain/acesso';
 import { ROTA } from '@/modules/acesso/domain/enderecos';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import {
@@ -139,11 +139,41 @@ function ItensMenu({ variante }: { variante: 'lateral' | 'pilulas' }) {
   const grupos = montarMenu(features, user);
   const ativo = itemAtivo(grupos.flatMap((g) => g.itens), path, busca.get('modo'));
   const ativoRef = useRef<HTMLAnchorElement | null>(null);
+  const centradoEm = useRef<string | null>(null);
+  // Os itens chegam aos poucos (Rotas, Vouchers e Financeiro só depois do `features`): pílulas entram ANTES da acesa sem trocar a
+  // acesa, então a faixa recentra quando a lista muda, não só quando a acesa muda.
+  const chaveItens = grupos.flatMap((g) => g.itens.map((i) => i.to)).join('|');
 
-  // No celular, a pílula ativa rola para ficar à vista (UX §2.2). `?.`: jsdom e navegadores antigos não têm o método.
+  // No celular, a pílula acesa fica no meio da faixa e inteira à vista (UX §2.2). Ao abrir a tela e quando a lista ou as fontes
+  // mudam, sem animação; trocando de item, rola suave — e nunca com `prefers-reduced-motion`. Só a faixa rola (sem `scrollIntoView`,
+  // que também mexeria na rolagem da página).
   useEffect(() => {
-    if (variante === 'pilulas') ativoRef.current?.scrollIntoView?.({ inline: 'center', block: 'nearest' });
-  }, [variante, ativo?.to]);
+    if (variante !== 'pilulas') return;
+    let viva = true;
+    const centrar = (suave: boolean) => {
+      const el = ativoRef.current;
+      const faixa = el?.closest('nav');
+      if (!viva || !el || !faixa) return;
+      const f = faixa.getBoundingClientRect();
+      const p = el.getBoundingClientRect();
+      const left = rolagemParaCentrar(
+        { left: f.left, width: f.width, scrollLeft: faixa.scrollLeft, scrollWidth: faixa.scrollWidth, clientWidth: faixa.clientWidth },
+        { left: p.left, width: p.width },
+      );
+      const calmo = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (typeof faixa.scrollTo === 'function') faixa.scrollTo({ left, behavior: suave && !calmo ? 'smooth' : 'auto' });
+      else faixa.scrollLeft = left;
+    };
+    const trocouDeItem = centradoEm.current !== null && centradoEm.current !== (ativo?.to ?? null);
+    centrar(trocouDeItem);
+    centradoEm.current = ativo?.to ?? null;
+    // `next/font` troca a largura das pílulas quando a fonte termina de chegar (só espera se ainda não chegou: com a fonte pronta,
+    // o `ready` resolveria na hora e cortaria a rolagem suave).
+    if (document.fonts && document.fonts.status !== 'loaded') void document.fonts.ready.then(() => centrar(false));
+    return () => {
+      viva = false;
+    };
+  }, [variante, ativo?.to, chaveItens]);
 
   return (
     <>

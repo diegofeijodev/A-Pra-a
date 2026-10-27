@@ -135,5 +135,15 @@ export function itemAtivo(itens: ItemMenu[], path: string, modo: string | null):
   return melhor;
 }
 
+/**
+ * Onde a faixa de pílulas do celular (rola de lado) para, para a pílula acesa ficar no MEIO e inteira à vista (UX §2.2). Medidas da
+ * tela (`getBoundingClientRect` da faixa e da pílula + `scrollLeft`/`scrollWidth`/`clientWidth` da faixa); o resultado fica entre 0 e
+ * o fim da faixa. Pura: o `AppShell` mede e aplica.
+ */
+export function rolagemParaCentrar(faixa: { left: number; width: number; scrollLeft: number; scrollWidth: number; clientWidth: number }, pilula: { left: number; width: number }): number {
+  const alvo = faixa.scrollLeft + (pilula.left - faixa.left) - (faixa.width - pilula.width) / 2;
+  return Math.round(Math.min(Math.max(alvo, 0), Math.max(faixa.scrollWidth - faixa.clientWidth, 0)));
+}
+
 /** Página inicial da equipe: sempre o Dashboard (sem o painel, ele mostra a Atenção agora), nunca mais `/hoje` (Comercial). */
 export const paginaInicial = (): string => ROTA.inicio;

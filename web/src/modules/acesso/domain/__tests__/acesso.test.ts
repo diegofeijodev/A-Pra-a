@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { corpoDoPerfil, ehGestor, featuresMenuSchema, itemAtivo, montarMenu, paginaInicial, perfilDe, podeOperar, SEM_FEATURES_MENU, type FeaturesMenu } from '../acesso';
+import { corpoDoPerfil, ehGestor, featuresMenuSchema, itemAtivo, montarMenu, paginaInicial, perfilDe, podeOperar, rolagemParaCentrar, SEM_FEATURES_MENU, type FeaturesMenu } from '../acesso';
 import { destinoDoRepresentante, destinoDoRepresentantePorEndereco, rotaDaPraca, rotaDoRepresentante, ROTA, ROTA_CAMPO } from '../enderecos';
 import { conferirRegras, senhaCumpre, type PoliticaLigada } from '../senha';
 import { emailContatoValido, linkWhatsappAcesso, mascararEmail } from '../cadastro';
@@ -166,5 +166,29 @@ describe('cadastro e e-mail do contato', () => {
     expect(decodeURIComponent(l!.split('text=')[1]!)).toContain('Olá, Ana! Seu acesso ao Praça:');
     expect(decodeURIComponent(l!.split('text=')[1]!)).toContain('Senha provisória: Ab3kq9Zt2mPw');
     expect(linkWhatsappAcesso({ telefone: '123', nome: 'A', email: 'a', senha: 's', endereco: 'e' })).toBeNull();
+  });
+});
+
+describe('faixa de pílulas do celular (a acesa fica à vista)', () => {
+  // Faixa de 390 px na tela, com 1.000 px de conteúdo (rola até 610).
+  const faixa = { left: 0, width: 390, scrollLeft: 0, scrollWidth: 1000, clientWidth: 390 };
+  it('pílula fora da tela à direita (Usuários, Configurações): centraliza', () => {
+    // Pílula em x = 800 (largura 90), faixa ainda no começo: para no meio = 800 − (390 − 90) / 2 = 650 → teto 610.
+    expect(rolagemParaCentrar(faixa, { left: 800, width: 90 })).toBe(610);
+    // Pílula em x = 500: 500 − 150 = 350.
+    expect(rolagemParaCentrar(faixa, { left: 500, width: 90 })).toBe(350);
+  });
+  it('pílula cortada na borda ("Repre…"): entra inteira', () => {
+    const r = rolagemParaCentrar(faixa, { left: 340, width: 140 });
+    // Depois de rolar, a pílula começa e termina dentro da faixa.
+    expect(340 - r).toBeGreaterThanOrEqual(0);
+    expect(340 - r + 140).toBeLessThanOrEqual(390);
+  });
+  it('já rolada: conta a partir da rolagem atual; nunca passa do começo', () => {
+    expect(rolagemParaCentrar({ ...faixa, scrollLeft: 300 }, { left: 100, width: 90 })).toBe(250);
+    expect(rolagemParaCentrar(faixa, { left: 20, width: 90 })).toBe(0);
+  });
+  it('faixa que não rola (cabe tudo): 0', () => {
+    expect(rolagemParaCentrar({ ...faixa, scrollWidth: 390 }, { left: 300, width: 80 })).toBe(0);
   });
 });
