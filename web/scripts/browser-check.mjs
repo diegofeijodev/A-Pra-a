@@ -1242,6 +1242,18 @@ console.log('-- Campo: GPS negado --');
     check('Mapa por situação desligado: avisa, sem chamar a rota', (await corpo(page)).includes('ainda não está ligado neste servidor'));
   }
 
+  // E5.7 (UX §4.9): Financeiro com os três cartões da Lovable sobre o `summary`; a aba "Cadastros declarados" só com a flag (lida do `features`).
+  await page.goto(`${BASE}/consultores/pagamentos`, { waitUntil: 'networkidle' });
+  await page.getByRole('heading', { name: 'Financeiro', exact: true }).waitFor({ timeout: 20000 });
+  if (lov.payouts) {
+    await page.getByRole('region', { name: 'Pendente', exact: true }).waitFor({ timeout: 20000 });
+    check('Financeiro: cartões "Total a pagar", "Já pago" e "Pendente"', (await page.getByRole('region', { name: 'Total a pagar', exact: true }).count()) === 1 && (await page.getByRole('region', { name: 'Já pago', exact: true }).count()) === 1);
+    check('Financeiro: semana com o dia do Pix e "Esta semana" / "Semana passada"', /semana \d{2}\/\d{2} a \d{2}\/\d{2} · pix /.test(await corpo(page)) && (await page.getByRole('button', { name: 'Semana passada', exact: true }).count()) === 1);
+    check('Financeiro: aba "Cadastros declarados" só com os declarados ligados', ((await page.getByRole('tab', { name: 'Cadastros declarados' }).count()) === 1) === !!lov.declared_signups);
+  } else {
+    check('Financeiro desligado: avisa, sem chamar a rota', (await corpo(page)).includes('ainda não está ligado neste servidor'));
+  }
+
   // ── Lote C (contrato §36/§38): só leitura e presença; NADA cria pedido de cupom (o pedido é um fato: não sai pela API) ──
   console.log('-- Equipe: lote C da Lovable (segmentos da busca e cupons) --');
   // E5.6 (UX §4.8): h1 "Vouchers", o seletor da Lovable (Todos / Pendente / Aprovado / Reprovado, abre em Pendente) e "Regras do voucher".

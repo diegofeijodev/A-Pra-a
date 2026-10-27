@@ -3,6 +3,8 @@ import { centavosDeTexto } from '@/modules/remuneracao/domain/remuneracao';
 import { atencaoSchema } from '@/modules/consultores/domain/atencao';
 import {
   acoesDisponiveis,
+  cartoesFinanceiro,
+  seloFinanceiro,
   alertaPixSchema,
   erroDoComprovante,
   listaSchema,
@@ -137,5 +139,30 @@ describe('contratos do fio', () => {
     const vazio = { day: '2026-10-20', generated_at: 'x', now: '10:00', dia_de_trabalho: true, thresholds: { alerta_inicio_apos_min: 1, alerta_visita_aberta_min: 1, alerta_sem_registro_min: 1, alerta_ritmo_atras: 1, alerta_parada_vencida_min: 1 }, alerts: [], consultants: [] };
     expect(atencaoSchema.parse(vazio).payout_alerts).toBeUndefined();
     expect(atencaoSchema.parse({ ...vazio, payout_alerts: [alerta] }).payout_alerts).toHaveLength(1);
+  });
+});
+
+describe('Financeiro no desenho da Lovable (E5.7, UX §4.9)', () => {
+  const resumo = (o: Partial<{ to_pay_cents: number; blocked_cents: number; failed_cents: number; paid_cents: number }> = {}, counts = { pending: 0, blocked: 0, failed: 0, paid: 0, cancelled: 0 }) => ({
+    to_pay_cents: 0, blocked_cents: 0, failed_cents: 0, paid_cents: 0, counts, conta: [], source: 'razão', ...o,
+  });
+  it('Total = Já pago + Pendente; o bloqueado (fora do to_pay do servidor) entra no Pendente', () => {
+    const c = cartoesFinanceiro(resumo({ to_pay_cents: 33000, blocked_cents: 12000, failed_cents: 8000, paid_cents: 50000 }, { pending: 2, blocked: 1, failed: 1, paid: 2, cancelled: 1 }));
+    expect(c.map((x) => [x.titulo, x.cents])).toEqual([['Total a pagar', 95000], ['Já pago', 50000], ['Pendente', 45000]]);
+    expect(c[0]!.apoio).toBe('= R$ 500,00 já pago + R$ 450,00 pendente (cancelados fora).');
+    expect(c[1]!.apoio).toBe('2 pagamentos registrados como pago.');
+    expect(c[2]!.apoio).toBe('4 pagamentos; inclui R$ 120,00 sem chave Pix e R$ 80,00 que falhou.');
+  });
+  it('semana vazia e semana só a pagar', () => {
+    expect(cartoesFinanceiro(resumo()).map((x) => x.cents)).toEqual([0, 0, 0]);
+    expect(cartoesFinanceiro(resumo({ to_pay_cents: 25000 }, { pending: 1, blocked: 0, failed: 0, paid: 0, cancelled: 0 }))[2]!.apoio).toBe('1 pagamento a pagar.');
+  });
+  it('selo da situação: Pago dd/mm (Brasília), Pendente, Falhou, Bloqueado, Cancelado', () => {
+    // 01h30 de 27/10 em UTC ainda é 26/10 em Brasília.
+    expect(seloFinanceiro({ status: 'paid', blocked: false, paid_at: '2026-10-27T01:30:00.000Z' })).toEqual({ rotulo: 'Pago 26/10', variante: 'default' });
+    expect(seloFinanceiro({ status: 'pending', blocked: false, paid_at: null }).rotulo).toBe('Pendente');
+    expect(seloFinanceiro({ status: 'pending', blocked: true, paid_at: null })).toEqual({ rotulo: 'Bloqueado', variante: 'destructive' });
+    expect(seloFinanceiro({ status: 'failed', blocked: false, paid_at: null }).rotulo).toBe('Falhou');
+    expect(seloFinanceiro({ status: 'cancelled', blocked: true, paid_at: null })).toEqual({ rotulo: 'Cancelado', variante: 'outline' });
   });
 });

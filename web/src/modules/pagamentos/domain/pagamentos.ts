@@ -206,3 +206,46 @@ export function pagoEmCentavos(texto: string, devido: number, converter: (t: str
 }
 
 export const nomeDoCsv = (semanaInicio: string) => `pagamentos-pix-${semanaInicio}.csv`;
+
+// ── Financeiro no desenho da Lovable (redesenho E5.7, UX §4.9) ─────────────
+
+export interface CartaoFinanceiro {
+  titulo: 'Total a pagar' | 'Já pago' | 'Pendente';
+  cents: number;
+  /** A conta embaixo do valor (regra do dono: todo número com a conta). */
+  apoio: string;
+}
+
+const plu = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
+
+/**
+ * Os três cartões da Lovable sobre o `summary` da semana (§29.4). "Pendente" = o que falta pagar, com o bloqueado por falta de chave
+ * (que o servidor deixa FORA do `to_pay_cents`) e o que falhou; "Já pago" = o registrado como pago; "Total a pagar" = os dois juntos
+ * (cancelados ficam fora), a mesma relação da Lovable (pendente = total − pago).
+ */
+export function cartoesFinanceiro(s: ListaPagamentos['summary']): CartaoFinanceiro[] {
+  const pendente = s.to_pay_cents + s.blocked_cents;
+  const total = pendente + s.paid_cents;
+  const partes = [s.blocked_cents ? `${brl(s.blocked_cents)} sem chave Pix` : null, s.failed_cents ? `${brl(s.failed_cents)} que falhou` : null].filter(Boolean);
+  const aPagar = s.counts.pending + s.counts.failed + s.counts.blocked;
+  return [
+    { titulo: 'Total a pagar', cents: total, apoio: `= ${brl(s.paid_cents)} já pago + ${brl(pendente)} pendente (cancelados fora).` },
+    { titulo: 'Já pago', cents: s.paid_cents, apoio: `${plu(s.counts.paid, 'pagamento registrado', 'pagamentos registrados')} como pago.` },
+    {
+      titulo: 'Pendente',
+      cents: pendente,
+      apoio: partes.length ? `${plu(aPagar, 'pagamento', 'pagamentos')}; inclui ${partes.join(' e ')}.` : `${plu(aPagar, 'pagamento', 'pagamentos')} a pagar.`,
+    },
+  ];
+}
+
+const DIA_MES_SP = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' });
+
+/** O selo da coluna "Situação" (Lovable: "Pago dd/mm"; os nossos estados com a variante do `Badge`). */
+export function seloFinanceiro(p: Pick<Pagamento, 'status' | 'blocked' | 'paid_at'>): { rotulo: string; variante: 'default' | 'secondary' | 'destructive' | 'outline' } {
+  if (p.status === 'paid') return { rotulo: p.paid_at ? `Pago ${DIA_MES_SP.format(new Date(p.paid_at))}` : 'Pago', variante: 'default' };
+  if (p.status === 'cancelled') return { rotulo: 'Cancelado', variante: 'outline' };
+  if (p.status === 'failed') return { rotulo: 'Falhou', variante: 'destructive' };
+  if (p.blocked) return { rotulo: 'Bloqueado', variante: 'destructive' };
+  return { rotulo: 'Pendente', variante: 'secondary' };
+}
