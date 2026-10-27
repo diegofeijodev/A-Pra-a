@@ -22,6 +22,14 @@ export function situacaoDaPraca(p: Periodo, hoje: string): SituacaoPraca {
   return 'em_andamento';
 }
 
+/**
+ * Praças "abertas" do Mapa (Lovable `mapa.tsx`: as que já saíram do planejamento; UX §4.5): Em andamento ou Concluída pelas datas —
+ * o mesmo corte da API (`start_date ≤ hoje`, contrato §34.1). A ordem da lista é mantida.
+ */
+export function pracasAbertas<T extends Periodo>(pracas: readonly T[], hoje: string): T[] {
+  return pracas.filter((p) => situacaoDaPraca(p, hoje) !== 'planejamento');
+}
+
 /** "Cidade/UF" da Lovable: a cidade-sede do IBGE quando há; senão a cidade digitada ("Belo Horizonte · MG" → "Belo Horizonte/MG"). */
 export function cidadeUf(p: { city: string; cobertura: { cidade: string; uf: string } | null }): string {
   if (p.cobertura?.cidade) return `${p.cobertura.cidade}/${p.cobertura.uf}`;

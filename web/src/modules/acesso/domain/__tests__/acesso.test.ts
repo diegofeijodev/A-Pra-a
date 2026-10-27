@@ -69,7 +69,7 @@ describe('menu da equipe (casca da Lovable)', () => {
     expect(rotulos(montarMenu(comCom, EQUIPE), 1)).toEqual(COMERCIAL.filter((l) => l !== 'Buscar estabelecimentos'));
     expect(montarMenu(comCom, ADMIN)[1]!.itens.find((i) => i.label === 'Ações')!.to).toBe('/hoje');
   });
-  it('item ativo: um só, o de prefixo mais longo; Clientes e Mapa pelo modo', () => {
+  it('item ativo: um só, o de prefixo mais longo; Clientes e Mapa em páginas próprias (E5.3)', () => {
     const itens = montarMenu({ ...tudo, commercial: true }, ADMIN).flatMap((g) => g.itens);
     const ativo = (path: string, modo: string | null = null) => itemAtivo(itens, path, modo)?.label ?? null;
     expect(ativo('/consultores/3f2b8c1e-6a7d-4e0f-9b1a-2c3d4e5f6a7b')).toBe('Representantes');
@@ -80,7 +80,8 @@ describe('menu da equipe (casca da Lovable)', () => {
     expect(ativo('/consultores/pagamentos')).toBe('Financeiro');
     expect(ativo('/consultores/clientes')).toBe('Clientes');
     expect(ativo('/consultores/clientes', 'lista')).toBe('Clientes');
-    expect(ativo('/consultores/clientes', 'mapa')).toBe('Mapa');
+    expect(ativo('/consultores/mapa')).toBe('Mapa');
+    expect(ROTA.mapa).toBe('/consultores/mapa');
     // E5.2: "Praças" é a lista nova (`/pracas`) e acende no detalhe; `/praca` (o plano de antes, até a E7) não acende nada.
     expect(ativo('/pracas')).toBe('Praças');
     expect(ativo(rotaDaPraca('3f2b8c1e-6a7d-4e0f-9b1a-2c3d4e5f6a7b'))).toBe('Praças');

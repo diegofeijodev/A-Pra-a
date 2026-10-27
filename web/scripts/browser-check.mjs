@@ -1221,10 +1221,17 @@ console.log('-- Campo: GPS negado --');
   await page.getByText('Chegada ao local').first().waitFor({ timeout: 20000 });
   check('Roteiros: "Roteiro da conversa" só com o checklist ligado', ((await page.getByText('Roteiro da conversa (checklist da visita)').count()) === 1) === !!lov.checklist);
   check('Roteiros: "Intervalo e almoço do consultor" só com o intervalo ligado', ((await page.getByText('Intervalo e almoço do consultor').count()) === 1) === !!lov.breaks);
+  // E5.3 (UX §4.5): o Mapa é página própria (`/consultores/mapa` até a E7), com a legenda num grupo e as pílulas de praça (a do seed é aberta).
   await page.goto(`${BASE}/consultores/mapa`, { waitUntil: 'networkidle' });
   if (lov.map_pins) {
-    await page.getByText('Situação (toque para esconder ou mostrar)').waitFor({ timeout: 20000 });
-    check('Mapa por situação: legenda com as 7 situações', (await corpo(page)).includes('a visitar') && (await corpo(page)).includes('estabelecimento fechado'));
+    const legenda = page.getByRole('group', { name: 'Mostrar ou esconder por situação' });
+    await legenda.waitFor({ timeout: 20000 });
+    const textoLegenda = (await legenda.innerText()).toLowerCase();
+    check('Mapa: legenda com as 7 situações num grupo', textoLegenda.includes('a visitar') && textoLegenda.includes('estabelecimento fechado'));
+    check('Mapa: pílula "Todas (n)" das praças abertas, escolhida', (await page.getByRole('button', { name: /^Todas \(\d+\)$/ }).getAttribute('aria-pressed')) === 'true');
+    check('Mapa: "Etapa do funil" só com o Comercial', ((await page.getByRole('button', { name: 'Etapa do funil' }).count()) === 1) === !!lov.commercial);
+    await page.locator('.leaflet-container').waitFor({ timeout: 30000 });
+    await page.waitForLoadState('networkidle');
   } else {
     check('Mapa por situação desligado: avisa, sem chamar a rota', (await corpo(page)).includes('ainda não está ligado neste servidor'));
   }
@@ -1323,17 +1330,20 @@ console.log('-- Campo: GPS negado --');
   check('Menu: sem os grupos antigos (Operação de campo, Administração)', (await page.getByRole('group', { name: 'Operação de campo' }).count()) === 0 && (await page.getByRole('group', { name: 'Administração' }).count()) === 0);
   check('Menu: "Funil" aceso só com a chave (endereço direto abre sem item no menu)', ((await page.locator('aside nav a[aria-current="page"]').count()) === 1) === !!lov.commercial);
   if (lov.map_pins) {
+    // E5.3 (UX §4.4): Clientes é só a lista, com as pílulas de escolha única da Lovable ("Todos" escolhida; sem "A visitar").
     await page.goto(`${BASE}/consultores/clientes`, { waitUntil: 'networkidle' });
-    await page.getByRole('tab', { name: 'Lista' }).waitFor({ timeout: 20000 });
-    await page.getByTestId('lista-conta').or(page.getByText('Nenhum estabelecimento com esses filtros')).first().waitFor({ timeout: 20000 });
-    check('Clientes > Lista: abre em Lista, "A visitar" escondido, com a conta', (await page.getByRole('button', { name: /^A visitar/ }).getAttribute('aria-pressed')) === 'false');
-    await page.getByRole('tab', { name: 'Mapa', exact: true }).click();
-    await page.waitForURL('**/consultores/clientes?modo=mapa', { timeout: 20000 });
-    // Só o mapa tem "Etapa do funil" e o Leaflet; espera ele carregar inteiro (sair antes cancela os pedaços do mapa).
-    await page.getByRole('button', { name: 'Etapa do funil' }).waitFor({ timeout: 20000 });
+    await page.getByTestId('lista-conta').waitFor({ timeout: 20000 });
+    check(
+      'Clientes: abre em "Todos" (escolha única), sem a pílula "A visitar", com a conta',
+      (await page.getByRole('button', { name: /^Todos/ }).getAttribute('aria-pressed')) === 'true' && (await page.getByRole('button', { name: /^A visitar/ }).count()) === 0,
+    );
+    check('Clientes: sem as abas antigas (o Mapa é página própria)', (await page.getByRole('tab', { name: 'Mapa', exact: true }).count()) === 0);
+    // O endereço antigo do Mapa (o do menu até a E5) continua abrindo: leva à página do Mapa.
+    await page.goto(`${BASE}/consultores/clientes?modo=mapa`, { waitUntil: 'networkidle' });
+    await page.waitForURL('**/consultores/mapa', { timeout: 20000 });
     await page.locator('.leaflet-container').waitFor({ timeout: 30000 });
     await page.waitForLoadState('networkidle');
-    check('Clientes > Mapa: o mapa por situação na mesma página', new URL(page.url()).searchParams.get('modo') === 'mapa' && (await page.getByRole('tab', { name: 'Mapa', exact: true }).getAttribute('aria-selected')) === 'true');
+    check('Clientes ?modo=mapa (endereço antigo) leva à página do Mapa', new URL(page.url()).pathname === '/consultores/mapa');
   }
   await page.goto(`${BASE}/configuracoes`, { waitUntil: 'networkidle' });
   await page.getByRole('heading', { name: 'Configurações', exact: true }).waitFor({ timeout: 20000 });

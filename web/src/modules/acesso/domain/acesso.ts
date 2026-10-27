@@ -113,8 +113,8 @@ const abaixoDe = (rota: string, path: string): boolean => path === rota || path.
 
 /**
  * O item ativo do menu (um só, ou nenhum): o de prefixo MAIS LONGO, como o `Link` do TanStack na Lovable — `/consultores/<id>`
- * acende "Representantes" e `/consultores/painel` acende "Dashboard". Clientes e Mapa dividem a rota e se separam pelo `modo`
- * da URL. Empate exato: vale o primeiro da lista.
+ * acende "Representantes" e `/consultores/painel` acende "Dashboard". Item com `?modo=` só casa com o mesmo `modo` na URL (o Mapa
+ * dividia a rota com Clientes até a E5.3; hoje é página própria). Empate exato: vale o primeiro da lista.
  */
 export function itemAtivo(itens: ItemMenu[], path: string, modo: string | null): ItemMenu | null {
   let melhor: ItemMenu | null = null;

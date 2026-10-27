@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cidadeUf, linhaClientes, periodoCurto, ROTULO_SITUACAO_PRACA, situacaoDaPraca } from '../status-praca';
+import { cidadeUf, linhaClientes, periodoCurto, pracasAbertas, ROTULO_SITUACAO_PRACA, situacaoDaPraca } from '../status-praca';
 
 const P = { start_date: '2026-10-27', end_date: '2027-02-01' };
 
@@ -35,5 +35,17 @@ describe('textos do cartão da praça', () => {
     expect(linhaClientes({ ...P, leads_count: 3406 })).toBe('3.406 clientes');
     expect(linhaClientes(P)).toBe('27/10 → 01/02');
     expect(periodoCurto(P)).toBe('27/10 → 01/02');
+  });
+});
+
+describe('praças abertas do Mapa (E5.3, UX §4.5)', () => {
+  it('fica quem começou até hoje (em andamento ou concluída); a de início amanhã sai; a ordem não muda', () => {
+    const lista = [
+      { id: 'a', start_date: '2026-10-28', end_date: '2026-12-01' },
+      { id: 'b', start_date: '2026-10-27', end_date: '2026-12-01' },
+      { id: 'c', start_date: '2026-01-01', end_date: '2026-02-01' },
+    ];
+    expect(pracasAbertas(lista, '2026-10-27').map((p) => p.id)).toEqual(['b', 'c']);
+    expect(pracasAbertas([], '2026-10-27')).toEqual([]);
   });
 });

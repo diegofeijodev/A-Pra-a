@@ -31,6 +31,7 @@ import type { HeatmapView } from '@/modules/calor/infrastructure/calor.api';
 import { useConsultores } from '@/modules/consultores/application/use-consultores';
 import { useActivePraca, usePracas } from '@/modules/pracas/application/use-pracas';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
+import { ROTA } from '@/modules/acesso/domain/enderecos';
 import type { VistaMapa } from './CalorMapa';
 import { atuaNaPraca } from '@/modules/consultores/domain/pracas';
 
@@ -69,7 +70,7 @@ export function MapaDeCalor() {
       setVista(null); // outro filtro = recomeça sem o recorte do mapa
       setDe(null);
       setAte(null);
-      router.replace(`/consultores/calor?${filtrosParaQuery(prox)}`);
+      router.replace(`${ROTA.mapaCalor}?${filtrosParaQuery(prox)}`);
     },
     [f, praca?.id, consultor, router],
   );

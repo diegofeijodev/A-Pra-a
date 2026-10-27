@@ -9,7 +9,10 @@ export const ROTA = {
   // E5.2: a lista nasce no endereço da Lovable; `/praca` (o plano da praça ativa) continua abrindo até a E7.
   pracas: '/pracas',
   clientes: '/consultores/clientes',
-  mapa: '/consultores/clientes?modo=mapa',
+  // E5.3: o Mapa é página própria (a de `/consultores/mapa`, que a E7 leva para `/mapa`); `/consultores/clientes?modo=mapa` (o do
+  // menu até aqui) continua abrindo e vem para cá. O Mapa de calor é um link dentro dele (a E7 o leva para `/mapa/calor`).
+  mapa: '/consultores/mapa',
+  mapaCalor: '/consultores/calor',
   rotas: '/consultores/roteiros',
   representantes: '/consultores',
   vouchers: '/consultores/cupons',
@@ -51,7 +54,7 @@ const DESTINO_REPRESENTANTE: Record<AbaRepresentante, string> = {
 };
 export const destinoDoRepresentante = (aba: AbaRepresentante = 'hoje'): string => DESTINO_REPRESENTANTE[aba];
 
-/** Só o caminho de um endereço (`/consultores/clientes?modo=mapa` → `/consultores/clientes`), sem a barra do fim. */
+/** Só o caminho de um endereço (`/consultores/clientes?x=1` → `/consultores/clientes`), sem a barra do fim. */
 const caminho = (endereco: string): string => endereco.split(/[?#]/)[0]!.replace(/\/+$/, '') || '/';
 
 /**
@@ -67,7 +70,7 @@ const ABA_DO_ENDERECO: Record<string, AbaRepresentante> = {
   [caminho(ROTA.inicio)]: 'hoje',
   [caminho(ROTA.clientes)]: 'clientes',
   [caminho(ROTA.financeiro)]: 'carteira',
-  '/consultores/mapa': 'mapa',
+  [caminho(ROTA.mapa)]: 'mapa',
 };
 
 /**

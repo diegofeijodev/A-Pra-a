@@ -1,55 +1,63 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useUiStore } from '@/lib/ui-store';
 import { useListaClientes } from '@/modules/acesso/application/use-acesso';
 import { diaCurto } from '@/modules/planos/domain/planos';
+import { codigosDaEscolha, pilulasVisitados, SIMBOLO, SITUACOES_LISTA, type EscolhaVisitados } from '@/modules/pinos/domain/pinos';
 import { usePracas } from '@/modules/pracas/application/use-pracas';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 
-/** Situações na ordem da legenda do mapa (§34.3); "A visitar" começa escondido na Lista, como na Lovable (UX §3.3). */
-const SITUACOES: [string, string][] = [
-  ['a_visitar', 'A visitar'],
-  ['cadastrado', 'Cadastrou'],
-  ['ja_usa', 'Já usa o Freela'],
-  ['retornar', 'Quer retorno'],
-  ['nao_cadastrado', 'Sem interesse'],
-  ['nao_contrata', 'Não contrata freelas'],
-  ['fechado', 'Estabelecimento fechado'],
-];
-const PADRAO = SITUACOES.map(([c]) => c).filter((c) => c !== 'a_visitar');
+const CARTAO = 'rounded-2xl bg-card shadow-card';
+const FORMA = new Map(SITUACOES_LISTA.map((s) => [s.code, s.shape]));
 
-const chip = (ativo: boolean) =>
-  `flex h-12 items-center gap-2 rounded-md border px-3 text-sm font-bold ${ativo ? 'border-primary bg-primary/15 text-foreground' : 'border-border text-muted-foreground line-through opacity-70'}`;
+/** Pílula da Lovable (`clientes.tsx`): escolhida em `bg-primary`, as outras em `bg-card`; 44 px no celular. */
+const pilula = (ativa: boolean) =>
+  `flex min-h-11 items-center gap-2 rounded-full border px-3 py-1 text-sm md:min-h-9 ${ativa ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card'}`;
 
 /**
- * Clientes > Lista (contrato §34.6, UX §3.3): a forma equivalente do mapa — mesma situação, mesmos filtros de praça, e os "sem
- * localização exata" (que o mapa não mostra). Só leitura (a situação vem da visita; corrigir é pelo Funil). Telefone mascarado.
+ * Clientes (Lovable `clientes.tsx`, UX §4.4, contrato §34.6): pílulas de escolha ÚNICA ("Todos" = todas as situações menos "A
+ * visitar"; o número vem de `counts`), praça + "Buscar por nome" e a tabela da Lovable. Só leitura: a situação vem da visita e se
+ * corrige pelo painel do cliente, que deixa rastro (a Lovable tem um seletor de status ali) [desvio: regra]. Telefone mascarado.
  */
 export function ListaClientes() {
   const { data: pracas } = usePracas();
   const [pracaId, setPracaId] = useState('');
   const [busca, setBusca] = useState('');
-  const [codes, setCodes] = useState<string[]>(PADRAO);
+  const [escolha, setEscolha] = useState<EscolhaVisitados>('todos');
   const [paginas, setPaginas] = useState<string[]>([]);
   const cursor = paginas[paginas.length - 1];
-  const lista = useListaClientes({ praca_id: pracaId || undefined, codes, q: busca, cursor }, true);
+  const lista = useListaClientes({ praca_id: pracaId || undefined, codes: codigosDaEscolha(escolha), q: busca, cursor }, true);
   const abrirLead = useUiStore((s) => s.openLead);
   const r = lista.data;
   const recomeca = () => setPaginas([]);
-  const alternar = (c: string) => {
-    recomeca();
-    setCodes((atual) => (atual.includes(c) ? atual.filter((x) => x !== c) : [...atual, c]));
-  };
-  const nomePraca = useMemo(() => new Map((pracas ?? []).map((p) => [p.id, p.name])), [pracas]);
 
   return (
-    <div className="mt-2 space-y-3">
-      <p className="text-sm text-muted-foreground">
-        {pracaId ? 'Estabelecimentos da praça escolhida.' : 'Praças abertas (início até hoje).'} A situação vem da última visita; para corrigir, use o Funil.
-      </p>
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2" aria-live="polite">
+        {pilulasVisitados(r?.counts).map((p) => (
+          <button
+            key={p.escolha}
+            type="button"
+            aria-pressed={escolha === p.escolha}
+            onClick={() => {
+              recomeca();
+              setEscolha(p.escolha);
+            }}
+            className={pilula(escolha === p.escolha)}
+          >
+            {p.shape && (
+              <span aria-hidden style={escolha === p.escolha ? undefined : { color: p.color }}>
+                {SIMBOLO[p.shape]}
+              </span>
+            )}
+            {p.rotulo} {p.n !== null && <b>{p.n.toLocaleString('pt-BR')}</b>}
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-2">
         <label htmlFor="lista-praca" className="sr-only">
           Praça
         </label>
@@ -60,7 +68,7 @@ export function ListaClientes() {
             recomeca();
             setPracaId(e.target.value);
           }}
-          className="h-12 min-w-40 rounded-md border border-border bg-background px-3 text-sm"
+          className="h-11 min-w-0 rounded-md border border-input bg-background px-2 text-sm md:h-9"
         >
           <option value="">Todas as praças abertas</option>
           {(pracas ?? []).map((p) => (
@@ -72,7 +80,7 @@ export function ListaClientes() {
         <label htmlFor="lista-busca" className="sr-only">
           Buscar por nome, endereço ou cidade
         </label>
-        <input
+        <Input
           id="lista-busca"
           type="search"
           value={busca}
@@ -80,73 +88,92 @@ export function ListaClientes() {
             recomeca();
             setBusca(e.target.value);
           }}
-          placeholder="Buscar por nome, endereço ou cidade"
-          className="h-12 min-w-0 flex-1 rounded-md border border-border bg-background px-3 text-sm"
+          placeholder="Buscar por nome"
+          className="w-full sm:max-w-xs"
         />
-      </div>
-      <div>
-        <p className="mb-1 text-sm font-bold">Situação (toque para esconder ou mostrar):</p>
-        <div className="flex flex-wrap gap-2" aria-live="polite">
-          {SITUACOES.map(([c, rotulo]) => (
-            <button key={c} type="button" aria-pressed={codes.includes(c)} onClick={() => alternar(c)} className={chip(codes.includes(c))}>
-              {rotulo} {r ? (r.counts[c] ?? 0).toLocaleString('pt-BR') : ''}
-            </button>
-          ))}
-        </div>
       </div>
 
       {lista.isError ? (
-        <div className="card-surface space-y-2 p-4">
+        <div className={`${CARTAO} space-y-2 p-5`}>
           <p role="alert" className="text-sm text-destructive">
             {apiErrorMessage(lista.error, 'Não foi possível carregar a lista.')}
           </p>
-          <Button variant="outline" className="h-12" onClick={() => void lista.refetch()}>
+          <Button variant="outline" onClick={() => void lista.refetch()}>
             Tentar de novo
           </Button>
         </div>
       ) : !r ? (
-        <div aria-busy="true" className="h-40 animate-pulse rounded-lg bg-muted" />
-      ) : codes.length === 0 ? (
-        <p className="card-surface p-4 text-sm">Nenhuma situação escolhida: toque numa situação acima para ver os estabelecimentos.</p>
-      ) : r.items.length === 0 ? (
-        <p className="card-surface p-4 text-sm">Nenhum estabelecimento com esses filtros. Mude a busca ou mostre outra situação.</p>
+        <div aria-busy="true" className="h-48 animate-pulse rounded-2xl bg-muted" />
       ) : (
         <>
+          <div className={`${CARTAO} overflow-hidden`}>
+            <table className="w-full text-sm">
+              <thead className="border-b text-left text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Cliente</th>
+                  <th className="hidden px-4 py-3 font-medium md:table-cell">Cidade/UF</th>
+                  <th className="hidden px-4 py-3 font-medium lg:table-cell">Contato</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-10 text-center text-muted-foreground">
+                      Nenhum cliente visitado com esses filtros ainda.
+                    </td>
+                  </tr>
+                ) : (
+                  r.items.map((i) => {
+                    const forma = FORMA.get(i.code);
+                    return (
+                      <tr key={i.id} className="border-b align-top last:border-0">
+                        <td className="px-4 py-3">
+                          <button type="button" className="min-h-11 break-words text-left font-medium hover:underline md:min-h-0" onClick={() => abrirLead(i.id)}>
+                            {i.name}
+                          </button>
+                          <p className="break-words text-xs text-muted-foreground">
+                            {i.address || '—'}
+                            {!i.has_location ? ' · sem localização exata' : ''}
+                          </p>
+                          {/* No celular a coluna "Cidade/UF" some (Lovable): a cidade vai embaixo do nome. */}
+                          {i.city && <p className="break-words text-xs text-muted-foreground md:hidden">{i.city}</p>}
+                        </td>
+                        <td className="hidden px-4 py-3 md:table-cell">{i.city || '—'}</td>
+                        <td className="hidden px-4 py-3 text-sm lg:table-cell">
+                          {i.phone ? `${i.phone.masked}${i.phone.kind === 'whatsapp' ? ' (WhatsApp)' : ''}` : '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="flex items-center gap-2">
+                            {forma && (
+                              <span aria-hidden style={{ color: i.color }}>
+                                {SIMBOLO[forma]}
+                              </span>
+                            )}
+                            {i.label}
+                          </span>
+                          <span className="block text-xs text-muted-foreground">
+                            {i.last_visit ? `última visita ${diaCurto(i.last_visit.day)}${i.last_visit.consultant_name ? ` · ${i.last_visit.consultant_name}` : ''}` : 'sem visita'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
           <p className="text-sm text-muted-foreground" data-testid="lista-conta">
             {r.total.toLocaleString('pt-BR')} no filtro · {r.without_location.toLocaleString('pt-BR')} sem localização exata (não aparecem no mapa)
           </p>
-          <ul className="space-y-2">
-            {r.items.map((i) => (
-              <li key={i.id} className="card-surface flex flex-wrap items-center justify-between gap-2 p-3">
-                <div className="min-w-0">
-                  <p className="break-words font-bold">{i.name}</p>
-                  <p className="break-words text-xs text-muted-foreground">
-                    {[i.address, i.city, nomePraca.get(i.praca_id)].filter(Boolean).join(' · ')}
-                    {!i.has_location ? ' · sem localização exata' : ''}
-                  </p>
-                  <p className="text-xs">
-                    <span className="font-bold" style={{ color: i.color }} aria-hidden>
-                      ●
-                    </span>{' '}
-                    {i.label}
-                    {i.last_visit ? ` · última visita ${diaCurto(i.last_visit.day)}${i.last_visit.consultant_name ? ` · ${i.last_visit.consultant_name}` : ''}` : ' · sem visita'}
-                    {i.phone ? ` · ${i.phone.masked}${i.phone.kind === 'whatsapp' ? ' (WhatsApp)' : ''}` : ''}
-                  </p>
-                </div>
-                <Button variant="outline" className="h-12" onClick={() => abrirLead(i.id)}>
-                  Abrir no funil
-                </Button>
-              </li>
-            ))}
-          </ul>
           <div className="flex flex-wrap gap-2">
             {paginas.length > 0 && (
-              <Button variant="outline" className="h-12" onClick={() => setPaginas((p) => p.slice(0, -1))}>
+              <Button variant="outline" onClick={() => setPaginas((p) => p.slice(0, -1))}>
                 ← Anteriores
               </Button>
             )}
             {r.next_cursor && (
-              <Button variant="outline" className="h-12" onClick={() => setPaginas((p) => [...p, r.next_cursor!])}>
+              <Button variant="outline" onClick={() => setPaginas((p) => [...p, r.next_cursor!])}>
                 Próximos →
               </Button>
             )}
