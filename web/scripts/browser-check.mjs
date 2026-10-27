@@ -153,6 +153,24 @@ async function entrarComoRepresentante(p, email, senha) {
   }
 }
 
+/**
+ * Mapa do Leaflet aberto em `p` com TODOS os ladrilhos já baixados (o aviso sem pinos não tem mapa: volta na hora). Trocar de visão
+ * logo que o `.leaflet-container` aparece desmonta o mapa com os ladrilhos a caminho e o navegador cancela os pedidos
+ * (`net::ERR_ABORTED` em `tile.openstreetmap.org`, que derruba a rodada). Lido duas vezes: o enquadramento nos pinos pode pedir
+ * outra leva logo depois da primeira. Um ladrilho que falha nunca ganha `leaflet-tile-loaded` — e a falha já derrubaria a rodada.
+ */
+async function esperarLadrilhos(p) {
+  if ((await p.locator('.leaflet-container').count()) === 0) return;
+  const prontos = () =>
+    p.waitForFunction(() => {
+      const t = [...document.querySelectorAll('.leaflet-container .leaflet-tile')];
+      return t.length > 0 && t.every((i) => i.classList.contains('leaflet-tile-loaded'));
+    }, null, { timeout: 30000 });
+  await prontos();
+  await espera(500);
+  await prontos();
+}
+
 /** Hoje em Brasília no formato do wire (`YYYY-MM-DD`), como `todaySp()`. */
 const hojeSp = () =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
@@ -959,6 +977,7 @@ console.log('-- Campo: GPS negado --');
     check('E4: aba Mapa é a visão ?v=mapa da rota única', new URL(cel.url()).pathname === '/campo' && new URL(cel.url()).search === '?v=mapa');
     if (meC.features?.map_pins) {
       await cel.locator('.leaflet-container').or(cel.getByText('Nenhum cliente seu com localização ainda')).first().waitFor({ timeout: 20000 });
+      await esperarLadrilhos(cel);
       check('E4: aba Mapa mostra os clientes dele (pinos ou o aviso)', true);
     } else {
       check('E4: sem FIELD_MAP_PINS_ENABLED, a aba Mapa diz que não está ligado (sem chamar a rota)', (await corpo(cel)).includes('o mapa ainda não está ligado neste servidor'));
@@ -1412,6 +1431,7 @@ try {
     if (meS.features?.map_pins) {
       await cs.getByRole('tab', { name: 'Mapa', exact: true }).click();
       await cs.locator('.leaflet-container').or(cs.getByText('Nenhum cliente seu com localização ainda')).first().waitFor({ timeout: 20000 });
+      await esperarLadrilhos(cs);
       check('simples: o mapa do consultor abre no celular (pinos dele ou o aviso)', true);
     }
     await cs.getByRole('button', { name: 'Voltar', exact: true }).click();
