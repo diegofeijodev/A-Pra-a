@@ -6,11 +6,12 @@ import { linhasDoResumo, notaTexto, type ResumoDiaView } from '@/modules/painel/
  * O "Resultado do dia" (contrato §33.5, UX §3.6) — mesmo conteúdo para o consultor e para a equipe. A nota só aparece com
  * `display = nota`, sempre com a conta; com `numeros`, só os números.
  */
-export function ResumoDiaConteudo({ r, paraEquipe = false }: { r: ResumoDiaView; paraEquipe?: boolean }) {
+export function ResumoDiaConteudo({ r, paraEquipe = false, quadros }: { r: ResumoDiaView; paraEquipe?: boolean; quadros?: { titulo: string } }) {
   const comNota = r.display === 'nota' && r.nota != null;
   // As linhas da fórmula vêm primeiro na conta (o servidor as escreve só com a nota).
   const formula = comNota ? r.conta.slice(0, 4) : [];
   const resto = comNota ? r.conta.slice(4) : r.conta;
+  if (quadros) return <ResumoEmQuadros r={r} titulo={quadros.titulo} comNota={comNota} formula={formula} resto={resto} />;
   return (
     <div className="space-y-4">
       {comNota && (
@@ -45,6 +46,57 @@ export function ResumoDiaConteudo({ r, paraEquipe = false }: { r: ResumoDiaView;
       </div>
       <details className="text-xs text-muted-foreground">
         <summary className="cursor-pointer py-2 text-sm">ⓘ Como contamos</summary>
+        <ul className="space-y-0.5">
+          {resto.map((l) => (
+            <li key={l}>{l}</li>
+          ))}
+        </ul>
+      </details>
+    </div>
+  );
+}
+
+/**
+ * O mesmo resultado no cartão da Lovable (`Resultado` de `roteiro.$rotaId.tsx`, UX §4.13): título e nota lado a lado, os números em
+ * quadros `bg-muted`, a avaliação em `bg-secondary`. Os rótulos e a conta são os nossos (a fórmula logo abaixo da nota).
+ */
+function ResumoEmQuadros({ r, titulo, comNota, formula, resto }: { r: ResumoDiaView; titulo: string; comNota: boolean; formula: string[]; resto: string[] }) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold">{titulo}</h2>
+        {comNota && (
+          <div className="text-center">
+            <p className="text-3xl font-bold text-primary">{notaTexto(r.nota!)}</p>
+            <p className="text-xs text-muted-foreground">nota de 0 a 10</p>
+          </div>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {linhasDoResumo(r).map(([k, v]) => (
+          <div key={k} className="rounded-xl bg-muted p-3">
+            <p className="text-xs text-muted-foreground">{k}</p>
+            <p className="font-semibold">{v}</p>
+          </div>
+        ))}
+      </div>
+      <div className="space-y-1 rounded-xl bg-secondary p-3 text-sm">
+        <p className="font-medium">Avaliação</p>
+        <ul className="list-disc space-y-1 pl-5">
+          {r.avaliacao.map((a) => (
+            <li key={a}>{a}</li>
+          ))}
+        </ul>
+      </div>
+      {formula.length > 0 && (
+        <ul className="space-y-0.5 text-xs text-muted-foreground">
+          {formula.map((l) => (
+            <li key={l}>{l}</li>
+          ))}
+        </ul>
+      )}
+      <details className="text-xs text-muted-foreground">
+        <summary className="min-h-11 cursor-pointer py-3 text-sm">ⓘ Como contamos</summary>
         <ul className="space-y-0.5">
           {resto.map((l) => (
             <li key={l}>{l}</li>

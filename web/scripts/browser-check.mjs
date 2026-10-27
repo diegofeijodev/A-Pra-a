@@ -889,7 +889,7 @@ console.log('-- Campo: GPS negado --');
   console.log('-- Campo: visita (check-in sem sinal, questionário, checkout, CRM) --');
   await cel.getByRole('button', { name: 'Nova visita' }).click();
   await cel.waitForURL(/\/campo\?v=nova/, { timeout: 20000 });
-  await cel.getByRole('tab', { name: 'Novo estabelecimento' }).click();
+  await cel.getByRole('tab', { name: 'Novo cliente' }).click();
   await cel.locator('#novo-nome').fill(CAMPO_LUGAR);
   await cel.locator('#novo-endereco').fill('Rua do Browser-Check, 100');
   await cel.getByRole('button', { name: 'Continuar', exact: true }).click();
@@ -910,18 +910,18 @@ console.log('-- Campo: GPS negado --');
   await cel.locator('#foto-fachada').setInputFiles({ name: 'fachada.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(jpeg) });
   const previa = cel.getByAltText('Foto da fachada');
   await previa.waitFor({ timeout: 15000 });
-  check('foto da fachada aparece antes do check-in (prévia local)', (await previa.getAttribute('src'))?.startsWith('blob:') === true);
+  check('foto da fachada aparece antes de confirmar a chegada (prévia local)', (await previa.getAttribute('src'))?.startsWith('blob:') === true);
 
   offline = true;
   await celularCtx.setOffline(true);
-  await cel.getByRole('button', { name: 'Fazer check-in' }).click();
+  await cel.getByRole('button', { name: 'Confirmar chegada e iniciar visita' }).click();
   // Sem sinal e SEM navegar: a visita abre como visão de /campo.
   await cel.waitForURL(/\/campo\?v=visita&ref=[0-9a-f-]{36}/, { timeout: 20000 });
   await cel.getByText('1 envio pendente').waitFor({ timeout: 15000 });
   const fotoVisita = cel.getByAltText('Foto da fachada');
   await fotoVisita.waitFor({ timeout: 15000 });
   check('sem sinal: o check-in fica na fila e a visita abre com a foto do arquivo local', (await fotoVisita.getAttribute('src'))?.startsWith('blob:') === true);
-  check('checkout bloqueado com o questionário vazio', await cel.getByRole('button', { name: 'Fazer checkout' }).isDisabled());
+  check('"Finalizar visita" bloqueado com o questionário vazio', await cel.getByRole('button', { name: 'Finalizar visita' }).isDisabled());
   await celularCtx.setOffline(false);
   offline = false;
   await cel.waitForFunction(() => !document.body.innerText.toLowerCase().includes('pendente'), null, { timeout: 30000 });
@@ -942,7 +942,7 @@ console.log('-- Campo: GPS negado --');
   await cel.getByRole('button', { name: 'Sim', exact: true }).click();
   await cel.locator('#q-retorno-oque').fill('Voltar com proposta');
   await cel.locator('#q-retorno-data').fill(HOJE);
-  check('questionário completo libera o checkout', !(await cel.getByRole('button', { name: 'Fazer checkout' }).isDisabled()));
+  check('questionário completo libera o "Finalizar visita"', !(await cel.getByRole('button', { name: 'Finalizar visita' }).isDisabled()));
 
   // Trocar de visão logo depois de digitar (antes da espera do rascunho) não perde nada.
   await cel.getByRole('button', { name: 'QR code' }).click();
@@ -952,7 +952,7 @@ console.log('-- Campo: GPS negado --');
   await cel.waitForURL(/\/campo\?v=visita&ref=/, { timeout: 15000 });
   check('ao voltar do QR, o questionário digitado continua preenchido', (await cel.locator('#q-nome').inputValue()) === 'Maria Check');
 
-  await cel.getByRole('button', { name: 'Fazer checkout' }).click();
+  await cel.getByRole('button', { name: 'Finalizar visita' }).click();
   await cel.waitForURL(/\/campo(\?v=hoje)?$/, { timeout: 20000 });
   await cel.waitForFunction(() => !document.body.innerText.toLowerCase().includes('pendente'), null, { timeout: 30000 });
   const fechada = (await diaCampo()).visits.find((v) => v.lead_id === leadCampoId);
@@ -972,16 +972,16 @@ console.log('-- Campo: GPS negado --');
   const LUGAR_B = `${CAMPO_LUGAR_PREFIXO} Segundo ${CARIMBO}`;
   await cel.getByRole('button', { name: 'Nova visita' }).click();
   await cel.waitForURL(/\/campo\?v=nova/, { timeout: 20000 });
-  await cel.getByRole('tab', { name: 'Novo estabelecimento' }).click();
+  await cel.getByRole('tab', { name: 'Novo cliente' }).click();
   await cel.locator('#novo-nome').fill(LUGAR_B);
   await cel.getByRole('button', { name: 'Continuar', exact: true }).click();
-  const outro = cel.getByRole('button', { name: 'É outro estabelecimento' });
+  const outro = cel.getByRole('button', { name: 'É outro cliente' });
   await Promise.race([cel.locator('#foto-fachada').waitFor({ timeout: 15000 }), outro.waitFor({ timeout: 15000 })]);
   if (await outro.isVisible()) await outro.click();
   await cel.locator('#foto-fachada').waitFor({ timeout: 15000 });
   await cel.locator('#foto-fachada').setInputFiles({ name: 'fachada2.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(jpeg) });
   await cel.getByAltText('Foto da fachada').waitFor({ timeout: 15000 });
-  await cel.getByRole('button', { name: 'Fazer check-in' }).click();
+  await cel.getByRole('button', { name: 'Confirmar chegada e iniciar visita' }).click();
   await cel.waitForURL(/\/campo\?v=visita&ref=[0-9a-f-]{36}/, { timeout: 20000 });
   const refB = new URL(cel.url()).searchParams.get('ref');
   await cel.locator('#q-nome').fill('Beto Segundo');
@@ -999,7 +999,7 @@ console.log('-- Campo: GPS negado --');
   await cel.locator('#q-freelas').fill('1');
   await cel.getByRole('button', { name: 'Nenhum', exact: true }).last().click();
   await cel.getByRole('button', { name: 'Não', exact: true }).click();
-  await cel.getByRole('button', { name: 'Fazer checkout' }).click();
+  await cel.getByRole('button', { name: 'Finalizar visita' }).click();
   await cel.waitForURL(/\/campo(\?v=hoje)?$/, { timeout: 20000 });
   await cel.waitForFunction(() => !document.body.innerText.toLowerCase().includes('pendente'), null, { timeout: 30000 });
   const fechadaB = (await diaCampo()).visits.find((v) => v.lead_name === LUGAR_B);
@@ -1517,17 +1517,24 @@ try {
       await cs.getByRole('button', { name: 'Encerrar o dia' }).waitFor({ timeout: 20000 });
     }
 
-    // Lote E (UX §2.2): "Lista | Mapa" nas paradas só com o mapa ligado; o mapa lê os pinos dele (precisa de sinal).
+    // E5c (UX §4.13): o roteiro é o da Lovable nos dois fluxos — "← Minhas rotas" e o cartão fixo do dia; o "Lista | Mapa" saiu dele
+    // (o mapa é a aba "Mapa" de baixo, que lê os pinos dele e precisa de sinal).
     await cs.goto(`${BASE}/campo?v=roteiro`, { waitUntil: 'networkidle' });
-    await cs.getByText('Paradas que faltam').waitFor({ timeout: 20000 });
-    check('simples: "Lista | Mapa" nas paradas só com o mapa ligado', ((await cs.getByRole('tab', { name: 'Mapa', exact: true }).count()) === 1) === (meS.features?.map_pins === true));
+    await cs.getByRole('button', { name: 'Minhas rotas' }).waitFor({ timeout: 20000 });
+    check(
+      'simples: o roteiro abre com "← Minhas rotas" e o cartão do dia "Em rota", sem o "Lista | Mapa"',
+      (await cs.getByRole('region', { name: 'Andamento do dia' }).innerText()).includes('Em rota') && (await cs.getByRole('tab', { name: 'Mapa', exact: true }).count()) === 0,
+    );
     if (meS.features?.map_pins) {
-      await cs.getByRole('tab', { name: 'Mapa', exact: true }).click();
+      const secoesS = cs.getByRole('navigation', { name: 'Seções' });
+      await secoesS.getByRole('button', { name: 'Mapa', exact: true }).click();
       await cs.locator('.leaflet-container').or(cs.getByText('Nenhum cliente seu com localização ainda')).first().waitFor({ timeout: 20000 });
       await esperarLadrilhos(cs);
-      check('simples: o mapa do consultor abre no celular (pinos dele ou o aviso)', true);
+      check('simples: o mapa do consultor abre no celular pela aba Mapa (pinos dele ou o aviso)', true);
+      await secoesS.getByRole('button', { name: 'Hoje', exact: true }).click();
+    } else {
+      await cs.getByRole('button', { name: 'Minhas rotas' }).click();
     }
-    await cs.getByRole('button', { name: 'Voltar', exact: true }).click();
     await cs.getByRole('button', { name: 'Encerrar o dia' }).waitFor({ timeout: 20000 });
 
     const jpegS = await cs.evaluate(
@@ -1570,34 +1577,34 @@ try {
     if (v1) leadsSimples.push(v1.lead_id);
     check('simples: a foto virou a chegada no servidor (fluxo simples, sem conclusão)', !!v1 && v1.flow === 'simples' && !v1.checkout_at);
     check('simples: sem resultado o botão diz o que falta', (await corpo(cs)).includes('falta escolher como foi a visita'));
-    // Lote B, L3 (contrato §35): roteiro da conversa + cronômetro só com a flag; sem ela, a tela é a de hoje.
+    // Lote B, L3 (contrato §35): roteiro da visita (checklist) + cronômetro só com a flag; sem ela, a tela é a de hoje.
     if (meS.features?.checklist) {
-      await cs.getByText('Roteiro da conversa · 0 de 7').waitFor({ timeout: 10000 });
+      await cs.getByText('Roteiro da visita · 0 de 7').waitFor({ timeout: 10000 });
       check('L3: cronômetro da visita aberta (role=timer, sem anúncio)', (await cs.getByRole('timer').getAttribute('aria-live')) === 'off');
       await cs.getByRole('checkbox', { name: /1\. Apresentação pessoal e da empresa/ }).click();
-      await cs.getByText('Roteiro da conversa · 1 de 7').waitFor({ timeout: 10000 });
+      await cs.getByText('Roteiro da visita · 1 de 7').waitFor({ timeout: 10000 });
       check('L3: marcar uma etapa = 1 toque na linha', true);
     } else {
-      check('sem FIELD_CHECKLIST_ENABLED: nem roteiro da conversa nem cronômetro', !(await corpo(cs)).includes('roteiro da conversa') && (await cs.getByRole('timer').count()) === 0);
+      check('sem FIELD_CHECKLIST_ENABLED: nem roteiro da visita nem cronômetro', !(await corpo(cs)).includes('roteiro da visita') && (await cs.getByRole('timer').count()) === 0);
     }
     await cs.getByRole('radio', { name: 'Sem interesse', exact: true }).click();
     await cs.getByRole('radio', { name: 'Preço', exact: true }).click();
-    // Lote C (§38, UX §3.2): "Pedir cupom" opcional na tela de resultado; abre a visão própria e volta SEM enviar (nada é gravado).
+    // Lote C (§38, UX §3.2): "Pedir voucher" opcional na tela de resultado; abre a visão própria e volta SEM enviar (nada é gravado).
     if (meS.features?.vouchers) {
-      const pedir = cs.getByRole('button', { name: 'Pedir cupom da 1ª contratação' });
+      const pedir = cs.getByRole('button', { name: 'Pedir voucher da 1ª contratação' });
       await pedir.waitFor({ timeout: 10000 });
-      check('C: "Pedir cupom da 1ª contratação" aparece em "Sem interesse"', await pedir.isVisible());
-      if (meS.features?.checklist) check('C: atalho "Pedir cupom" na etapa "Oferecer o cupom" do roteiro', (await cs.getByRole('button', { name: /Pedir cupom$/ }).count()) === 1);
+      check('C: "Pedir voucher da 1ª contratação" aparece em "Sem interesse"', await pedir.isVisible());
+      if (meS.features?.checklist) check('C: atalho "Pedir voucher" na etapa "Oferecer o cupom" do roteiro', (await cs.getByRole('button', { name: /Pedir voucher$/ }).count()) === 1);
       await pedir.click();
       await cs.waitForURL(/\/campo\?v=pedir-cupom&ref=/, { timeout: 15000 });
       await cs.getByText('Falta escolher o ramo.').waitFor({ timeout: 10000 });
-      check('C: a visão de pedir mostra o desconto e não deixa enviar sem o ramo', (await corpo(cs)).includes('de desconto') && (await cs.getByRole('button', { name: 'Enviar pedido do cupom' }).isDisabled()));
+      check('C: a visão de pedir mostra o desconto e não deixa enviar sem o ramo', (await corpo(cs)).includes('de desconto') && (await cs.getByRole('button', { name: 'Enviar pedido do voucher' }).isDisabled()));
       await cs.getByRole('button', { name: '← Voltar para a visita' }).click();
       await cs.waitForURL(/\/campo\?v=visita&ref=/, { timeout: 15000 });
       await cs.getByRole('button', { name: 'Concluir: Sem interesse, Preço' }).waitFor({ timeout: 10000 });
       check('C: voltar não envia nada (nenhum pedido no servidor)', (await api('GET', `/v1/consultores/vouchers?consultant_id=${consultorSimplesId}`)).counts.todos === 0);
     } else {
-      check('sem FIELD_VOUCHERS_ENABLED: nenhum botão de cupom', (await cs.getByRole('button', { name: /Pedir cupom/ }).count()) === 0);
+      check('sem FIELD_VOUCHERS_ENABLED: nenhum botão de voucher', (await cs.getByRole('button', { name: /Pedir voucher/ }).count()) === 0);
     }
     const concluir1 = cs.getByRole('button', { name: 'Concluir: Sem interesse, Preço' });
     await concluir1.waitFor({ timeout: 10000 });
@@ -1646,10 +1653,10 @@ try {
       // "Já usa o Freela" não tem 1ª contratação: o botão some (aceite C9). Depois volta para "Quer retorno".
       await cs.getByRole('radio', { name: 'Já usa o Freela', exact: true }).click();
       await espera(300);
-      check('C: em "Já usa o Freela" o "Pedir cupom" some', (await cs.getByRole('button', { name: 'Pedir cupom da 1ª contratação' }).count()) === 0);
+      check('C: em "Já usa o Freela" o "Pedir voucher" some', (await cs.getByRole('button', { name: 'Pedir voucher da 1ª contratação' }).count()) === 0);
     }
     await cs.getByRole('radio', { name: 'Quer retorno', exact: true }).click();
-    if (meS.features?.vouchers) check('C: em "Quer retorno" o "Pedir cupom" aparece', (await cs.getByRole('button', { name: 'Pedir cupom da 1ª contratação' }).count()) === 1);
+    if (meS.features?.vouchers) check('C: em "Quer retorno" o "Pedir voucher" aparece', (await cs.getByRole('button', { name: 'Pedir voucher da 1ª contratação' }).count()) === 1);
     await cs.getByRole('radio', { name: 'Amanhã', exact: true }).click();
     await cs.locator('#r-nome').fill('Rui Simples');
     await cs.getByRole('radio', { name: 'Gerente', exact: true }).click();
@@ -1685,13 +1692,13 @@ try {
       check('simples: CRM com evento de visita e o próximo passo do retorno', (leadS2.events ?? []).some((e) => e.kind === 'visit') && leadS2.next_step?.date === amanha.toISOString().slice(0, 10));
     }
 
-    // Encerrar o dia (diálogo do navegador) → resumo do dia, se ligado.
+    // Encerrar o dia (diálogo do navegador) → o Roteiro com o "Resultado do seu dia" no lugar dos botões (E5c, Lovable), se ligado.
     cs.once('dialog', (d) => void d.accept());
     await cs.getByRole('button', { name: 'Encerrar o dia' }).click();
     if (meS.features?.day_summary) {
-      await cs.waitForURL(/\/campo\?v=resumo/, { timeout: 20000 });
+      await cs.waitForURL(/\/campo\?v=roteiro/, { timeout: 20000 });
       await cs.getByText('Resultado do seu dia').first().waitFor({ timeout: 20000 });
-      check('simples: encerrar abre o resultado do dia', (await corpo(cs)).includes('resultado do seu dia'));
+      check('simples: encerrar abre o Roteiro com o resultado do dia e o selo "Encerrada"', (await corpo(cs)).includes('resultado do seu dia') && (await cs.getByRole('region', { name: 'Andamento do dia' }).innerText()).includes('Encerrada'));
       if (meS.features?.breaks) {
         await cs.getByText('Tempo trabalhado (dia − intervalo)').waitFor({ timeout: 20000 });
         check('L4: o resultado do dia mostra o intervalo e o tempo trabalhado', (await corpo(cs)).includes('tempo trabalhado (dia − intervalo)'));

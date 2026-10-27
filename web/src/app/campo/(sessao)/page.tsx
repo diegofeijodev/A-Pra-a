@@ -18,7 +18,6 @@ import { VisitaTela } from '@/components/campo/VisitaTela';
 import { OndeVoceEstaTela } from '@/components/campo/simples/OndeVoceEstaTela';
 import { ResultadoTela } from '@/components/campo/simples/ResultadoTela';
 import { SimplesHojeTela } from '@/components/campo/simples/SimplesHojeTela';
-import { SimplesListaTela } from '@/components/campo/simples/SimplesListaTela';
 import { useDia } from '@/modules/campo/application/use-campo';
 import { useFluxo } from '@/modules/campo/application/use-fluxo';
 import { useTela } from '@/modules/campo/application/use-tela';
@@ -47,7 +46,8 @@ function Visao() {
     case 'cadastro':
       return <CadastroEmpresaTela key={tela.ref} refVisita={tela.ref} />;
     case 'roteiro':
-      return simples ? <SimplesListaTela /> : <RoteiroTela />;
+      // Redesenho E5c (UX §4.13): uma tela só para os dois fluxos; muda só o que "Cheguei no cliente" faz.
+      return <RoteiroTela simples={simples} />;
     case 'parada':
       return <ParadaTela key={tela.id} id={tela.id} />;
     case 'resumo':

@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { AvisoGps } from '@/components/campo/AvisoGps';
 import { CampoTopo } from '@/components/campo/CampoTopo';
 import { ChecklistVisita } from '@/components/campo/ChecklistVisita';
-import { Cronometro } from '@/components/campo/Cronometro';
+import { VisitaEmAndamento } from '@/components/campo/Cronometro';
 import { LinhaPedirCupom } from '@/components/campo/PedirCupomTela';
 import { podePedirCupom } from '@/modules/cupons/domain/cupons';
 import { Chip, Grupo } from '@/components/campo/simples/Chip';
@@ -215,8 +215,6 @@ export function ResultadoTela({ refVisita }: { refVisita: string }) {
 
   return (
     <main className="space-y-5 pb-40">
-      <CampoTopo titulo={local.nome} />
-      {gps && <AvisoGps motivo={gps} onFechar={() => setGps(null)} />}
       <div className="flex items-center justify-between gap-3">
         <button type="button" onClick={() => irPara({ v: 'hoje' })} className="min-h-12 text-sm font-bold text-primary">
           ← Voltar
@@ -227,20 +225,18 @@ export function ResultadoTela({ refVisita }: { refVisita: string }) {
           </button>
         )}
       </div>
-      <div className="flex items-center gap-3">
-        {/* eslint-disable-next-line @next/next/no-img-element -- blob: local, next/image não serve */}
-        {foto && <img src={foto} alt="Foto da fachada" className="h-16 w-16 rounded-md object-cover" />}
-        <p className="text-sm text-muted-foreground">
-          ✓ Chegada registrada · {hora(local.checkin_at)}
-          {local.auto_closed ? ' · fechada sem conclusão' : ''}
-          {ck.ligado && !fechada && (
-            <>
-              {' · '}
-              <Cronometro desde={local.checkin_at} />
-            </>
-          )}
-        </p>
-      </div>
+      {/* Cabeçalho da Lovable (UX §4.13.1): o nome é o título da visão; o cronômetro só com o checklist ligado (lote B §35). */}
+      <VisitaEmAndamento nome={local.nome} desde={local.checkin_at} comCronometro={ck.ligado} encerrada={fechada} titulo>
+        <div className="flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element -- blob: local, next/image não serve */}
+          {foto && <img src={foto} alt="Foto da fachada" className="h-16 w-16 rounded-md object-cover" />}
+          <p className="text-sm text-muted-foreground">
+            ✓ Chegada registrada · {hora(local.checkin_at)}
+            {local.auto_closed ? ' · fechada sem conclusão' : ''}
+          </p>
+        </div>
+      </VisitaEmAndamento>
+      {gps && <AvisoGps motivo={gps} onFechar={() => setGps(null)} />}
 
       {longe && config.justificativa_distancia !== 'nao' && (
         <section className="card-surface space-y-2 p-3" aria-label="Distância do local">

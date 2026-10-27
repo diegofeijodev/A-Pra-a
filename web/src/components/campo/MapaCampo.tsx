@@ -80,18 +80,3 @@ export function MapaCampo({ paradas, escuro }: { paradas: StopView[]; escuro: bo
     </div>
   );
 }
-
-/** "Lista | Mapa" (UX §2.2): só com o mapa ligado no servidor (`features.map_pins` do `/me`). */
-export function AlternarListaMapa({ modo, onModo }: { modo: 'lista' | 'mapa'; onModo: (m: 'lista' | 'mapa') => void }) {
-  const aba = (ativa: boolean) => `flex h-12 flex-1 items-center justify-center rounded-md border text-sm font-bold ${ativa ? 'border-primary bg-primary/15' : 'border-border text-muted-foreground'}`;
-  return (
-    <div role="tablist" aria-label="Ver as paradas" className="flex gap-2">
-      <button type="button" role="tab" aria-selected={modo === 'lista'} className={aba(modo === 'lista')} onClick={() => onModo('lista')}>
-        Lista
-      </button>
-      <button type="button" role="tab" aria-selected={modo === 'mapa'} className={aba(modo === 'mapa')} onClick={() => onModo('mapa')}>
-        Mapa
-      </button>
-    </div>
-  );
-}

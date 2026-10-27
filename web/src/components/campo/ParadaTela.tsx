@@ -48,7 +48,7 @@ export function ParadaTela({ id }: { id: string }) {
         <div className="fixed inset-x-0 bottom-0 border-t border-border bg-background/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
           <div className="mx-auto max-w-md">
             <Button onClick={() => irPara({ v: 'nova', parada: parada.id })} className="h-14 w-full text-base">
-              Cheguei: fazer check-in
+              Cheguei no cliente
             </Button>
           </div>
         </div>

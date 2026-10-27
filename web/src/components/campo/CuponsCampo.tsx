@@ -91,7 +91,7 @@ export function CuponsCampo() {
       )}
       {!isPending && !isError && lista.length === 0 && naFila.length === 0 && (
         <p className="card-surface p-3 text-sm text-muted-foreground">
-          Nenhum cupom pedido ainda. Na visita, depois de escolher como foi, toque em &quot;Pedir cupom da 1ª contratação&quot;.
+          Nenhum voucher pedido ainda. Na visita, depois de escolher como foi, toque em &quot;Pedir voucher da 1ª contratação&quot;.
         </p>
       )}
       {visiveis.length > 0 && (

@@ -33,7 +33,7 @@ export function PedirCupomTela({ refVisita }: { refVisita: string }) {
   if (me.data?.features?.vouchers !== true) {
     return (
       <main className="space-y-4">
-        <CampoTopo titulo="Cupom" />
+        <CampoTopo titulo="Voucher" />
         <p className="card-surface p-5 text-sm">Este recurso ainda não está ligado neste servidor.</p>
         <button type="button" onClick={() => irPara({ v: 'hoje' })} className="flex h-12 w-full items-center justify-center rounded-md border border-border text-sm font-bold">
           Voltar
@@ -55,7 +55,7 @@ export function PedirCupomTela({ refVisita }: { refVisita: string }) {
         },
         consultantId,
       );
-      toast.success(navigator.onLine ? 'Pedido enviado. Avisamos aqui quando o cupom sair.' : 'Sem internet. O pedido está guardado e sai quando o sinal voltar.');
+      toast.success(navigator.onLine ? 'Pedido enviado. Avisamos aqui quando o voucher sair.' : 'Sem internet. O pedido está guardado e sai quando o sinal voltar.');
       voltar();
     } catch {
       toast.error('Não foi possível guardar o pedido neste aparelho.');
@@ -67,13 +67,13 @@ export function PedirCupomTela({ refVisita }: { refVisita: string }) {
   const titulo = local?.nome ?? 'estabelecimento';
   return (
     <main className="space-y-5 pb-36">
-      <CampoTopo titulo="Pedir cupom da 1ª contratação" />
+      <CampoTopo titulo="Pedir voucher da 1ª contratação" />
       <button type="button" onClick={voltar} className="min-h-12 text-sm font-bold text-primary">
         ← Voltar para a visita
       </button>
       <section className="space-y-1">
         <p className="text-lg font-black">{titulo}</p>
-        <p className="text-sm text-muted-foreground">Nome e cidade vêm da visita. A equipe aprova e o cupom aparece aqui.</p>
+        <p className="text-sm text-muted-foreground">Nome e cidade vêm da visita. A equipe aprova e o voucher aparece aqui.</p>
         {config && (
           <p className="text-sm">
             <span aria-hidden>🎟 </span>
@@ -84,7 +84,7 @@ export function PedirCupomTela({ refVisita }: { refVisita: string }) {
 
       {existente || naFila ? (
         <section role="status" className="card-surface space-y-2 p-4 text-sm">
-          <p className="font-bold">Esta empresa já tem um cupom pedido.</p>
+          <p className="font-bold">Esta empresa já tem um voucher pedido.</p>
           <p>
             {existente ? (
               <>
@@ -154,7 +154,7 @@ export function PedirCupomTela({ refVisita }: { refVisita: string }) {
                 onClick={() => void enviar()}
                 className="flex h-14 w-full items-center justify-center rounded-md bg-primary text-base font-bold text-primary-foreground disabled:opacity-50"
               >
-                Enviar pedido do cupom
+                Enviar pedido do voucher
               </button>
             </div>
           </div>
@@ -175,11 +175,11 @@ export function LinhaPedirCupom({ refVisita, leadId, desabilitado }: { refVisita
   if (!ligado) return null;
   const naFila = itens.some((i) => i.kind === 'voucher' && i.visit_ref === refVisita);
   if (existente || naFila) {
-    const st = existente ? situacaoParaConsultor(existente) : { icone: '⏳', texto: 'Cupom pedido · guardado no celular' };
+    const st = existente ? situacaoParaConsultor(existente) : { icone: '⏳', texto: 'Voucher pedido · guardado no celular' };
     return (
       <p role="status" className="rounded-md border border-border p-3 text-sm">
         <span aria-hidden>{st.icone} </span>
-        Cupom: {st.texto}
+        Voucher: {st.texto}
       </p>
     );
   }
@@ -190,7 +190,7 @@ export function LinhaPedirCupom({ refVisita, leadId, desabilitado }: { refVisita
       onClick={() => irPara({ v: 'pedir-cupom', ref: refVisita })}
       className="flex min-h-12 w-full items-center justify-center rounded-md border border-primary px-3 text-base font-bold disabled:opacity-50"
     >
-      <span aria-hidden>🎟&nbsp;</span>Pedir cupom da 1ª contratação
+      <span aria-hidden>🎟&nbsp;</span>Pedir voucher da 1ª contratação
     </button>
   );
 }

@@ -14,44 +14,72 @@ import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 
 
 /**
- * "Resultado do seu dia" (contrato §33.5, UX §3.6). Abre ao encerrar o dia e em Ganhos. A conta é do servidor; sem sinal,
- * avisa e não inventa número. Com `ui_resumo_dia = desligado`, volta para a tela Hoje.
+ * O cartão "Resultado do seu dia" da Lovable (`border-2 border-primary`, UX §4.13) com o nosso conteúdo (contrato §33.5): a conta é
+ * do servidor; sem sinal, avisa e não inventa número. `null` com o módulo desligado ou com `ui_resumo_dia = desligado` (quem chama
+ * decide o que mostrar no lugar). Usado no Roteiro, depois de encerrar o dia, e na visão `resumo` (dias anteriores, pela Carteira).
  */
-export function ResumoDiaTela({ dia }: { dia?: string }) {
+export function ResultadoDoDiaCartao({ dia }: { dia?: string }) {
   const me = useCampoMe();
   const ligado = me.data?.features?.day_summary === true;
   const online = useOnline();
   const q = useResumoDiaCampo(dia, ligado);
-  const desligado = q.data?.display === 'desligado';
-  useEffect(() => {
-    if (desligado) irPara({ v: 'hoje' }, 'replace');
-  }, [desligado]);
-  const fechar = () => irPara({ v: 'hoje' });
-  const diaTela = dia ?? todaySp();
-
+  if (!ligado || q.data?.display === 'desligado') return null;
+  const titulo = dia && dia !== todaySp() ? `Resultado do dia · ${rotuloDia(dia)}` : 'Resultado do seu dia';
   return (
-    <main className="space-y-4 pb-28">
-      <CampoTopo titulo={`Resultado do seu dia · ${rotuloDia(diaTela)}`} />
-      {!ligado && me.data ? (
-        <p className="card-surface p-4 text-sm">Este recurso ainda não está ligado neste servidor.</p>
-      ) : q.isError ? (
-        <div className="card-surface space-y-2 p-4">
+    <section aria-label={titulo} className="space-y-4 rounded-2xl border-2 border-primary bg-card p-5 shadow-card">
+      {q.isError ? (
+        <>
+          <h2 className="text-lg font-semibold">{titulo}</h2>
           <p role="alert" className="text-sm">
             {online ? apiErrorMessage(q.error, 'Não foi possível calcular o resultado do dia.') : 'Sem sinal agora. O resultado do dia aparece quando o celular tiver sinal.'}
           </p>
           <Button variant="outline" className="h-14 w-full" onClick={() => void q.refetch()}>
             Tentar de novo
           </Button>
-        </div>
-      ) : !q.data || desligado ? (
-        <div aria-busy="true" className="space-y-3">
-          <div className="h-24 animate-pulse rounded-lg bg-muted" />
-          <div className="h-40 animate-pulse rounded-lg bg-muted" />
-        </div>
+        </>
+      ) : !q.data ? (
+        <>
+          <h2 className="text-lg font-semibold">{titulo}</h2>
+          <div aria-busy="true" className="space-y-3">
+            <div className="h-24 animate-pulse rounded-lg bg-muted" />
+            <div className="h-40 animate-pulse rounded-lg bg-muted" />
+          </div>
+        </>
       ) : (
-        <section className="card-surface p-4">
-          <ResumoDiaConteudo r={q.data} />
-        </section>
+        <ResumoDiaConteudo r={q.data} quadros={{ titulo }} />
+      )}
+    </section>
+  );
+}
+
+/**
+ * Visão `resumo` (contrato §33.5, UX §3.6): o resultado de um dia, aberto pela Carteira ("Resultado do dia"). O de hoje, ao encerrar,
+ * aparece no Roteiro (redesenho E5c, Lovable); `?v=resumo` continua abrindo o de hoje. Com `ui_resumo_dia = desligado`, volta para a
+ * Hoje.
+ */
+export function ResumoDiaTela({ dia }: { dia?: string }) {
+  const me = useCampoMe();
+  const ligado = me.data?.features?.day_summary === true;
+  const q = useResumoDiaCampo(dia, ligado);
+  const desligado = q.data?.display === 'desligado';
+  useEffect(() => {
+    if (desligado) irPara({ v: 'hoje' }, 'replace');
+  }, [desligado]);
+  const fechar = () => irPara({ v: 'hoje' });
+
+  return (
+    <main className="space-y-4 pb-28">
+      {!ligado && me.data ? (
+        <>
+          <CampoTopo titulo="Resultado do seu dia" grande />
+          <p className="card-surface p-4 text-sm">Este recurso ainda não está ligado neste servidor.</p>
+        </>
+      ) : (
+        <>
+          {/* O título da visão é o do cartão (h1 só para o leitor de tela, sem repetir o texto na tela). */}
+          <h1 className="sr-only">Resultado do dia · {rotuloDia(dia ?? todaySp())}</h1>
+          <ResultadoDoDiaCartao dia={dia} />
+        </>
       )}
       {/* Acima das 5 abas da casca (o resultado do dia acende "Hoje", redesenho E4). */}
       <div className="fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 border-t border-border bg-card/95 py-3 backdrop-blur">

@@ -9,7 +9,8 @@ const ICONE: Record<AbaRepresentante, LucideIcon> = { hoje: CalendarCheck, mapa:
 /**
  * As 5 abas de baixo da casca do representante (Lovable `repNav`, UX §2.5). Cada uma é um `<button>` que troca a VISÃO de `/campo`
  * por `irPara` (`pushState`): nunca `Link`, porque sem sinal a navegação do Next falharia. Nas telas de fluxo (`abaDaTela` = `null`)
- * a barra some e o botão fixo da tela fica no lugar dela. Sem `role="tab"`: o "Lista | Mapa" das paradas já usa esse papel.
+ * a barra some e o botão fixo da tela fica no lugar dela. Sem `role="tab"`: são seções da casca, não abas de um conteúdo (e as abas
+ * "Perto de mim | Buscar | Novo cliente" da chegada usam esse papel).
  */
 export function AbasRepresentante() {
   const tela = useTela();

@@ -192,7 +192,7 @@ export function NovaVisitaTela() {
       {!escolhido ? (
         <section className="space-y-4">
           <div role="tablist" className="grid grid-cols-3 gap-2">
-            {([['perto', 'Perto de mim'], ['buscar', 'Buscar'], ['novo', 'Novo estabelecimento']] as [Modo, string][]).map(
+            {([['perto', 'Perto de mim'], ['buscar', 'Buscar'], ['novo', 'Novo cliente']] as [Modo, string][]).map(
               ([m, rotulo]) => (
                 <button
                   key={m}
@@ -212,7 +212,7 @@ export function NovaVisitaTela() {
           </div>
 
           {modo !== 'novo' && !online && (
-            <p className="text-sm text-muted-foreground">Sem sinal: procurar e buscar precisam de internet. Use “Novo estabelecimento”.</p>
+            <p className="text-sm text-muted-foreground">Sem sinal: procurar e buscar precisam de internet. Use “Novo cliente”.</p>
           )}
 
           {modo === 'perto' && online && (
@@ -227,7 +227,7 @@ export function NovaVisitaTela() {
 
           {modo !== 'novo' && lugares && (
             lugares.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nada encontrado. Tente “Novo estabelecimento”.</p>
+              <p className="text-sm text-muted-foreground">Nada encontrado. Tente “Novo cliente”.</p>
             ) : (
               <ul className="space-y-2">
                 {lugares.map((l) => (
@@ -286,7 +286,7 @@ export function NovaVisitaTela() {
                 }
                 className="h-11 w-full"
               >
-                É outro estabelecimento
+                É outro cliente
               </Button>
             </div>
           )}
@@ -325,7 +325,7 @@ export function NovaVisitaTela() {
         <div className="fixed inset-x-0 bottom-0 border-t border-border bg-background/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
           <div className="mx-auto max-w-md">
             <Button onClick={() => void fazerCheckin()} disabled={!foto || ocupado} className="h-14 w-full text-base">
-              {ocupado ? 'Pegando a localização…' : 'Fazer check-in'}
+              {ocupado ? 'Pegando a localização…' : 'Confirmar chegada e iniciar visita'}
             </Button>
           </div>
         </div>

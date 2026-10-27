@@ -5,8 +5,9 @@ import { Input } from '@/components/ui/input';
 import { marcarEtapa, type ChecklistTela, type MarcaChecklist } from '@/modules/campo/domain/checklist';
 
 /**
- * "Roteiro da conversa" (checklist de abordagem, contrato §35; UX §3.5). Tocar na linha inteira marca a etapa (1 toque, 56 px);
- * [Anotar] abre a observação SÓ daquela etapa. Não é obrigatório por padrão (como a Lovable): não acrescenta toque nenhum.
+ * "Roteiro da visita" (checklist de abordagem, contrato §35; UX §3.5 e §4.13.1, Lovable `VisitaAberta`). Cada etapa num quadro
+ * com borda, riscada quando feita. Tocar na linha inteira marca a etapa (1 toque, 56 px); [Anotar] abre a observação SÓ daquela
+ * etapa ("Objeção principal" na etapa da objeção, como a Lovable). Não é obrigatório por padrão: não acrescenta toque nenhum.
  */
 export function ChecklistVisita({
   checklist,
@@ -19,7 +20,7 @@ export function ChecklistVisita({
   abertoInicial: boolean;
   desabilitado?: boolean;
   onMarcas: (m: MarcaChecklist[]) => void;
-  /** Lote C (§38, UX §3.2 entrada (b)): atalho "Pedir cupom" na etapa "Oferecer o cupom". Ausente = sem atalho. */
+  /** Lote C (§38, UX §3.2 entrada (b)): atalho "Pedir voucher" na etapa "Oferecer o cupom". Ausente = sem atalho. */
   aoPedirCupom?: () => void;
 }) {
   const [aberto, setAberto] = useState(abertoInicial);
@@ -27,7 +28,7 @@ export function ChecklistVisita({
   const feitas = checklist.items.filter((e) => e.done).length;
   const total = checklist.items.length;
   return (
-    <section aria-label="Roteiro da conversa" className="card-surface">
+    <section aria-label="Roteiro da visita" className="card-surface">
       <button
         type="button"
         aria-expanded={aberto}
@@ -35,14 +36,14 @@ export function ChecklistVisita({
         className="flex min-h-14 w-full items-center justify-between gap-3 px-4 text-left text-base font-bold"
       >
         <span>
-          Roteiro da conversa · {feitas} de {total}
+          Roteiro da visita · {feitas} de {total}
         </span>
         <span aria-hidden>{aberto ? '▴' : '▾'}</span>
       </button>
       {aberto && (
-        <ol className="divide-y divide-border border-t border-border">
+        <ol className="space-y-2 border-t border-border p-2">
           {checklist.items.map((e, i) => (
-            <li key={e.id} className="space-y-2 px-2 py-1">
+            <li key={e.id} className="space-y-2 rounded-lg border border-border p-2">
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -60,7 +61,7 @@ export function ChecklistVisita({
                   >
                     {e.done ? '✓' : ''}
                   </span>
-                  <span>
+                  <span className={e.done ? 'text-muted-foreground line-through' : ''}>
                     {i + 1}. {e.text}
                   </span>
                 </button>
@@ -71,7 +72,7 @@ export function ChecklistVisita({
                     onClick={aoPedirCupom}
                     className="min-h-12 shrink-0 px-2 text-sm font-bold text-foreground underline underline-offset-4 disabled:opacity-50"
                   >
-                    <span aria-hidden>🎟 </span>Pedir cupom
+                    <span aria-hidden>🎟 </span>Pedir voucher
                   </button>
                 )}
                 <button
@@ -88,12 +89,12 @@ export function ChecklistVisita({
               {(anotando === e.id || !!e.note) && (
                 <Input
                   aria-label={`Observação da etapa ${i + 1}`}
-                  placeholder="Observação (opcional)"
+                  placeholder={/obje/i.test(e.text) ? 'Objeção principal' : 'Observação (opcional)'}
                   maxLength={200}
                   disabled={desabilitado}
                   value={e.note ?? ''}
                   onChange={(ev) => onMarcas(marcarEtapa(checklist, e.id, { note: ev.target.value || null }))}
-                  className="h-12"
+                  className="h-11 text-sm"
                 />
               )}
             </li>

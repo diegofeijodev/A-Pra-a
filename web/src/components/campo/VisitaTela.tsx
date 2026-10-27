@@ -6,7 +6,7 @@ import { AvisoGps } from '@/components/campo/AvisoGps';
 import { CampoTopo } from '@/components/campo/CampoTopo';
 import { ChecklistVisita } from '@/components/campo/ChecklistVisita';
 import { LinhaPedirCupom } from '@/components/campo/PedirCupomTela';
-import { Cronometro } from '@/components/campo/Cronometro';
+import { VisitaEmAndamento } from '@/components/campo/Cronometro';
 import { Questionario } from '@/components/campo/Questionario';
 import { Button } from '@/components/ui/button';
 import { todaySp } from '@/lib/dates';
@@ -154,22 +154,18 @@ export function VisitaTela({ refVisita }: { refVisita: string }) {
 
   return (
     <main className="space-y-5 pb-32">
-      <CampoTopo titulo={local.nome} />
-      {gps && <AvisoGps motivo={gps} onFechar={() => setGps(null)} />}
-      <button type="button" onClick={() => irPara({ v: 'hoje' })} className="text-sm font-bold text-primary">
+      <button type="button" onClick={() => irPara({ v: 'hoje' })} className="min-h-11 text-sm font-bold text-primary">
         ← Voltar
       </button>
-      <p className="text-xs text-muted-foreground">
-        Check-in às {hora(local.checkin_at)}
-        {doServidor?.far_from_place ? ' · longe do local' : ''}
-        {local.auto_closed ? ' · fechada sem checkout' : ''}
-        {ck.ligado && !fechada && (
-          <>
-            {' · '}
-            <Cronometro desde={local.checkin_at} />
-          </>
-        )}
-      </p>
+      {/* Cabeçalho da Lovable (UX §4.13.1): o nome é o título da visão; o cronômetro só com o checklist ligado (lote B §35). */}
+      <VisitaEmAndamento nome={local.nome} desde={local.checkin_at} comCronometro={ck.ligado} encerrada={fechada} titulo>
+        <p className="text-xs text-muted-foreground">
+          Chegada às {hora(local.checkin_at)}
+          {doServidor?.far_from_place ? ' · longe do local' : ''}
+          {local.auto_closed ? ' · fechada sem checkout' : ''}
+        </p>
+      </VisitaEmAndamento>
+      {gps && <AvisoGps motivo={gps} onFechar={() => setGps(null)} />}
       {/* eslint-disable-next-line @next/next/no-img-element -- blob: local, next/image não serve */}
       {foto && <img src={foto} alt="Foto da fachada" className="w-full rounded-md" />}
 
@@ -235,7 +231,7 @@ export function VisitaTela({ refVisita }: { refVisita: string }) {
               </Button>
             ) : (
               <Button onClick={() => void checkout()} disabled={ocupado || falta.length > 0} className="h-14 flex-1 text-base">
-                {ocupado ? 'Pegando a localização…' : 'Fazer checkout'}
+                {ocupado ? 'Pegando a localização…' : 'Finalizar visita'}
               </Button>
             )}
           </div>

@@ -17,7 +17,7 @@ import { useRoteiro } from '@/modules/rotas/application/use-roteiro';
 /**
  * Iniciar e encerrar o dia (a jornada), o mesmo nas visões Hoje e Roteiro (redesenho E5c, UX §4.12–§4.13): os mesmos corpos de
  * `start`/`end` na fila de sempre, a escolha da praça (lote F2) e o diálogo com a conta. Ao encerrar com o resultado do dia
- * ligado, abre o "Resultado do seu dia".
+ * ligado, cai no Roteiro, onde o "Resultado do seu dia" toma o lugar dos botões (Lovable); `?v=resumo` fica para os outros dias.
  */
 export function useJornada({ simples, fechadoContaNaMeta = false }: { simples: boolean; fechadoContaNaMeta?: boolean }) {
   const consultantId = useCampoSession((s) => s.session?.consultant.id ?? '');
@@ -69,7 +69,7 @@ export function useJornada({ simples, fechadoContaNaMeta = false }: { simples: b
     void comPosicao(async (p) => {
       await enfileirar({ kind: 'end', payload: p }, consultantId);
       // Resultado do dia (contrato §33.5): só com o módulo ligado; a conta é "até agora" se o encerrar ainda estiver na fila.
-      if (resumoLigado) irPara({ v: 'resumo' });
+      if (resumoLigado) irPara({ v: 'roteiro' });
     });
   }
 
