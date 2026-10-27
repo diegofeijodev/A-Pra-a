@@ -129,12 +129,13 @@ const espera = (ms) => new Promise((r) => setTimeout(r, ms));
  * O console do Chromium registra a mesma recusa como "Failed to load resource … status of N", com o endereço em `location()`.
  */
 let recusaEsperada = null;
+// Endereço casado pelo SUFIXO (o web pode falar com a API por outro texto: `127.0.0.1`, barra no fim); método e status, exatos.
 const ehRecusaEsperada = (status, metodo, url) =>
-  !!recusaEsperada && status === recusaEsperada.status && metodo === recusaEsperada.metodo && url === `${API}${recusaEsperada.caminho}`;
+  !!recusaEsperada && status === recusaEsperada.status && metodo === recusaEsperada.metodo && url.endsWith(recusaEsperada.caminho);
 const consoleDaRecusa = (m) => {
   if (!recusaEsperada || !m.text().includes(`status of ${recusaEsperada.status}`)) return false;
   const onde = m.location()?.url ?? '';
-  return onde === '' || onde === `${API}${recusaEsperada.caminho}`;
+  return onde === '' || onde.endsWith(recusaEsperada.caminho);
 };
 
 /** Representante entra pelo formulário único (já aberto em `p`): a 1ª ida (equipe) volta 401 de propósito; fecha quando o campo responde. */
@@ -143,7 +144,7 @@ async function entrarComoRepresentante(p, email, senha) {
   await p.locator('#senha').fill(senha);
   recusaEsperada = { metodo: 'POST', caminho: '/v1/auth/login', status: 401 };
   try {
-    const doCampo = p.waitForResponse((r) => r.url() === `${API}/v1/campo/auth/login`, { timeout: 20000 });
+    const doCampo = p.waitForResponse((r) => r.url().endsWith('/v1/campo/auth/login'), { timeout: 20000 });
     await p.getByRole('button', { name: 'Entrar', exact: true }).click();
     await doCampo;
     await espera(300);
