@@ -188,7 +188,8 @@ function Usuarios({ eu }: { eu: string }) {
         </div>
       )}
 
-      <NovoUsuario aberto={novo} onFechar={() => setNovo(false)} regra={regra} gestor={features.team_gestor} onCriado={setCred} />
+      {/* Monta só aberto: o perfil padrão lê o `features` já resolvido (sem a flag do gestor ainda vazia, ele nasceria "Admin"). */}
+      {novo && <NovoUsuario aberto onFechar={() => setNovo(false)} regra={regra} gestor={features.team_gestor} onCriado={setCred} />}
       {editar && <EditarUsuario u={editar} onFechar={() => setEditar(null)} />}
       {redefinir && (
         <RedefinirSenha
@@ -257,7 +258,8 @@ function NovoUsuario({
 }) {
   const criar = useCreateUser();
   const perfis: Perfil[] = gestor ? ['gestor', 'admin', 'equipe'] : ['admin', 'equipe'];
-  const vazio = () => ({ nome: '', email: '', perfil: perfis[0]!, senha: gerarSenhaProvisoria() });
+  // Padrão: Gestor (Lovable) com o perfil ligado; sem ele, Equipe — nunca Admin por omissão.
+  const vazio = () => ({ nome: '', email: '', perfil: (gestor ? 'gestor' : 'equipe') as Perfil, senha: gerarSenhaProvisoria() });
   const [f, setF] = useState(vazio);
   const [erro, setErro] = useState<string | null>(null);
 
