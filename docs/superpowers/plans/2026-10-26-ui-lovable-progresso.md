@@ -88,7 +88,14 @@ Endereços novos com redirecionamento dos antigos (vídeos, favoritos e o browse
       vitest 37/384. Seguiu a arquitetura onde as specs divergem: o consultor fica em `/campo/senha` e `/campo/entrar` (sem redirecionar para
       `/trocar-senha`/`/entrar`, escopo do atalho); tenta o campo em QUALQUER 401 da equipe. Fica para depois: `?como=representante` (UX §3.1.6),
       troca obrigatória e `token_version` da equipe (D2), contagem exata do browser-check (≈ +5) na rodada da E4.
-- [ ] 4. Casca do representante (5 abas) por cima do campo atual
+- [x] 4. Casca do representante (5 abas) por cima do campo atual — API `c449eba` (contrato §34.7: `GET /v1/campo/map/list`, `@CampoRoute()` +
+      trava do mapa, recorte do §34.4 na praça ATIVA, sem `pracas`/`praca_id`; a G5 veio nesta etapa a pedido, não na E5.11) + web `38e4dd4` (faixa
+      `bg-brand` com "Sair", `AbasRepresentante`, `abaDaTela`, visões `mapa|clientes|desempenho|carteira`, Ganhos/Pix/cadastros/resultado do dia
+      → Carteira, retornos/vouchers/"Visitados" → Clientes, `EmBreve` + atalho D5, barras fixas acima das abas, `destinoDoRepresentante` final,
+      browser-check +11/+12 sem rodar). Jest 10 suítes/120 (pinos, campo.controller, painel, guardas do campo, permissões), `tsc` 0; web lint 0,
+      typecheck 0, vitest 37/401. Fica para depois (E5): Hoje no desenho §4.12 (saudação, `CardRota`, quadros), Roteiro §4.13 (sem "Lista | Mapa",
+      "← Minhas rotas"), Sol e `FaixaFila` na faixa do topo, `CampoTopo` só h1, renomes ("Iniciar/Encerrar intervalo", rótulos da §4.4), os 3
+      cartões de resumo da Carteira; smoke da rota nova (nenhum `smoke*.sh` a chama ainda).
 - [ ] 5. Telas, uma a uma, no desenho da Lovable (Dashboard, Praças, Clientes, Mapa, Rotas, Roteiro, Representantes,
       Vouchers, Financeiro, Usuários, Configurações, Desempenho)
 - [ ] 6. Filtro "Perfil dos clientes" na rota geral (API + contrato + tela)
