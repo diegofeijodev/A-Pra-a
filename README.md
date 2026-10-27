@@ -168,7 +168,7 @@ Freela. Conta **separada** da equipe (tabela `field_consultants`, token com
 `aud: "campo"`, telas em `/campo`). Desenho: `docs/superpowers/specs/2026-10-08-consultores-de-campo-design.md`;
 contrato: `docs/api-contract.md` §20.
 
-- **Equipe** (`/consultores`, menu "Consultores"): admin cria o consultor (nome,
+- **Equipe** (`/representantes`, menu "Representantes"; `/consultores` redireciona): admin cria o consultor (nome,
   e-mail, telefone, CPF, praça, chave Pix) e recebe a senha provisória **uma vez**;
   vê por dia a linha do tempo (início, visitas com foto e respostas, fim) e o mapa
   do trajeto; desativa (derruba o acesso na hora), gera nova senha, vê o QR.

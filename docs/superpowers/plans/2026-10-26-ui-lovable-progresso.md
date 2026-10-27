@@ -143,6 +143,14 @@ Endereços novos com redirecionamento dos antigos (vídeos, favoritos e o browse
       sem rodar). Jest rotas + domain 53 suítes/1077 (+2 suítes/33), `tsc` 0; web lint 0, typecheck 0, vitest 42/460 (+5). Desvios: com os segmentos
       desligados as pílulas são os 5 tipos no singular (`Bar`…, os rótulos que a API grava; o `TIPOS` da busca é plural); na aba Shoppings o seletor SAI (Lovable de 26/10),
       não "pré-marcado e editável" como dizia a arquitetura §4.7.
-- [ ] 7. Endereços da Lovable + redirecionamentos
+- [x] 7. Endereços da Lovable + redirecionamentos — web `c4e1506` (`git mv` para `/inicio`, `/clientes`, `/mapa`, `/mapa/calor`, `/rotas`,
+      `/representantes(/[id])`, `/vouchers`, `/financeiro(/declarados)`; `(app)/praca` saiu; `ROTA` novo + `rotaDoRepresentante`; tabela ÚNICA de 13
+      linhas 307 em `web/src/modules/acesso/domain/redirecionamentos.ts`, lida pelo `redirects()` do `next.config.ts` por caminho relativo e testada em
+      `__tests__/redirecionamentos.test.ts`; carregada pelo `loadConfig` do Next 15.5 sem erro e conferida com o matcher do próprio Next, sem subir nada).
+      Web lint 0, typecheck 0 (depois de `next typegen`: o `.next/types/validator.ts` velho apontava as páginas movidas), vitest 43/469 (+1/+9); sem API
+      (nenhum link da API aponta para tela da equipe; manifest `scope: '/campo'` intacto, sem service worker). browser-check atualizado sem rodar
+      (+6 nas duas configurações: 4 × 307 por `fetch` sem seguir + representante em `/desempenho` e `/consultores/painel`). Desvios (seguiu a arquitetura):
+      `/consultores/roteiros` → `/rotas` e `/consultores/declarados` → `/financeiro/declarados` (a UX dizia `?aba=`; as abas são estado da tela);
+      `/campo/entrar` e `/campo/senha` NÃO redirecionam (E3, escopo do atalho); `/roteiro/:id` (da Lovable) → `/campo?v=roteiro`.
 - [ ] 8. Verificação: lint, typecheck, vitest, jest das partes tocadas, browser-check (um processo por vez, `nice`)
 - [ ] 9. Prévia na Vercel → Denner aprova → subida
