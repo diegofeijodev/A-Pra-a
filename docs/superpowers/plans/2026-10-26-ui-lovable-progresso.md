@@ -80,7 +80,14 @@ Endereços novos com redirecionamento dos antigos (vídeos, favoritos e o browse
       `tsc` 0; web lint 0, typecheck 0, vitest 35/364. Fica para depois: "Trocar senha" no rodapé (E3), `not-found`/`error` da Lovable
       (UX §2.4), "Usuários" aponta para `/configuracoes#pessoas` até a tela própria (E5), sondagem de "Pagamentos"/"Declarados" na
       tela Consultores trocada pelo `features` junto da tela Financeiro (E5).
-- [ ] 3. Entrada única + trocar senha no layout Lovable
+- [x] 3. Entrada única + trocar senha no layout Lovable — API `95d521c` (contrato §2: `POST /v1/auth/change-password` com `@Equipe()`, 400
+      `WRONG_PASSWORD`/`SAME_PASSWORD`/`WEAK_PASSWORD`; `@Throttle` 20/min no login; hash fixo de custo 10 para e-mail inexistente nos dois
+      logins) + web `5127dcf` (`EntradaUnica` em `/entrar` e `/campo/entrar`, `decidirEntrada`/`destinoDaSessao`, `TrocarSenhaCartao` em
+      `/trocar-senha` e `/campo/senha`, "Trocar senha" no rodapé, `(app)/layout` leva o consultor a `/campo`, browser-check com a janela
+      `recusaEsperada`, sem rodar). Jest 7 suítes/98 (auth, campo-auth, users, password-policy, permissões), `tsc` 0; web lint 0, typecheck 0,
+      vitest 37/384. Seguiu a arquitetura onde as specs divergem: o consultor fica em `/campo/senha` e `/campo/entrar` (sem redirecionar para
+      `/trocar-senha`/`/entrar`, escopo do atalho); tenta o campo em QUALQUER 401 da equipe. Fica para depois: `?como=representante` (UX §3.1.6),
+      troca obrigatória e `token_version` da equipe (D2), contagem exata do browser-check (≈ +5) na rodada da E4.
 - [ ] 4. Casca do representante (5 abas) por cima do campo atual
 - [ ] 5. Telas, uma a uma, no desenho da Lovable (Dashboard, Praças, Clientes, Mapa, Rotas, Roteiro, Representantes,
       Vouchers, Financeiro, Usuários, Configurações, Desempenho)
