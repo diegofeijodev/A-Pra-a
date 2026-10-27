@@ -6,6 +6,7 @@ import { ContatoLinks } from '@/components/praca/ContatoLinks';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ROTA } from '@/modules/acesso/domain/enderecos';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { useAtencao, useConfigAlertas, useRetornosEquipe, useSalvarConfigAlertas } from '@/modules/consultores/application/use-consultores';
 import {
@@ -54,7 +55,7 @@ export function AtencaoAgora() {
                 <span className="sr-only">{a.kind === 'pix_bloqueado' ? 'Pix bloqueado' : 'Pix falhou'}: </span>
                 {a.message}
               </p>
-              <Link href="/consultores/pagamentos" className="inline-flex h-12 items-center text-sm font-bold text-primary hover:underline">
+              <Link href={ROTA.financeiro} className="inline-flex h-12 items-center text-sm font-bold text-primary hover:underline">
                 Abrir pagamentos
               </Link>
             </li>
@@ -66,7 +67,7 @@ export function AtencaoAgora() {
                 <span className="sr-only">Divergência nos cadastros declarados: </span>
                 {a.message}
               </p>
-              <Link href="/consultores/declarados" className="inline-flex h-12 items-center text-sm font-bold text-primary hover:underline">
+              <Link href={ROTA.declarados} className="inline-flex h-12 items-center text-sm font-bold text-primary hover:underline">
                 Abrir cadastros declarados
               </Link>
             </li>

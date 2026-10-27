@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle, Copy, Link2, Phone, Plus, SkipForward, Trash2, Undo2, Upload, MessageCircle,
 } from 'lucide-react';
+import { ROTA } from '@/modules/acesso/domain/enderecos';
 import { addDays, diffDays, fmtBR, fmtDateTime, todaySp } from '@/lib/dates';
 import { readFile, type ParsedFile } from '@/lib/intake';
 import { useUiStore } from '@/lib/ui-store';
@@ -499,7 +500,7 @@ function FormularioSection() {
     return (
       <Card title="2. Formulário de captura" sub="Endereço público por praça. Quem preencher entra direto na etapa Lead novo. É o destino dos anúncios do módulo de campanhas.">
         <p className="text-sm text-muted-foreground">
-          Nenhuma praça ainda — abra a primeira em <Link href="/praca" className="text-primary hover:underline">Praça</Link>.
+          Nenhuma praça ainda — abra a primeira em <Link href={ROTA.pracas} className="text-primary hover:underline">Praças</Link>.
         </p>
       </Card>
     );

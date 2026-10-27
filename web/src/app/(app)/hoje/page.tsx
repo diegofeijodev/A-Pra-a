@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useMemo } from 'react';
+import { ROTA } from '@/modules/acesso/domain/enderecos';
 import { addDays, fmtBR, fmtShort, todaySp, WD_SHORT, wdOf } from '@/lib/dates';
 import { dueDateOf } from '@/lib/recurrence';
 import { useUiStore } from '@/lib/ui-store';
@@ -45,7 +46,7 @@ export default function HojePage() {
   if (!praca) {
     return (
       <p className="text-sm text-muted-foreground">
-        Nenhuma praça ainda — abra a primeira em <Link href="/praca" className="text-primary hover:underline">Praça</Link>.
+        Nenhuma praça ainda — abra a primeira em <Link href={ROTA.pracas} className="text-primary hover:underline">Praças</Link>.
       </p>
     );
   }

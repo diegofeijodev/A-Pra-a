@@ -17,7 +17,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { todaySp } from '@/lib/dates';
-import { ROTA } from '@/modules/acesso/domain/enderecos';
+import { ROTA, rotaDoRepresentante } from '@/modules/acesso/domain/enderecos';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { useAtencao } from '@/modules/consultores/application/use-consultores';
 import { useFeaturesLovable, useConfigLovable, usePainel } from '@/modules/painel/application/use-painel';
@@ -203,7 +203,7 @@ export function PainelGestor() {
                             <Posicao i={i} />
                           </td>
                           <td>
-                            <Link href={`${ROTA.representantes}/${r.consultant_id}`} className="hover:underline">
+                            <Link href={rotaDoRepresentante(r.consultant_id)} className="hover:underline">
                               {r.name}
                             </Link>
                           </td>
@@ -217,7 +217,7 @@ export function PainelGestor() {
                   <ol className="space-y-1 sm:hidden">
                     {p.ranking.map((r, i) => (
                       <li key={r.consultant_id}>
-                        <Link href={`${ROTA.representantes}/${r.consultant_id}`} className="flex min-h-11 items-center gap-2 rounded-md px-1 text-sm hover:bg-secondary/60">
+                        <Link href={rotaDoRepresentante(r.consultant_id)} className="flex min-h-11 items-center gap-2 rounded-md px-1 text-sm hover:bg-secondary/60">
                           <span className="w-6 shrink-0 font-semibold">
                             <Posicao i={i} />
                           </span>

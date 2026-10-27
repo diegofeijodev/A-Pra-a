@@ -22,7 +22,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from '@/components/ui/input';
 import { useFeaturesMenu } from '@/modules/acesso/application/use-acesso';
 import { podeOperar } from '@/modules/acesso/domain/acesso';
-import { ROTA } from '@/modules/acesso/domain/enderecos';
+import { rotaDoRepresentante } from '@/modules/acesso/domain/enderecos';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { textoCadastrosConfirmados } from '@/modules/campo/domain/cadastros-confirmados';
 import { useAtivarConsultor, useConsultor, useConsultores } from '@/modules/consultores/application/use-consultores';
@@ -140,7 +140,7 @@ export default function RepresentantesPage() {
                   return (
                     <tr key={c.id} className="border-b align-top last:border-0">
                       <td className="px-4 py-3">
-                        <Link href={`${ROTA.representantes}/${c.id}`} className="inline-flex min-h-11 items-center break-words font-medium hover:underline md:min-h-0">
+                        <Link href={rotaDoRepresentante(c.id)} className="inline-flex min-h-11 items-center break-words font-medium hover:underline md:min-h-0">
                           {c.name}
                         </Link>
                         <div className="break-all text-xs text-muted-foreground">{c.email}</div>

@@ -41,7 +41,7 @@ const CalorMapa = dynamic(() => import('./CalorMapa'), { ssr: false });
 const selectCls = 'h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-primary';
 
 /**
- * `/consultores/calor` — onde a equipe passou e onde falta visitar (UX §5.3, contrato §24).
+ * `/mapa/calor` — onde a equipe passou e onde falta visitar (UX §5.3, contrato §24).
  * Filtros na URL (compartilháveis). Uma camada por vez: o servidor agrega por camada em grade.
  */
 export function MapaDeCalor() {

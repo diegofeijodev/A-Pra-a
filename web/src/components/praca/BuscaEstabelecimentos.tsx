@@ -324,7 +324,7 @@ export function BuscaEstabelecimentos({ praca }: { praca: PracaView }) {
                   {feito.pulados > 0 ? ` (${feito.pulados} ficaram de fora: já estavam na praça)` : ''}
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <Button asChild size="sm" variant="outline"><Link href="/praca">Ver a praça</Link></Button>
+                  <Button asChild size="sm" variant="outline"><Link href={rotaDaPraca(praca.id)}>Ver a praça</Link></Button>
                   <Button asChild size="sm" variant="outline"><Link href="/entrada">Ver em Entrada (desfazer)</Link></Button>
                 </div>
               </div>

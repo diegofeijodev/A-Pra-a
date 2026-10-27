@@ -29,7 +29,7 @@ import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
  * Lovable: [Editar praça] (no lugar do seletor de situação), [Importar planilha] (ligado, abre a Entrada) e [Buscar clientes no mapa]
  * (o nosso `BuscaEstabelecimentos`, mapa aberto). [Atualizar dados do Google] sai (decisão 5). Tabela de clientes da lista do §34.6
  * (só com `features.map_pins`: desligada, a rota responde 404 e não é chamada). Embaixo, recolhidos: "Áreas de atuação" e o
- * "Plano de abertura (11 etapas)" (o conteúdo de `/praca`). A coluna "Origem" da Lovable fica de fora até a lista trazer a origem (G3).
+ * "Plano de abertura (11 etapas)" (o conteúdo da `/praca` de antes da E7). A coluna "Origem" da Lovable fica de fora até a lista trazer a origem (G3).
  *
  * Abrir o detalhe torna a praça a ATIVA da conta (`active_praca_id`, o conceito de sempre): Rotas, Entrada e as telas do Comercial
  * leem a praça ativa.

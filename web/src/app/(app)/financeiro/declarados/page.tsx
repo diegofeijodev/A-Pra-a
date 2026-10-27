@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { DeclaracoesEquipe } from '@/components/praca/DeclaracoesEquipe';
 import { ROTA } from '@/modules/acesso/domain/enderecos';
 
-/** Cadastros declarados (lote S3): também é a 2ª aba do Financeiro (E5.7); o endereço de antes continua abrindo. */
+/** Cadastros declarados (lote S3): também é a 2ª aba do Financeiro (E5.7); `/consultores/declarados` redireciona para cá (E7). */
 export default function DeclaradosPage() {
   return (
     <div className="space-y-4">

@@ -368,10 +368,10 @@ try {
   // as seções do Comercial nas Configurações (passo 10) dependem da chave.
   const featIni = (await api('GET', '/v1/consultores/settings/config')).features ?? {};
   await page.getByRole('button', { name: 'Entrar', exact: true }).click();
-  await page.waitForURL('**/consultores/painel', { timeout: 20000 });
+  await page.waitForURL('**/inicio', { timeout: 20000 });
   await espera(1500);
   const tokenDoNavegador = await page.evaluate(() => JSON.parse(localStorage.getItem('authUser')).access_token);
-  check('login leva ao Dashboard com sessão guardada', page.url().includes('/consultores/painel') && tokenDoNavegador.length > 20);
+  check('login leva ao Dashboard com sessão guardada', new URL(page.url()).pathname === '/inicio' && tokenDoNavegador.length > 20);
   check('login da equipe pela tela única não grava sessão do campo', (await page.evaluate(() => localStorage.getItem('campoSession'))) === null);
 
   // E3 (arquitetura §3.5): "Trocar senha" no rodapé do menu; com a senha atual ERRADA (só o caminho de erro: a senha do seed não
@@ -396,11 +396,26 @@ try {
   check('trocar senha com a atual errada: mostra a mensagem e NÃO derruba a sessão', new URL(page.url()).pathname === '/trocar-senha' && aindaLogado === tokenDoNavegador);
   // A equipe que abre `/campo` passa por `/campo/entrar`, que a reconhece e devolve ao Dashboard (sem laço).
   await page.goto(`${BASE}/campo`, { waitUntil: 'networkidle' });
-  await page.waitForURL('**/consultores/painel', { timeout: 20000 });
-  check('equipe que abre /campo volta ao Dashboard, sem laço', new URL(page.url()).pathname === '/consultores/painel');
+  await page.waitForURL('**/inicio', { timeout: 20000 });
+  check('equipe que abre /campo volta ao Dashboard, sem laço', new URL(page.url()).pathname === '/inicio');
   await page.goto(`${BASE}/hoje`, { waitUntil: 'networkidle' });
   await espera(1000);
   token = tokenDoNavegador;
+
+  // E7 (arquitetura §3.4): os endereços de antes respondem 307 (nunca 308, que fica no cache) para os da Lovable, pela tabela de
+  // `modules/acesso/domain/redirecionamentos.ts` no `next.config.ts`. Um pedido por forma de linha (estática, `has` de query, `:id`,
+  // fora de `/consultores`), FORA do navegador (`redirect: 'manual'`): nada abre, então o vigia não vê nada.
+  console.log('-- Endereços de antes da E7 (307) --');
+  for (const [antigo, novo] of [
+    ['/consultores/painel', '/inicio'],
+    ['/consultores/clientes?modo=mapa', '/mapa'],
+    [`/consultores/${PRACA}`, `/representantes/${PRACA}`],
+    ['/praca', '/pracas'],
+  ]) {
+    const r = await fetch(`${BASE}${antigo}`, { redirect: 'manual' });
+    const destino = r.headers.get('location');
+    check(`${antigo} → 307 ${novo}`, r.status === 307 && !!destino && new URL(destino, BASE).pathname === novo, `${r.status} ${destino}`);
+  }
 
   // ── 2. Hoje ───────────────────────────────────────────────────
   console.log('-- Hoje --');
@@ -474,7 +489,7 @@ try {
   await page.waitForURL(`**/pracas/${PRACA}`, { timeout: 20000 });
   await page.getByRole('heading', { name: /belo horizonte \+ contagem/i }).waitFor({ timeout: 20000 });
   check('Detalhe da praça: "Editar praça", "Importar planilha" e "Buscar clientes no mapa" (admin)', (await page.getByRole('button', { name: 'Editar praça' }).count()) === 1 && (await page.getByRole('link', { name: 'Importar planilha' }).count()) === 1 && (await page.getByRole('button', { name: 'Buscar clientes no mapa' }).count()) >= 1);
-  // O plano de abertura (o conteúdo de `/praca`) mora recolhido no detalhe: abre e espera as etapas.
+  // O plano de abertura (o conteúdo da `/praca` de antes, que redireciona para `/pracas` desde a E7) mora recolhido no detalhe: abre e espera as etapas.
   await abrirSecao(page, 'Plano de abertura (11 etapas)');
   await page.getByText('Mapear a região', { exact: false }).first().waitFor({ timeout: 20000 });
   await espera(800);
@@ -846,6 +861,13 @@ try {
   await cel.goto(`${BASE}/hoje`, { waitUntil: 'networkidle' });
   await espera(1200);
   check('representante que abre endereço da equipe cai na casca dele (/campo), não na entrada', new URL(cel.url()).pathname === '/campo');
+  // E7 (arquitetura §3.3): o endereço da Lovable que serve às duas pessoas leva à visão equivalente; o de antes passa pelo 307 primeiro.
+  await cel.goto(`${BASE}/desempenho`, { waitUntil: 'networkidle' });
+  await cel.waitForURL((u) => u.pathname === '/campo' && u.search === '?v=desempenho', { timeout: 20000 });
+  check('representante que abre /desempenho cai na aba Desempenho do campo (?v=desempenho)', true);
+  await cel.goto(`${BASE}/consultores/painel`, { waitUntil: 'networkidle' });
+  await cel.waitForURL((u) => u.pathname === '/campo' && u.search === '', { timeout: 20000 });
+  check('representante que abre /consultores/painel (de antes): 307 para /inicio e o Hoje do campo', true);
   await cel.goto(`${BASE}/campo`, { waitUntil: 'networkidle' });
   await espera(1200);
   check('e volta para o campo com a sessão dele', new URL(cel.url()).pathname === '/campo');
@@ -1068,12 +1090,12 @@ console.log('-- Campo: GPS negado --');
   await cel.waitForFunction(() => !document.body.innerText.toLowerCase().includes('pendente'), null, { timeout: 30000 });
   check('sinal de volta: a fila enviou o encerramento', (await situacaoCampo())?.status === 'encerrou');
 
-  console.log('-- Equipe: Consultores --');
-  await page.goto(`${BASE}/consultores`, { waitUntil: 'networkidle' });
+  console.log('-- Equipe: Representantes --');
+  await page.goto(`${BASE}/representantes`, { waitUntil: 'networkidle' });
   check('menu tem "Representantes"', (await page.getByRole('link', { name: 'Representantes', exact: true }).count()) > 0);
   check('lista mostra o consultor do roteiro, encerrado hoje', (await corpo(page)).includes(CAMPO_NOME.toLowerCase()) && (await corpo(page)).includes('encerrou'));
   await page.getByRole('link', { name: CAMPO_NOME }).click();
-  await page.waitForURL(`**/consultores/${consultorId}`, { timeout: 20000 });
+  await page.waitForURL(`**/representantes/${consultorId}`, { timeout: 20000 });
   await page.getByText(CAMPO_LUGAR).first().waitFor({ timeout: 20000 });
   const detalhe = await corpo(page);
   check('detalhe: linha do tempo com início, a visita e o fim', detalhe.includes('início da jornada') && detalhe.includes(CAMPO_LUGAR.toLowerCase()) && detalhe.includes('fim da jornada'));
@@ -1151,10 +1173,10 @@ console.log('-- Campo: GPS negado --');
     await page.getByLabel('Simular a semana').uncheck();
 
     // A tela dos declarados só existe com FIELD_DECLARED_SIGNUPS_ENABLED, lida do `features` (sem sondar rota que dá 404). E5.5: o link
-    // saiu do topo de Representantes (o menu e o Financeiro levam lá); o endereço continua abrindo.
+    // saiu do topo de Representantes (o Financeiro e a "Atenção agora" levam lá); E7: página própria em `/financeiro/declarados`.
     const declaradosLigados = !!(await api('GET', '/v1/consultores/settings/config')).features?.declared_signups;
     if (declaradosLigados) {
-      await page.goto(`${BASE}/consultores/declarados`, { waitUntil: 'networkidle' });
+      await page.goto(`${BASE}/financeiro/declarados`, { waitUntil: 'networkidle' });
       await page.getByText('Resumo do período').waitFor({ timeout: 20000 });
       check('Declarados: relatório com resumo e filtros', (await corpo(page)).includes('resumo do período') && (await corpo(page)).includes('sem correspondência'));
     }
@@ -1189,7 +1211,7 @@ console.log('-- Campo: GPS negado --');
   }
   if (remFeat.per_consultant_enabled && consultorId) {
     console.log('-- Equipe: regra de pagamento por consultor (L13) --');
-    await page.goto(`${BASE}/consultores/${consultorId}`, { waitUntil: 'networkidle' });
+    await page.goto(`${BASE}/representantes/${consultorId}`, { waitUntil: 'networkidle' });
     const resumo = page.getByText('Regra de pagamento deste consultor');
     await resumo.first().waitFor({ timeout: 15000 });
     await resumo.first().click();
@@ -1204,14 +1226,14 @@ console.log('-- Campo: GPS negado --');
   console.log('-- Equipe: lote A da Lovable (painel, resumo do dia, mapa por situação) --');
   const lov = (await api('GET', '/v1/consultores/settings/config')).features ?? {};
   // E5.5 (UX §4.7): os links do topo de Representantes saíram (o menu tem tudo, conferido no bloco do menu); "Em campo hoje" fica embaixo.
-  await page.goto(`${BASE}/consultores`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}/representantes`, { waitUntil: 'networkidle' });
   await page.getByRole('heading', { name: 'Em campo hoje', exact: true }).waitFor({ timeout: 20000 });
   const linksDoTopo = ['Painel', 'Mapa por situação', 'Mapa de calor', 'Cupons', 'Pagamentos', 'Declarados', 'Roteiros do dia'];
   let linksAchados = 0;
   for (const nome of linksDoTopo) linksAchados += await page.locator('main').getByRole('link', { name: nome, exact: true }).count();
   check('Representantes: sem os links do topo (Painel, Mapa, Cupons, Pagamentos, Declarados, Roteiros)', linksAchados === 0);
   check('Representantes: busca e filtros da Lovable', (await page.getByLabel('Buscar por nome, e-mail ou telefone').count()) === 1 && (await page.getByLabel('Situação', { exact: true }).count()) === 1);
-  await page.goto(`${BASE}/consultores/painel`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}/inicio`, { waitUntil: 'networkidle' });
   if (lov.dashboard) {
     await page.getByText('Painel ao vivo da operação').first().waitFor({ timeout: 20000 });
     await page.getByText('Visitas concluídas').first().waitFor({ timeout: 20000 });
@@ -1223,13 +1245,13 @@ console.log('-- Campo: GPS negado --');
   }
   // Lote B (contrato §35.2/§37.2): as seções de configuração só existem com as flags (a leitura é a mesma, 200 sempre).
   // E5.4 (D6): com os planos ligados, Rotas abre em "Clientes"; as seções de configuração ficam em "Dia de cada representante".
-  await page.goto(`${BASE}/consultores/roteiros`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}/rotas`, { waitUntil: 'networkidle' });
   if (lov.route_plans) await page.getByRole('tab', { name: 'Dia de cada representante' }).click();
   await page.getByText('Chegada ao local').first().waitFor({ timeout: 20000 });
   check('Rotas: "Roteiro da visita (checklist)" só com o checklist ligado', ((await page.getByText('Roteiro da visita (checklist)').count()) === 1) === !!lov.checklist);
   check('Rotas: "Intervalo e almoço do representante" só com o intervalo ligado', ((await page.getByText('Intervalo e almoço do representante').count()) === 1) === !!lov.breaks);
-  // E5.3 (UX §4.5): o Mapa é página própria (`/consultores/mapa` até a E7), com a legenda num grupo e as pílulas de praça (a do seed é aberta).
-  await page.goto(`${BASE}/consultores/mapa`, { waitUntil: 'networkidle' });
+  // E5.3 (UX §4.5): o Mapa é página própria (`/mapa`, E7), com a legenda num grupo e as pílulas de praça (a do seed é aberta).
+  await page.goto(`${BASE}/mapa`, { waitUntil: 'networkidle' });
   if (lov.map_pins) {
     const legenda = page.getByRole('group', { name: 'Mostrar ou esconder por situação' });
     await legenda.waitFor({ timeout: 20000 });
@@ -1245,7 +1267,7 @@ console.log('-- Campo: GPS negado --');
   }
 
   // E5.7 (UX §4.9): Financeiro com os três cartões da Lovable sobre o `summary`; a aba "Cadastros declarados" só com a flag (lida do `features`).
-  await page.goto(`${BASE}/consultores/pagamentos`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}/financeiro`, { waitUntil: 'networkidle' });
   await page.getByRole('heading', { name: 'Financeiro', exact: true }).waitFor({ timeout: 20000 });
   if (lov.payouts) {
     await page.getByRole('region', { name: 'Pendente', exact: true }).waitFor({ timeout: 20000 });
@@ -1259,7 +1281,7 @@ console.log('-- Campo: GPS negado --');
   // ── Lote C (contrato §36/§38): só leitura e presença; NADA cria pedido de cupom (o pedido é um fato: não sai pela API) ──
   console.log('-- Equipe: lote C da Lovable (segmentos da busca e cupons) --');
   // E5.6 (UX §4.8): h1 "Vouchers", o seletor da Lovable (Todos / Pendente / Aprovado / Reprovado, abre em Pendente) e "Regras do voucher".
-  await page.goto(`${BASE}/consultores/cupons`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}/vouchers`, { waitUntil: 'networkidle' });
   await page.getByRole('heading', { name: 'Vouchers', exact: true }).waitFor({ timeout: 20000 });
   if (lov.vouchers) {
     // A lista só é pedida depois de `features` chegar: espera a contagem no seletor (só existe com a resposta; o `networkidle` não espera a 2ª busca).
@@ -1279,7 +1301,7 @@ console.log('-- Campo: GPS negado --');
     check('Vouchers desligados: avisa, sem chamar a rota', (await corpo(page)).includes('ainda não está ligado neste servidor'));
   }
   if (lov.dashboard) {
-    await page.goto(`${BASE}/consultores/painel`, { waitUntil: 'networkidle' });
+    await page.goto(`${BASE}/inicio`, { waitUntil: 'networkidle' });
     await page.getByText('Visitas concluídas').first().waitFor({ timeout: 20000 });
     check('Painel: cartão "Vouchers" com número só com os cupons ligados ("Não ligado" sem eles)', (await corpo(page)).includes('não ligado neste servidor') === !lov.vouchers);
   }
@@ -1302,7 +1324,7 @@ console.log('-- Campo: GPS negado --');
   // ── Lote D (contrato §39/§40): só leitura e presença; NADA gera plano nem busca shopping (a busca chamaria o Overpass) ──
   console.log('-- Equipe: lote D da Lovable (dividir em rotas e shoppings) --');
   // E5.4 (D6, UX §4.6): com os planos ligados a tela abre na aba "Clientes" (a divisão em rotas); sem eles, é o dia, sem abas.
-  await page.goto(`${BASE}/consultores/roteiros`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}/rotas`, { waitUntil: 'networkidle' });
   if (lov.route_plans) await page.getByRole('tab', { name: 'Clientes', exact: true }).waitFor({ timeout: 20000 });
   else await page.getByText('Chegada ao local').first().waitFor({ timeout: 20000 });
   check('Rotas: aba "Clientes" só com os planos ligados', ((await page.getByRole('tab', { name: 'Clientes', exact: true }).count()) === 1) === !!lov.route_plans);
@@ -1370,19 +1392,20 @@ console.log('-- Campo: GPS negado --');
   check('Menu: "Funil" aceso só com a chave (endereço direto abre sem item no menu)', ((await page.locator('aside nav a[aria-current="page"]').count()) === 1) === !!lov.commercial);
   if (lov.map_pins) {
     // E5.3 (UX §4.4): Clientes é só a lista, com as pílulas de escolha única da Lovable ("Todos" escolhida; sem "A visitar").
-    await page.goto(`${BASE}/consultores/clientes`, { waitUntil: 'networkidle' });
+    await page.goto(`${BASE}/clientes`, { waitUntil: 'networkidle' });
     await page.getByTestId('lista-conta').waitFor({ timeout: 20000 });
     check(
       'Clientes: abre em "Todos" (escolha única), sem a pílula "A visitar", com a conta',
       (await page.getByRole('button', { name: /^Todos/ }).getAttribute('aria-pressed')) === 'true' && (await page.getByRole('button', { name: /^A visitar/ }).count()) === 0,
     );
     check('Clientes: sem as abas antigas (o Mapa é página própria)', (await page.getByRole('tab', { name: 'Mapa', exact: true }).count()) === 0);
-    // O endereço antigo do Mapa (o do menu até a E5) continua abrindo: leva à página do Mapa.
+    // O endereço antigo do Mapa (o do menu até a E5) continua abrindo: o 307 do `next.config.ts` (E7) leva à página do Mapa. O Next
+    // repassa a query (chega `/mapa?modo=mapa`, que a página ignora): por isso a regex, e o check confere só o caminho.
     await page.goto(`${BASE}/consultores/clientes?modo=mapa`, { waitUntil: 'networkidle' });
-    await page.waitForURL('**/consultores/mapa', { timeout: 20000 });
+    await page.waitForURL(/\/mapa(\?|$)/, { timeout: 20000 });
     await page.locator('.leaflet-container').waitFor({ timeout: 30000 });
     await esperarLadrilhos(page);
-    check('Clientes ?modo=mapa (endereço antigo) leva à página do Mapa', new URL(page.url()).pathname === '/consultores/mapa');
+    check('Clientes ?modo=mapa (endereço antigo) leva à página do Mapa', new URL(page.url()).pathname === '/mapa');
   }
   await page.goto(`${BASE}/configuracoes`, { waitUntil: 'networkidle' });
   await page.getByRole('heading', { name: 'Configurações', exact: true }).waitFor({ timeout: 20000 });
@@ -1395,7 +1418,7 @@ console.log('-- Campo: GPS negado --');
   if (lov.team_gestor) await page.getByText('ⓘ O que cada perfil pode fazer').waitFor({ timeout: 20000 });
   check('Usuários: perfil Admin / Gestor / Equipe só com o gestor ligado', ((await page.getByLabel(/^Perfil de /).count()) > 0) === !!lov.team_gestor);
   // E5.5 (UX §4.7): o cadastro da Lovable — "Novo representante", com o endereço à vista ("CEP") e o banco só com o cadastro ligado.
-  await page.goto(`${BASE}/consultores`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}/representantes`, { waitUntil: 'networkidle' });
   await page.getByRole('button', { name: 'Novo representante' }).click();
   await page.getByRole('dialog').getByText('Novo representante', { exact: true }).waitFor({ timeout: 20000 });
   check('Novo representante: "CEP" à vista e "Banco / dados bancários" só com o cadastro ligado', ((await page.getByLabel('CEP', { exact: true }).count()) === 1) === !!lov.consultant_profile && ((await page.getByText('Banco / dados bancários').count()) === 1) === !!lov.consultant_profile);
@@ -1414,7 +1437,7 @@ console.log('-- Campo: GPS negado --');
       await g.locator('#email').fill('rebeca@praca.local');
       await g.locator('#senha').fill('praca123');
       await g.getByRole('button', { name: 'Entrar', exact: true }).click();
-      await g.waitForURL('**/consultores/painel', { timeout: 20000 });
+      await g.waitForURL('**/inicio', { timeout: 20000 });
       check('gestor: entra no Dashboard', true);
       // A busca é do grupo Comercial (contrato §46): no menu só com a chave; sem ela, o endereço continua abrindo (abaixo).
       if (lov.commercial) {
@@ -1424,10 +1447,10 @@ console.log('-- Campo: GPS negado --');
         await g.locator('aside nav').getByRole('link', { name: 'Representantes', exact: true }).waitFor({ timeout: 20000 });
         check('gestor: sem o Comercial, o menu não tem "Buscar estabelecimentos"', (await g.getByRole('link', { name: 'Buscar estabelecimentos', exact: true }).count()) === 0);
       }
-      await g.goto(`${BASE}/consultores`, { waitUntil: 'networkidle' });
+      await g.goto(`${BASE}/representantes`, { waitUntil: 'networkidle' });
       await g.getByRole('button', { name: 'Novo representante' }).waitFor({ timeout: 20000 });
       check('gestor: cria representante ("Novo representante")', true);
-      await g.goto(`${BASE}/consultores/roteiros`, { waitUntil: 'networkidle' });
+      await g.goto(`${BASE}/rotas`, { waitUntil: 'networkidle' });
       if (lov.route_plans) await g.getByRole('tab', { name: 'Dia de cada representante' }).click();
       await g.getByText('Chegada ao local').first().waitFor({ timeout: 20000 });
       check('gestor: monta roteiro (botão no lugar de "Só administradores montam roteiros")', (await g.getByText('Só administradores montam roteiros.').count()) === 0);
@@ -1768,7 +1791,7 @@ try {
       consultorMpId = criadoM.consultant.id;
 
       // Equipe (admin): "Praças em que atua" na página do consultor — marca B e salva.
-      await page.goto(`${BASE}/consultores/${consultorMpId}`, { waitUntil: 'networkidle' });
+      await page.goto(`${BASE}/representantes/${consultorMpId}`, { waitUntil: 'networkidle' });
       await page.getByRole('heading', { name: 'Praças em que atua' }).waitFor({ timeout: 20000 });
       check('L12: a principal vem marcada e travada', (await page.getByRole('checkbox', { name: /\(principal\)/ }).isDisabled()) && (await page.getByRole('checkbox', { name: /\(principal\)/ }).getAttribute('aria-checked')) === 'true');
       await page.getByRole('checkbox', { name: NOME_B }).click();

@@ -324,7 +324,7 @@ function FluxoVisitaConfig({ admin }: { admin: boolean }) {
   );
 }
 
-/** `/consultores/roteiros` — montar o dia dos consultores e acompanhar o planejado × realizado (UX §5.2, contrato §23.4). */
+/** Aba "Dia de cada representante" de `/rotas` — montar o dia dos consultores e acompanhar o planejado × realizado (UX §5.2, contrato §23.4). */
 export function RoteirosEquipe({ praca }: { praca: PracaView }) {
   const { user } = useAuth();
   const admin = !!user?.is_admin;

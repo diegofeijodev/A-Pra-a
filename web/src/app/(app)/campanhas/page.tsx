@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
+import { ROTA } from '@/modules/acesso/domain/enderecos';
 import { CampCalendario } from '@/components/praca/CampCalendario';
 import { CampCriativos } from '@/components/praca/CampCriativos';
 import { CampEstrategia } from '@/components/praca/CampEstrategia';
@@ -27,7 +28,7 @@ export default function CampanhasPage() {
   if (!praca) {
     return (
       <p className="text-sm text-muted-foreground">
-        Nenhuma praça ainda — abra a primeira em <Link href="/praca" className="text-primary hover:underline">Praça</Link>.
+        Nenhuma praça ainda — abra a primeira em <Link href={ROTA.pracas} className="text-primary hover:underline">Praças</Link>.
       </p>
     );
   }

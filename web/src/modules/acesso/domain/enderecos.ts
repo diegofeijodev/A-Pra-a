@@ -1,24 +1,28 @@
 /**
- * Endereços das telas da equipe num lugar só (redesenho da Lovable, arquitetura §5 E2). Até a E7 os valores são os endereços
- * de HOJE; a E7 troca os valores pelos da Lovable (`/inicio`, `/pracas`, `/clientes`…) e redireciona os antigos. Quem aponta
+ * Endereços das telas da equipe num lugar só (redesenho da Lovable, arquitetura §3.4 e §5 E7): os da Lovable. Os de antes
+ * (`/consultores/*`, `/praca`) redirecionam (307) pela tabela de `redirecionamentos.ts`, lida no `next.config.ts`. Quem aponta
  * para uma tela usa `ROTA.x`, nunca o texto do endereço.
+ *
+ * Este arquivo NÃO importa nada: o `next.config.ts` o carrega (por `redirecionamentos.ts`), e lá não há o atalho `@/`.
  */
 export const ROTA = {
   entrar: '/entrar',
-  inicio: '/consultores/painel',
-  // E5.2: a lista nasce no endereço da Lovable; `/praca` (o plano da praça ativa) continua abrindo até a E7.
+  inicio: '/inicio',
   pracas: '/pracas',
-  clientes: '/consultores/clientes',
-  // E5.3: o Mapa é página própria (a de `/consultores/mapa`, que a E7 leva para `/mapa`); `/consultores/clientes?modo=mapa` (o do
-  // menu até aqui) continua abrindo e vem para cá. O Mapa de calor é um link dentro dele (a E7 o leva para `/mapa/calor`).
-  mapa: '/consultores/mapa',
-  mapaCalor: '/consultores/calor',
-  rotas: '/consultores/roteiros',
-  representantes: '/consultores',
-  vouchers: '/consultores/cupons',
-  financeiro: '/consultores/pagamentos',
+  clientes: '/clientes',
+  // Página própria desde a E5.3; o Mapa de calor é um link dentro dele.
+  mapa: '/mapa',
+  mapaCalor: '/mapa/calor',
+  rotas: '/rotas',
+  representantes: '/representantes',
+  vouchers: '/vouchers',
+  financeiro: '/financeiro',
+  // Também é a 2ª aba do Financeiro (E5.7); a página própria fica para os links da "Atenção agora".
+  declarados: '/financeiro/declarados',
+  // Fora do menu: "Em construção" (a Lovable também é só "Em breve").
+  desempenho: '/desempenho',
   configuracoes: '/configuracoes',
-  // Telas NOVAS da E5 nascem no endereço da Lovable (não há antigo a redirecionar): Usuários saiu de Configurações > Pessoas.
+  // Usuários saiu de Configurações > Pessoas (E5.8).
   usuarios: '/usuarios',
   // Fora do menu: a troca da própria senha (E3), aberta pelo rodapé da casca.
   trocarSenha: '/trocar-senha',
@@ -26,6 +30,9 @@ export const ROTA = {
 
 /** Detalhe de uma praça (E5.2): clientes, busca no mapa, áreas e o plano de abertura. */
 export const rotaDaPraca = (id: string): string => `${ROTA.pracas}/${id}`;
+
+/** Ficha de um representante (linha do tempo, praças em que atua, regra própria). */
+export const rotaDoRepresentante = (id: string): string => `${ROTA.representantes}/${id}`;
 
 /**
  * Endereços do consultor (arquitetura §3.4): ficam dentro de `/campo` porque o atalho instalado tem `scope: '/campo'` — a entrada e a
@@ -54,23 +61,19 @@ const DESTINO_REPRESENTANTE: Record<AbaRepresentante, string> = {
 };
 export const destinoDoRepresentante = (aba: AbaRepresentante = 'hoje'): string => DESTINO_REPRESENTANTE[aba];
 
-/** Só o caminho de um endereço (`/consultores/clientes?x=1` → `/consultores/clientes`), sem a barra do fim. */
-const caminho = (endereco: string): string => endereco.split(/[?#]/)[0]!.replace(/\/+$/, '') || '/';
+/** Só o caminho de um endereço (`/clientes?x=1` → `/clientes`), sem a barra do fim. */
+export const caminho = (endereco: string): string => endereco.split(/[?#]/)[0]!.replace(/\/+$/, '') || '/';
 
 /**
- * Endereços que servem às duas pessoas (o mesmo link na equipe e no representante, arquitetura §3.3): os da Lovable (`/inicio`,
- * `/mapa`…, que a E7 cria) e os de HOJE da equipe para as mesmas telas (Dashboard, Clientes, Mapa por situação, Pagamentos).
+ * Endereços que servem às duas pessoas (o mesmo link na equipe e no representante, como na Lovable, arquitetura §3.3). Os de antes
+ * da E7 (`/consultores/painel`…) não precisam estar aqui: o 307 do `next.config.ts` chega antes do `(app)/layout.tsx`.
  */
 const ABA_DO_ENDERECO: Record<string, AbaRepresentante> = {
-  '/inicio': 'hoje',
-  '/mapa': 'mapa',
-  '/clientes': 'clientes',
-  '/financeiro': 'carteira',
-  '/desempenho': 'desempenho',
-  [caminho(ROTA.inicio)]: 'hoje',
-  [caminho(ROTA.clientes)]: 'clientes',
-  [caminho(ROTA.financeiro)]: 'carteira',
-  [caminho(ROTA.mapa)]: 'mapa',
+  [ROTA.inicio]: 'hoje',
+  [ROTA.mapa]: 'mapa',
+  [ROTA.clientes]: 'clientes',
+  [ROTA.financeiro]: 'carteira',
+  [ROTA.desempenho]: 'desempenho',
 };
 
 /**

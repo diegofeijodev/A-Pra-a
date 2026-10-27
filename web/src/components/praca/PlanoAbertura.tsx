@@ -24,7 +24,7 @@ const STATUS_STYLE: Record<string, string> = {
 
 /**
  * Plano de abertura (11 etapas) de UMA praça: a faixa de etapas, as etapas com as ações e as ações fixas — o conteúdo da tela
- * `/praca` (porte de `.prototype/src/routes/praca.tsx`), que também mora recolhido no detalhe da praça (redesenho E5.2, UX §4.3).
+ * `/praca` de antes (porte de `.prototype/src/routes/praca.tsx`), que mora recolhido no detalhe da praça (redesenho E5.2, UX §4.3; `/praca` redireciona para `/pracas` desde a E7).
  *
  * Desvio §9.2: o `stepInfo` que o protótipo calculava no navegador (status, progresso, janela, motivo da tranca) vem pronto de
  * `GET /v1/pracas/:id/steps`. Desvio §9.3: o destrave não pede mais "por quem" — autor é quem está logado.

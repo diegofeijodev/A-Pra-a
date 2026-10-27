@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Fragment, useState } from 'react';
+import { ROTA, rotaDaPraca } from '@/modules/acesso/domain/enderecos';
 import { fmtBR, todaySp } from '@/lib/dates';
 import { fmtVal } from '@/lib/format';
 import { useCatalog } from '@/modules/catalog/application/use-catalog';
@@ -70,7 +71,7 @@ export default function IndicadoresPage() {
   if (!praca) {
     return (
       <p className="text-sm text-muted-foreground">
-        Nenhuma praça ainda — abra a primeira em <Link href="/praca" className="text-primary hover:underline">Praça</Link>.
+        Nenhuma praça ainda — abra a primeira em <Link href={ROTA.pracas} className="text-primary hover:underline">Praças</Link>.
       </p>
     );
   }
@@ -120,7 +121,7 @@ export default function IndicadoresPage() {
       {view === "praca" && (
         <PracaView
           params={params}
-          onOpen={(id) => setActivePraca.mutate(id, { onSuccess: () => router.push("/praca") })}
+          onOpen={(id) => setActivePraca.mutate(id, { onSuccess: () => router.push(rotaDaPraca(id)) })}
         />
       )}
       {view === "pessoa" && <PessoaView params={params} />}

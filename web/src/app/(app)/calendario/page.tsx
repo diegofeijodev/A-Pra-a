@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
+import { ROTA } from '@/modules/acesso/domain/enderecos';
 import { addDays, diffDays, fmtBR, iso, MONTHS, parse, todaySp, wdOf } from '@/lib/dates';
 import { useUiStore } from '@/lib/ui-store';
 import {
@@ -76,7 +77,7 @@ export default function CalendarioPage() {
   if (!praca) {
     return (
       <p className="text-sm text-muted-foreground">
-        Nenhuma praça ainda — abra a primeira em <Link href="/praca" className="text-primary hover:underline">Praça</Link>.
+        Nenhuma praça ainda — abra a primeira em <Link href={ROTA.pracas} className="text-primary hover:underline">Praças</Link>.
       </p>
     );
   }

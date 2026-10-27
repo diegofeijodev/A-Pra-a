@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { corpoDoPerfil, ehGestor, featuresMenuSchema, itemAtivo, montarMenu, paginaInicial, perfilDe, podeOperar, SEM_FEATURES_MENU, type FeaturesMenu } from '../acesso';
-import { destinoDoRepresentante, destinoDoRepresentantePorEndereco, rotaDaPraca, ROTA, ROTA_CAMPO } from '../enderecos';
+import { destinoDoRepresentante, destinoDoRepresentantePorEndereco, rotaDaPraca, rotaDoRepresentante, ROTA, ROTA_CAMPO } from '../enderecos';
 import { conferirRegras, senhaCumpre, type PoliticaLigada } from '../senha';
 import { emailContatoValido, linkWhatsappAcesso, mascararEmail } from '../cadastro';
 
@@ -72,17 +72,22 @@ describe('menu da equipe (casca da Lovable)', () => {
   it('item ativo: um só, o de prefixo mais longo; Clientes e Mapa em páginas próprias (E5.3)', () => {
     const itens = montarMenu({ ...tudo, commercial: true }, ADMIN).flatMap((g) => g.itens);
     const ativo = (path: string, modo: string | null = null) => itemAtivo(itens, path, modo)?.label ?? null;
-    expect(ativo('/consultores/3f2b8c1e-6a7d-4e0f-9b1a-2c3d4e5f6a7b')).toBe('Representantes');
-    expect(ativo('/consultores')).toBe('Representantes');
-    expect(ativo('/consultores/painel')).toBe('Dashboard');
-    expect(ativo('/consultores/roteiros')).toBe('Rotas');
-    expect(ativo('/consultores/cupons')).toBe('Vouchers');
-    expect(ativo('/consultores/pagamentos')).toBe('Financeiro');
-    expect(ativo('/consultores/clientes')).toBe('Clientes');
-    expect(ativo('/consultores/clientes', 'lista')).toBe('Clientes');
-    expect(ativo('/consultores/mapa')).toBe('Mapa');
-    expect(ROTA.mapa).toBe('/consultores/mapa');
-    // E5.2: "Praças" é a lista nova (`/pracas`) e acende no detalhe; `/praca` (o plano de antes, até a E7) não acende nada.
+    expect(ativo(rotaDoRepresentante('3f2b8c1e-6a7d-4e0f-9b1a-2c3d4e5f6a7b'))).toBe('Representantes');
+    expect(ativo('/representantes')).toBe('Representantes');
+    expect(ativo('/inicio')).toBe('Dashboard');
+    expect(ativo('/rotas')).toBe('Rotas');
+    expect(ativo('/vouchers')).toBe('Vouchers');
+    expect(ativo('/financeiro')).toBe('Financeiro');
+    // E7: as páginas de dentro acendem o item de cima (antes, `/consultores/calor` acendia "Representantes").
+    expect(ativo(ROTA.declarados)).toBe('Financeiro');
+    expect(ativo('/clientes')).toBe('Clientes');
+    expect(ativo('/clientes', 'lista')).toBe('Clientes');
+    expect(ativo('/mapa')).toBe('Mapa');
+    expect(ativo(ROTA.mapaCalor)).toBe('Mapa');
+    expect(ROTA.mapa).toBe('/mapa');
+    // `/desempenho` fica fora do menu ("Em construção").
+    expect(ativo('/desempenho')).toBeNull();
+    // E5.2: "Praças" é a lista (`/pracas`) e acende no detalhe; `/praca` (prefixo por pedaço) não acende nada.
     expect(ativo('/pracas')).toBe('Praças');
     expect(ativo(rotaDaPraca('3f2b8c1e-6a7d-4e0f-9b1a-2c3d4e5f6a7b'))).toBe('Praças');
     expect(ativo('/praca')).toBeNull();
@@ -97,7 +102,7 @@ describe('menu da equipe (casca da Lovable)', () => {
   });
   it('página inicial: sempre o Dashboard (nunca mais /hoje)', () => {
     expect(paginaInicial()).toBe(ROTA.inicio);
-    expect(ROTA.inicio).toBe('/consultores/painel');
+    expect(ROTA.inicio).toBe('/inicio');
   });
   it('features: servidor antigo (sem as chaves novas) = desligado; o representante mora em /campo', () => {
     const f = featuresMenuSchema.parse({ dashboard: true });
@@ -113,16 +118,13 @@ describe('menu da equipe (casca da Lovable)', () => {
       ['/financeiro', '/campo?v=carteira'],
       ['/desempenho', '/campo?v=desempenho'],
       ['/mapa/', '/campo?v=mapa'],
-      // Os endereços de HOJE das mesmas telas (até a E7).
-      ['/consultores/painel', '/campo'],
-      ['/consultores/clientes', '/campo?v=clientes'],
-      ['/consultores/mapa', '/campo?v=mapa'],
-      ['/consultores/pagamentos', '/campo?v=carteira'],
-      // Qualquer outro → Hoje.
+      ['/clientes?x=1', '/campo?v=clientes'],
+      // Qualquer outro → Hoje. Os endereços de antes da E7 passam pelo 307 primeiro (redirecionamentos.test.ts).
       ['/hoje', '/campo'],
-      ['/praca', '/campo'],
-      ['/consultores', '/campo'],
+      ['/pracas', '/campo'],
+      ['/representantes', '/campo'],
       ['/mapa/calor', '/campo'],
+      ['/financeiro/declarados', '/campo'],
       ['/', '/campo'],
     ];
     for (const [p, destino] of tabela) expect([p, destinoDoRepresentantePorEndereco(p)]).toEqual([p, destino]);

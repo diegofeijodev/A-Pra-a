@@ -10,7 +10,7 @@ type Aba = 'pagamentos' | 'declarados';
 /**
  * Financeiro (Lovable `financeiro.tsx`, UX §4.9, arquitetura §5 E5.7). Só com o Pix ligado (`features.payouts`); a aba "Cadastros
  * declarados" (nossa, lote S3) só com `features.declared_signups` — os dois lidos do `GET settings/config`, nunca sondando rota.
- * O endereço de antes dos declarados (`/consultores/declarados`) continua abrindo.
+ * Os declarados também têm página própria (`ROTA.declarados`, a dos links da "Atenção agora").
  */
 export default function FinanceiroPage() {
   const { features, carregando } = useFeaturesMenu();
