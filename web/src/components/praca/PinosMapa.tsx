@@ -99,7 +99,9 @@ export default function PinosMapa({ pins, cores, dark, chaveEnquadre, onPino, ba
       ref={el}
       role="img"
       aria-label="Mapa dos estabelecimentos por situação. As mesmas contagens estão na legenda."
-      className="h-[55vh] min-h-[20rem] w-full overflow-hidden rounded-md border border-border lg:h-[38.75rem]"
+      // `isolate`: os painéis do Leaflet (z-index 400–1000) ficam DENTRO do mapa, sem passar por cima da faixa e das abas fixas
+      // da casca do representante (redesenho E4) nem do menu da equipe.
+      className="isolate h-[55vh] min-h-[20rem] w-full overflow-hidden rounded-md border border-border lg:h-[38.75rem]"
     />
   );
 }
