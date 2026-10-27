@@ -5,6 +5,7 @@ import { AdminOnly, GestorOuAdmin } from '../../common/decorators/admin-only.dec
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { LOVABLE_E_FLAGS, type FlagsLovableE } from '../../common/flags/lovable-e.flags';
 import { MULTI_PRACA_LIGADO } from '../../common/flags/multi-praca.flags';
+import { UI_FLAGS, type FlagsUi } from '../../common/flags/ui.flags';
 import { CandidatosQueryDto, ConfigRotaDto, MontarRotaDto, OrdenarRotaDto, ReotimizarEquipeDto, RotasQueryDto } from './dto/rotas.dto';
 import { RotasConfigService } from './rotas-config.service';
 import { RotasEquipeService } from './rotas-equipe.service';
@@ -77,6 +78,8 @@ export class RotasConfigController {
     @Optional() @Inject(LOVABLE_D_FLAGS) private readonly flagsD?: FlagsLovableD,
     @Optional() @Inject(LOVABLE_E_FLAGS) private readonly flagsE?: FlagsLovableE,
     @Optional() @Inject(MULTI_PRACA_LIGADO) private readonly multiPraca?: boolean,
+    // Por último: os testes montam o controller por posição.
+    @Optional() @Inject(UI_FLAGS) private readonly flagsUi?: FlagsUi,
   ) {}
 
   /** `features` (contrato §33.1): o web mostra os links novos sem sondar rota desligada. Só no GET. */
@@ -105,6 +108,12 @@ export class RotasConfigController {
         team_gestor: this.flagsE?.team_gestor ?? false,
         // Lote F2 (contrato §44.1): consultor em várias praças.
         multi_praca: this.multiPraca === true,
+        // Casca da Lovable (contrato §46): o menu da equipe sem sondar rota desligada.
+        commercial: this.flagsUi?.commercial ?? false,
+        routes: this.flagsUi?.routes ?? false,
+        earnings: this.flagsUi?.earnings ?? false,
+        payouts: this.flagsUi?.payouts ?? false,
+        declared_signups: this.flagsUi?.declared_signups ?? false,
       },
     };
   }

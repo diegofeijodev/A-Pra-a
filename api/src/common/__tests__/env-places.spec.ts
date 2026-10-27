@@ -2,6 +2,7 @@ import { validateEnv } from '../config/env.validation';
 import { lerFlagsLovableD, velocidadeCarroKmh } from '../../modules/rotas/rotas.tokens';
 import { lerFlagsLovableE } from '../flags/lovable-e.flags';
 import { lerMultiPraca } from '../flags/multi-praca.flags';
+import { lerFlagsUi } from '../flags/ui.flags';
 import { earningsOpcoesProvider } from '../../modules/campo/earnings/earnings.tokens';
 
 const BASE = { DATABASE_URL: 'postgresql://praca:praca@localhost:5437/praca', JWT_SECRET: 'x'.repeat(16) };
@@ -183,5 +184,24 @@ describe('env — restante da Lovable, lote F2 (§44)', () => {
     expect(lerMultiPraca(BASE)).toBe(false);
     expect(lerMultiPraca({ ...BASE, FIELD_MULTI_PRACA_ENABLED: 'true' })).toBe(true);
     expect(lerMultiPraca({ ...BASE, FIELD_MULTI_PRACA_ENABLED: '' })).toBe(false);
+  });
+});
+
+describe('env — casca da Lovable (§46)', () => {
+  it('chave do Comercial: desligada por padrão e aceita true', () => {
+    expect(validateEnv(BASE).TEAM_COMMERCIAL_ENABLED).toBe('false');
+    expect(validateEnv({ ...BASE, TEAM_COMMERCIAL_ENABLED: 'true' }).TEAM_COMMERCIAL_ENABLED).toBe('true');
+  });
+  it('features de navegação: tudo desligado por padrão; cada flag liga só a sua', () => {
+    expect(lerFlagsUi(BASE)).toEqual({ commercial: false, routes: false, earnings: false, payouts: false, declared_signups: false });
+    expect(lerFlagsUi({ ...BASE, TEAM_COMMERCIAL_ENABLED: 'true' })).toEqual({ commercial: true, routes: false, earnings: false, payouts: false, declared_signups: false });
+    expect(lerFlagsUi({ ...BASE, FIELD_ROUTES_ENABLED: 'true' })).toEqual({ commercial: false, routes: true, earnings: false, payouts: false, declared_signups: false });
+  });
+  it('Pix e cadastro declarado só valem com a remuneração ligada (a mesma conta dos módulos donos)', () => {
+    const t = 'true';
+    expect(lerFlagsUi({ ...BASE, FIELD_PAYOUTS_ENABLED: t, FIELD_DECLARED_SIGNUPS_ENABLED: t })).toMatchObject({ earnings: false, payouts: false, declared_signups: false });
+    expect(lerFlagsUi({ ...BASE, FIELD_EARNINGS_ENABLED: t })).toMatchObject({ earnings: true, payouts: false, declared_signups: false });
+    expect(lerFlagsUi({ ...BASE, FIELD_EARNINGS_ENABLED: t, FIELD_PAYOUTS_ENABLED: t })).toMatchObject({ earnings: true, payouts: true, declared_signups: false });
+    expect(lerFlagsUi({ ...BASE, FIELD_EARNINGS_ENABLED: t, FIELD_DECLARED_SIGNUPS_ENABLED: t })).toMatchObject({ earnings: true, payouts: false, declared_signups: true });
   });
 });

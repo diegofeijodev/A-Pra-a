@@ -4317,7 +4317,8 @@ leitura, no dia de **Brasília** (`field_journeys.day`), com a conta e a fonte d
 Desligadas: as rotas abaixo respondem `404 DASHBOARD_DISABLED` / `404 DAY_SUMMARY_DISABLED` e nada mais muda. Acréscimos aditivos de resposta (valem para L1 e L2):
 
 - `GET /v1/consultores/settings/config` (só o **GET**) ganha `features: { dashboard, day_summary, map_pins }` (booleans, as flags). É o que o web usa para mostrar
-  os links novos **sem sondar** rota desligada (um `404` derrubaria o `browser-check`).
+  os links novos **sem sondar** rota desligada (um `404` derrubaria o `browser-check`). Os lotes seguintes acrescentam chaves ao mesmo objeto (§35.6, §36, §37.6,
+  §38.1, §39, §40, §41.1, §42.1, §44.1) e a casca da Lovable acrescenta as de navegação `commercial`, `routes`, `earnings`, `payouts` e `declared_signups` (§46).
 - `GET /v1/campo/me`: `features.day_summary` e `features.map_pins` (booleans).
 
 ### 33.2 Configuração — `GET/PUT /v1/consultores/settings/config` (chaves novas; `null` no PUT = ausente)
@@ -5454,3 +5455,36 @@ Demais conferências do `PUT …/config`: `validarRegra`, `ROUTES_DISABLED`, `DE
 **Desligar depois de usar** faz todos voltarem à regra geral: as semanas abertas passam a ser calculadas pela geral e as fechadas dentro do prazo tardio ganham delta (§28.4). Para
 desligar sem mexer em dinheiro, crie antes uma regra própria igual à geral, ou feche as semanas.
 **Ordem de subida:** `migrate deploy` → API → web.
+
+## 46. Casca da Lovable: chave do Comercial e `features` de navegação (redesenho de 26/10, etapa E2)
+
+Origem: `docs/superpowers/specs/2026-10-26-ui-lovable-arquitetura.md` §2. **Só leitura e aditivo**: nenhuma rota nova, nenhuma migração, nenhuma rota muda de comportamento.
+O web monta o menu da equipe só pelo `features` do `GET /v1/consultores/settings/config` (200 sempre), **sem sondar** rota desligada.
+
+### 46.1 Trava: `TEAM_COMMERCIAL_ENABLED` (padrão `false`)
+
+| Estado | Efeito |
+|---|---|
+| Desligada | `features.commercial = false`. O web tira do menu o grupo "Comercial" (Funil, Entrada, Buscar estabelecimentos, Mensagens, Campanhas, Calendário, Indicadores, Ações e Freela), o sino de notificações e as seções "Variáveis padrão das mensagens", "Roteiro-modelo" e "Impressão" das Configurações. **A API não muda:** leads, eventos, cadências, outbox do Freela, formulário público e todas as rotas `/v1/*` seguem iguais (o lead é comum ao funil e ao campo). Endereço direto de uma tela do Comercial continua abrindo |
+| Ligada | `features.commercial = true`: o menu ganha o 2º grupo "Comercial", na ordem de hoje, e voltam o sino e as três seções |
+
+### 46.2 `features` de navegação no `GET /v1/consultores/settings/config` (só o **GET**)
+
+| Chave | Vale `true` quando | Uso no web |
+|---|---|---|
+| `commercial` | `TEAM_COMMERCIAL_ENABLED=true` | grupo "Comercial", sino e as três seções das Configurações |
+| `routes` | `FIELD_ROUTES_ENABLED=true` | item "Rotas" |
+| `earnings` | `FIELD_EARNINGS_ENABLED=true` | remuneração (mesma trava do §28) |
+| `payouts` | `FIELD_PAYOUTS_ENABLED=true` **e** `FIELD_EARNINGS_ENABLED=true` (a mesma conta do §29) | item "Financeiro" |
+| `declared_signups` | `FIELD_DECLARED_SIGNUPS_ENABLED=true` **e** `FIELD_EARNINGS_ENABLED=true` (a mesma conta do §32.5) | link "Declarados" do Financeiro |
+
+Booleans sempre presentes. Servidor antigo (sem as chaves) = desligado no web, que só perde itens de menu. O `PUT` não aceita nenhuma delas (são flags de ambiente,
+não configuração).
+
+### 46.3 Variáveis
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `TEAM_COMMERCIAL_ENABLED` | `false` | mostra o grupo "Comercial" no menu da equipe (só apresentação; a API do Comercial funciona com ela desligada) |
+
+**Ordem de subida:** API → web (o web novo contra a API velha só perde itens de menu).

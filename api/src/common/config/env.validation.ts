@@ -110,6 +110,9 @@ const envBase = z.object({
   // Restante da Lovable, lote F2 (contrato §44): consultor em várias praças. Desligada = o conjunto é ignorado, o guard lê o
   // consultor como hoje e o início do dia só aceita a praça principal (outra = 422 MULTI_PRACA_DISABLED).
   FIELD_MULTI_PRACA_ENABLED: z.string().default('false'),
+  // Casca da Lovable (contrato §46): mostra o grupo "Comercial" no menu da equipe. Só apresentação: a API do Comercial
+  // (leads, cadências, disparos, Freela) funciona igual com ela desligada.
+  TEAM_COMMERCIAL_ENABLED: z.string().default('false'),
 
   SWAGGER_ENABLED: z.string().optional(),
 
