@@ -6,6 +6,7 @@ import {
   Calendar,
   Filter,
   Inbox,
+  KeyRound,
   LayoutDashboard,
   ListChecks,
   LogOut,
@@ -222,6 +223,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="mb-3 break-all text-xs opacity-70">
             {user?.email} · {user ? ROTULO_PERFIL[perfilDe(user)] : ''}
           </div>
+          {/* Nosso (UX §2.1): a Lovable só leva à troca quando ela é obrigatória. A troca pede a senha atual (contrato §2). */}
+          <Link href={ROTA.trocarSenha} className="mb-2 block text-xs underline opacity-80 hover:opacity-100">
+            Trocar senha
+          </Link>
           <Button variant="secondary" size="sm" className="w-full" onClick={() => void sair()}>
             <LogOut className="h-4 w-4" aria-hidden /> Sair
           </Button>
@@ -236,6 +241,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
           <div className="flex items-center">
             {features.commercial && <Sino pracaId={praca?.id} lado="topo" />}
+            {/* No celular não há rodapé: o mesmo "Trocar senha" vira ícone ao lado de "Sair" (alvo de 44 × 44). */}
+            <Link href={ROTA.trocarSenha} aria-label="Trocar senha" className="grid h-11 w-11 place-items-center">
+              <KeyRound className="h-5 w-5" aria-hidden />
+            </Link>
             <button onClick={() => void sair()} aria-label="Sair" className="grid h-11 w-11 place-items-center">
               <LogOut className="h-5 w-5" aria-hidden />
             </button>

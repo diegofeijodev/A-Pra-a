@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { corpoDoPerfil, ehGestor, featuresMenuSchema, itemAtivo, montarMenu, paginaInicial, perfilDe, podeOperar, SEM_FEATURES_MENU, type FeaturesMenu } from '../acesso';
-import { destinoDoRepresentante, ROTA } from '../enderecos';
+import { destinoDoRepresentante, destinoDoRepresentantePorEndereco, ROTA, ROTA_CAMPO } from '../enderecos';
 import { conferirRegras, senhaCumpre, type PoliticaLigada } from '../senha';
 import { emailContatoValido, linkWhatsappAcesso, mascararEmail } from '../cadastro';
 
@@ -99,6 +99,14 @@ describe('menu da equipe (casca da Lovable)', () => {
     expect([f.commercial, f.routes, f.earnings, f.payouts, f.declared_signups]).toEqual([false, false, false, false, false]);
     expect(destinoDoRepresentante()).toBe('/campo');
     expect(destinoDoRepresentante('carteira')).toBe('/campo');
+  });
+  it('representante que abre endereço da equipe cai na casca dele (E3: tudo → /campo), nunca na entrada', () => {
+    for (const p of ['/inicio', '/mapa', '/clientes', '/financeiro', '/desempenho', '/hoje', '/consultores/painel', '/praca', '/', '/mapa/']) {
+      expect(destinoDoRepresentantePorEndereco(p)).toBe('/campo');
+    }
+    // A entrada e a troca obrigatória do consultor ficam DENTRO de `/campo` (escopo do atalho instalado, arquitetura §3.4).
+    expect(Object.values(ROTA_CAMPO).every((r) => r.startsWith('/campo'))).toBe(true);
+    expect(ROTA.trocarSenha).toBe('/trocar-senha');
   });
   it('as chaves dos links são únicas (o React reclamaria no console)', () => {
     const itens = montarMenu({ ...tudo, commercial: true }, ADMIN).flatMap((g) => g.itens);

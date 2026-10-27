@@ -27,7 +27,12 @@
 // não chama mais nenhuma rota `/v1/freela/*` sem conexão. As duas únicas
 // tolerâncias são do servidor de desenvolvimento do Next e estão em listas
 // FECHADAS, com motivo: `IGNORADAS` (404 do `hot-update.json`) e
-// `REDE_IGNORADA` (pré-carregamento `_rsc` cancelado pelo roteador).
+// `REDE_IGNORADA` (pré-carregamento `_rsc` cancelado pelo roteador). E há as
+// recusas que o próprio roteiro provoca, cada uma numa JANELA aberta só em
+// volta do passo e só para o par exato (método + endereço + status):
+// `recusaEsperada` (a entrada única tenta a equipe antes do representante; a
+// troca de senha com a atual errada) e `esperado401` (a sessão do celular cai
+// depois da senha nova).
 //
 // A conta vem de `PRACA_CHECK_EMAIL` / `PRACA_CHECK_PASSWORD` (padrão: a conta
 // admin do seed) e o login é feito PELO FORMULÁRIO — `?demo=1` só existe com
@@ -116,6 +121,37 @@ const check = (nome, cond, detalhe = '') => (cond ? ok(nome) : ko(nome, detalhe)
 const corpo = async (p) => (await p.locator('body').innerText()).toLowerCase();
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Recusa ESPERADA (redesenho E3): `null` fora da janela. Dentro dela, só o par exato não derruba a rodada:
+ * - `POST /v1/auth/login` → 401: a entrada única tenta a EQUIPE primeiro; para um representante ela responde 401 e só então vai o
+ *   login do campo (arquitetura §3.2). Cada login de representante pelo formulário abre a janela (`entrarComoRepresentante`).
+ * - `POST /v1/auth/change-password` → 400: a troca com a senha atual errada é testada de propósito (não pode derrubar a sessão).
+ * O console do Chromium registra a mesma recusa como "Failed to load resource … status of N", com o endereço em `location()`.
+ */
+let recusaEsperada = null;
+const ehRecusaEsperada = (status, metodo, url) =>
+  !!recusaEsperada && status === recusaEsperada.status && metodo === recusaEsperada.metodo && url === `${API}${recusaEsperada.caminho}`;
+const consoleDaRecusa = (m) => {
+  if (!recusaEsperada || !m.text().includes(`status of ${recusaEsperada.status}`)) return false;
+  const onde = m.location()?.url ?? '';
+  return onde === '' || onde === `${API}${recusaEsperada.caminho}`;
+};
+
+/** Representante entra pelo formulário único (já aberto em `p`): a 1ª ida (equipe) volta 401 de propósito; fecha quando o campo responde. */
+async function entrarComoRepresentante(p, email, senha) {
+  await p.locator('#email').fill(email);
+  await p.locator('#senha').fill(senha);
+  recusaEsperada = { metodo: 'POST', caminho: '/v1/auth/login', status: 401 };
+  try {
+    const doCampo = p.waitForResponse((r) => r.url() === `${API}/v1/campo/auth/login`, { timeout: 20000 });
+    await p.getByRole('button', { name: 'Entrar', exact: true }).click();
+    await doCampo;
+    await espera(300);
+  } finally {
+    recusaEsperada = null;
+  }
+}
+
 /** Hoje em Brasília no formato do wire (`YYYY-MM-DD`), como `todaySp()`. */
 const hojeSp = () =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
@@ -125,13 +161,13 @@ const ctx = await browser.newContext({ viewport: { width: 1500, height: 1200 } }
 const page = await ctx.newPage();
 
 page.on('console', (m) => {
-  if (m.type() === 'error') {
+  if (m.type() === 'error' && !consoleDaRecusa(m)) {
     erros.push(`[console] ${page.url().replace(BASE, '')}: ${m.text().slice(0, 200)}`);
   }
 });
 page.on('pageerror', (e) => erros.push(`[pageerror] ${page.url().replace(BASE, '')}: ${String(e).slice(0, 200)}`));
 page.on('response', (r) => {
-  if (r.status() >= 400 && !ignorada(r.url())) {
+  if (r.status() >= 400 && !ignorada(r.url()) && !ehRecusaEsperada(r.status(), r.request().method(), r.url())) {
     erros.push(`[http ${r.status()}] ${r.request().method()} ${r.url().replace(API, 'api')}`);
   }
 });
@@ -293,7 +329,9 @@ try {
   // Pelo FORMULÁRIO, não por `?demo=1`: o atalho só existe com
   // `NEXT_PUBLIC_DEMO_LOGIN=1` (a senha do admin do seed não fica no pacote).
   await page.goto(`${BASE}/entrar`, { waitUntil: 'networkidle' });
-  check('tela de entrada com a marca PRAÇA', (await corpo(page)).includes('checklist de abertura de praças'));
+  // Entrada única no layout da Lovable (E3): o texto do formulário está sempre à vista; o painel azul, só a partir de `lg`.
+  const telaDeEntrada = await corpo(page);
+  check('tela de entrada única (Lovable): formulário por e-mail e o painel "Abra praças com método."', telaDeEntrada.includes('use o e-mail e a senha fornecidos') && telaDeEntrada.includes('abra praças com método'));
   await page.locator('#email').fill(EMAIL);
   await page.locator('#senha').fill(SENHA);
   check('formulário de entrada preenchido', (await page.locator('#email').inputValue()) === EMAIL);
@@ -306,6 +344,32 @@ try {
   await espera(1500);
   const tokenDoNavegador = await page.evaluate(() => JSON.parse(localStorage.getItem('authUser')).access_token);
   check('login leva ao Dashboard com sessão guardada', page.url().includes('/consultores/painel') && tokenDoNavegador.length > 20);
+  check('login da equipe pela tela única não grava sessão do campo', (await page.evaluate(() => localStorage.getItem('campoSession'))) === null);
+
+  // E3 (arquitetura §3.5): "Trocar senha" no rodapé do menu; com a senha atual ERRADA (só o caminho de erro: a senha do seed não
+  // muda) a mensagem aparece e a sessão continua — é 400, não 401.
+  console.log('-- Entrada: trocar senha e a equipe em /campo --');
+  await page.locator('aside').first().getByRole('link', { name: 'Trocar senha', exact: true }).click();
+  await page.waitForURL('**/trocar-senha', { timeout: 20000 });
+  await page.getByRole('heading', { name: 'Crie sua nova senha' }).waitFor({ timeout: 20000 });
+  check('rodapé do menu: "Trocar senha" abre o cartão pedindo a senha atual', (await page.getByLabel('Senha atual', { exact: true }).count()) === 1);
+  await page.locator('#atual').fill('senha-errada-9');
+  await page.locator('#nova').fill('NovaSenha123');
+  await page.locator('#confirma').fill('NovaSenha123');
+  recusaEsperada = { metodo: 'POST', caminho: '/v1/auth/change-password', status: 400 };
+  try {
+    await page.getByRole('button', { name: 'Salvar senha', exact: true }).click();
+    await page.getByText('A senha atual não confere.').waitFor({ timeout: 20000 });
+    await espera(300);
+  } finally {
+    recusaEsperada = null;
+  }
+  const aindaLogado = await page.evaluate(() => JSON.parse(localStorage.getItem('authUser') ?? 'null')?.access_token);
+  check('trocar senha com a atual errada: mostra a mensagem e NÃO derruba a sessão', new URL(page.url()).pathname === '/trocar-senha' && aindaLogado === tokenDoNavegador);
+  // A equipe que abre `/campo` passa por `/campo/entrar`, que a reconhece e devolve ao Dashboard (sem laço).
+  await page.goto(`${BASE}/campo`, { waitUntil: 'networkidle' });
+  await page.waitForURL('**/consultores/painel', { timeout: 20000 });
+  check('equipe que abre /campo volta ao Dashboard, sem laço', new URL(page.url()).pathname === '/consultores/painel');
   await page.goto(`${BASE}/hoje`, { waitUntil: 'networkidle' });
   await espera(1000);
   token = tokenDoNavegador;
@@ -623,13 +687,13 @@ const e401 = (status, url) => esperado401 && status === 401 && url.includes('/v1
 /** Os mesmos vigias da página principal, para cada página do campo. */
 function vigiar(p, rotulo) {
   p.on('console', (m) => {
-    if (m.type() === 'error' && !esperadoOffline(m.text()) && !(esperado401 && /401/.test(m.text()))) {
+    if (m.type() === 'error' && !esperadoOffline(m.text()) && !(esperado401 && /401/.test(m.text())) && !consoleDaRecusa(m)) {
       erros.push(`[console/${rotulo}] ${p.url().replace(BASE, '')}: ${m.text().slice(0, 200)}`);
     }
   });
   p.on('pageerror', (e) => erros.push(`[pageerror/${rotulo}] ${String(e).slice(0, 200)}`));
   p.on('response', (r) => {
-    if (r.status() >= 400 && !ignorada(r.url()) && !e401(r.status(), r.url())) {
+    if (r.status() >= 400 && !ignorada(r.url()) && !e401(r.status(), r.url()) && !ehRecusaEsperada(r.status(), r.request().method(), r.url())) {
       erros.push(`[http ${r.status()}/${rotulo}] ${r.request().method()} ${r.url().replace(API, 'api')}`);
     }
   });
@@ -681,11 +745,10 @@ try {
   const icone = await fetch(`${BASE}/campo/icone/192`);
   check('ícone do atalho é PNG', icone.status === 200 && (icone.headers.get('content-type') ?? '').includes('image/png'));
 
-  await cel.goto(`${BASE}/campo/entrar`, { waitUntil: 'networkidle' });
-  check('tela de entrada do campo', (await corpo(cel)).includes('entrada do consultor de campo'));
-  await cel.locator('#email').fill(CAMPO_EMAIL);
-  await cel.locator('#senha').fill(criado.temp_password);
-  await cel.getByRole('button', { name: 'Entrar', exact: true }).click();
+  // Entrada única (E3): o representante entra pelo MESMO `/entrar` da equipe e cai na troca da senha provisória, dentro de `/campo`.
+  await cel.goto(`${BASE}/entrar`, { waitUntil: 'networkidle' });
+  check('representante abre a entrada única (/entrar, 390 px)', (await corpo(cel)).includes('use o e-mail e a senha fornecidos'));
+  await entrarComoRepresentante(cel, CAMPO_EMAIL, criado.temp_password);
   await cel.waitForURL('**/campo/senha', { timeout: 20000 });
   check('senha provisória leva à troca obrigatória', cel.url().endsWith('/campo/senha'));
   // Lote E §41.2: com a regra ligada, ela aparece ANTES do erro (marcada ao vivo); desligada, a tela é a de hoje.
@@ -711,7 +774,7 @@ try {
   check('sessão do campo numa chave própria, sem sessão da equipe', !!chaves.campo?.access_token && chaves.equipe === null);
   await cel.goto(`${BASE}/hoje`, { waitUntil: 'networkidle' });
   await espera(1200);
-  check('consultor não entra nas telas da equipe (volta para /entrar)', new URL(cel.url()).pathname === '/entrar');
+  check('representante que abre endereço da equipe cai na casca dele (/campo), não na entrada', new URL(cel.url()).pathname === '/campo');
   await cel.goto(`${BASE}/campo`, { waitUntil: 'networkidle' });
   await espera(1200);
   check('e volta para o campo com a sessão dele', new URL(cel.url()).pathname === '/campo');
@@ -733,9 +796,8 @@ console.log('-- Campo: GPS negado --');
     const sg = await semGpsCtx.newPage();
     vigiar(sg, 'campo-sem-gps');
     await sg.goto(`${BASE}/campo/entrar`, { waitUntil: 'networkidle' });
-    await sg.locator('#email').fill(CAMPO_EMAIL);
-    await sg.locator('#senha').fill(CAMPO_SENHA_NOVA);
-    await sg.getByRole('button', { name: 'Entrar', exact: true }).click();
+    check('o endereço do atalho (/campo/entrar) abre a mesma entrada única', (await corpo(sg)).includes('use o e-mail e a senha fornecidos'));
+    await entrarComoRepresentante(sg, CAMPO_EMAIL, CAMPO_SENHA_NOVA);
     await sg.waitForURL(/\/campo$/, { timeout: 20000 });
     await sg.getByRole('button', { name: 'Iniciar jornada' }).click();
     await sg.getByText('A localização está bloqueada para este site').waitFor({ timeout: 15000 });
@@ -1258,9 +1320,7 @@ try {
     const semPendencia = () => cs.waitForFunction(() => !document.body.innerText.toLowerCase().includes('pendente'), null, { timeout: 30000 });
 
     await cs.goto(`${BASE}/campo/entrar`, { waitUntil: 'networkidle' });
-    await cs.locator('#email').fill(EMAIL_S);
-    await cs.locator('#senha').fill(criadoS.temp_password);
-    await cs.getByRole('button', { name: 'Entrar', exact: true }).click();
+    await entrarComoRepresentante(cs, EMAIL_S, criadoS.temp_password);
     await cs.waitForURL('**/campo/senha', { timeout: 20000 });
     await cs.locator('#atual').fill(criadoS.temp_password);
     await cs.locator('#nova').fill(CAMPO_SENHA_NOVA);
@@ -1530,9 +1590,7 @@ try {
 
       // Campo: a escolha da praça no início (2 praças, sem roteiro), o botão com o nome e o cabeçalho com a praça do dia.
       await cm.goto(`${BASE}/campo/entrar`, { waitUntil: 'networkidle' });
-      await cm.locator('#email').fill(EMAIL_M);
-      await cm.locator('#senha').fill(criadoM.temp_password);
-      await cm.getByRole('button', { name: 'Entrar', exact: true }).click();
+      await entrarComoRepresentante(cm, EMAIL_M, criadoM.temp_password);
       await cm.waitForURL('**/campo/senha', { timeout: 20000 });
       await cm.locator('#atual').fill(criadoM.temp_password);
       await cm.locator('#nova').fill(CAMPO_SENHA_NOVA);

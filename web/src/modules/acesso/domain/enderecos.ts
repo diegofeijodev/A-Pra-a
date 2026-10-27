@@ -16,6 +16,18 @@ export const ROTA = {
   configuracoes: '/configuracoes',
   // A tela própria "Usuários" chega na E5; até lá é o bloco "Pessoas" das Configurações.
   usuarios: '/configuracoes#pessoas',
+  // Fora do menu: a troca da própria senha (E3), aberta pelo rodapé da casca.
+  trocarSenha: '/trocar-senha',
+} as const;
+
+/**
+ * Endereços do consultor (arquitetura §3.4): ficam dentro de `/campo` porque o atalho instalado tem `scope: '/campo'` — a entrada e a
+ * troca obrigatória de senha são os únicos momentos em que ele sairia do escopo (no iOS, isso abre um navegador dentro do app).
+ */
+export const ROTA_CAMPO = {
+  inicio: '/campo',
+  entrar: '/campo/entrar',
+  senha: '/campo/senha',
 } as const;
 
 /** As 5 abas do representante (Lovable `repNav`). */
@@ -33,3 +45,19 @@ const DESTINO_REPRESENTANTE: Record<AbaRepresentante, string> = {
   carteira: '/campo',
 };
 export const destinoDoRepresentante = (aba: AbaRepresentante = 'hoje'): string => DESTINO_REPRESENTANTE[aba];
+
+/** Endereços da Lovable que servem às duas pessoas (o mesmo link na equipe e no representante, arquitetura §3.3). */
+const ABA_DO_ENDERECO: Record<string, AbaRepresentante> = {
+  '/inicio': 'hoje',
+  '/mapa': 'mapa',
+  '/clientes': 'clientes',
+  '/financeiro': 'carteira',
+  '/desempenho': 'desempenho',
+};
+
+/**
+ * O representante (só `campoSession`) que abre um endereço da equipe cai na casca DELE, na visão equivalente — nunca na entrada
+ * (o `(app)/layout.tsx` usa isto). Qualquer outro endereço vai para o "Hoje".
+ */
+export const destinoDoRepresentantePorEndereco = (pathname: string): string =>
+  destinoDoRepresentante(ABA_DO_ENDERECO[pathname.replace(/\/+$/, '') || '/'] ?? 'hoje');

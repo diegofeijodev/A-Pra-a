@@ -39,7 +39,10 @@ Lovable "PRAÇA" para a stack do Freela.
 - A API roda em **uma** instância: os dois `@Cron` (motor de cadências e outbox
   do Freela) duplicariam mensagem com duas réplicas. Ver README, "Produção".
 - Throttle é por rota + IP, e `req.ip` atrás de nginx é o IP do proxy: flag
-  `TRUST_PROXY`.
+  `TRUST_PROXY`. Os dois logins (`POST /v1/auth/login` e `/v1/campo/auth/login`)
+  têm teto de **20/min por IP**; nenhum `smoke*.sh` passa de 6 logins da equipe
+  (`smoke.sh` e `smoke-lovable-e.sh`) nem o `browser-check` (≈ 6 espalhados em
+  minutos). Rodar vários smokes colados no mesmo minuto pode bater no teto (429).
 - Id que vem da URL passa por `isUuid()` antes do Prisma: sem isso, id
   malformado vira 500 em vez de 404.
 - Guarda de sessão do web vive em `app/(app)/layout.tsx`, não no `AppShell`:
@@ -58,6 +61,14 @@ Lovable "PRAÇA" para a stack do Freela.
   `--success`, `--warning`, `--input`), Manrope + Sora por `next/font` (variáveis no `<html>`), `bg-brand`, `shadow-card` e
   `card-surface` = cartão da Lovable. Sem `.light`, sem `ThemeSync` e sem botão de tema: `users.theme` segue no banco e no
   `PATCH /v1/users/me`, sem efeito na tela; mapas com `dark={false}`. Não reintroduza tema escuro sem pedido do dono.
+- **Entrada única (redesenho E3, contrato §2):** `components/entrada/EntradaUnica.tsx`, a mesma em `/entrar` e `/campo/entrar` (o
+  atalho instalado não sai do `scope: '/campo'`). Tenta a EQUIPE; só num 401 tenta o consultor; 429/rede/5xx da equipe param ali
+  (`modules/entrada/domain/entrada.ts`, `decidirEntrada`). Entrar numa conta APAGA a outra do aparelho (a fila offline fica) e limpa o
+  cache. Quem tem sessão não vê a entrada (`destinoDaSessao`: a equipe vence; consultor → `/campo/senha` ou `/campo`). O `(app)/layout.tsx`
+  manda quem só tem `campoSession` para a casca dele (`destinoDoRepresentantePorEndereco`), nunca monta `CampoMotor`. Troca de senha no
+  cartão da Lovable (`TrocarSenhaCartao`): equipe em `/trocar-senha` (link no rodapé do menu; `POST /v1/auth/change-password`, pede a atual,
+  400 `WRONG_PASSWORD`, nunca 401), consultor em `/campo/senha` (fica dentro de `/campo`). Os dois logins comparam com um hash fixo
+  (`common/auth/senha-falsa.ts`) quando o e-mail não existe. Troca OBRIGATÓRIA da equipe e `token_version` da equipe ficam para depois (D2).
 - **Consultor de campo ≠ equipe.** Token com `aud: "campo"`; rotas `/v1/campo/*`
   marcadas com `@CampoRoute()` (o `JwtAuthGuard` global delega ao
   `CampoAuthGuard`). Rota nova do consultor SEM `@CampoRoute()` fica fechada
@@ -125,8 +136,8 @@ npm run prisma:migrate:dev | prisma:generate | prisma:studio
 
 # web/
 yarn dev | typecheck | lint        # `build` só se o dono pedir (ver abaixo)
-yarn test                          # vitest run (fork único) — 35 arquivos, 364 testes
-yarn browser-check                 # scripts/browser-check.mjs — 195 checagens na configuração de produção (fluxo simples e completo; 244 com as flags dos lotes A–F ligadas, com um passo logado como gestor e um consultor em duas praças)
+yarn test                          # vitest run (fork único) — 37 arquivos, 384 testes
+yarn browser-check                 # scripts/browser-check.mjs — 195 checagens na configuração de produção (fluxo simples e completo; 244 com as flags dos lotes A–F ligadas, com um passo logado como gestor e um consultor em duas praças); a E3 somou 5 (≈ 200/249, conferir na próxima rodada)
                                    # precisa da API na 3014 (start:smoke) e do web na 3024 (yarn dev)
                                    # conta: PRACA_CHECK_EMAIL/PASSWORD (padrão = seed), login pelo formulário
 ```
@@ -138,9 +149,13 @@ teardown no seu próprio `try`. Antes de começar ele afirma as pré-condições
 seed de que depende e faz uma faxina do que uma rodada interrompida possa ter
 deixado. Resultado: o banco volta ao seed e o script roda de novo em seguida.
 Ele falha em qualquer erro de console, `pageerror`, falha de rede
-(`requestfailed`) ou resposta HTTP ≥ 400 — a única exceção é o 404 do
+(`requestfailed`) ou resposta HTTP ≥ 400 — as exceções são o 404 do
 `hot-update.json` do `next dev` (lista fechada `IGNORADAS`, com motivo no
-script). Sem o Freela configurado a tela do Freela só chama
+script) e as recusas que o próprio roteiro provoca, cada uma numa janela só em
+volta do passo e só para o par exato: `recusaEsperada` (o 401 do login da
+equipe quando um representante entra pela tela única, via
+`entrarComoRepresentante`; o 400 da troca de senha com a atual errada) e
+`esperado401` (a sessão do celular caindo depois da senha nova). Sem o Freela configurado a tela do Freela só chama
 `GET /v1/freela/status`, que responde 200.
 
 ## Onde fica o conteúdo
