@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   campoCupomSchema,
+  contarGrupos,
+  detalheDaSituacao,
+  doGrupo,
+  grupoDoCupom,
+  situacaoDoGrupo,
   linkWhatsApp,
   listaCuponsSchema,
   mensagemWhatsApp,
@@ -71,5 +76,34 @@ describe('cupons — wire (§38.3/§38.4)', () => {
     expect(campoCupomSchema.parse({ ...cupom(), coisa_nova: 1 }).id).toBe('v1');
     const lista = listaCuponsSchema.parse({ items: [], counts: { pedido: 0, todos: 0 }, coupons_enabled: false, freela_configured: false, extra: true });
     expect(lista.counts.todos).toBe(0);
+  });
+});
+
+describe('vouchers da equipe no desenho da Lovable (E5.6, UX §4.8)', () => {
+  it('três grupos: Pendente = pedido, Reprovado = reprovado, Aprovado = todo o resto do ciclo (com ou sem cupom)', () => {
+    expect(grupoDoCupom('pedido')).toBe('pendente');
+    expect(grupoDoCupom('reprovado')).toBe('reprovado');
+    for (const s of SITUACOES.filter((x) => x !== 'pedido' && x !== 'reprovado')) expect([s, grupoDoCupom(s)]).toEqual([s, 'aprovado']);
+  });
+  it('as contagens do seletor somam os counts do servidor (o "todos" do servidor não entra duas vezes)', () => {
+    const c = contarGrupos({ pedido: 3, reprovado: 1, aguardando_empresa: 2, criado: 4, usado: 1, registrado: 1, todos: 12 });
+    expect(c).toEqual({ todos: 12, pendente: 3, aprovado: 8, reprovado: 1 });
+    expect(contarGrupos({})).toEqual({ todos: 0, pendente: 0, aprovado: 0, reprovado: 0 });
+  });
+  it('o que pedir ao servidor e o filtro da tela: Aprovado pede tudo e filtra aqui', () => {
+    expect([situacaoDoGrupo('pendente'), situacaoDoGrupo('reprovado'), situacaoDoGrupo('aprovado'), situacaoDoGrupo('todos')]).toEqual(['pedido', 'reprovado', undefined, undefined]);
+    const itens = [{ id: 'a', situacao: 'pedido' as const }, { id: 'b', situacao: 'criado' as const }, { id: 'c', situacao: 'erro' as const }, { id: 'd', situacao: 'reprovado' as const }];
+    expect(doGrupo(itens, 'aprovado').map((x) => x.id)).toEqual(['b', 'c']);
+    expect(doGrupo(itens, 'todos').map((x) => x.id)).toEqual(['a', 'b', 'c', 'd']);
+  });
+  it('a situação fina embaixo do selo', () => {
+    const base = { decision_reason: null, coupon_code: null, redeemed_at: null };
+    expect(detalheDaSituacao({ ...base, situacao: 'pedido' })).toBeNull();
+    expect(detalheDaSituacao({ ...base, situacao: 'reprovado', decision_reason: 'Fora do perfil' })).toBe('Motivo: Fora do perfil');
+    expect(detalheDaSituacao({ ...base, situacao: 'aguardando_empresa' })).toBe('Aguardando a conta no Freela');
+    expect(detalheDaSituacao({ ...base, situacao: 'aguardando_freela' })).toBe('Na fila do Freela');
+    expect(detalheDaSituacao({ ...base, situacao: 'criado', coupon_code: 'ABC123' })).toBe('Cupom criado: ABC123');
+    expect(detalheDaSituacao({ ...base, situacao: 'usado', redeemed_at: '2026-10-22T15:00:00.000Z' })).toBe('Usado em 22/10');
+    expect(detalheDaSituacao({ ...base, situacao: 'erro' })).toBe('Erro ao criar o cupom');
   });
 });

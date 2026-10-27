@@ -1,152 +1,285 @@
 'use client';
 
+import { MoreHorizontal } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { useAcoesCupom, useCandidatos, useConfigCupom, useCuponsEquipe, useDetalheCupom, useFeaturesLoteC } from '@/modules/cupons/application/use-cupons';
-import { ABAS_EQUIPE, resumoDoCupom, situacaoParaEquipe, type ConfigCupom, type CupomEquipe } from '@/modules/cupons/domain/cupons';
+import {
+  contarGrupos,
+  detalheDaSituacao,
+  doGrupo,
+  grupoDoCupom,
+  resumoDoCupom,
+  SELO_GRUPO,
+  situacaoDoGrupo,
+  situacaoParaEquipe,
+  type ConfigCupom,
+  type CupomEquipe,
+  type EscolhaGrupo,
+} from '@/modules/cupons/domain/cupons';
 import { usePracas } from '@/modules/pracas/application/use-pracas';
 
 const MOTIVOS = ['Já é cliente do Freela', 'Fora do perfil', 'Pedido repetido'] as const;
 const dia = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' });
+const CARTAO = 'rounded-2xl bg-card shadow-card';
+const SELECT = 'h-11 rounded-md border border-input bg-background px-2 text-sm md:h-9';
+const GRUPOS: { id: EscolhaGrupo; rotulo: string }[] = [
+  { id: 'todos', rotulo: 'Todos' },
+  { id: 'pendente', rotulo: 'Pendente' },
+  { id: 'aprovado', rotulo: 'Aprovado' },
+  { id: 'reprovado', rotulo: 'Reprovado' },
+];
 
 type Acao = { tipo: 'aprovar' | 'reprovar' | 'vincular' | 'desativar' | 'detalhe'; c: CupomEquipe } | null;
 
+/** As ações "⋯" de cada pedido, pela situação (o servidor é quem decide de verdade). Quem não é admin só vê o histórico. */
+function acoesDoMenu(c: CupomEquipe, admin: boolean, vincularLigado: boolean): { tipo: 'detalhe' | 'vincular' | 'tentar' | 'desativar'; rotulo: string }[] {
+  return [
+    { tipo: 'detalhe' as const, rotulo: 'Ver histórico' },
+    ...(admin && c.situacao === 'aguardando_empresa' && vincularLigado ? [{ tipo: 'vincular' as const, rotulo: 'Vincular à conta do Freela' }] : []),
+    ...(admin && (c.situacao === 'aguardando_freela' || c.situacao === 'erro') ? [{ tipo: 'tentar' as const, rotulo: 'Tentar agora' }] : []),
+    ...(admin && (c.situacao === 'criado' || c.situacao === 'usado') ? [{ tipo: 'desativar' as const, rotulo: 'Desativar no Freela' }] : []),
+  ];
+}
+
 /**
- * Cupons da 1ª contratação — equipe (contrato §38.4; UX §3.2). A equipe vê; só o admin aprova, reprova, vincula, tenta de novo e
- * desativa (como a Lovable; o gestor é a fase L10). Cada número diz o que é: as contagens vêm do servidor, por situação.
+ * Vouchers da 1ª contratação — equipe (Lovable `vouchers.tsx`, UX §4.8, contrato §38.4). A equipe vê; só o admin aprova, reprova,
+ * vincula, tenta de novo e desativa. O cartão "Solicitar voucher" da Lovable NÃO entra: o pedido é um fato que nasce na visita (lote C)
+ * [desvio: regra]. O seletor da Lovable (Todos / Pendente / Aprovado / Reprovado) agrupa o nosso ciclo fino, que aparece embaixo do selo.
+ * As contagens vêm do servidor, por situação.
  */
 export function CuponsEquipe() {
   const { user } = useAuth();
   const admin = !!user?.is_admin;
   const lc = useFeaturesLoteC();
-  const [situacao, setSituacao] = useState<string>('pedido');
+  const [grupo, setGrupo] = useState<EscolhaGrupo>('pendente');
   const [pracaId, setPracaId] = useState('');
   const [busca, setBusca] = useState('');
   const { data: pracas } = usePracas();
-  const lista = useCuponsEquipe({ situacao: situacao === 'todos' ? undefined : situacao, praca_id: pracaId || undefined, q: busca.trim() || undefined }, lc.vouchers);
+  const lista = useCuponsEquipe({ situacao: situacaoDoGrupo(grupo), praca_id: pracaId || undefined, q: busca.trim() || undefined }, lc.vouchers);
   const [acao, setAcao] = useState<Acao>(null);
   const acoes = useAcoesCupom();
 
-  if (lc.carregando) return <div aria-busy="true" className="h-40 animate-pulse rounded-lg bg-muted" />;
-  if (!lc.vouchers) return <p className="card-surface p-5 text-sm">Este recurso ainda não está ligado neste servidor.</p>;
-
   const d = lista.data;
-  return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="font-display text-xl font-extrabold">Cupons da 1ª contratação</h1>
-        <p className="text-sm text-muted-foreground">
-          {admin ? 'Aprove ou reprove os cupons pedidos pelos consultores.' : 'Os cupons pedidos pelos consultores. Só administradores aprovam ou reprovam.'}
-          {d && !d.coupons_enabled && ' Neste servidor, aprovar é só registro: o cupom no Freela não está ligado.'}
-          {d && d.coupons_enabled && !d.freela_configured && ' A conexão com o Freela não está configurada: os aprovados esperam por ela.'}
+  const cabecalho = (
+    <div>
+      <h1 className="text-3xl font-semibold">Vouchers</h1>
+      <p className="text-muted-foreground">
+        {admin ? 'Aprove ou reprove os vouchers solicitados pelos representantes.' : 'Os vouchers pedidos pelos representantes. Só administradores aprovam ou reprovam.'}
+      </p>
+      {d && (!d.coupons_enabled || !d.freela_configured) && (
+        <p className="mt-1 text-sm text-muted-foreground">
+          {!d.coupons_enabled ? 'Neste servidor, aprovar é só registro: o cupom no Freela não está ligado.' : 'A conexão com o Freela não está configurada: os aprovados esperam por ela.'}
         </p>
+      )}
+    </div>
+  );
+  if (lc.carregando)
+    return (
+      <div className="space-y-6">
+        {cabecalho}
+        <div aria-busy="true" className="h-40 animate-pulse rounded-2xl bg-muted" />
       </div>
+    );
+  if (!lc.vouchers)
+    return (
+      <div className="space-y-6">
+        {cabecalho}
+        <p className={`${CARTAO} p-5 text-sm`}>Este recurso ainda não está ligado neste servidor.</p>
+      </div>
+    );
 
-      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Situação">
-        {ABAS_EQUIPE.filter((a) => a.id === 'todos' || (d?.counts[a.id] ?? 0) > 0 || ['pedido', 'aguardando_empresa', 'aguardando_freela', 'criado', 'reprovado'].includes(a.id)).map((a) => (
-          <button
-            key={a.id}
-            type="button"
-            role="tab"
-            aria-selected={situacao === a.id}
-            onClick={() => setSituacao(a.id)}
-            className={`min-h-12 rounded-full border px-3 text-sm font-bold ${situacao === a.id ? 'border-primary bg-primary text-primary-foreground' : 'border-border'}`}
-          >
-            {a.rotulo} {d ? (d.counts[a.id] ?? 0) : ''}
-          </button>
+  const n = d ? contarGrupos(d.counts) : null;
+  const itens = d ? doGrupo(d.items, grupo) : [];
+  const vincularLigado = !!d && d.coupons_enabled && d.freela_configured;
+  const escolherAcao = (c: CupomEquipe, tipo: 'detalhe' | 'vincular' | 'tentar' | 'desativar') => {
+    if (tipo === 'tentar') acoes.tentar.mutate(c.id);
+    else setAcao({ tipo, c });
+  };
+  const menu = (c: CupomEquipe) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="icon" variant="ghost" aria-label={`Mais ações de ${c.company_name}`}>
+          <MoreHorizontal className="h-4 w-4" aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {acoesDoMenu(c, admin, vincularLigado).map((a) => (
+          <DropdownMenuItem key={a.tipo} className="min-h-11" disabled={a.tipo === 'tentar' && acoes.tentar.isPending} onSelect={() => escolherAcao(c, a.tipo)}>
+            {a.rotulo}
+          </DropdownMenuItem>
         ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+  const selo = (c: CupomEquipe) => {
+    const g = SELO_GRUPO[grupoDoCupom(c.situacao)];
+    const fino = detalheDaSituacao(c);
+    return (
+      <div className="flex flex-col gap-1">
+        <Badge variant={g.variante} className="w-fit">
+          {g.rotulo}
+        </Badge>
+        {fino && <span className={`text-xs text-muted-foreground ${c.situacao === 'criado' ? 'font-mono' : ''}`}>{fino}</span>}
       </div>
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="text-sm">
-          Praça
-          <select value={pracaId} onChange={(e) => setPracaId(e.target.value)} className="mt-1 block h-12 min-w-40 rounded-md border border-border bg-background px-3 text-sm">
-            <option value="">Todas</option>
-            {(pracas ?? []).map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-sm">
-          Estabelecimento
-          <Input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="buscar pelo nome…" className="mt-1 h-12 w-56" />
-        </label>
-      </div>
-      <p className="text-xs text-muted-foreground">Contagem: pedidos de cupom por situação agora (a praça e a busca valem para os números). Fonte: pedidos dos consultores.</p>
+    );
+  };
 
-      {lista.isPending && <div aria-busy="true" className="h-32 animate-pulse rounded-lg bg-muted" />}
+  return (
+    <div className="space-y-6">
+      {cabecalho}
+      <p className="rounded-xl bg-secondary p-4 text-sm">Os representantes pedem o voucher na visita, depois de marcar o resultado. O pedido chega aqui para aprovar.</p>
+
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <h2 className="text-lg font-semibold">Solicitações</h2>
+          <div className="flex flex-wrap items-end gap-2">
+            <label htmlFor="vouchers-situacao" className="sr-only">
+              Situação
+            </label>
+            <select id="vouchers-situacao" value={grupo} onChange={(e) => setGrupo(e.target.value as EscolhaGrupo)} className={`${SELECT} w-44`}>
+              {GRUPOS.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.id === 'todos' || !n ? g.rotulo : `${g.rotulo} (${n[g.id]})`}
+                </option>
+              ))}
+            </select>
+            <label htmlFor="vouchers-praca" className="sr-only">
+              Praça
+            </label>
+            <select id="vouchers-praca" value={pracaId} onChange={(e) => setPracaId(e.target.value)} className={`${SELECT} w-44`}>
+              <option value="">Todas as praças</option>
+              {(pracas ?? []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <label htmlFor="vouchers-busca" className="sr-only">
+              Buscar por cliente
+            </label>
+            <Input id="vouchers-busca" type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por cliente" className="w-full sm:w-56" />
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">Contagem: pedidos por situação agora (a praça e a busca valem para os números). Fonte: pedidos dos representantes.</p>
+      </div>
+
+      {lista.isPending && <div aria-busy="true" className="h-32 animate-pulse rounded-2xl bg-muted" />}
       {lista.isError && (
-        <p role="alert" className="card-surface p-4 text-sm">
-          Não deu para carregar os cupons.{' '}
-          <button type="button" className="min-h-12 font-bold underline" onClick={() => void lista.refetch()}>
+        <p role="alert" className={`${CARTAO} p-4 text-sm`}>
+          Não deu para carregar os vouchers.{' '}
+          <button type="button" className="min-h-11 font-bold underline" onClick={() => void lista.refetch()}>
             Tentar de novo
           </button>
         </p>
       )}
-      {d && d.items.length === 0 && (
-        <p className="card-surface p-5 text-sm text-muted-foreground">
-          Nenhum cupom nesta situação. Os consultores pedem o cupom na visita, depois de escolher como foi.
-        </p>
+      {d && itens.length === 0 && (
+        <div className={`${CARTAO} space-y-1 p-6 text-center text-sm text-muted-foreground`}>
+          <p>Nenhuma solicitação.</p>
+          <p>Os representantes pedem o voucher na visita, depois de escolher como foi.</p>
+        </div>
       )}
-      {d && d.items.length > 0 && (
-        <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {d.items.map((c) => {
-            const st = situacaoParaEquipe(c);
-            return (
-              <li key={c.id} className="card-surface space-y-2 p-4">
-                <p className="text-sm">
-                  <span aria-hidden>{st.icone} </span>
-                  <span className="font-bold">{st.texto}</span> · pedido em {dia(c.created_at)}
-                </p>
-                <p className="text-base font-bold">{c.company_name}</p>
-                <p className="text-sm text-muted-foreground">
-                  {c.city || '—'}/{c.uf || '—'} · {c.segment} · {c.freelas_per_week} {c.freelas_per_week === 1 ? 'freela' : 'freelas'}/semana · {c.consultant_name}
-                </p>
-                {c.contractor_user_id && <p className="text-sm">✓ Conta no Freela: {c.contractor_name ?? 'vinculada'}</p>}
-                {c.coupon_code && ['criado', 'usado', 'vencido', 'desativado'].includes(c.situacao) && <p className="font-mono text-lg font-black">{c.coupon_code}</p>}
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" className="h-12" onClick={() => setAcao({ tipo: 'detalhe', c })}>
-                    Ver histórico
-                  </Button>
-                  {admin && c.situacao === 'pedido' && (
-                    <>
-                      <Button variant="outline" className="h-12" onClick={() => setAcao({ tipo: 'reprovar', c })}>
-                        Reprovar
-                      </Button>
-                      <Button className="h-12" onClick={() => setAcao({ tipo: 'aprovar', c })}>
-                        Aprovar
-                      </Button>
-                    </>
-                  )}
-                  {admin && c.situacao === 'aguardando_empresa' && d.coupons_enabled && d.freela_configured && (
-                    <Button className="h-12" onClick={() => setAcao({ tipo: 'vincular', c })}>
-                      Vincular à conta do Freela
-                    </Button>
-                  )}
-                  {admin && (c.situacao === 'aguardando_freela' || c.situacao === 'erro') && (
-                    <Button variant="outline" className="h-12" disabled={acoes.tentar.isPending} onClick={() => acoes.tentar.mutate(c.id)}>
-                      Tentar agora
-                    </Button>
-                  )}
-                  {admin && (c.situacao === 'criado' || c.situacao === 'usado') && (
-                    <Button variant="outline" className="h-12" onClick={() => setAcao({ tipo: 'desativar', c })}>
-                      Desativar no Freela
-                    </Button>
-                  )}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+      {d && itens.length > 0 && (
+        <>
+          {d.items.length >= 500 && grupo === 'aprovado' && (
+            <p className="text-xs text-muted-foreground">Mostrando os 500 pedidos mais recentes: filtre por praça ou cliente para ver os outros.</p>
+          )}
+          <div className={`${CARTAO} hidden overflow-hidden md:block`}>
+            <table className="w-full text-sm">
+              <thead className="border-b text-left text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Data</th>
+                  <th className="px-4 py-3 font-medium">Cliente</th>
+                  <th className="px-4 py-3 font-medium">Cidade/UF</th>
+                  <th className="px-4 py-3 font-medium">Ramo</th>
+                  <th className="px-4 py-3 text-right font-medium">Freelas/sem.</th>
+                  <th className="px-4 py-3 font-medium">Representante</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 text-right font-medium">
+                    <span className="sr-only">Ações</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {itens.map((c) => (
+                  <tr key={c.id} className="border-b align-top last:border-0">
+                    <td className="px-4 py-3 whitespace-nowrap">{dia(c.created_at)}</td>
+                    <td className="px-4 py-3 font-medium">
+                      {c.company_name}
+                      {c.contractor_user_id && <span className="block text-xs font-normal text-muted-foreground">✓ Conta no Freela: {c.contractor_name ?? 'vinculada'}</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      {c.city || '—'}/{c.uf || '—'}
+                    </td>
+                    <td className="px-4 py-3">{c.segment}</td>
+                    <td className="px-4 py-3 text-right">{c.freelas_per_week}</td>
+                    <td className="px-4 py-3">{c.consultant_name}</td>
+                    <td className="px-4 py-3">{selo(c)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-1">
+                        {admin && c.situacao === 'pedido' && (
+                          <>
+                            <Button size="sm" onClick={() => setAcao({ tipo: 'aprovar', c })}>
+                              Aprovar
+                            </Button>
+                            <Button size="sm" variant="destructive" onClick={() => setAcao({ tipo: 'reprovar', c })}>
+                              Reprovar
+                            </Button>
+                          </>
+                        )}
+                        {menu(c)}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <ul className="grid grid-cols-1 gap-3 md:hidden">
+            {itens.map((c) => {
+              const st = situacaoParaEquipe(c);
+              return (
+                <li key={c.id} className={`${CARTAO} space-y-2 p-4`}>
+                  <div className="flex items-start justify-between gap-2">
+                    {selo(c)}
+                    <span className="text-xs text-muted-foreground">pedido em {dia(c.created_at)}</span>
+                  </div>
+                  <p className="text-base font-semibold">{c.company_name}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {c.city || '—'}/{c.uf || '—'} · {c.segment} · {c.freelas_per_week} {c.freelas_per_week === 1 ? 'freela' : 'freelas'}/semana · {c.consultant_name}
+                  </p>
+                  <p className="text-xs">
+                    <span aria-hidden>{st.icone} </span>
+                    {st.texto}
+                  </p>
+                  {c.contractor_user_id && <p className="text-sm">✓ Conta no Freela: {c.contractor_name ?? 'vinculada'}</p>}
+                  {c.coupon_code && ['criado', 'usado', 'vencido', 'desativado'].includes(c.situacao) && <p className="font-mono text-lg font-bold">{c.coupon_code}</p>}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {admin && c.situacao === 'pedido' && (
+                      <>
+                        <Button onClick={() => setAcao({ tipo: 'aprovar', c })}>Aprovar</Button>
+                        <Button variant="destructive" onClick={() => setAcao({ tipo: 'reprovar', c })}>
+                          Reprovar
+                        </Button>
+                      </>
+                    )}
+                    {menu(c)}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </>
       )}
 
       {admin && <RegrasDoCupom />}
 
-      {acao?.tipo === 'aprovar' && d && <AprovarDialog c={acao.c} podeVincular={d.coupons_enabled && d.freela_configured} cuponsLigados={d.coupons_enabled} onFechar={() => setAcao(null)} />}
+      {acao?.tipo === 'aprovar' && d && <AprovarDialog c={acao.c} podeVincular={vincularLigado} cuponsLigados={d.coupons_enabled} onFechar={() => setAcao(null)} />}
       {acao?.tipo === 'reprovar' && <ReprovarDialog c={acao.c} onFechar={() => setAcao(null)} />}
       {acao?.tipo === 'vincular' && <VincularDialog c={acao.c} onFechar={() => setAcao(null)} />}
       {acao?.tipo === 'desativar' && <DesativarDialog c={acao.c} onFechar={() => setAcao(null)} />}
@@ -199,7 +332,7 @@ function AprovarDialog({ c, podeVincular, cuponsLigados, onFechar }: { c: CupomE
     <Dialog open onOpenChange={(o) => !o && !aprovar.isPending && onFechar()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Aprovar o cupom de {c.company_name}?</DialogTitle>
+          <DialogTitle>Aprovar o voucher de {c.company_name}?</DialogTitle>
         </DialogHeader>
         <div className="space-y-3 text-sm">
           {cuponsLigados ? (
@@ -338,7 +471,7 @@ function HistoricoDialog({ id, nome, onFechar }: { id: string; nome: string; onF
     <Dialog open onOpenChange={(o) => !o && onFechar()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Histórico do cupom de {nome}</DialogTitle>
+          <DialogTitle>Histórico do voucher de {nome}</DialogTitle>
         </DialogHeader>
         {isPending && <p className="text-sm text-muted-foreground">Carregando…</p>}
         <ol className="space-y-2 text-sm">
@@ -377,8 +510,8 @@ function RegrasDoCupom() {
   };
   const num = (v: string): number | null => (v.trim() === '' ? null : Number(v));
   return (
-    <details className="card-surface p-4">
-      <summary className="cursor-pointer text-sm font-bold">Regras do cupom</summary>
+    <details className="rounded-2xl bg-card p-4 shadow-card">
+      <summary className="cursor-pointer text-sm font-bold">Regras do voucher</summary>
       <div className="mt-3 grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
         <label>
           Desconto

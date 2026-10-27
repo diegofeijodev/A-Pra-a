@@ -1,17 +1,8 @@
 'use client';
 
-import Link from 'next/link';
 import { CuponsEquipe } from '@/components/praca/CuponsEquipe';
 
-export default function CuponsPage() {
-  return (
-    <>
-      <div className="flex items-center justify-end">
-        <Link href="/consultores" className="text-sm text-primary hover:underline">
-          ← Consultores
-        </Link>
-      </div>
-      <CuponsEquipe />
-    </>
-  );
+/** Vouchers (Lovable `vouchers.tsx`, UX §4.8, arquitetura §5 E5.6): o título e o resto moram no `CuponsEquipe`. */
+export default function VouchersPage() {
+  return <CuponsEquipe />;
 }

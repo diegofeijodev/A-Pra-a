@@ -1244,21 +1244,25 @@ console.log('-- Campo: GPS negado --');
 
   // ── Lote C (contrato §36/§38): só leitura e presença; NADA cria pedido de cupom (o pedido é um fato: não sai pela API) ──
   console.log('-- Equipe: lote C da Lovable (segmentos da busca e cupons) --');
+  // E5.6 (UX §4.8): h1 "Vouchers", o seletor da Lovable (Todos / Pendente / Aprovado / Reprovado, abre em Pendente) e "Regras do voucher".
   await page.goto(`${BASE}/consultores/cupons`, { waitUntil: 'networkidle' });
+  await page.getByRole('heading', { name: 'Vouchers', exact: true }).waitFor({ timeout: 20000 });
   if (lov.vouchers) {
-    await page.getByText('Cupons da 1ª contratação').first().waitFor({ timeout: 20000 });
-    // A lista só é pedida depois de `features` chegar: espera o elemento que só existe com ela (o `networkidle` não espera a 2ª busca).
-    await page.getByRole('tab', { name: /^Pedidos \d+$/ }).waitFor({ timeout: 20000 });
+    // A lista só é pedida depois de `features` chegar: espera a contagem no seletor (só existe com a resposta; o `networkidle` não espera a 2ª busca).
+    await page.waitForFunction(() => [...document.querySelectorAll('#vouchers-situacao option')].some((o) => /^Pendente \(\d+\)$/.test(o.textContent.trim())), null, { timeout: 20000 });
+    const opcoes = (await page.locator('#vouchers-situacao option').allTextContents()).map((t) => t.trim().replace(/ \(\d+\)$/, ''));
+    check('Vouchers: seletor Todos / Pendente / Aprovado / Reprovado, aberto em Pendente', JSON.stringify(opcoes) === JSON.stringify(['Todos', 'Pendente', 'Aprovado', 'Reprovado']) && (await page.locator('#vouchers-situacao').inputValue()) === 'pendente');
     const lc = await api('GET', '/v1/consultores/vouchers?situacao=pedido');
-    check('Cupons: a tela abre com as situações e a contagem do servidor', typeof lc.counts.todos === 'number');
+    check('Vouchers: a contagem de Pendente é a do servidor', (await page.locator('#vouchers-situacao option[value="pendente"]').textContent()).trim() === `Pendente (${lc.counts.pedido})`);
+    check('Vouchers: sem o cartão "Solicitar voucher" (o pedido nasce na visita)', (await page.getByRole('button', { name: 'Solicitar voucher' }).count()) === 0);
     if (lc.items.length === 0) {
-      await page.getByText(/os consultores pedem o cupom na visita/i).waitFor({ timeout: 20000 });
-      check('Cupons: sem pedido, o estado vazio explica de onde vêm', true);
+      await page.getByText('Nenhuma solicitação.', { exact: true }).waitFor({ timeout: 20000 });
+      check('Vouchers: sem pedido, o estado vazio explica de onde vêm', (await corpo(page)).includes('os representantes pedem o voucher na visita'));
     }
-    await page.getByText('Regras do cupom').waitFor({ timeout: 20000 });
-    check('Cupons: "Regras do cupom" para o admin', (await page.getByText('Regras do cupom').count()) === 1);
+    await page.getByText('Regras do voucher').waitFor({ timeout: 20000 });
+    check('Vouchers: "Regras do voucher" para o admin', (await page.getByText('Regras do voucher').count()) === 1);
   } else {
-    check('Cupons desligados: avisa, sem chamar a rota', (await corpo(page)).includes('ainda não está ligado neste servidor'));
+    check('Vouchers desligados: avisa, sem chamar a rota', (await corpo(page)).includes('ainda não está ligado neste servidor'));
   }
   if (lov.dashboard) {
     await page.goto(`${BASE}/consultores/painel`, { waitUntil: 'networkidle' });

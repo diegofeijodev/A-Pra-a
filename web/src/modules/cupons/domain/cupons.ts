@@ -194,6 +194,72 @@ export const ABAS_EQUIPE: { id: Situacao | 'todos'; rotulo: string }[] = [
   { id: 'todos', rotulo: 'Todos' },
 ];
 
+// ── Vouchers da equipe no desenho da Lovable (redesenho E5.6, UX §4.8) ──
+
+/** Os três grupos do seletor da Lovable: o nosso ciclo fino cabe em "Aprovado" (aprovado de qualquer jeito, com ou sem cupom). */
+export type GrupoCupom = 'pendente' | 'aprovado' | 'reprovado';
+export type EscolhaGrupo = GrupoCupom | 'todos';
+
+export function grupoDoCupom(situacao: Situacao): GrupoCupom {
+  if (situacao === 'pedido') return 'pendente';
+  if (situacao === 'reprovado') return 'reprovado';
+  return 'aprovado';
+}
+
+/** "Pendente (3)", "Aprovado (5)"…: somados dos `counts` do servidor (a praça e a busca já valem neles). */
+export function contarGrupos(counts: Record<string, number>): Record<EscolhaGrupo, number> {
+  const out: Record<EscolhaGrupo, number> = { todos: 0, pendente: 0, aprovado: 0, reprovado: 0 };
+  for (const s of SITUACOES) {
+    const n = counts[s] ?? 0;
+    out[grupoDoCupom(s)] += n;
+    out.todos += n;
+  }
+  return out;
+}
+
+/**
+ * O que pedir ao servidor para cada grupo (`GET …/vouchers?situacao=`, que aceita uma situação só): Pendente e Reprovado vão
+ * direto; Todos e Aprovado pedem a lista inteira e "Aprovado" filtra na tela (`doGrupo`).
+ */
+export const situacaoDoGrupo = (g: EscolhaGrupo): Situacao | undefined => (g === 'pendente' ? 'pedido' : g === 'reprovado' ? 'reprovado' : undefined);
+
+export function doGrupo<T extends { situacao: Situacao }>(itens: readonly T[], g: EscolhaGrupo): T[] {
+  return g === 'todos' ? [...itens] : itens.filter((c) => grupoDoCupom(c.situacao) === g);
+}
+
+/** O selo da Lovable (Pendente `secondary`, Aprovado `default`, Reprovado `destructive`). */
+export const SELO_GRUPO: Record<GrupoCupom, { rotulo: string; variante: 'secondary' | 'default' | 'destructive' }> = {
+  pendente: { rotulo: 'Pendente', variante: 'secondary' },
+  aprovado: { rotulo: 'Aprovado', variante: 'default' },
+  reprovado: { rotulo: 'Reprovado', variante: 'destructive' },
+};
+
+/** A situação fina embaixo do selo (UX §4.8); `null` = nada a dizer além do selo. */
+export function detalheDaSituacao(c: Pick<CupomEquipe, 'situacao' | 'decision_reason' | 'coupon_code' | 'redeemed_at'>): string | null {
+  switch (c.situacao) {
+    case 'pedido':
+      return null;
+    case 'reprovado':
+      return c.decision_reason ? `Motivo: ${c.decision_reason}` : null;
+    case 'registrado':
+      return 'Só registro (o cupom no Freela não está ligado)';
+    case 'aguardando_empresa':
+      return 'Aguardando a conta no Freela';
+    case 'aguardando_freela':
+      return 'Na fila do Freela';
+    case 'criado':
+      return c.coupon_code ? `Cupom criado: ${c.coupon_code}` : 'Cupom criado';
+    case 'usado':
+      return c.redeemed_at ? `Usado em ${diaMes(c.redeemed_at)}` : 'Usado';
+    case 'vencido':
+      return 'Vencido';
+    case 'desativado':
+      return 'Desativado';
+    case 'erro':
+      return 'Erro ao criar o cupom';
+  }
+}
+
 /** "100% de desconto · vale 1 vez · 30 dias" (a mesma frase do servidor). */
 export function resumoDoCupom(p: Pick<ParamsCupom, 'discount_type' | 'percent_off' | 'amount_off_cents' | 'single_use' | 'validade_dias' | 'min_job_hours'>): string {
   const desconto =
