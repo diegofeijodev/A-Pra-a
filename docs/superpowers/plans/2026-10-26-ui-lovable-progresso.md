@@ -152,5 +152,15 @@ Endereços novos com redirecionamento dos antigos (vídeos, favoritos e o browse
       (+6 nas duas configurações: 4 × 307 por `fetch` sem seguir + representante em `/desempenho` e `/consultores/painel`). Desvios (seguiu a arquitetura):
       `/consultores/roteiros` → `/rotas` e `/consultores/declarados` → `/financeiro/declarados` (a UX dizia `?aba=`; as abas são estado da tela);
       `/campo/entrar` e `/campo/senha` NÃO redirecionam (E3, escopo do atalho); `/roteiro/:id` (da Lovable) → `/campo?v=roteiro`.
-- [ ] 8. Verificação: lint, typecheck, vitest, jest das partes tocadas, browser-check (um processo por vez, `nice`)
+- [x] 8. Verificação: lint, typecheck, vitest, jest das partes tocadas, browser-check (um processo por vez, `nice`) — 27/10, sobre `fb320b2`.
+      Números: web lint 0, typecheck 0, vitest 43/469; API `tsc` 0, jest da suíte INTEIRA 142 suítes/2169 testes (80 snapshots iguais);
+      `smoke.sh` 923/923 (flags desligadas) e 928/928 (só `FIELD_EARNINGS_ENABLED`); nos cabeçalhos: `smoke-lovable-d` 40/40 (2×, sem resíduo),
+      `-e` 68/68 (com `LOG_API`), `-a` 38, `-b` 34, `-c` 42, `-f1` 39, `-f2` 38, `smoke-modo-chefe` 28, `-s3` 43 (os 5xx dos logs são só os 503
+      `FREELA_NOT_CONFIGURED` esperados); `browser-check` (a) produção antiga 226/226, (b) + lotes A–F (menos VOUCHER_COUPONS; gestor e consultor
+      em duas praças) 288/288, (c) + `TEAM_COMMERCIAL_ENABLED` 288/288 — todas com o Overpass num endereço morto.
+      Correções: `e36953a` limpeza (o `NewPracaForm` órfão desde a E7 e o parâmetro `dark` de `tilesOptions`/mapas, arquitetura §5 E8.7);
+      `37acbb0` o `smoke-lovable-d` inseria `place_candidates` sem `id` (sem default no banco), então as 2 checagens do perfil (E6) nunca
+      tinham passado; `e027c2b` o passo do gestor do `browser-check` saía do Dashboard antes do GET do painel responder (`ERR_ABORTED` em (b));
+      `87e9abe` o `smoke-lovable-f1` sondava os CHECKs do razão na semana fixa 2026-10-26, que virou a semana corrente (4100 em vez de 4000).
+      Nenhum bug de produto. Não feito: capturas desktop/celular de cada tela para o Denner (E8.9).
 - [ ] 9. Prévia na Vercel → Denner aprova → subida

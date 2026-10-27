@@ -61,7 +61,7 @@ Lovable "PRAÇA" para a stack do Freela.
   tokens de `garden-v2/src/styles.css` em `web/src/app/globals.css` (com os 4 ajustes de contraste da UX §1.2: `--destructive`,
   `--success`, `--warning`, `--input`), Manrope + Sora por `next/font` (variáveis no `<html>`), `bg-brand`, `shadow-card` e
   `card-surface` = cartão da Lovable. Sem `.light`, sem `ThemeSync` e sem botão de tema: `users.theme` segue no banco e no
-  `PATCH /v1/users/me`, sem efeito na tela; mapas com `dark={false}`. Não reintroduza tema escuro sem pedido do dono.
+  `PATCH /v1/users/me`, sem efeito na tela; mapas sempre claros (o parâmetro `dark` de `tilesOptions` e dos mapas saiu na E8). Não reintroduza tema escuro sem pedido do dono.
 - **Entrada única (redesenho E3, contrato §2):** `components/entrada/EntradaUnica.tsx`, a mesma em `/entrar` e `/campo/entrar` (o
   atalho instalado não sai do `scope: '/campo'`). Tenta a EQUIPE; só num 401 tenta o consultor; 429/rede/5xx da equipe param ali
   (`modules/entrada/domain/entrada.ts`, `decidirEntrada`). Entrar numa conta APAGA a outra do aparelho (a fila offline fica) e limpa o
@@ -184,13 +184,15 @@ npm run start:dev | build | typecheck | lint | test | seed
 npm run start:smoke                # sobe sem watcher (ts-node --transpile-only), pra smoke
 npm run smoke                      # scripts/smoke.sh contra a API viva — 923 checagens com as flags desligadas (928 só com FIELD_EARNINGS_ENABLED), repetível sem resíduo
                                    # (menos sem o container `praca-postgres`: a limpeza final é por psql)
-npm test                           # jest maxWorkers 1 — 137 suítes, 2102 testes (antes da E3, E4 e E5a, que somaram 1 suíte/15 testes, 7 testes e 1 suíte/5 testes sem rodar a suíte inteira)
+                                   # os outros, nos cabeçalhos de cada um (E8, 27/10): smoke-lovable-a 38, -b 34, -c 42, -d 40, -e 68 (com LOG_API),
+                                   # -f1 39, -f2 38, smoke-modo-chefe 28, -s3 43
+npm test                           # jest maxWorkers 1 — 142 suítes, 2169 testes, 80 snapshots (suíte inteira na E8, 27/10)
 npm run prisma:migrate:dev | prisma:generate | prisma:studio
 
 # web/
 yarn dev | typecheck | lint        # `build` só se o dono pedir (ver abaixo)
-yarn test                          # vitest run (fork único) — 43 arquivos, 469 testes (depois da E7)
-yarn browser-check                 # scripts/browser-check.mjs — 213 checagens na configuração de produção antiga (ROUTES, VISIT_FLOW_SELECT, EARNINGS, DECLARED_SIGNUPS, PAYOUTS; fluxo simples e completo); 263 com as flags dos lotes A–F ligadas (menos VOUCHER_COUPONS), com um passo logado como gestor e um consultor em duas praças; 263 também com TEAM_COMMERCIAL_ENABLED (mesmas checagens, outro ramo) — rodado depois da E4 (27/10); a E5a (sem rodar) soma ≈ +6 desligadas / +8 ligadas, a E5b (sem rodar) ≈ +1 / +8, a E5c (sem rodar) ±0 (só textos e passos trocados), a E6 (sem rodar) +3 ligadas e a E7 (sem rodar) +6 nas duas (4 endereços de antes por `fetch` sem seguir o 307 + 2 do representante)
+yarn test                          # vitest run (fork único) — 43 arquivos, 469 testes (E8, 27/10)
+yarn browser-check                 # scripts/browser-check.mjs — rodado na E8 (27/10): 226 checagens na configuração de produção antiga (ROUTES, VISIT_FLOW_SELECT, EARNINGS, DECLARED_SIGNUPS, PAYOUTS; fluxo simples e completo); 288 com as flags dos lotes A–F ligadas (menos VOUCHER_COUPONS), com um passo logado como gestor e um consultor em duas praças; 288 também com TEAM_COMMERCIAL_ENABLED (mesmas checagens, outro ramo). Nas três, `OVERPASS_URL` num endereço morto
                                    # precisa da API na 3014 (start:smoke) e do web na 3024 (yarn dev)
                                    # conta: PRACA_CHECK_EMAIL/PASSWORD (padrão = seed), login pelo formulário
 ```
