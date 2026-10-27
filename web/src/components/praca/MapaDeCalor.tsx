@@ -189,7 +189,6 @@ export function MapaDeCalor() {
                 cells={dados?.cells ?? []}
                 cell={dados?.cell ?? { dlat: 0, dlng: 0 }}
                 max={dados?.max ?? 0}
-                dark={false}
                 inicio={inicio}
                 chaveEnquadre={chaveEnquadre}
                 onVista={setVista}
@@ -211,7 +210,7 @@ export function MapaDeCalor() {
                 </button>
               </p>
             )}
-            {dados && <Legenda dados={dados} dark={false} />}
+            {dados && <Legenda dados={dados} />}
             {dados && dados.cells.length > 0 && <Quadras dados={dados} />}
           </div>
           <Resumo dados={dados} />
@@ -227,10 +226,10 @@ function mensagemVazia(c: Camada): string {
   return 'Nenhuma visita nesse período. Escolha outro período ou consultor.';
 }
 
-function Legenda({ dados, dark }: { dados: HeatmapView; dark: boolean }) {
+function Legenda({ dados }: { dados: HeatmapView }) {
   return (
     <section aria-label="Legenda" className="space-y-1.5 text-xs">
-      <div className="h-3 w-full max-w-xs rounded-sm border border-border" style={{ backgroundImage: degradeDaLegenda(dark) }} aria-hidden />
+      <div className="h-3 w-full max-w-xs rounded-sm border border-border" style={{ backgroundImage: degradeDaLegenda(false) }} aria-hidden />
       <div className="flex max-w-xs justify-between text-muted-foreground">
         <span>poucos</span>
         <span>alguns</span>

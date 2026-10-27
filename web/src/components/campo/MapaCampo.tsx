@@ -19,7 +19,7 @@ const chip = (ativo: boolean) =>
  * ele visitou, com a situação de cada um (mesma legenda da equipe). Tocar num pino das paradas de hoje abre a parada. Precisa de
  * sinal: sem ele, a Lista continua funcionando.
  */
-export function MapaCampo({ paradas, escuro }: { paradas: StopView[]; escuro: boolean }) {
+export function MapaCampo({ paradas }: { paradas: StopView[] }) {
   const mapa = useMapaPinosCampo(true);
   const [escondidos, setEscondidos] = useState<Set<string>>(new Set());
   const [selecionado, setSelecionado] = useState<string | null>(null);
@@ -48,7 +48,7 @@ export function MapaCampo({ paradas, escuro }: { paradas: StopView[]; escuro: bo
 
   return (
     <div className="space-y-3">
-      <PinosMapa pins={visiveis} cores={cores} dark={escuro} chaveEnquadre="campo" onPino={setSelecionado} balao={pino ? { leadId: pino[0], linhas } : null} />
+      <PinosMapa pins={visiveis} cores={cores} chaveEnquadre="campo" onPino={setSelecionado} balao={pino ? { leadId: pino[0], linhas } : null} />
       {pino && (
         <div className="card-surface flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
           <span className="min-w-0 break-words">{linhas.join(' · ')}</span>

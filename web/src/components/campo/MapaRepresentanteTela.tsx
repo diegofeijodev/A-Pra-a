@@ -32,7 +32,7 @@ export function MapaRepresentanteTela() {
         </p>
       ) : (
         // As paradas de hoje: tocar no pino de uma delas abre a parada.
-        <MapaCampo paradas={rot.route?.stops ?? []} escuro={false} />
+        <MapaCampo paradas={rot.route?.stops ?? []} />
       )}
     </main>
   );

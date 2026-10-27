@@ -15,7 +15,6 @@ interface Props {
   cells: CelulaCalor[];
   cell: { dlat: number; dlng: number };
   max: number;
-  dark: boolean;
   /** Onde o mapa abre (praça/áreas). */
   inicio: { center: [number, number]; zoom: number };
   /** Muda quando o filtro muda: a próxima carga reenquadra o mapa nas quadras. */
@@ -31,7 +30,7 @@ const MAX_TOOLTIPS = 800;
  * Sem plugin de calor — o servidor já agrega, então nenhum ponto de GPS chega ao navegador.
  * Entra por `next/dynamic({ ssr: false })`.
  */
-export default function CalorMapa({ camada, cells, cell, max, dark, inicio, chaveEnquadre, onVista }: Props) {
+export default function CalorMapa({ camada, cells, cell, max, inicio, chaveEnquadre, onVista }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import('leaflet').Map | null>(null);
   const LRef = useRef<typeof import('leaflet') | null>(null);
@@ -40,14 +39,14 @@ export default function CalorMapa({ camada, cells, cell, max, dark, inicio, chav
   const onVistaRef = useRef(onVista);
   onVistaRef.current = onVista;
   const inicioRef = useRef(inicio);
-  const dadosRef = useRef({ camada, cells, cell, max, dark });
-  dadosRef.current = { camada, cells, cell, max, dark };
+  const dadosRef = useRef({ camada, cells, cell, max });
+  dadosRef.current = { camada, cells, cell, max };
 
   useEffect(() => {
     enquadrarRef.current = true;
   }, [chaveEnquadre]);
 
-  // O mapa nasce uma vez (só o tema recria); as quadras mudam a cada filtro/arrasto.
+  // O mapa nasce uma vez; as quadras mudam a cada filtro/arrasto.
   useEffect(() => {
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -60,7 +59,7 @@ export default function CalorMapa({ camada, cells, cell, max, dark, inicio, chav
         inicioRef.current.zoom,
       );
       map.attributionControl.setPrefix(false);
-      L.tileLayer(TILES_URL, tilesOptions(dark, 19)).addTo(map);
+      L.tileLayer(TILES_URL, tilesOptions(19)).addTo(map);
       grupoRef.current = L.layerGroup().addTo(map);
       map.on('moveend', () => {
         clearTimeout(timer);
@@ -80,7 +79,7 @@ export default function CalorMapa({ camada, cells, cell, max, dark, inicio, chav
       mapRef.current = null;
       grupoRef.current = null;
     };
-  }, [dark]);
+  }, []);
 
   function desenhar() {
     const L = LRef.current;
@@ -91,7 +90,7 @@ export default function CalorMapa({ camada, cells, cell, max, dark, inicio, chav
     grupo.clearLayers();
     const comTooltip = d.cells.length <= MAX_TOOLTIPS;
     for (const c of d.cells) {
-      const { cor, opacidade } = corDoCalor(intensidade(c.n, d.max), d.dark);
+      const { cor, opacidade } = corDoCalor(intensidade(c.n, d.max), false);
       const r = L.rectangle(cantosDaCelula(c, d.cell), { stroke: false, fillColor: cor, fillOpacity: opacidade, interactive: comTooltip });
       if (comTooltip) {
         // Só números; elemento com textContent, nunca HTML (Leaflet usa innerHTML em string).
@@ -108,7 +107,7 @@ export default function CalorMapa({ camada, cells, cell, max, dark, inicio, chav
     }
   }
 
-  useEffect(desenhar, [camada, cells, cell, max, dark]);
+  useEffect(desenhar, [camada, cells, cell, max]);
 
   return (
     <div

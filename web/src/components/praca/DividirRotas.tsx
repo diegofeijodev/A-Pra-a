@@ -227,7 +227,7 @@ export function DividirRotas({ praca, seletorPraca }: { praca: PracaView; seleto
                 {verMapa ? 'Esconder o mapa' : 'Ver no mapa'}
               </Button>
             )}
-            {(larga || verMapa) && <RotasMapa itens={itens} destaque={rotaEscolhida} dark={false} />}
+            {(larga || verMapa) && <RotasMapa itens={itens} destaque={rotaEscolhida} />}
           </div>
         )}
       </div>

@@ -174,7 +174,6 @@ export function AreasAtuacao({ praca, embutido = false }: { praca: PracaView; em
           </p>
           <AreaMapa
             visao={visao}
-            dark={false}
             existentes={(areas ?? []).filter((a) => a.id !== editando)}
             atual={{ lat: form.lat, lng: form.lng, radius_m: Number.isFinite(form.radius_m) ? form.radius_m : RAIO_PADRAO_M }}
             onPick={(lat, lng) => setForm((f) => ({ ...f, lat, lng }))}

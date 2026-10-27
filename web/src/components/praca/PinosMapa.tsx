@@ -8,7 +8,6 @@ import type { PinosPagina } from '@/modules/pinos/domain/pinos';
 interface Props {
   pins: PinosPagina['pins'];
   cores: Record<string, string>;
-  dark: boolean;
   /** Muda quando o filtro muda: a próxima carga reenquadra o mapa nos pinos. */
   chaveEnquadre: string;
   onPino: (leadId: string) => void;
@@ -18,9 +17,9 @@ interface Props {
 
 /**
  * Pinos por situação (contrato §34, Lovable `mapa.tsx`): `circleMarker` no renderer de canvas (10 mil SVGs travariam),
- * mapa aberto (OSM) com `.tiles-escuros` no tema escuro, como os outros mapas. Entra por `next/dynamic({ ssr: false })`.
+ * mapa aberto (OSM), como os outros mapas. Entra por `next/dynamic({ ssr: false })`.
  */
-export default function PinosMapa({ pins, cores, dark, chaveEnquadre, onPino, balao }: Props) {
+export default function PinosMapa({ pins, cores, chaveEnquadre, onPino, balao }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import('leaflet').Map | null>(null);
   const LRef = useRef<typeof import('leaflet') | null>(null);
@@ -45,7 +44,7 @@ export default function PinosMapa({ pins, cores, dark, chaveEnquadre, onPino, ba
       LRef.current = L;
       const map = L.map(el.current, { zoomControl: true, preferCanvas: true, renderer: L.canvas({ padding: 0.3 }) }).setView([-15.8, -47.9], 4);
       map.attributionControl.setPrefix(false);
-      L.tileLayer(TILES_URL, tilesOptions(dark, 19)).addTo(map);
+      L.tileLayer(TILES_URL, tilesOptions(19)).addTo(map);
       grupoRef.current = L.layerGroup().addTo(map);
       mapRef.current = map;
       setTimeout(() => map.invalidateSize(), 80);
@@ -58,7 +57,7 @@ export default function PinosMapa({ pins, cores, dark, chaveEnquadre, onPino, ba
       grupoRef.current = null;
       marcados.clear();
     };
-  }, [dark]);
+  }, []);
 
   function desenhar() {
     const L = LRef.current;
@@ -80,7 +79,7 @@ export default function PinosMapa({ pins, cores, dark, chaveEnquadre, onPino, ba
     }
   }
 
-  useEffect(desenhar, [pins, cores, dark]);
+  useEffect(desenhar, [pins, cores]);
 
   useEffect(() => {
     const m = balao ? marcadores.current.get(balao.leadId) : undefined;

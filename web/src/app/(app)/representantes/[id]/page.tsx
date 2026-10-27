@@ -124,7 +124,7 @@ export default function ConsultorDetalhePage() {
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
             <ConsultorLinhaDoTempo dia={diaDados} />
-            {(trilhas.some((t) => t.length > 0) || diaDados.visits.length > 0) && <ConsultorMapa trilhas={trilhas} visitas={diaDados.visits} dark={false} />}
+            {(trilhas.some((t) => t.length > 0) || diaDados.visits.length > 0) && <ConsultorMapa trilhas={trilhas} visitas={diaDados.visits} />}
           </div>
         )}
         <ResumoDiaEquipe consultantId={id} dia={dia} />

@@ -7,10 +7,10 @@ import type { PlanItem } from '@/modules/planos/domain/planos';
 
 /**
  * Mapa das rotas de uma geração (UX §3.4; Lovable `MapaRotas.tsx`): uma linha colorida por rota, na ordem das paradas, e um
- * ponto por parada; a rota escolhida fica mais grossa. Mapa aberto (OSM) com `.tiles-escuros` no tema escuro. Entra por
+ * ponto por parada; a rota escolhida fica mais grossa. Mapa aberto (OSM). Entra por
  * `next/dynamic({ ssr: false })` e só quando a pessoa pede ("Ver no mapa"). Cor nunca sozinha: o nome está no cartão.
  */
-export default function RotasMapa({ itens, destaque, dark }: { itens: PlanItem[]; destaque: string | null; dark: boolean }) {
+export default function RotasMapa({ itens, destaque }: { itens: PlanItem[]; destaque: string | null }) {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import('leaflet').Map | null>(null);
   const LRef = useRef<typeof import('leaflet') | null>(null);
@@ -43,7 +43,7 @@ export default function RotasMapa({ itens, destaque, dark }: { itens: PlanItem[]
       LRef.current = L;
       const map = L.map(el.current, { zoomControl: true, preferCanvas: true }).setView([-15.8, -47.9], 4);
       map.attributionControl.setPrefix(false);
-      L.tileLayer(TILES_URL, tilesOptions(dark, 19)).addTo(map);
+      L.tileLayer(TILES_URL, tilesOptions(19)).addTo(map);
       grupoRef.current = L.layerGroup().addTo(map);
       mapRef.current = map;
       setTimeout(() => map.invalidateSize(), 80);
@@ -55,7 +55,7 @@ export default function RotasMapa({ itens, destaque, dark }: { itens: PlanItem[]
       mapRef.current = null;
       grupoRef.current = null;
     };
-  }, [dark]);
+  }, []);
 
   useEffect(() => desenhar(false), [itens, destaque]);
 

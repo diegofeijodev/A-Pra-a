@@ -11,7 +11,6 @@ import type { Visao } from '@/modules/areas/domain/area-form';
 
 interface Props {
   visao: Visao;
-  dark: boolean;
   /** Áreas já cadastradas, desenhadas esmaecidas para dar referência. */
   existentes: { id: string; name: string; lat: number; lng: number; radius_m: number; active: boolean }[];
   /** Área em edição/criação. `lat/lng` nulos = ainda sem centro. */
@@ -22,7 +21,7 @@ interface Props {
 
 const COR = '#e8a020';
 
-export default function AreaMapa({ visao, dark, existentes, atual, onPick }: Props) {
+export default function AreaMapa({ visao, existentes, atual, onPick }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import('leaflet').Map | null>(null);
   const LRef = useRef<typeof import('leaflet') | null>(null);
@@ -31,8 +30,8 @@ export default function AreaMapa({ visao, dark, existentes, atual, onPick }: Pro
   onPickRef.current = onPick;
   const visaoInicial = useRef(visao);
 
-  // Cria o mapa UMA vez (só o tema recria): raio e centro mudam a cada clique e
-  // não podem derrubar o mapa.
+  // Cria o mapa UMA vez: raio e centro mudam a cada clique e não podem derrubar
+  // o mapa.
   useEffect(() => {
     let alive = true;
     void (async () => {
@@ -41,7 +40,7 @@ export default function AreaMapa({ visao, dark, existentes, atual, onPick }: Pro
       LRef.current = L;
       const map = L.map(el.current, { zoomControl: true }).setView(visaoInicial.current.center, visaoInicial.current.zoom);
       map.attributionControl.setPrefix(false);
-      L.tileLayer(TILES_URL, tilesOptions(dark, 18)).addTo(map);
+      L.tileLayer(TILES_URL, tilesOptions(18)).addTo(map);
       camadaRef.current = L.layerGroup().addTo(map);
       map.on('click', (e: import('leaflet').LeafletMouseEvent) => onPickRef.current?.(e.latlng.lat, e.latlng.lng));
       mapRef.current = map;
@@ -55,7 +54,7 @@ export default function AreaMapa({ visao, dark, existentes, atual, onPick }: Pro
       camadaRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dark]);
+  }, []);
 
   function desenhar() {
     const L = LRef.current;
@@ -65,7 +64,7 @@ export default function AreaMapa({ visao, dark, existentes, atual, onPick }: Pro
     for (const a of existentes) {
       L.circle([a.lat, a.lng], {
         radius: a.radius_m,
-        color: dark ? '#d8d8d0' : '#3a3a34',
+        color: '#3a3a34',
         weight: 1,
         dashArray: a.active ? undefined : '4 4',
         fillOpacity: a.active ? 0.08 : 0.02,

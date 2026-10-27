@@ -6,7 +6,7 @@ import { TILES_URL, tilesOptions } from '@/lib/map-tiles';
 import type { PointView, VisitView } from '@/modules/campo/domain/campo.types';
 
 /** Mapa do dia (spec §8.2): pontos ligados na ordem gravada + check-ins destacados. Entra por `next/dynamic({ ssr: false })`. */
-export default function ConsultorMapa({ trilhas, visitas, dark }: { trilhas: PointView[][]; visitas: VisitView[]; dark: boolean }) {
+export default function ConsultorMapa({ trilhas, visitas }: { trilhas: PointView[][]; visitas: VisitView[] }) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -24,7 +24,7 @@ export default function ConsultorMapa({ trilhas, visitas, dark }: { trilhas: Poi
       if (todos.length === 0) return;
       map = L.map(ref.current, { zoomControl: true });
       map.attributionControl.setPrefix(false);
-      L.tileLayer(TILES_URL, tilesOptions(dark, 19)).addTo(map);
+      L.tileLayer(TILES_URL, tilesOptions(19)).addTo(map);
       for (const l of linhas) if (l.length > 1) L.polyline(l, { color: '#ECA826', weight: 3, opacity: 0.85 }).addTo(map);
       for (const v of visitas) {
         // Nome do lugar é digitado pelo consultor: elemento com textContent, nunca string (Leaflet usa innerHTML).
@@ -45,7 +45,7 @@ export default function ConsultorMapa({ trilhas, visitas, dark }: { trilhas: Poi
       vivo = false;
       map?.remove();
     };
-  }, [trilhas, visitas, dark]);
+  }, [trilhas, visitas]);
 
   return <div ref={ref} className="h-80 w-full overflow-hidden rounded-md border border-border" />;
 }

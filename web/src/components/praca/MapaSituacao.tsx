@@ -129,7 +129,7 @@ export function MapaSituacao() {
                 carregando clientes…
               </div>
             )}
-            <PinosMapa pins={visiveis} cores={cores} dark={false} chaveEnquadre={`${pracaId}|${modo}`} onPino={setSelecionado} balao={balao} />
+            <PinosMapa pins={visiveis} cores={cores} chaveEnquadre={`${pracaId}|${modo}`} onPino={setSelecionado} balao={balao} />
           </div>
           {selecionado && detalhe.data?.id === selecionado && (
             <div className={`${CARTAO} flex flex-wrap items-center justify-between gap-2 p-4 text-sm`}>

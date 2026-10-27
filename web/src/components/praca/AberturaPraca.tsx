@@ -119,7 +119,7 @@ export function AberturaPraca({ onClose }: { onClose: () => void }) {
           {/* mapa + vizinhas */}
           {centro && cobertura ? (
             <>
-              <AberturaMapa centro={cobertura.centro} vizinhas={vizinhas} dark={false} />
+              <AberturaMapa centro={cobertura.centro} vizinhas={vizinhas} />
               <div className="rounded-md border border-border bg-secondary/40 p-3">
                 <p className="tag text-muted-foreground">Cobertura no raio de {RADIUS_KM} km</p>
                 <p className="mt-1 text-sm">
