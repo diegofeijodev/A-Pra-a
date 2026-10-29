@@ -5559,3 +5559,74 @@ não configuração).
 | `TEAM_COMMERCIAL_ENABLED` | `false` | mostra o grupo "Comercial" no menu da equipe (só apresentação; a API do Comercial funciona com ela desligada) |
 
 **Ordem de subida:** API → web (o web novo contra a API velha só perde itens de menu).
+
+---
+
+## 47. CRM automático: tarefas do dia, resumo, automações e cinco chaves (28/10)
+
+Origem: `docs/superpowers/specs/2026-10-28-crm-automatizado-arquitetura.md` §2 e `…-design.md` §12 (o §12 manda). Tudo atrás de chaves que
+começam **desligadas**. Wire em snake_case; dia só-dia `"YYYY-MM-DD"` de `todaySp()`; erro `{ error: { code, message } }`; todo id de URL/query
+passa por `isUuid()`. Nenhuma rota de §1–§46 muda de forma, exceto as métricas do Funil (§47.5), que só ganham campos.
+
+### 47.1 As cinco chaves (todas `false` por padrão)
+
+| Variável | `features` | Liga | Depende de |
+|---|---|---|---|
+| `CRM_TASKS_ENABLED` | `crm_tasks` | rotas `/v1/crm/*` (desligada = `404 CRM_TASKS_DISABLED`), telas Tarefas e Automações, cartão do Dashboard, selos do Funil | nada (o web mostra só com `commercial` também) |
+| `CRM_AUTO_LEADS_FROM_SEARCH_ENABLED` | `crm_auto_leads` | A1: achados da busca entram sozinhos no funil (teto de 300 por busca, sem dono, autor `Automático`) | nada |
+| `CRM_AUTO_STAGES_ENABLED` | — | A2 (etapa pelo cadastro do representante, autor `Automático · Freela`), A4 do "sem resposta" para "Perdido / reaquecer" junto com `CRM_AUTO_LOST_ENABLED`, e o `since` mais largo do sync | sync ligado e dados de `field_signups` |
+| `CRM_AUTO_LOST_ENABLED` | — | A4: lead sem resposta há 21 dias vai para "Perdido / reaquecer" (autor `Automático`) | nada |
+| `CRM_FREELA_PIPELINE_ENABLED` | — | A3: etapa e lead pelo quadro de contratantes do Freela (autor `Automático · Freela`) | conta do Freela |
+
+`features` (só no **GET** de `/v1/consultores/settings/config`, como no §46.2): `crm_tasks` e `crm_auto_leads`, booleans sempre presentes;
+servidor antigo = desligado no web. As outras três chaves não aparecem em `features` (o web não precisa delas). O `PUT` não aceita nenhuma.
+
+### 47.2 Autores dos eventos automáticos
+
+`'Automático'` (A1, A4); `'Automático · Freela'` (A2, A3); o sync de hoje continua com `'Freela (sincronização)'`. A separação entre
+automático e manual vem do `author_label` do evento. Idempotência: `lead_events.auto_key` único (`a2:etapa:<lead>:<alvo>`, `a2:vaga1:<signup>`,
+`a3:etapa:<lead>:<alvo>`, `a3:contratacoes:<lead>:<n>`, `a3:criado:<userId>`, `a4:<lead>:<stage_since>`); rodada repetida ou duas instâncias não duplicam.
+O automático move cada lead **uma vez por fato** (`leads.auto_stage_applied`).
+
+### 47.3 Rotas `/v1/crm`
+
+Guard de 404 na classe (`CRM_TASKS_DISABLED`), `@Equipe()` em cada método. A migração `20261109100000_crm_automatico` é aditiva.
+
+| Rota | Entrada | Saída |
+|---|---|---|
+| `GET /v1/crm/tasks` | `praca_id` (obrigatório; não-UUID/inexistente = 404 `NOT_FOUND`), `person?: 'all' \| 'me'` (padrão `all`; `me` = `owner_id` do token **ou** nulo) | ver abaixo |
+| `POST /v1/crm/tasks/done` | `{ lead_id (IsUUID), task (IsIn hot_visit\|next_step\|stalled\|first_vacancy), kind (IsIn call\|msg_out\|msg_in\|visit), text? (≤ 2000), next_step? (NextStepDto) }` | `{ ok: true, lead_id }` |
+| `GET /v1/crm/summary` | `praca_id?` (**opcional**; ausente = todas as praças), `day?` (`IsDayString`; padrão `todaySp()`) | `{ day, praca_id, freela_configured, freela_read_at, numbers: [{ key, value, parts: [{ label, value }], formula, source }] }` — janela do dia `[atSpHour(day,0), atSpHour(addDays(day,1),0))` |
+| `GET /v1/crm/automations` | — | `{ freela_configured, send_mode, jobs: [{ key, enabled, needs_freela, blocked_by, last_run, last_7d }], cadences: [{ id, name, entry, paused, active_enrollments }], warnings: [] }` — nunca o e-mail da conta; `send_mode` = `app_settings.mode` |
+| `GET /v1/crm/badges` | `praca_id` | `{ items: [{ lead_id, last_stage_auto, freela_hirings }] }` |
+
+**`GET /v1/crm/tasks`** devolve
+`{ day, praca_id, person, counts: { me, all }, entrada: { novos }, freela_configured, groups: [{ task, total, items }] }`.
+`task` ∈ `send`, `cadence_send` (só leitura), `hot_visit`, `next_step`, `stalled`, `first_vacancy`; até 50 itens por grupo (`ITENS_POR_GRUPO`), `total` com todos.
+Item = `{ lead_id, lead_name, owner_id, stage, phone, send_id?, text?, scheduled_at?, origin_label?, visit?: { consultant_name, day, interest },
+next_step?: { what, date, from_cadence }, last_contact_day?, stage_since?, readonly? }`. A `send` só traz disparos (`status: 'fila'`); as mensagens
+das cadências do dia vão em `cadence_send`, com `readonly: true` (abrir WhatsApp, sem "Feito"). `hot_visit` olha visitas encerradas de 1 a 14 dias atrás;
+`stalled` usa 5 dias de conversa parada; `first_vacancy` espera 3 dias sem contato da equipe.
+
+**`POST /v1/crm/tasks/done`**: uma transação grava o evento (`author_id` do token) e `last_contact_at`. Com `owner_id` do lead **nulo, quem fez vira dono**.
+`next_step` presente grava o novo passo (em qualquer tarefa); ausente **não toca**, exceto com `task = 'next_step'`, em que ausente limpa `next_step_*`
+(o serviço decide; o DTO não tem default). Só contato de verdade conta (`call`, `msg_out`, `msg_in`, `visit`). Lead que já saiu da regra grava o contato assim mesmo.
+404 lead; 409 `LEAD_ARCHIVED`. "Feito" da `send` usa a rota que já existe, `POST /v1/sends/:id/mark { status: 'enviada' }`; "Adiar" usa `POST /v1/leads/:id/snooze { until }`.
+
+### 47.4 Trabalhos (instância única)
+
+Um relógio só (`CrmScheduler`, a cada 5 min). Jobs: `auto_leads_busca`, `etapas_cadastro` (A2), `quadro_freela` (A3, de 2 em 2 horas, das 08h às 20h) e
+`sem_resposta` (A4, uma vez por dia). Cada rodada grava uma linha em `crm_automation_runs`; as com mais de 30 dias saem na rodada diária (só se alguma chave CRM estiver ligada).
+
+### 47.5 `GET /v1/leads/metrics` (só ganha campos)
+
+Ganha `conv_contact_n`, `conv_contact_de`, `conv_active_n`, `conv_active_de` (cada taxa vem com a conta: `n` de `de`). A etapa 8 ("Perdido / reaquecer")
+**sai** de "contatados" e "cadastrados" (bug de contagem corrigido antes de ligar a A4). Os campos antigos continuam.
+
+### 47.6 Variáveis
+
+| Variável | Padrão |
+|---|---|
+| `CRM_TASKS_ENABLED`, `CRM_AUTO_LEADS_FROM_SEARCH_ENABLED`, `CRM_AUTO_STAGES_ENABLED`, `CRM_AUTO_LOST_ENABLED`, `CRM_FREELA_PIPELINE_ENABLED` | `false` (compose de dev: `${VAR:-false}`) |
+
+**Ordem de subida:** migração → API → web. Com tudo desligado, nada muda para ninguém.

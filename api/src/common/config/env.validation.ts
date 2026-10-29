@@ -114,6 +114,13 @@ const envBase = z.object({
   // (leads, cadências, disparos, Freela) funciona igual com ela desligada.
   TEAM_COMMERCIAL_ENABLED: z.string().default('false'),
 
+  // CRM automático (contrato §47): cinco chaves, todas desligadas. Ver common/flags/crm.flags.ts.
+  CRM_TASKS_ENABLED: z.string().default('false'),
+  CRM_AUTO_LEADS_FROM_SEARCH_ENABLED: z.string().default('false'),
+  CRM_AUTO_STAGES_ENABLED: z.string().default('false'),
+  CRM_AUTO_LOST_ENABLED: z.string().default('false'),
+  CRM_FREELA_PIPELINE_ENABLED: z.string().default('false'),
+
   SWAGGER_ENABLED: z.string().optional(),
 
   /**
