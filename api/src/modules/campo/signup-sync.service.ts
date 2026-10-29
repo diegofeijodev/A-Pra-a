@@ -9,9 +9,10 @@
  * - erro gravado em `field_signup_sync_state` é sempre sanitizado (sem corpo, telefone, URL ou token);
  * - rodar duas vezes o mesmo conteúdo não duplica nada (UNIQUE + escrita única + `stage < 5`).
  */
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/database/prisma.service';
+import { CRM_FLAGS, type FlagsCrm } from '../../common/flags/crm.flags';
 import { PracasDoConsultorService } from '../../common/pracas/pracas-do-consultor.service';
 import { todaySp } from '../../common/time/dates';
 import { somenteDigitos } from '../../domain/company-signup-rules';
@@ -78,6 +79,7 @@ export class SignupSyncService {
     private readonly freela: FreelaClient,
     private readonly config: RotasConfigService,
     @Optional() private readonly pracas?: PracasDoConsultorService,
+    @Optional() @Inject(CRM_FLAGS) private readonly crm?: FlagsCrm,
   ) {}
 
   /** Uma rodada: todos os consultores com código no Freela (inclusive inativos). */
@@ -120,11 +122,23 @@ export class SignupSyncService {
         orderBy: { freela_created_at: 'asc' },
         select: { freela_created_at: true },
       });
+      // Chave do CRM (arquitetura, achado 7): quem ainda não concluiu o 1º serviço continua sendo relido, para o A2 poder
+      // levar o lead à etapa 6. Desligada: nenhuma consulta a mais, `since` idêntico ao de antes.
+      let maisAntigoSemEvento = maisAntigo?.freela_created_at ?? null;
+      if (this.crm?.auto_stages) {
+        const semServico = await this.prisma.field_signups.findFirst({
+          where: { consultant_id: c.id, first_job_completed_at: null },
+          orderBy: { freela_created_at: 'asc' },
+          select: { freela_created_at: true },
+        });
+        const d = semServico?.freela_created_at ?? null;
+        if (d && (!maisAntigoSemEvento || d < maisAntigoSemEvento)) maisAntigoSemEvento = d;
+      }
       const desde = escolherDesde({
         agora,
         janelaDias: opcoes.janelaDias,
         watermark: estado?.watermark ?? null,
-        maisAntigoSemEvento: maisAntigo?.freela_created_at ?? null,
+        maisAntigoSemEvento,
       });
 
       let cursor: string | undefined;
