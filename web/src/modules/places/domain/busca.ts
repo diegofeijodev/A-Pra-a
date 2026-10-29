@@ -22,6 +22,18 @@ export function opcoesDeTipo(segmentos: { slug: string; label: string; active: b
 /** Máximo de ids por chamada de "adicionar" (igual ao servidor). */
 export const MAX_ADICIONAR = 300;
 
+/**
+ * A1 ligada (UX final, achado 9): a busca do OSM já devolve no máximo 300 (`MAX_ADICIONAR`), então nada "fica aqui para escolher"; o aviso
+ * diz só o teto.
+ */
+export const AVISO_AUTO_LEADS = 'Os achados entram no funil sozinhos quando a busca termina (até 300 por busca).';
+
+/** A abertura do passo 3, antes de escolher uma busca. Com a A1 ligada, não há o que revisar antes de adicionar. */
+export const aberturaDoResultado = (autoLeads: boolean): string =>
+  autoLeads
+    ? 'Os achados aparecem aqui; os que ainda não estão no funil entram sozinhos quando a busca termina.'
+    : 'Escolha uma área e o que buscar. Os resultados aparecem aqui para você revisar antes de adicionar.';
+
 export type ModoLista = 'todos' | 'novos' | 'na_praca';
 
 export const emAndamento = (r: Pick<SearchRunView, 'status'> | undefined): boolean =>

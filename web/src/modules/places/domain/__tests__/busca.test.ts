@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { CandidateView, SearchRunView, SourceView } from '../../infrastructure/places.api';
 import {
+  AVISO_AUTO_LEADS,
+  aberturaDoResultado,
   alternar,
   avisoPago,
   emAndamento,
@@ -133,5 +135,20 @@ describe('segmentos editáveis (§36)', () => {
     expect(opcoesDeTipo(null)).toBe(TIPOS);
     expect(opcoesDeTipo([{ slug: 'pizzaria', label: 'Pizzaria', active: true, priority: 20 }, { slug: 'motel', label: 'Motel', active: false, priority: 50 }])).toEqual([{ id: 'pizzaria', label: 'Pizzaria' }]);
     expect(MAX_TIPOS_SEGMENTOS).toBe(10);
+  });
+});
+
+describe('UX final, achado 9: o aviso da busca automática não promete sobra', () => {
+  it('o aviso diz o teto, sem "ficam aqui"', () => {
+    expect(AVISO_AUTO_LEADS).toBe('Os achados entram no funil sozinhos quando a busca termina (até 300 por busca).');
+    expect(AVISO_AUTO_LEADS).not.toContain('ficam aqui');
+  });
+  it('a abertura do passo 3: com a A1 ligada, não manda "revisar antes de adicionar"', () => {
+    expect(aberturaDoResultado(true)).toBe(
+      'Os achados aparecem aqui; os que ainda não estão no funil entram sozinhos quando a busca termina.',
+    );
+    expect(aberturaDoResultado(false)).toBe(
+      'Escolha uma área e o que buscar. Os resultados aparecem aqui para você revisar antes de adicionar.',
+    );
   });
 });

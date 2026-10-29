@@ -1,5 +1,5 @@
 import { ROTA } from '@/modules/acesso/domain/enderecos';
-import { addDays, daySp, WD_SHORT } from '@/lib/dates';
+import { addDays, DAY, daySp, WD_SHORT } from '@/lib/dates';
 import type { AutomacoesView } from '../infrastructure/crm.api';
 
 /**
@@ -109,6 +109,19 @@ export function quandoDito(iso: string, agora: Date): string {
   return `${sem} ${String(dd).padStart(2, '0')}/${String(m).padStart(2, '0')} ${hhmm(d)}`;
 }
 
+/**
+ * "ⓘ De onde vem" de cada cartão (UX final, achado 5). Os "Últimos 7 dias" são a soma dos `summary` das rodadas gravadas nas últimas
+ * 168 horas (`automacoes.service.ts`, `crm_automation_runs`), não os eventos da ficha dos leads; o registro guarda
+ * `DIAS_RETENCAO_RODADAS` = 30 dias (`api/src/domain/catalog/crm.ts`).
+ */
+export function fonteDoCartaoJob(agora: Date): string {
+  const desde = quandoDito(new Date(agora.getTime() - 7 * DAY).toISOString(), agora);
+  return (
+    `Última rodada: o registro das rodadas do trabalho. Últimos 7 dias: a soma do que cada rodada registrou desde ${desde}. ` +
+    'O registro das rodadas guarda 30 dias.'
+  );
+}
+
 // ── números do resumo ───────────────────────────────────────
 
 const plural = (n: number, um: string, varios: string) => (n === 1 ? um : varios);
@@ -128,6 +141,18 @@ const semConexao = (j: Job): boolean => (j.last_run?.summary as { nao_configurad
 // ── situação ────────────────────────────────────────────────
 
 export type TipoSituacao = 'desligada' | 'parada' | 'falhou' | 'nunca' | 'ligada';
+
+/**
+ * A cor de cada selo (o texto e o ícone vão junto; a cor nunca sozinha). "Falhou" sem o fundo vermelho a 10%: o texto de 12 px dava cerca
+ * de 4,3:1 (UX final, achado 7); no fundo do cartão, com a borda, passa dos 4,5:1. Os outros dois translúcidos passam (≈ 4,9 e 5,9:1).
+ */
+export const CLASSE_DO_SELO: Record<TipoSituacao, string> = {
+  desligada: 'bg-muted text-muted-foreground',
+  parada: 'bg-warning/10 text-warning',
+  falhou: 'bg-card border border-destructive text-destructive',
+  nunca: 'bg-secondary text-secondary-foreground',
+  ligada: 'bg-success/10 text-success',
+};
 export interface Situacao {
   tipo: TipoSituacao;
   rotulo: string;

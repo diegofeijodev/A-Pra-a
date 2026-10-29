@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { AlertTriangle, BriefcaseBusiness, Clock, Inbox, Plus, Search, Zap } from 'lucide-react';
 import { ROTA } from '@/modules/acesso/domain/enderecos';
-import { fmtBRL } from '@/lib/format';
 import { todaySp, WD_SHORT, wdOf } from '@/lib/dates';
 import { useUiStore } from '@/lib/ui-store';
 import { Button } from '@/components/ui/button';
@@ -26,6 +25,7 @@ import {
   estadoDoQuadro,
   nomeSeloFreela,
   textosDasMetricas,
+  totalDaEtapa,
   type SeloDoLead,
 } from '@/modules/leads/domain/funil';
 import { useActivePraca } from '@/modules/pracas/application/use-pracas';
@@ -342,7 +342,7 @@ export default function FunilPage() {
                     <Badge variant="secondary">{qtdDa(st.n)}</Badge>
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {qtdDa(st.n)} leads · {fmtBRL(somaDa(st.n))}
+                    {totalDaEtapa(qtdDa(st.n), somaDa(st.n))}
                   </p>
                 </div>
                 <div className="flex-1 space-y-2">
@@ -365,7 +365,7 @@ export default function FunilPage() {
                 </summary>
                 <div className="space-y-2 px-3 pb-3">
                   <p className="px-1 text-xs text-muted-foreground">
-                    {qtdDa(st.n)} leads · {fmtBRL(somaDa(st.n))}
+                    {totalDaEtapa(qtdDa(st.n), somaDa(st.n))}
                   </p>
                   {qtdDa(st.n) === 0 ? <p className="px-1 py-2 text-xs text-muted-foreground">Nenhum lead nesta etapa.</p> : cartoesDa(st.n, false)}
                 </div>

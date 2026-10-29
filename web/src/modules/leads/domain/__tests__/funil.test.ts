@@ -8,7 +8,9 @@ import {
   textoConversao,
   textoDeSelos,
   textosDasMetricas,
+  totalDaEtapa,
 } from '../funil';
+import { fmtBRL } from '@/lib/format';
 
 describe('textoConversao', () => {
   it('mostra a conta quando a API manda n e de', () => {
@@ -108,5 +110,13 @@ describe('estadoDoQuadro (UX §3.4, Estados)', () => {
     expect(estadoDoQuadro({ erro: false, lido: true, total: 0, filtrados: 0 })).toBe('sem-leads');
     expect(estadoDoQuadro({ erro: false, lido: true, total: 4, filtrados: 0 })).toBe('sem-resultado');
     expect(estadoDoQuadro({ erro: false, lido: true, total: 4, filtrados: 2 })).toBe('quadro');
+  });
+});
+
+describe('totalDaEtapa (UX final, achado 17)', () => {
+  it('"1 lead" no singular; 0 e 2 ou mais no plural', () => {
+    expect(totalDaEtapa(1, 1500)).toBe(`1 lead · ${fmtBRL(1500)}`);
+    expect(totalDaEtapa(0, 0)).toBe(`0 leads · ${fmtBRL(0)}`);
+    expect(totalDaEtapa(12, 9000)).toBe(`12 leads · ${fmtBRL(9000)}`);
   });
 });

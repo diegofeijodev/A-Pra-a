@@ -36,6 +36,9 @@ export function textoDeSelos(selo: SeloDoLead | undefined): string[] {
   return nomes;
 }
 
+/** "1 lead · R$ 1.500" na coluna e no acordeão de cada etapa (UX final, achado 17: nunca "1 leads"). */
+export const totalDaEtapa = (qtd: number, soma: number): string => `${qtd} ${qtd === 1 ? 'lead' : 'leads'} · ${fmtBRL(soma)}`;
+
 export function diasParado(dias: number): string {
   if (dias <= 0) return 'Hoje';
   return dias === 1 ? '1 dia parado' : `${dias} dias parado`;

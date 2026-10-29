@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { ResumoCrmView } from '../../infrastructure/crm.api';
-import { estadoDoCartao, fonteDoCartao, linhaDeTarefas, linhasDoResumoCartao, somarGrupos, subtituloDoCartao } from '../comercial-hoje';
+import {
+  estadoDoCartao,
+  fonteDoCartao,
+  linhaDeTarefas,
+  linhasDoResumoCartao,
+  rotuloAbrirTarefas,
+  somarGrupos,
+  subtituloDoCartao,
+} from '../comercial-hoje';
 
 const r = (leads: number, etapas: number): ResumoCrmView => ({
   day: '2026-10-28',
@@ -56,5 +64,24 @@ describe('Comercial hoje', () => {
     expect(t).toContain('calculadas agora, às 14h32');
     expect(t).toContain('em 28/10, dia de Brasília, sem os de teste');
     expect(fonteDoCartao('2026-10-28', null)).toContain('calculadas agora, pela mesma regra');
+  });
+  it('UX final, achado 6: com "todas" e mais de uma praça, a conta diz quantas e que Tarefas mostra uma por vez', () => {
+    const g = [{ task: 'send' as const, total: 4 }, { task: 'stalled' as const, total: 2 }];
+    expect(linhaDeTarefas(g, { pracas: 3 }).conta).toBe(
+      '4 mensagens + 2 conversas paradas, em 3 praças; a tela Tarefas mostra uma praça por vez.',
+    );
+    expect(linhaDeTarefas([], { pracas: 3 }).conta).toBe('Nenhuma tarefa para hoje em 3 praças.');
+    // Uma praça só (ou o cartão de uma praça): a conta de antes.
+    expect(linhaDeTarefas(g, { pracas: 1 }).conta).toBe('4 mensagens + 2 conversas paradas');
+    expect(linhaDeTarefas(g).conta).toBe('4 mensagens + 2 conversas paradas');
+  });
+  it('UX final, achado 6: o botão diz de qual praça é a Tarefas que abre quando não é a do cartão', () => {
+    const ativa = { id: 'p-bh', name: 'BH' };
+    expect(rotuloAbrirTarefas({ pracaId: null, ativa, pracas: 3 })).toBe('Abrir tarefas de BH');
+    expect(rotuloAbrirTarefas({ pracaId: null, ativa, pracas: 1 })).toBe('Abrir tarefas');
+    expect(rotuloAbrirTarefas({ pracaId: 'p-bh', ativa, pracas: 3 })).toBe('Abrir tarefas');
+    // O painel do gestor com outra praça escolhida: Tarefas abre a ativa, e o botão diz qual.
+    expect(rotuloAbrirTarefas({ pracaId: 'p-sp', ativa, pracas: 3 })).toBe('Abrir tarefas de BH');
+    expect(rotuloAbrirTarefas({ pracaId: null, ativa: undefined, pracas: 0 })).toBe('Abrir tarefas');
   });
 });

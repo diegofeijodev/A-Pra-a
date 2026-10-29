@@ -14,17 +14,19 @@ import {
   fonteDoCartao,
   linhaDeTarefas,
   linhasDoResumoCartao,
+  rotuloAbrirTarefas,
   somarGrupos,
   subtituloDoCartao,
 } from '@/modules/crm/domain/comercial-hoje';
 import { fetchTarefas } from '@/modules/crm/infrastructure/crm.api';
-import { usePracas } from '@/modules/pracas/application/use-pracas';
+import { useActivePraca, usePracas } from '@/modules/pracas/application/use-pracas';
 
 /**
  * "Comercial hoje" do Dashboard (UX §3.3): tarefas, leads novos e mudanças de etapa DO DIA, com a conta e a fonte. Só existe com
  * `features.commercial` E `features.crm_tasks` (desligado, nada é chamado). Segue o "Praça" do Dashboard (`pracaId` vazio = todas) e
  * NÃO segue o período. As tarefas vêm de uma consulta por praça (a rota exige `praca_id`), com as mesmas chaves da tela Tarefas; o
- * resumo, do `GET /v1/crm/summary` sem praça. Se falhar, só o cartão avisa: o resto do Dashboard continua. `comPeriodo`: há um seletor de
+ * resumo, do `GET /v1/crm/summary` sem praça. Tarefas mostra só a praça ATIVA: com "todas" e mais de uma praça, a conta diz quantas e
+ * o botão diz de qual praça é a Tarefas que abre (UX final, achado 6). Se falhar, só o cartão avisa: o resto do Dashboard continua. `comPeriodo`: há um seletor de
  * período acima (o painel do gestor), e o subtítulo avisa que o cartão não o segue.
  */
 export function CartaoComercialHoje({ pracaId, comPeriodo = false }: { pracaId: string | null; comPeriodo?: boolean }) {
@@ -39,6 +41,7 @@ function Conteudo({ pracaId, comPeriodo }: { pracaId: string | null; comPeriodo:
   const dia = todaySp();
   const pracasQ = usePracas();
   const pracas = pracasQ.data;
+  const { praca: ativa } = useActivePraca();
   const ids = pracaId ? [pracaId] : (pracas ?? []).map((p) => p.id);
   const resumo = useResumoCrm(pracaId, dia, { enabled: true });
   const tarefas = useQueries({
@@ -78,7 +81,7 @@ function Conteudo({ pracaId, comPeriodo }: { pracaId: string | null; comPeriodo:
   } else if (estado === 'carregando' || !r) {
     corpo = <div aria-busy="true" className="mt-4 h-44 animate-pulse rounded-2xl bg-muted" />;
   } else {
-    const linhas = [linhaDeTarefas(somarGrupos(tarefas.map((t) => t.data!.groups))), ...linhasDoResumoCartao(r)];
+    const linhas = [linhaDeTarefas(somarGrupos(tarefas.map((t) => t.data!.groups)), { pracas: ids.length }), ...linhasDoResumoCartao(r)];
     const lido = new Date(Math.max(...tarefas.map((t) => t.dataUpdatedAt), 0));
     corpo = (
       <>
@@ -97,7 +100,7 @@ function Conteudo({ pracaId, comPeriodo }: { pracaId: string | null; comPeriodo:
             <p className="break-words">{fonteDoCartao(dia, tarefas.length > 0 ? lido : null)}</p>
           </details>
           <Button asChild className="w-full sm:w-auto">
-            <Link href={ROTA.tarefas}>Abrir tarefas</Link>
+            <Link href={ROTA.tarefas}>{rotuloAbrirTarefas({ pracaId, ativa, pracas: (pracas ?? []).length })}</Link>
           </Button>
         </div>
       </>

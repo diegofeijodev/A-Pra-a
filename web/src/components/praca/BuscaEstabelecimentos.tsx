@@ -32,6 +32,8 @@ import {
   useStartSearch,
 } from '@/modules/places/application/use-places';
 import {
+  AVISO_AUTO_LEADS,
+  aberturaDoResultado,
   alternar,
   avisoPago,
   emAndamento,
@@ -272,15 +274,12 @@ export function BuscaEstabelecimentos({ praca }: { praca: PracaView }) {
         {features.crm_auto_leads && (
           <p className="mt-3 flex items-start gap-2 rounded-xl bg-secondary p-4 text-sm">
             <Zap aria-hidden className="mt-0.5 size-4 shrink-0" />
-            Os achados entram no funil sozinhos quando a busca termina, até 300 por busca. Os que passarem disso ficam aqui para você
-            escolher.
+            {AVISO_AUTO_LEADS}
           </p>
         )}
 
         {!runId && (
-          <p className="mt-3 text-sm text-muted-foreground">
-            Escolha uma área e o que buscar. Os resultados aparecem aqui para você revisar antes de adicionar.
-          </p>
+          <p className="mt-3 text-sm text-muted-foreground">{aberturaDoResultado(!!features.crm_auto_leads)}</p>
         )}
 
         {runId && !run && !erroRun && <p className="mt-3 text-sm text-muted-foreground">Carregando a busca…</p>}

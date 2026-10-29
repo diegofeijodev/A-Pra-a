@@ -329,6 +329,37 @@ describe('resumo do dia (UX §3.1.6)', () => {
     expect(linhas[4]!.conta).toBe('Só conta a resposta registrada no Praça: o WhatsApp não avisa.');
   });
 
+  it('a conta de mensagens com as partes da cadência e do disparo (API, UX final, achado 3) passa como veio', () => {
+    const r = resumo();
+    const formula = '9 = 1 entregue ao Freela + 4 marcadas pela cadência + 3 marcadas à mão (disparos) + 1 de outra origem';
+    r.numbers = r.numbers.map((n) =>
+      n.key === 'mensagens_enviadas'
+        ? {
+            ...n,
+            value: 9,
+            parts: [
+              { label: 'entregue ao Freela', value: 1 },
+              { label: 'marcadas pela cadência', value: 4 },
+              { label: 'marcadas à mão (disparos)', value: 3 },
+              { label: 'de outra origem', value: 1 },
+            ],
+            formula,
+          }
+        : n,
+    );
+    const msg = linhasDoResumo(r, 'hoje').find((l) => l.chave === 'mensagens_enviadas')!;
+    expect(msg.numero).toBe('9');
+    // "entregue ao Freela" no singular também leva o aviso de que o Praça não sabe se chegou.
+    expect(msg.conta).toBe(`${formula}. O Praça não sabe se chegaram no WhatsApp.`);
+    // Sem nada entregue ao Freela, a conta vai sem o aviso.
+    r.numbers = r.numbers.map((n) =>
+      n.key === 'mensagens_enviadas'
+        ? { ...n, parts: n.parts.map((p) => (p.label.includes('Freela') ? { ...p, value: 0 } : p)), formula: '8 = 0 entregues ao Freela + …' }
+        : n,
+    );
+    expect(linhasDoResumo(r, 'hoje').find((l) => l.chave === 'mensagens_enviadas')!.conta).toBe('8 = 0 entregues ao Freela + …');
+  });
+
   it('sem o Freela, o número do Freela vira — com a linha da conexão', () => {
     const semFreela = resumo({ freela_configured: false });
     semFreela.numbers[3] = { ...semFreela.numbers[3]!, value: null, parts: [], formula: 'Precisa da conexão com o Freela.' };

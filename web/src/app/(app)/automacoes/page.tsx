@@ -10,19 +10,20 @@ import { useAutomacoes } from '@/modules/crm/application/use-crm';
 import {
   AVISO_NADA_LIGADO,
   CATALOGO_JOBS,
+  CLASSE_DO_SELO,
   JOBS_ORDEM,
   MENSAGENS,
   avisoDoFreela,
   comoLigar,
   contaDaCadencia,
   detalheTecnico,
+  fonteDoCartaoJob,
   modoDeEnvio,
   situacaoDoJob,
   textoUltimaRodada,
   textoUltimos7Dias,
   type TipoSituacao,
 } from '@/modules/crm/domain/automacoes';
-import { addDays, daySp } from '@/lib/dates';
 import type { AutomacoesView } from '@/modules/crm/infrastructure/crm.api';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 
@@ -33,11 +34,11 @@ const ICONE_JOB: Record<string, LucideIcon> = { auto_leads_busca: Search, etapas
 
 /** Ícone e cor do selo: a situação é texto + ícone, a cor nunca vai sozinha (UX §3.2.2). */
 const SELO: Record<TipoSituacao, { icone: LucideIcon; classe: string }> = {
-  desligada: { icone: PowerOff, classe: 'bg-muted text-muted-foreground' },
-  parada: { icone: AlertTriangle, classe: 'bg-warning/10 text-warning' },
-  falhou: { icone: AlertTriangle, classe: 'bg-destructive/10 text-destructive' },
-  nunca: { icone: Clock, classe: 'bg-secondary text-secondary-foreground' },
-  ligada: { icone: CheckCircle2, classe: 'bg-success/10 text-success' },
+  desligada: { icone: PowerOff, classe: CLASSE_DO_SELO.desligada },
+  parada: { icone: AlertTriangle, classe: CLASSE_DO_SELO.parada },
+  falhou: { icone: AlertTriangle, classe: CLASSE_DO_SELO.falhou },
+  nunca: { icone: Clock, classe: CLASSE_DO_SELO.nunca },
+  ligada: { icone: CheckCircle2, classe: CLASSE_DO_SELO.ligada },
 };
 const CLASSE_SELO = 'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold';
 
@@ -103,16 +104,21 @@ function Tela({ v, admin }: { v: AutomacoesView; admin: boolean }) {
   const porChave = new Map(v.jobs.map((j) => [j.key, j]));
   const jobs = JOBS_ORDEM.map((k) => porChave.get(k)).filter((j): j is Job => !!j);
   const nadaLigado = jobs.length > 0 && jobs.every((j) => !j.enabled);
-  const hoje = daySp(agora);
-  const periodo = `${fmt(addDays(hoje, -6))} a ${fmt(hoje)}`;
   const modo = modoDeEnvio(v.send_mode, v.freela_configured);
 
   return (
     <>
+      {/* Os avisos da API são riscos (busca automática + cadência de lead novo rodando), não informação: faixa de atenção (UX final, achado 10). */}
       {v.warnings.map((w) => (
-        <p key={w} role="status" className="rounded-xl bg-secondary p-4 text-sm">
-          {w}
-        </p>
+        <div key={w} role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm">
+          <p className="flex min-w-0 items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            <span>{w}</span>
+          </p>
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`${MENSAGENS}?aba=cadencias`}>Pausar em Mensagens</Link>
+          </Button>
+        </div>
       ))}
       {nadaLigado && (
         <p role="status" className="rounded-xl bg-secondary p-4 text-sm">
@@ -137,7 +143,7 @@ function Tela({ v, admin }: { v: AutomacoesView; admin: boolean }) {
         </h2>
         <div className="grid gap-4 md:grid-cols-2">
           {jobs.map((j) => (
-            <CartaoJob key={j.key} j={j} admin={admin} agora={agora} periodo={periodo} />
+            <CartaoJob key={j.key} j={j} admin={admin} agora={agora} />
           ))}
         </div>
       </section>
@@ -201,9 +207,7 @@ function Tela({ v, admin }: { v: AutomacoesView; admin: boolean }) {
   );
 }
 
-const fmt = (dia: string) => `${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
-
-function CartaoJob({ j, admin, agora, periodo }: { j: Job; admin: boolean; agora: Date; periodo: string }) {
+function CartaoJob({ j, admin, agora }: { j: Job; admin: boolean; agora: Date }) {
   const info = CATALOGO_JOBS[j.key as keyof typeof CATALOGO_JOBS];
   if (!info) return null;
   const Icone = ICONE_JOB[j.key] ?? Search;
@@ -214,7 +218,6 @@ function CartaoJob({ j, admin, agora, periodo }: { j: Job; admin: boolean; agora
   const tecnico = detalheTecnico(j, admin);
   const id = `auto-${j.key}`;
   const ultima = j.last_run;
-  const autor = j.key === 'quadro_freela' || j.key === 'etapas_cadastro' ? 'Automático · Freela ou Freela (sincronização)' : 'Automático';
 
   return (
     <section aria-labelledby={id} className={`${CARTAO} min-w-0`} data-job={j.key}>
@@ -243,9 +246,7 @@ function CartaoJob({ j, admin, agora, periodo }: { j: Job; admin: boolean; agora
 
       <details className="mt-2 text-xs text-muted-foreground">
         <summary className="min-h-11 cursor-pointer py-1 md:min-h-0">ⓘ De onde vem</summary>
-        <p className="break-words">
-          Última rodada: o registro das rodadas do trabalho. Últimos 7 dias: eventos com o autor {autor} na ficha dos leads, de {periodo}.
-        </p>
+        <p className="break-words">{fonteDoCartaoJob(agora)}</p>
       </details>
 
       {admin && ligar && (

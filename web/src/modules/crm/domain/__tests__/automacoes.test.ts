@@ -3,11 +3,13 @@ import type { AutomacoesView } from '../../infrastructure/crm.api';
 import {
   AVISO_NADA_LIGADO,
   CATALOGO_JOBS,
+  CLASSE_DO_SELO,
   JOBS_ORDEM,
   avisoDoFreela,
   comoLigar,
   contaDaCadencia,
   detalheTecnico,
+  fonteDoCartaoJob,
   modoDeEnvio,
   quandoDito,
   situacaoDoJob,
@@ -255,5 +257,31 @@ describe('contaDaCadencia', () => {
     expect(contaDaCadencia(0)).toBe('0 leads dentro agora');
     expect(contaDaCadencia(1)).toBe('1 lead dentro agora');
     expect(contaDaCadencia(12)).toBe('12 leads dentro agora');
+  });
+});
+
+describe('UX final, achado 5: a fonte dos "Últimos 7 dias" é o registro das rodadas, nas últimas 168 horas', () => {
+  it('a soma do que cada rodada registrou desde agora menos 7 dias (Brasília), e quanto o registro guarda', () => {
+    // quinta 29/10/2026, 14h32 em Brasília → desde quinta 22/10 14h32
+    expect(fonteDoCartaoJob(new Date('2026-10-29T17:32:00Z'))).toBe(
+      'Última rodada: o registro das rodadas do trabalho. Últimos 7 dias: a soma do que cada rodada registrou desde qui 22/10 14h32. ' +
+        'O registro das rodadas guarda 30 dias.',
+    );
+    expect(fonteDoCartaoJob(AGORA)).not.toContain('eventos com o autor');
+  });
+});
+
+describe('UX final, achado 7: contraste dos selos', () => {
+  it('"Falhou na última rodada" sem o fundo vermelho translúcido (≈ 4,3:1): fundo do cartão e borda', () => {
+    expect(CLASSE_DO_SELO.falhou).toBe('bg-card border border-destructive text-destructive');
+    expect(CLASSE_DO_SELO.falhou).not.toContain('bg-destructive/');
+  });
+  it('os outros ficam como estavam', () => {
+    expect(CLASSE_DO_SELO).toMatchObject({
+      desligada: 'bg-muted text-muted-foreground',
+      parada: 'bg-warning/10 text-warning',
+      nunca: 'bg-secondary text-secondary-foreground',
+      ligada: 'bg-success/10 text-success',
+    });
   });
 });
