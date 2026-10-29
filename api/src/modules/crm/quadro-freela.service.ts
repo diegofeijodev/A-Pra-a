@@ -266,6 +266,9 @@ export class QuadroFreelaService {
           data: { freela_user_id: c.userId },
         });
         vinculou = v.count === 1;
+        // Vínculo recusado: o lead mudou entre a leitura e a transação (a A2, na mesma hora par, pode tê-lo ligado a OUTRO
+        // usuário do Freela; ou foi arquivado). O casamento já não vale: nem vagas nem etapa por este cartão.
+        if (!vinculou) return { vinculou: false, anotou: false, subiu: null };
       }
       let anotou = false;
       if (contar) {
@@ -472,7 +475,7 @@ export class QuadroFreelaService {
 
   /**
    * Cidades (com UF) de cada praça (achado 13): a da cobertura + cada nome de `vizinhas` resolvido para o município com esse
-   * nome mais perto do centro (`cobertura_ibge`), até 100 km. Sem `cobertura_ibge`, só a cidade da cobertura (se houver).
+   * nome mais perto do centro (`cobertura_ibge`), até 100 km. Sem `cobertura_ibge`, nenhuma cidade.
    */
   private async pracasComCobertura(): Promise<PracaCobertura[]> {
     const pracas = await this.prisma.pracas.findMany({
@@ -488,7 +491,8 @@ export class QuadroFreelaService {
     });
     return pracas.map((p) => {
       const cidades: PracaCobertura['cidades'] = [];
-      if (p.cobertura_cidade && p.cobertura_uf) cidades.push({ cidade: p.cobertura_cidade, uf: p.cobertura_uf });
+      // Sem `cobertura_ibge` a praça não entra com cidade nenhuma (achado 13): não gera lead e o telefone só casa pelo número.
+      if (p.cobertura_ibge && p.cobertura_cidade && p.cobertura_uf) cidades.push({ cidade: p.cobertura_cidade, uf: p.cobertura_uf });
       if (p.cobertura_ibge && p.vizinhas.length > 0 && this.geo.find(p.cobertura_ibge)) {
         const perto = this.geo.cidadesNoRaio(p.cobertura_ibge, RAIO_VIZINHAS_KM).map((m) => ({ ...m, chave: normalizarCidade(m.nome) }));
         for (const nome of p.vizinhas) {

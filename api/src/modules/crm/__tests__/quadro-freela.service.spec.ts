@@ -497,6 +497,29 @@ describe('QuadroFreelaService.rodar (A3)', () => {
     expect(t.eventos.filter((e) => e.kind === 'stage')).toHaveLength(0);
   });
 
+  it('vínculo recusado (a A2 ligou o lead a OUTRO usuário entre a leitura e a transação): nada mais é gravado', async () => {
+    const t = montar({ cartoes: [cartao({ hiringsCount: 1 })] });
+    t.leads.push(lead());
+    const tx = t.prisma.$transaction.getMockImplementation()!;
+    t.prisma.$transaction.mockImplementationOnce(async (fn: any) => {
+      t.leads[0]!.freela_user_id = 'u-9';
+      return tx(fn);
+    });
+    const r = await t.svc.rodar(AGORA);
+    expect(r).toMatchObject({ casados_por_telefone: 1, etapas: { '5': 0, '6': 0, '7': 0 }, contratacoes: 0 });
+    expect(t.leads[0]).toMatchObject({ stage: 3, freela_user_id: 'u-9', freela_hirings: null, auto_stage_applied: null });
+    expect(t.eventos).toHaveLength(0);
+    expect(t.rodadas[0]!.summary).toMatchObject({ vinculados: 0, erros: 0 });
+  });
+
+  it('praça com cidade da cobertura mas sem cobertura_ibge: não gera lead (achado 13)', async () => {
+    const t = montar({ cartoes: [cartao({ userId: 'u-novo' })] });
+    t.pracas[0]!.cobertura_ibge = null;
+    const r = await t.svc.rodar(AGORA);
+    expect(r).toMatchObject({ cartoes: 1, criados: 0 });
+    expect(t.leads).toHaveLength(0);
+  });
+
   it('alguém voltou o lead de 6 para 3 depois da marca: o quadro não sobe de novo', async () => {
     const t = montar({ cartoes: [cartao({ hiringsCount: 1 })] });
     t.leads.push(lead({ stage: 3, auto_stage_applied: 6, freela_user_id: 'u-1', freela_hirings: 1 }));
