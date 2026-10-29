@@ -68,6 +68,7 @@ const toDate = (s: string | null | undefined): Date | null => {
 };
 
 const ETAPA_CADASTRADO = 5;
+const ETAPA_CLIENTE_ATIVO = 7;
 const NOMES_ETAPA: Record<number, string> = { 1: 'Prospecção', 2: 'Contatado', 3: 'Conversando', 4: 'Reunião' };
 
 @Injectable()
@@ -91,8 +92,10 @@ export class SignupSyncService {
       orderBy: { id: 'asc' },
     });
     const r: ResumoSync = { consultores: 0, itens: 0, erros: 0, interrompido429: false };
+    // Chave do CRM (revisão final, I2): uma consulta por rodada; desligada, nenhuma (e o 5 fica como era).
+    const voltados = this.crm?.auto_stages ? await this.leadsVoltadosDoCinco() : undefined;
     for (const c of consultores) {
-      const out = await this.sincronizarConsultor(c, agora, regra, opcoes);
+      const out = await this.sincronizarConsultor(c, agora, regra, opcoes, voltados);
       r.consultores++;
       r.itens += out.itens;
       if (out.erro) r.erros++;
@@ -104,12 +107,26 @@ export class SignupSyncService {
     return r;
   }
 
-  /** Nunca lança: o erro vai (sanitizado) para o estado do consultor. */
+  /**
+   * Leads hoje abaixo de 5 que já tiveram evento de etapa 5, 6 ou 7: alguém os voltou depois de um "Cadastrado" (ou além), e o
+   * sync não os sobe de novo. O Perdido (8) não conta: o lead reaquecido à mão depois de perdido continua podendo ir a 5.
+   */
+  private async leadsVoltadosDoCinco(): Promise<Set<string>> {
+    const r = await this.prisma.lead_events.findMany({
+      where: { stage_to: { gte: ETAPA_CADASTRADO, lte: ETAPA_CLIENTE_ATIVO }, lead: { stage: { lt: ETAPA_CADASTRADO } } },
+      select: { lead_id: true },
+      distinct: ['lead_id'],
+    });
+    return new Set(r.map((e) => e.lead_id));
+  }
+
+  /** Nunca lança: o erro vai (sanitizado) para o estado do consultor. `voltados` só vem com a chave `auto_stages` (I2). */
   async sincronizarConsultor(
     c: ConsultorSync,
     agora: Date,
     regra: RegraConfirmacao,
     opcoes: OpcoesSync,
+    voltados?: Set<string>,
   ): Promise<{ itens: number; erro: boolean; status429: boolean }> {
     const maxPaginas = opcoes.maxPaginas ?? MAX_PAGINAS_POR_CONSULTOR;
     let itens = 0;
@@ -152,7 +169,7 @@ export class SignupSyncService {
           ...(cursor ? { cursor } : {}),
         });
         for (const item of p.data) {
-          const criado = await this.processarItem(c, item, regra, agora, conjunto);
+          const criado = await this.processarItem(c, item, regra, agora, conjunto, voltados);
           if (criado) {
             itens++;
             if (!maiorCriacao || criado > maiorCriacao) maiorCriacao = criado;
@@ -202,6 +219,7 @@ export class SignupSyncService {
     regra: RegraConfirmacao,
     agora: Date,
     conjunto: string[] = [c.praca_id],
+    voltados?: Set<string>,
   ): Promise<Date | null> {
     const criado = toDate(item.createdAt);
     if (!criado) return null;
@@ -281,9 +299,10 @@ export class SignupSyncService {
         if (Object.keys(mudanca).length > 0) await tx.field_company_signups.update({ where: { id: cadastro.id }, data: mudanca });
       }
 
-      // Lead → "Cadastrado" (5): só confirmado pela regra vigente; a guarda no WHERE torna idempotente.
+      // Lead → "Cadastrado" (5): só confirmado pela regra vigente; a guarda no WHERE torna idempotente. Com a chave do CRM, o
+      // lead que alguém voltou de 5–7 fica onde está (`voltados`; desligada = undefined, como antes).
       const cls = classificar(valor, regra);
-      if (leadId && cls.confirmado && matchStatus !== 'ambiguous') {
+      if (leadId && cls.confirmado && matchStatus !== 'ambiguous' && !voltados?.has(leadId)) {
         const lead = await tx.leads.findUnique({ where: { id: leadId }, select: { stage: true, archived: true, is_test: true } });
         if (lead && leadDeveSubir(lead, true)) {
           const r = await tx.leads.updateMany({
