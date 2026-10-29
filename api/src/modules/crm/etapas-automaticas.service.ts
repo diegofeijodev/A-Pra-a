@@ -1,7 +1,7 @@
 /**
  * CRM automático — etapa automática por fato do Freela (arquitetura §2.4, contrato §47.2).
  *
- * `subir()` é a ÚNICA função que move um lead para a frente por um fato do Freela (A2 agora, A3 depois):
+ * `subir()` é a ÚNICA função que move um lead para a frente por um fato do Freela (A2 e A3):
  * - a guarda atômica vive no `where` do `updateMany` (achados 4/5): só para a frente, nunca arquivado/teste, etapa 8 só com
  *   fato do dia de entrada em "Perdido" ou depois, e só se a marca `auto_stage_applied` ainda não cobre o alvo (quem voltou
  *   o cartão para trás vence: cada fato move o lead uma vez só);
@@ -29,7 +29,10 @@ type Tx = Prisma.TransactionClient;
 export interface SubirEtapa {
   lead_id: string;
   alvo: 5 | 6 | 7;
-  /** Dia de Brasília do fato que justifica o alvo ("YYYY-MM-DD"); decide a saída da etapa 8. */
+  /**
+   * Dia de Brasília do fato que justifica o alvo ("YYYY-MM-DD"); decide a saída da etapa 8. Fato sem dia conhecido = um dia anterior
+   * a qualquer `stage_since` (o `'0000-00-00'` da A3): nunca tira de Perdido.
+   */
   fato_dia: string;
   autor_label: string;
   /** O fato, numa frase; a função acrescenta "Etapa: de → para." com a etapa lida dentro da transação. */
