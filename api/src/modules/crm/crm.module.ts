@@ -2,10 +2,12 @@ import { Module } from '@nestjs/common';
 import { FreelaClientModule } from '../freela/freela-client.module';
 import { GeoModule } from '../geo/geo.module';
 import { RotasModule } from '../rotas/rotas.module';
+import { CrmController } from './crm.controller';
 import { CrmScheduler } from './crm.scheduler';
 import { EtapasAutomaticasService } from './etapas-automaticas.service';
 import { QuadroFreelaService } from './quadro-freela.service';
 import { SemRespostaService } from './sem-resposta.service';
+import { TarefasService } from './tarefas.service';
 
 /**
  * CRM automático (contrato §47, arquitetura §2.2). Só importa módulos FOLHA (`RotasModule`: a regra de "cadastro confirmado"
@@ -14,7 +16,8 @@ import { SemRespostaService } from './sem-resposta.service';
  */
 @Module({
   imports: [RotasModule, FreelaClientModule, GeoModule],
-  providers: [EtapasAutomaticasService, SemRespostaService, QuadroFreelaService, CrmScheduler],
+  controllers: [CrmController],
+  providers: [EtapasAutomaticasService, SemRespostaService, QuadroFreelaService, TarefasService, CrmScheduler],
   exports: [EtapasAutomaticasService, SemRespostaService, QuadroFreelaService],
 })
 export class CrmModule {}

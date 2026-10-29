@@ -205,9 +205,11 @@ export function montarTarefas(
   for (const l of leads.values()) {
     if (l.stage !== 3 && l.stage !== 4) continue;
     const contatos = [l.last_contact_day, e.contatos_recentes.get(l.id)].filter((d): d is string => !!d);
-    const ultimo = contatos.length ? contatos.reduce((a, b) => (a > b ? a : b)) : l.stage_since;
+    const contato = contatos.length ? contatos.reduce((a, b) => (a > b ? a : b)) : undefined;
+    const ultimo = contato ?? l.stage_since;
     if (daysBetween(ultimo, hoje) < DIAS_CONVERSA_PARADA) continue;
-    entrar('stalled', l, { ...base(l), last_contact_day: ultimo }, ultimo);
+    // `last_contact_day` só existe com contato de verdade; sem ele a tela usa `stage_since` ("na etapa desde").
+    entrar('stalled', l, { ...base(l), ...(contato ? { last_contact_day: contato } : {}), stage_since: l.stage_since }, ultimo);
   }
 
   // first_vacancy: cadastrada há 3+ dias, sem 1ª vaga/contratação e sem contato da equipe nos últimos 3 dias.
@@ -228,6 +230,7 @@ export function montarTarefas(
     const vistos = person === 'me' ? todos.filter(meu) : todos;
     return { task, total: vistos.length, items: vistos.slice(0, ITENS_POR_GRUPO).map((c) => c.item) };
   });
-  const todosCands = [...porTipo.values()].flat();
+  // O selo conta só o que a equipe pode resolver: `cadence_send` é informação (só leitura).
+  const todosCands = TIPOS_TAREFA.filter((t) => t !== 'cadence_send').flatMap((t) => porTipo.get(t)!);
   return { counts: { me: todosCands.filter(meu).length, all: todosCands.length }, groups };
 }

@@ -223,6 +223,39 @@ describe('montarTarefas', () => {
     expect(grupo(r, 'stalled').items[1]!.last_contact_day).toBe('2026-10-24');
   });
 
+  it('stalled: sem contato real, last_contact_day fica ausente e stage_since vai junto (com contato, também)', () => {
+    const r = montarTarefas(
+      base({
+        leads: [
+          lead('a', { stage: 3, last_contact_day: '2026-10-24', stage_since: '2026-10-01' }),
+          lead('c', { stage: 3, last_contact_day: null, stage_since: '2026-10-10' }),
+        ],
+      }),
+      HOJE,
+      EU,
+      'all',
+    );
+    const [c, a] = grupo(r, 'stalled').items;
+    expect(c).not.toHaveProperty('last_contact_day');
+    expect(c!.stage_since).toBe('2026-10-10');
+    expect(a!.last_contact_day).toBe('2026-10-24');
+    expect(a!.stage_since).toBe('2026-10-01');
+  });
+
+  it('counts não incluem cadence_send (só leitura), mas o grupo mostra o total', () => {
+    const r = montarTarefas(
+      base({
+        leads: [lead('a'), lead('b', { stage: 3, last_contact_day: '2026-10-01' })],
+        envios_cadencia: [envio('c1', 'a', { sent_at: new Date('2026-10-29T13:00:00Z') })],
+      }),
+      HOJE,
+      EU,
+      'all',
+    );
+    expect(grupo(r, 'cadence_send').total).toBe(1);
+    expect(r.counts).toEqual({ me: 1, all: 1 });
+  });
+
   it('first_vacancy: etapa 5 há 3+ dias, sem 1ª vaga, sem contratações, sem contato em 3 dias', () => {
     const r = montarTarefas(
       base({
