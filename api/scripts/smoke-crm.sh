@@ -2,11 +2,13 @@
 # Smoke do CRM automático (contrato §47): tarefas do dia, "Feito", resumo, automações, selos, features e a guarda do auto_key no banco.
 # Conversa com a API viva (3014) e limpa o que cria (repetível sem resíduo). Roda SEPARADO do smoke.sh (que cobre as chaves desligadas).
 # NUNCA fala com o Overpass público nem com um Freela real (as variáveis FREELA_* do api/.env ficam vazias no local). Suba a API, em outro
-# terminal, com as chaves ligadas (a partir de api/):
-#   OVERPASS_URL=http://127.0.0.1:9/api/interpreter TEAM_COMMERCIAL_ENABLED=true CRM_TASKS_ENABLED=true CRM_AUTO_LEADS_FROM_SEARCH_ENABLED=true \
-#   CRM_AUTO_STAGES_ENABLED=true CRM_AUTO_LOST_ENABLED=true CRM_FREELA_PIPELINE_ENABLED=true nice -n 19 npm run start:smoke > /tmp/praca-api.log 2>&1
+# terminal, SÓ com estas três chaves ligadas (a partir de api/):
+#   OVERPASS_URL=http://127.0.0.1:9/api/interpreter TEAM_COMMERCIAL_ENABLED=true CRM_TASKS_ENABLED=true \
+#   CRM_AUTO_LEADS_FROM_SEARCH_ENABLED=true nice -n 19 npm run start:smoke > /tmp/praca-api.log 2>&1
 #   bash scripts/smoke-crm.sh
-# A2, A3 e A4 (e A1) não têm rota para disparar: provam-se no jest. Aqui: rotas /v1/crm/*, formato do §47 e o índice único de auto_key.
+# NÃO ligue CRM_AUTO_STAGES_ENABLED, CRM_AUTO_LOST_ENABLED nem CRM_FREELA_PIPELINE_ENABLED aqui: o relógio do CRM (a cada 5 min) rodaria
+# A2/A4/A3 no banco de dev e mexeria nos leads do seed (a A4 perde os da etapa 2 parados). Elas não têm rota para disparar e provam-se
+# no jest (A1 também). Aqui: rotas /v1/crm/*, formato do §47 e o índice único de auto_key.
 # Faz 1 login da equipe (teto de 40/min).
 API=${API:-http://localhost:3014}
 PASS=0; FAIL=0
@@ -24,9 +26,11 @@ HOJE=$(TZ=America/Sao_Paulo date +%F)
 INICIO=$($PSQL "select now() at time zone 'utc'" | tr -d '\n')   # as rodadas do relógio criadas daqui em diante saem na limpeza
 
 faxina(){
-  $PSQL "delete from lead_events where auto_key like 'smoke-crm-%';
-         delete from leads where name like 'CrmS %';
-         delete from crm_automation_runs where started_at >= '$INICIO';" > /dev/null 2>&1
+  # Uma chamada por comando: num -c só, um erro desfaz os três. Sem INICIO (psql fora do ar no começo), nenhuma rodada é apagada.
+  $PSQL "delete from lead_events where auto_key like 'smoke-crm-%'" > /dev/null 2>&1
+  $PSQL "delete from leads where name like 'CrmS %'" > /dev/null 2>&1
+  [ -n "$INICIO" ] && $PSQL "delete from crm_automation_runs where started_at >= '$INICIO'" > /dev/null 2>&1
+  return 0
 }
 trap faxina EXIT
 faxina
