@@ -272,7 +272,8 @@ export function BuscaEstabelecimentos({ praca }: { praca: PracaView }) {
         {features.crm_auto_leads && (
           <p className="mt-3 flex items-start gap-2 rounded-xl bg-secondary p-4 text-sm">
             <Zap aria-hidden className="mt-0.5 size-4 shrink-0" />
-            Os achados entram no funil sozinhos (até 300 por busca).
+            Os achados entram no funil sozinhos quando a busca termina, até 300 por busca. Os que passarem disso ficam aqui para você
+            escolher.
           </p>
         )}
 
