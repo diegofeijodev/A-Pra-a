@@ -82,6 +82,8 @@ const ETAPA_PRIMEIRA_VAGA = 6;
 const ETAPA_CLIENTE_ATIVO = 7;
 const NOME_ETAPA = new Map(FUNNEL_STAGES.map((s) => [s.n, s.name]));
 
+/** Concordância: singular só para 1 (0 e 2+ vão no plural). */
+const pl = (n: number, um: string, varios: string) => (n === 1 ? um : varios);
 const soma = (p: ParteResumo[]) => p.reduce((a, x) => a + x.value, 0);
 const diaCurto = (day: string) => `${day.slice(8, 10)}/${day.slice(5, 7)}`;
 
@@ -103,9 +105,9 @@ export function montarResumo(e: EntradaResumo, day: string): { numbers: NumeroRe
   const total = Object.values(o).reduce((a, n) => a + n, 0);
   const leads: ParteResumo[] = [
     { label: 'da busca', value: busca },
-    { label: 'de visitas', value: visitas },
+    { label: pl(visitas, 'de visita', 'de visitas'), value: visitas },
     { label: 'do formulário', value: formulario },
-    { label: 'de outras origens', value: total - busca - visitas - formulario },
+    { label: pl(total - busca - visitas - formulario, 'de outra origem', 'de outras origens'), value: total - busca - visitas - formulario },
   ];
   numbers.push({
     key: 'leads_novos',
@@ -125,11 +127,11 @@ export function montarResumo(e: EntradaResumo, day: string): { numbers: NumeroRe
   }
   const n = (a: Autoria) => porAutoria.get(a) ?? 0;
   const etapas: ParteResumo[] = [
-    { label: 'automáticas', value: n('automatico') },
+    { label: pl(n('automatico'), 'automática', 'automáticas'), value: n('automatico') },
     { label: 'da equipe', value: n('equipe') },
-    { label: 'de visitas', value: n('representante') },
+    { label: pl(n('representante'), 'de visita', 'de visitas'), value: n('representante') },
     { label: 'do formulário', value: n('formulario') },
-    { label: 'das cadências', value: n('cadencia') },
+    { label: pl(n('cadencia'), 'da cadência', 'das cadências'), value: n('cadencia') },
     { label: 'de outra origem', value: n('outro') },
   ];
   const totalEtapas = e.eventosEtapa.length;
@@ -153,15 +155,15 @@ export function montarResumo(e: EntradaResumo, day: string): { numbers: NumeroRe
     e.eventosEtapa.filter((ev) => ev.stage_to === etapa && !ev.author_id && AUTORES_FREELA.includes(ev.author_label ?? '')).length;
   const lido = e.freelaLidoEm ? ` (quadro de contratantes lido às ${e.freelaLidoEm})` : '';
   const sourceFreela =
-    `Leads que chegaram em ${d} a Cadastrado, Primeira vaga rodada ou Cliente ativo pelo Freela${lido}. ` +
-    'Por enquanto, Cliente ativo = 2 contratações pagas ou mais.';
+    `Mudanças de etapa em ${d} para Cadastrado, Primeira vaga rodada ou Cliente ativo feitas pelo Freela${lido}; conta mudanças, não leads diferentes. ` +
+    'Cliente ativo = voltou a contratar num dia depois da primeira vaga paga (como o Praça vê o quadro do Freela).';
   if (!e.freelaConfigurado) {
     numbers.push({ key: 'freela', value: null, parts: [], formula: 'Precisa da conexão com o Freela.', source: sourceFreela });
   } else {
     const f: ParteResumo[] = [
-      { label: 'cadastros', value: doFreela(ETAPA_CADASTRADO) },
-      { label: 'primeira contratação', value: doFreela(ETAPA_PRIMEIRA_VAGA) },
-      { label: 'clientes ativos', value: doFreela(ETAPA_CLIENTE_ATIVO) },
+      { label: pl(doFreela(ETAPA_CADASTRADO), 'cadastro', 'cadastros'), value: doFreela(ETAPA_CADASTRADO) },
+      { label: pl(doFreela(ETAPA_PRIMEIRA_VAGA), 'primeira contratação', 'primeiras contratações'), value: doFreela(ETAPA_PRIMEIRA_VAGA) },
+      { label: pl(doFreela(ETAPA_CLIENTE_ATIVO), 'cliente ativo', 'clientes ativos'), value: doFreela(ETAPA_CLIENTE_ATIVO) },
     ];
     numbers.push({ key: 'freela', value: soma(f), parts: f, formula: conta(soma(f), f, 3), source: sourceFreela });
   }
@@ -171,8 +173,8 @@ export function montarResumo(e: EntradaResumo, day: string): { numbers: NumeroRe
   const viaFreela = porModo('freela');
   const totalEnviadas = e.enviadas.reduce((a, x) => a + x.n, 0);
   const env: ParteResumo[] = [
-    { label: 'entregues ao Freela', value: viaFreela },
-    { label: 'marcadas à mão', value: totalEnviadas - viaFreela },
+    { label: pl(viaFreela, 'entregue ao Freela', 'entregues ao Freela'), value: viaFreela },
+    { label: pl(totalEnviadas - viaFreela, 'marcada à mão', 'marcadas à mão'), value: totalEnviadas - viaFreela },
   ];
   numbers.push({
     key: 'mensagens_enviadas',
@@ -184,8 +186,8 @@ export function montarResumo(e: EntradaResumo, day: string): { numbers: NumeroRe
   numbers.push({
     key: 'respostas',
     value: e.respostas,
-    parts: [{ label: 'respostas registradas', value: e.respostas }],
-    formula: `${e.respostas} = ${e.respostas} respostas registradas`,
+    parts: [{ label: pl(e.respostas, 'resposta registrada', 'respostas registradas'), value: e.respostas }],
+    formula: `${e.respostas} = ${e.respostas} ${pl(e.respostas, 'resposta registrada', 'respostas registradas')}`,
     source: `Mensagens com resposta registrada em ${d}. Só conta a resposta registrada no Praça: o WhatsApp não avisa.`,
   });
 

@@ -62,7 +62,7 @@ describe('montarResumo', () => {
     });
     const m = num(e, 'mudancas_etapa');
     expect(m.value).toBe(5);
-    expect(m.formula).toBe('5 = 3 automáticas + 1 da equipe + 1 de visitas');
+    expect(m.formula).toBe('5 = 3 automáticas + 1 da equipe + 1 de visita');
     const d = num(e, 'mudancas_etapa_destino');
     expect(d.parts).toEqual([
       { label: 'para Conversa aberta', value: 1 },
@@ -86,11 +86,26 @@ describe('montarResumo', () => {
     expect(n.value).toBe(3);
     expect(n.formula).toBe('3 = 2 cadastros + 1 primeira contratação + 0 clientes ativos');
     expect(n.source).toContain('lido às 14h00');
+    expect(n.source).toContain('voltou a contratar num dia depois da primeira vaga paga');
+    expect(n.source).not.toContain('2 contratações');
+    expect(n.source).toContain('conta mudanças, não leads diferentes');
   });
   it('mensagens por modo e respostas', () => {
     const e = base({ enviadas: [{ mode: 'freela', n: 3 }, { mode: 'fila', n: 1 }], respostas: 2 });
-    expect(num(e, 'mensagens_enviadas').formula).toBe('4 = 3 entregues ao Freela + 1 marcadas à mão');
+    expect(num(e, 'mensagens_enviadas').formula).toBe('4 = 3 entregues ao Freela + 1 marcada à mão');
     expect(num(e, 'respostas').value).toBe(2);
+  });
+  it('concordância: 1 no singular, 0 e 2 ou mais no plural', () => {
+    const e = base({ eventosEtapa: [ev(5, 'Automático')], enviadas: [{ mode: 'freela', n: 1 }], respostas: 1 });
+    expect(num(e, 'mudancas_etapa').formula).toBe('1 = 1 automática + 0 da equipe');
+    expect(num(e, 'mensagens_enviadas').formula).toBe('1 = 1 entregue ao Freela + 0 marcadas à mão');
+    expect(num(e, 'respostas').formula).toBe('1 = 1 resposta registrada');
+    expect(num(base({ eventosEtapa: [ev(5, 'Automático · Freela'), ev(6, 'Automático · Freela')] }), 'freela').formula).toBe(
+      '2 = 1 cadastro + 1 primeira contratação + 0 clientes ativos',
+    );
+    expect(num(base({ eventosEtapa: [ev(7, 'Automático · Freela')] }), 'freela').formula).toBe(
+      '1 = 0 cadastros + 0 primeiras contratações + 1 cliente ativo',
+    );
   });
   it('dia vazio: tudo zero, sem quebrar', () => {
     const r = montarResumo(base(), '2026-10-27').numbers;

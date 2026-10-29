@@ -84,9 +84,9 @@ describe('ResumoService.resumo', () => {
     });
     const r = await svc.resumo(PRACA, '2026-10-27', AGORA);
     expect(chave(r, 'leads_novos').formula).toBe('12 = 8 da busca + 3 de visitas + 1 do formulário');
-    expect(chave(r, 'mudancas_etapa').formula).toBe('2 = 1 automáticas + 1 da equipe');
-    expect(chave(r, 'freela').formula).toBe('1 = 1 cadastros + 0 primeira contratação + 0 clientes ativos');
-    expect(chave(r, 'mensagens_enviadas').formula).toBe('4 = 3 entregues ao Freela + 1 marcadas à mão');
+    expect(chave(r, 'mudancas_etapa').formula).toBe('2 = 1 automática + 1 da equipe');
+    expect(chave(r, 'freela').formula).toBe('1 = 1 cadastro + 0 primeiras contratações + 0 clientes ativos');
+    expect(chave(r, 'mensagens_enviadas').formula).toBe('4 = 3 entregues ao Freela + 1 marcada à mão');
     expect(chave(r, 'respostas').value).toBe(2);
   });
 });
