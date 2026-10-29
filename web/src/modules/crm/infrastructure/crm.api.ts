@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { api } from '@/modules/shared/infrastructure/http';
+import { api, configKeepalive } from '@/modules/shared/infrastructure/http';
 
 /**
  * CRM automático (contrato §47.3), validado na borda da rede. Só se chama com `features.crm_tasks` ligada: desligada, o servidor
@@ -101,8 +101,9 @@ export async function fetchTarefas(pracaId: string, person: 'all' | 'me'): Promi
   return tarefasViewSchema.parse(data);
 }
 
-export async function marcarTarefaFeita(input: TarefaFeitaInput): Promise<{ ok: true; lead_id: string }> {
-  const { data } = await api.post('/v1/crm/tasks/done', input);
+/** `keepalive`: só no envio adiado que sai quando a aba fecha (`configKeepalive`). */
+export async function marcarTarefaFeita(input: TarefaFeitaInput, opcoes?: { keepalive?: boolean }): Promise<{ ok: true; lead_id: string }> {
+  const { data } = await api.post('/v1/crm/tasks/done', input, configKeepalive(opcoes?.keepalive));
   return z.object({ ok: z.literal(true), lead_id: z.string() }).parse(data);
 }
 

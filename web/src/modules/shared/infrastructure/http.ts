@@ -1,9 +1,18 @@
-import axios from 'axios';
+import axios, { type AxiosRequestConfig } from 'axios';
 import { clearStoredAuth, getStoredAuth } from '@/modules/auth/infrastructure/auth.storage';
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3014';
 
 export const api = axios.create({ baseURL: API_URL });
+
+/**
+ * Pedido que precisa sobreviver ao fechamento da aba (o `pagehide` da fila do "Desfazer" de Tarefas, desenho A14): o XHR padrão do
+ * axios morre com a página; o `fetch` com `keepalive` não. Só nessa hora — no resto, o adaptador de sempre (sem `keepalive`, o
+ * pedido com preflight de CORS não depende do suporte do navegador).
+ */
+export function configKeepalive(keepalive?: boolean): AxiosRequestConfig | undefined {
+  return keepalive ? { adapter: 'fetch', fetchOptions: { keepalive: true } } : undefined;
+}
 
 api.interceptors.request.use((config) => {
   // Só anexa o token quando o chamador não definiu um — sobrescrever um

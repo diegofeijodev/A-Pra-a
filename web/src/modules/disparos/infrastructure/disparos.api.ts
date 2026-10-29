@@ -1,4 +1,4 @@
-import { api } from '@/modules/shared/infrastructure/http';
+import { api, configKeepalive } from '@/modules/shared/infrastructure/http';
 
 /**
  * `/v1/disparos` e `/v1/sends` (§13 do contrato).
@@ -175,8 +175,9 @@ export async function getDisparo(id: string): Promise<DisparoDetailView> {
   return data as DisparoDetailView;
 }
 
-export async function markSend(id: string, status: string): Promise<SendView> {
-  const { data } = await api.post(`/v1/sends/${id}/mark`, { status });
+/** `keepalive`: só no envio adiado que sai quando a aba fecha (Tarefas, `configKeepalive`). */
+export async function markSend(id: string, status: string, opcoes?: { keepalive?: boolean }): Promise<SendView> {
+  const { data } = await api.post(`/v1/sends/${id}/mark`, { status }, configKeepalive(opcoes?.keepalive));
   return data as SendView;
 }
 

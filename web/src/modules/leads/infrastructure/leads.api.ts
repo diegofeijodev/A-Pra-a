@@ -1,4 +1,4 @@
-import { api } from '@/modules/shared/infrastructure/http';
+import { api, configKeepalive } from '@/modules/shared/infrastructure/http';
 
 /**
  * `LeadListView` (§9 do contrato). Os campos calculados (`stalled_days`,
@@ -182,8 +182,9 @@ export async function archiveLead(id: string): Promise<LeadView> {
   return data as LeadView;
 }
 
-export async function snoozeLead(id: string, until: string): Promise<LeadView> {
-  const { data } = await api.post(`/v1/leads/${id}/snooze`, { until });
+/** `keepalive`: só no envio adiado que sai quando a aba fecha (Tarefas, `configKeepalive`). */
+export async function snoozeLead(id: string, until: string, opcoes?: { keepalive?: boolean }): Promise<LeadView> {
+  const { data } = await api.post(`/v1/leads/${id}/snooze`, { until }, configKeepalive(opcoes?.keepalive));
   return data as LeadView;
 }
 
