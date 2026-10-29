@@ -8,6 +8,7 @@ import {
   apoioDaLinha,
   contaDasTarefas,
   criarFilaAdiada,
+  enviarAoSairDaAba,
   fontesDoResumo,
   linhasDoResumo,
   linkLigar,
@@ -191,6 +192,38 @@ describe('Desfazer em 5 s (fila adiada, UX §3.1.5)', () => {
     expect(fila.tamanho).toBe(0);
     vi.advanceTimersByTime(10_000);
     expect(a).toHaveBeenCalledTimes(1);
+  });
+
+  it('esconder a aba (trocar para o WhatsApp) manda com keepalive; o pagehide depois não manda de novo', () => {
+    const fila = criarFilaAdiada();
+    const a = vi.fn();
+    fila.agendar('a', a);
+    const janela = new EventTarget();
+    const documento = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+    const desligar = enviarAoSairDaAba(fila, janela, documento);
+    documento.dispatchEvent(new Event('visibilitychange'));
+    expect(a).not.toHaveBeenCalled();
+    documento.visibilityState = 'hidden';
+    documento.dispatchEvent(new Event('visibilitychange'));
+    expect(a).toHaveBeenCalledTimes(1);
+    expect(a).toHaveBeenCalledWith(true);
+    janela.dispatchEvent(new Event('pagehide'));
+    vi.advanceTimersByTime(10_000);
+    expect(a).toHaveBeenCalledTimes(1);
+
+    // Fechar a aba sem esconder antes (computador) também manda.
+    const b = vi.fn();
+    fila.agendar('b', b);
+    janela.dispatchEvent(new Event('pagehide'));
+    expect(b).toHaveBeenCalledWith(true);
+
+    // Desligado (a tela saiu): nenhum dos dois avisos manda mais nada.
+    desligar();
+    const c = vi.fn();
+    fila.agendar('c', c);
+    documento.dispatchEvent(new Event('visibilitychange'));
+    janela.dispatchEvent(new Event('pagehide'));
+    expect(c).not.toHaveBeenCalled();
   });
 
   it('agendar de novo a mesma linha troca o envio e recomeça a conta', () => {

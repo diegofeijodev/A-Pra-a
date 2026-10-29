@@ -285,6 +285,31 @@ export function criarFilaAdiada(esperaMs = ESPERA_DESFAZER_MS): FilaAdiada {
   };
 }
 
+type Ouvinte = Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
+
+/**
+ * Manda tudo o que espera o Desfazer, com `keepalive`, quando a página pode morrer: `pagehide` (fechou a aba) e a aba escondida
+ * (`visibilitychange` → `hidden`). No celular, trocar para o WhatsApp quase nunca dispara `pagehide`, e o sistema pode matar a aba
+ * escondida. Não manda duas vezes: a fila tira a linha antes de mandar. `janela`/`documento` entram por parâmetro (o teste usa
+ * `EventTarget`); devolve o "desligar".
+ */
+export function enviarAoSairDaAba(
+  fila: Pick<FilaAdiada, 'enviarTodas'>,
+  janela: Ouvinte,
+  documento: Ouvinte & { readonly visibilityState: string },
+): () => void {
+  const aoFechar = () => fila.enviarTodas(true);
+  const aoEsconder = () => {
+    if (documento.visibilityState === 'hidden') fila.enviarTodas(true);
+  };
+  janela.addEventListener('pagehide', aoFechar);
+  documento.addEventListener('visibilitychange', aoEsconder);
+  return () => {
+    janela.removeEventListener('pagehide', aoFechar);
+    documento.removeEventListener('visibilitychange', aoEsconder);
+  };
+}
+
 // ── resumo do dia ───────────────────────────────────────────
 
 type Quando = 'hoje' | 'ontem';

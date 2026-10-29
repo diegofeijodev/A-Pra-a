@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
-import { criarFilaAdiada } from '../domain/tarefas';
+import { criarFilaAdiada, enviarAoSairDaAba } from '../domain/tarefas';
 
 /**
  * "Feito"/"Adiar" com Desfazer (UX §3.1.5, desenho A14): nada vai ao servidor por 5 s. A tela mostra a confirmação com "Desfazer";
  * passado o prazo o pedido sai — deu certo, a linha some (e a lista é relida pela mutação); falhou, a linha volta com a mensagem do
- * servidor e "Tentar de novo". Saiu da tela antes dos 5 s: manda na desmontagem; fechou a aba: manda no `pagehide` com `keepalive`.
+ * servidor e "Tentar de novo". Saiu da tela antes dos 5 s: manda na desmontagem; fechou ou escondeu a aba (no celular, trocar para o
+ * WhatsApp): manda no `pagehide` ou no `visibilitychange` → `hidden`, com `keepalive` (`enviarAoSairDaAba`).
  * Serve a Tarefas e à fila da Entrada (Task 23): `M` é o que a linha mostra enquanto espera.
  */
 export type SituacaoAdiada<M> =
@@ -17,7 +18,7 @@ export type SituacaoAdiada<M> =
 
 export interface AcaoAdiada<M> {
   meta: M;
-  /** `urgente` = a aba está fechando: use a chamada com `keepalive`, não a mutação. */
+  /** `urgente` = a aba está fechando ou foi escondida: use a chamada com `keepalive`, não a mutação. */
   enviar: (urgente: boolean) => Promise<unknown>;
 }
 
@@ -96,10 +97,9 @@ export function useAcoesAdiadas<M>({ antesDeSumir }: { antesDeSumir?: (chave: st
   }, []);
 
   useEffect(() => {
-    const aoFecharAba = () => fila.enviarTodas(true);
-    window.addEventListener('pagehide', aoFecharAba);
+    const desligar = enviarAoSairDaAba(fila, window, document);
     return () => {
-      window.removeEventListener('pagehide', aoFecharAba);
+      desligar();
       // Saiu da tela (navegação dentro do app): manda o que estava esperando, sem `keepalive` (a página continua viva).
       fila.enviarTodas(false);
     };
