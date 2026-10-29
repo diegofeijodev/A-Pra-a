@@ -5567,7 +5567,8 @@ não configuração).
 
 Origem: `docs/superpowers/specs/2026-10-28-crm-automatizado-arquitetura.md` §2 e `…-design.md` §12 (o §12 manda). Tudo atrás de chaves que
 começam **desligadas**. Wire em snake_case; dia só-dia `"YYYY-MM-DD"` de `todaySp()`; erro `{ error: { code, message } }`; todo id de URL/query
-passa por `isUuid()`. Nenhuma rota de §1–§46 muda de forma, exceto as métricas do Funil (§47.5), que só ganham campos.
+passa por `isUuid()`. Nenhuma rota de §1–§46 muda de forma, exceto as métricas do Funil (§47.5), que só ganham campos; três indicadores
+mudam de valor, não de forma (§47.7).
 
 ### 47.1 As cinco chaves (todas `false` por padrão)
 
@@ -5632,4 +5633,14 @@ Ganha `conv_contact_n`, `conv_contact_de`, `conv_active_n`, `conv_active_de` (ca
 |---|---|
 | `CRM_TASKS_ENABLED`, `CRM_AUTO_LEADS_FROM_SEARCH_ENABLED`, `CRM_AUTO_STAGES_ENABLED`, `CRM_AUTO_LOST_ENABLED`, `CRM_FREELA_PIPELINE_ENABLED` | `false` (compose de dev: `${VAR:-false}`) |
 
-**Ordem de subida:** migração → API → web. Com tudo desligado, nada muda para ninguém.
+**Ordem de subida:** migração → API → web. Com tudo desligado, nada muda para ninguém, exceto as taxas do Funil (§47.5) e dos
+indicadores (§47.7), que são correções de conta.
+
+### 47.7 `GET /v1/indicators` (mesma forma, valores corrigidos)
+
+A etapa 8 ("Perdido / reaquecer") sai das contas de três indicadores calculados (bug de contagem corrigido antes de ligar a A4, que
+perde leads da etapa 2): **`recontratacao`** = leads na etapa 7 ÷ leads nas etapas 6 e 7 (antes: etapa ≥ 7 ÷ etapa ≥ 6, com os
+perdidos); **`perda_mensal`** = perdidos no período que **já foram clientes** (têm evento de etapa com `stage_to` 5, 6 ou 7) ÷ (leads
+nas etapas 5 a 7 + esses perdidos) — perdido sem esse histórico (o da A4, o que nunca passou de 4) não conta; **`passagem_etapa`** =
+etapa 5 a 7 ÷ etapas 2 a 7 (antes o perdido entrava na base). Os números dessas três leituras (e da coluna `recontratacao` das
+linhas por praça) mudam; nenhum campo muda.

@@ -1741,8 +1741,8 @@ check "o período padrão é o mês corrente" "$MES1 $HOJE este mês" \
   "$(curl -s "$API/v1/indicators" -H "$HD" | jq -r '.range | "\(.from) \(.to) \(.label)"')"
 check "clientes ativos = os 3 leads do seed na etapa 7" "3" \
   "$(echo "$IND" | jq '[.readings[] | select(.key=="clientes_ativos")][0].value')"
-# 8 leads na etapa ≥ 6 (3 na 6, 3 na 7, 2 perdidos), 5 deles na etapa ≥ 7.
-check "recontratação = 5 de 8 leads que rodaram a primeira vaga" "62.5" \
+# 6 leads nas etapas 6 e 7 (3 em cada), 3 deles na 7; os 2 perdidos ficam fora (CRM §47.7).
+check "recontratação = 3 de 6 leads que rodaram a primeira vaga" "50" \
   "$(echo "$IND" | jq '[.readings[] | select(.key=="recontratacao")][0].value')"
 check "preenchimento médio do seed abaixo do teto de 4 h" "2.73 ok" \
   "$(echo "$IND" | jq -r '[.readings[] | select(.key=="tempo_preencher")][0] | "\((.value * 100 | round) / 100) \(.sem)"')"
@@ -1750,9 +1750,10 @@ check "custo por cliente ativado = 720 de mídia / 3 ativos" "240 bad" \
   "$(echo "$IND" | jq -r '[.readings[] | select(.key=="custo_cliente")][0] | "\(.value) \(.sem)"')"
 check "os 25 leads do seed entraram nos últimos 90 dias" "25" \
   "$(echo "$IND" | jq '[.readings[] | select(.key=="leads_novos")][0].value')"
-check "perda mensal = 2 perdidos sobre a base de 13" "15.38" \
+# Os 2 perdidos do seed não têm evento de etapa 5–7 (nunca foram clientes pelo histórico): 0 sobre a base de 9 (etapas 5 a 7).
+check "perda mensal = 0 clientes perdidos sobre a base de 9" "0" \
   "$(echo "$IND" | jq '[.readings[] | select(.key=="perda_mensal")][0].value | (. * 100 | round) / 100')"
-check "passagem por etapa = 9 cadastrados de 21 tocados" "42.86" \
+check "passagem por etapa = 9 cadastrados de 19 tocados (etapas 2 a 7)" "47.37" \
   "$(echo "$IND" | jq '[.readings[] | select(.key=="passagem_etapa")][0].value | (. * 100 | round) / 100')"
 # A praça do seed abre em 2026-10-12: antes disso nada venceu ainda (playbook
 # sem base = "null none"); atrasadas só passa de 0 depois do dia 12.

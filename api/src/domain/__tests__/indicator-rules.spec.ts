@@ -235,6 +235,13 @@ describe('computeValue', () => {
     expect(computeValue('recontratacao', d, null, MES)).toBeNull();
   });
 
+  it('recontratacao: o perdido (etapa 8) fica fora da base e da conta (CRM §47.7)', () => {
+    const d = data({ leads: [lead({ stage: 6 }), lead({ stage: 7 }), lead({ stage: 8 }), lead({ stage: 8 })] });
+    // base = etapas 6 e 7 (2); voltaram a contratar = etapa 7 (1). Antes: 3 de 4 (75%), contando os dois perdidos.
+    expect(computeValue('recontratacao', d, null, MES)).toBe(50);
+    expect(computeValue('recontratacao', data({ leads: [lead({ stage: 8 })] }), null, MES)).toBeNull();
+  });
+
   it('passagem_etapa: dos tocados (etapa ≥ 2), quantos chegaram a cadastrado', () => {
     const d = data({
       leads: [
@@ -249,9 +256,13 @@ describe('computeValue', () => {
     expect(computeValue('passagem_etapa', d, null, MES)).toBe(50);
   });
 
-  it('passagem_etapa não conta o perdido (etapa 8) como chegada', () => {
+  it('passagem_etapa não conta o perdido (etapa 8) nem como chegada nem como tocado (CRM §47.7)', () => {
     const d = data({ leads: [lead({ stage: 2 }), lead({ stage: 8 })] });
     expect(computeValue('passagem_etapa', d, null, MES)).toBe(0);
+    // base = etapas 2..7 (2, 5); chegaram = 5. Antes: 1 de 3, com o perdido na base.
+    const e = data({ leads: [lead({ stage: 2 }), lead({ stage: 5 }), lead({ stage: 8 })] });
+    expect(computeValue('passagem_etapa', e, null, MES)).toBe(50);
+    expect(computeValue('passagem_etapa', data({ leads: [lead({ stage: 8 }), lead({ stage: 1 })] }), null, MES)).toBeNull();
   });
 
   it('leads_novos conta pela data de entrada no período', () => {
@@ -265,17 +276,46 @@ describe('computeValue', () => {
     expect(computeValue('leads_novos', d, null, MES)).toBe(2);
   });
 
-  it('perda_mensal: perdido no período sobre a base viva mais os perdidos', () => {
+  it('perda_mensal: cliente perdido no período sobre a base viva (5..7) mais os perdidos', () => {
     const d = data({
       leads: [
-        lead({ stage: 8, stage_since: '2026-09-05' }),
+        lead({
+          stage: 8,
+          stage_since: '2026-09-05',
+          events: [
+            { kind: 'stage', at: '2026-08-20T12:00:00.000Z', stage_to: 6 },
+            { kind: 'stage', at: '2026-09-05T12:00:00.000Z', stage_to: 8 },
+          ],
+        }),
         lead({ stage: 5 }),
         lead({ stage: 6 }),
         lead({ stage: 7 }),
       ],
     });
-    // perdidos 1; base = (etapa ≥ 5, que inclui o perdido) 4 + 1 = 5
-    expect(computeValue('perda_mensal', d, null, MES)).toBe(20);
+    // perdidos 1 (chegou à etapa 6 antes); base = etapas 5..7 (3) + 1 = 4
+    expect(computeValue('perda_mensal', d, null, MES)).toBe(25);
+  });
+
+  it('perda_mensal só conta o perdido que já tinha sido cliente (evento para 5, 6 ou 7) (CRM §47.7)', () => {
+    const cliente = (stage_to: number) =>
+      lead({ stage: 8, stage_since: '2026-09-05', events: [{ kind: 'stage', at: '2026-08-10T12:00:00.000Z', stage_to }] });
+    const nuncaCliente = lead({
+      stage: 8,
+      stage_since: '2026-09-05',
+      events: [
+        { kind: 'stage', at: '2026-08-10T12:00:00.000Z', stage_to: 2 },
+        { kind: 'stage', at: '2026-09-05T12:00:00.000Z', stage_to: 8 },
+      ],
+    });
+    const semHistorico = lead({ stage: 8, stage_since: '2026-09-05' });
+    const d = data({ leads: [cliente(5), cliente(7), nuncaCliente, semHistorico, lead({ stage: 6 }), lead({ stage: 6 })] });
+    // perdidos 2 (os que chegaram a 5 e a 7; o da etapa 2 que a A4 perdeu e o sem histórico não contam); base 2 + 2 = 4
+    expect(computeValue('perda_mensal', d, null, MES)).toBe(50);
+    // Perdido FORA do período não conta, mesmo tendo sido cliente.
+    const fora = lead({ stage: 8, stage_since: '2026-08-20', events: [{ kind: 'stage', at: '2026-08-01T12:00:00.000Z', stage_to: 6 }] });
+    expect(computeValue('perda_mensal', data({ leads: [fora, lead({ stage: 6 })] }), null, MES)).toBe(0);
+    // Só perdidos que nunca foram clientes e nenhum vivo: sem base.
+    expect(computeValue('perda_mensal', data({ leads: [nuncaCliente, semHistorico] }), null, MES)).toBeNull();
   });
 
   it('tempo_preencher é a média das horas das vagas preenchidas da praça', () => {

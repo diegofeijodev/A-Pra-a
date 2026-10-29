@@ -213,6 +213,13 @@ export function stageEnteredAt(lead: IndLeadRow, stage: number): string | undefi
   return lead.stage >= stage ? lead.stage_since : undefined;
 }
 
+/**
+ * O lead já foi cliente (passou por 5, 6 ou 7)? Só pelos eventos com `stage_to`: `stageEnteredAt(l, 5)` não serve para o
+ * perdido, porque cai em `stage_since` sempre que `stage >= 5` — e 8 é maior que 5. Perdido sem histórico de etapa = não.
+ */
+const jaFoiCliente = (lead: IndLeadRow): boolean =>
+  lead.events.some((e) => e.stage_to != null && e.stage_to >= STAGE_CADASTRO && e.stage_to <= STAGE_ATIVO);
+
 const leadsOf = (data: IndData, pracaId: string | null): IndLeadRow[] =>
   pracaId ? data.leads.filter((l) => l.praca_id === pracaId) : data.leads;
 
@@ -263,9 +270,10 @@ export function computeValue(key: IndKey, data: IndData, pracaId: string | null,
         .length;
 
     case 'recontratacao': {
-      const base = leads.filter((l) => l.stage >= STAGE_PRIMEIRA_VAGA).length;
+      // Etapas 6 e 7 só: o perdido (8) não "voltou a contratar" (CRM §47.7; antes `>= 6`/`>= 7` contavam a 8).
+      const base = leads.filter((l) => l.stage === STAGE_PRIMEIRA_VAGA || l.stage === STAGE_ATIVO).length;
       if (!base) return null;
-      return (leads.filter((l) => l.stage >= STAGE_ATIVO).length / base) * 100;
+      return (leads.filter((l) => l.stage === STAGE_ATIVO).length / base) * 100;
     }
 
     case 'tempo_preencher': {
@@ -278,8 +286,12 @@ export function computeValue(key: IndKey, data: IndData, pracaId: string | null,
     }
 
     case 'perda_mensal': {
-      const perdidos = leads.filter((l) => l.stage === STAGE_PERDIDO && inRange(l.stage_since, r)).length;
-      const base = leads.filter((l) => l.stage >= STAGE_CADASTRO).length + perdidos;
+      // Perda de CLIENTE (CRM §47.7): só o perdido que já tinha passado por 5, 6 ou 7 (a A4 perde leads da etapa 2, que
+      // nunca foram clientes). Base = os vivos de 5 a 7 + esses perdidos.
+      const perdidos = leads.filter(
+        (l) => l.stage === STAGE_PERDIDO && inRange(l.stage_since, r) && jaFoiCliente(l),
+      ).length;
+      const base = leads.filter((l) => l.stage >= STAGE_CADASTRO && l.stage <= STAGE_ATIVO).length + perdidos;
       if (!base) return null;
       return (perdidos / base) * 100;
     }
@@ -299,7 +311,8 @@ export function computeValue(key: IndKey, data: IndData, pracaId: string | null,
       return leads.filter((l) => inRange(l.entered_at, r)).length;
 
     case 'passagem_etapa': {
-      const tocados = leads.filter((l) => l.stage >= 2).length;
+      // Tocados = etapas 2 a 7: o perdido (8) sai da base também, não só da chegada (CRM §47.7).
+      const tocados = leads.filter((l) => l.stage >= 2 && l.stage <= STAGE_ATIVO).length;
       if (!tocados) return null;
       const chegaram = leads.filter((l) => l.stage >= STAGE_CADASTRO && l.stage !== STAGE_PERDIDO).length;
       return (chegaram / tocados) * 100;
