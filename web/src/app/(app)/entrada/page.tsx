@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Check, Link2, MapPin, MessageCircle, Phone, Plus, Trash2, Upload, type LucideIcon } from 'lucide-react';
+import { useFeaturesMenu } from '@/modules/acesso/application/use-acesso';
 import { ROTA } from '@/modules/acesso/domain/enderecos';
 import { CabecalhoPagina } from '@/components/praca/CabecalhoPagina';
 import { focarSemPular, proximoFoco } from '@/components/crm/foco-da-lista';
@@ -50,15 +51,18 @@ import {
   contaDaFila,
   contagemDaFila,
   eventoDoFeito,
+  feitoDaEntrada,
+  marcaDoContato,
   motivoDaFila,
   rotuloDoImportar,
+  saiDaFila,
   textoImportacaoDesfeita,
   textosDesfazerImportacao,
   type ContatoDaFila,
 } from '@/modules/leads/domain/entrada';
 import { useAcoesAdiadas } from '@/modules/crm/application/use-acoes-adiadas';
 import { useAnuncio } from '@/modules/crm/application/use-anuncio';
-import { enviosAoFecharAba, useAdiarLead } from '@/modules/crm/application/use-crm';
+import { enviosAoFecharAba, useAdiarLead, useFeito } from '@/modules/crm/application/use-crm';
 import { OPCOES_FEITO, anuncioDaAcao, opcoesAdiar, textoAdiado } from '@/modules/crm/domain/tarefas';
 import { useSettings, useUpdateSettings } from '@/modules/messages/application/use-settings';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
@@ -635,7 +639,25 @@ function FilaDoDia() {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hoje = todaySp();
   const [focoDepois, setFocoDepois] = useState<string | null>(null);
-  const acoes = useAcoesAdiadas<Espera>({ antesDeSumir: (chave) => setFocoDepois(proximoFoco(chave, "#fila-vazia")) });
+  // Ruling W2: com `crm_tasks`, o "Feito" é o 1º contato de Tarefas (o lead vai a "Contatado" e sai da fila); sem a chave, ou no
+  // reaquecer, ele só grava o contato e a linha FICA, com a marca (UX final, achado 2). `ficam` = as linhas cujo "Feito" não as tira.
+  const { features } = useFeaturesMenu();
+  const feito = useFeito();
+  const [ficam, setFicam] = useState<ReadonlySet<string>>(() => new Set());
+  const marcarFica = (chave: string, fica: boolean) =>
+    setFicam((prev) => {
+      if (prev.has(chave) === fica) return prev;
+      const n = new Set(prev);
+      if (fica) n.add(chave);
+      else n.delete(chave);
+      return n;
+    });
+  // Só a linha que SAI passa o foco adiante; a que fica devolve o foco ao próprio "Feito" (`LinhaTarefa`).
+  const acoes = useAcoesAdiadas<Espera>({
+    antesDeSumir: (chave) => {
+      if (!ficam.has(chave)) setFocoDepois(proximoFoco(chave, "#fila-vazia"));
+    },
+  });
   // A fila da praça ativa (UX final, achado 1), a mesma do cartão "Primeiro contato" de Tarefas; espera a praça chegar.
   const { praca, isPending: lendoPracas } = useActivePraca();
   const { data: queue, isError, error, refetch } = useLeadQueue(who, praca?.id, { enabled: !lendoPracas });
@@ -678,21 +700,34 @@ function FilaDoDia() {
   const people = (users ?? []).filter((u) => u.active);
   const total = queue?.total ?? 0;
   const grandes = queue?.grandes ?? 0;
-  const shown = (queue?.items ?? []).filter((l) => !acoes.feitas.has(`entrada:${l.id}`));
+  const shown = (queue?.items ?? []).filter((l) => {
+    const chave = `entrada:${l.id}`;
+    return !(acoes.feitas.has(chave) && !ficam.has(chave));
+  });
   const aviso = avisoDoLimite({ total, quota, porPessoa: who !== "all" });
   const classLabel = (id: string) => catalog?.classes.find((c) => c.id === id)?.label ?? id;
 
   function agendarFeito(l: QueueItemView, kind: ContatoDaFila) {
+    const chave = `entrada:${l.id}`;
     const ev = eventoDoFeito(kind);
-    acoes.agendar(`entrada:${l.id}`, {
+    const plano = feitoDaEntrada({ crmTasks: features.crm_tasks, leadId: l.id, kind });
+    const sai = saiDaFila({ crmTasks: features.crm_tasks, stage: l.stage });
+    marcarFica(chave, !sai);
+    acoes.agendar(chave, {
       meta: { texto: `✓ ${ev.confirmacao}` },
-      enviar: (urgente) =>
-        urgente ? addLeadEvent(l.id, ev.kind, ev.text, { keepalive: true }) : addEvent.mutateAsync({ id: l.id, kind: ev.kind, text: ev.text }),
+      enviar: (urgente) => {
+        if (plano.via === "tarefas") return urgente ? enviosAoFecharAba.feito(plano.input) : feito.mutateAsync(plano.input);
+        return urgente
+          ? addLeadEvent(l.id, plano.kind, plano.text, { keepalive: true })
+          : addEvent.mutateAsync({ id: l.id, kind: plano.kind, text: plano.text });
+      },
     });
-    anunciar(anuncioDaAcao(ev.confirmacao, l.name, shown.length - 1));
+    anunciar(anuncioDaAcao(ev.confirmacao, l.name, sai ? shown.length - 1 : shown.length));
   }
 
   function agendarAdiar(l: QueueItemView, ate: string) {
+    // Adiado, o lead sai da fila até a data: a linha some.
+    marcarFica(`entrada:${l.id}`, false);
     acoes.agendar(`entrada:${l.id}`, {
       meta: { texto: textoAdiado(ate) },
       enviar: (urgente) => (urgente ? enviosAoFecharAba.adiar(l.id, ate) : adiar.mutateAsync({ id: l.id, until: ate })),
@@ -719,7 +754,10 @@ function FilaDoDia() {
         telefone={l.phone}
         // O link só ABRE a conversa (decisão U1): quem grava "Mensagem enviada" é o Feito.
         whatsapp={{ onAbrir: () => { if (acaoDoLinkWhatsApp() === "abrir") setWhatsAbertos((prev) => new Set(prev).add(chave)); } }}
-        aviso={abriu ? "Mandou? Toque em Feito e escolha “Mandei mensagem”." : null}
+        aviso={
+          marcaDoContato(l, hoje, ficam.has(chave) && acoes.feitas.has(chave)) ??
+          (abriu ? "Mandou? Toque em Feito e escolha “Mandei mensagem”." : null)
+        }
         feito={{
           opcoes: OPCOES_FEITO.map((o) => ({ id: o.kind, rotulo: o.rotulo, icone: ICONE_FEITO[o.kind] })),
           onEscolher: (kind) => agendarFeito(l, kind as ContatoDaFila),

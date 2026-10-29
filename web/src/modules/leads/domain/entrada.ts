@@ -27,6 +27,45 @@ export function eventoDoFeito(kind: ContatoDaFila): { kind: ContatoDaFila; text:
   }
 }
 
+/**
+ * O que o "Feito" da fila grava (ruling W2). Com `CRM_TASKS_ENABLED`, o "Feito" de Tarefas (`POST /v1/crm/tasks/done`, `task:
+ * 'first_contact'`): o contato e, num lead em "Lead novo", a passagem a "Contatado" na mesma transação. Sem a chave, o evento de antes
+ * (`POST /v1/leads/:id/events`), que não muda a etapa. O texto do evento é o mesmo nos dois.
+ */
+export type FeitoDaEntrada =
+  | { via: 'tarefas'; input: { lead_id: string; task: 'first_contact'; kind: ContatoDaFila; text: string } }
+  | { via: 'evento'; kind: ContatoDaFila; text: string };
+
+export function feitoDaEntrada(p: { crmTasks: boolean; leadId: string; kind: ContatoDaFila }): FeitoDaEntrada {
+  const ev = eventoDoFeito(p.kind);
+  return p.crmTasks
+    ? { via: 'tarefas', input: { lead_id: p.leadId, task: 'first_contact', kind: ev.kind, text: ev.text } }
+    : { via: 'evento', kind: ev.kind, text: ev.text };
+}
+
+/**
+ * A linha some depois do "Feito" só se o lead sai da fila: com a chave e em "Lead novo" (vai a "Contatado"). Reaquecer (etapa 8) e o
+ * "Feito" sem a chave gravam só o contato, o lead continua na fila e voltaria ao recarregar; então a linha FICA, com a marca
+ * (UX final, achado 2).
+ */
+export const saiDaFila = (p: { crmTasks: boolean; stage: number }): boolean => p.crmTasks && p.stage === 1;
+
+const ETAPA_NA_FILA: Record<number, string> = { 1: 'Lead novo', 8: 'Perdido / reaquecer' };
+
+/**
+ * A marca da linha que fica: contato registrado hoje, agora mesmo (`registradoAgora`) ou já no lead (`last_contact_date`, dia de Brasília
+ * do servidor; assim a marca sobrevive ao recarregar e avisa quem mais abrir a fila). `null` = sem contato hoje.
+ */
+export function marcaDoContato(
+  lead: { last_contact_date: string | null; stage: number },
+  hoje: string,
+  registradoAgora: boolean,
+): string | null {
+  if (!registradoAgora && lead.last_contact_date !== hoje) return null;
+  const etapa = ETAPA_NA_FILA[lead.stage];
+  return etapa ? `✓ Contato registrado hoje · continua em “${etapa}”` : '✓ Contato registrado hoje';
+}
+
 /** O motivo da linha (UX §3.6): "Lead novo há 3 dias · Casa grande" ou a volta do reaquecer, com o motivo da perda. */
 export function motivoDaFila(
   lead: { is_reheat: boolean; entered_at: string; lost_reason: string | null },

@@ -165,7 +165,8 @@ function TelaTarefas({ hoje, subtitulo }: { hoje: string; subtitulo: ReactNode }
     anunciar(anuncioDaAcao(CONFIRMACAO_ENVIADA, item.lead_name, faltamDepois()));
   }
 
-  function agendarFeito(task: TarefaFeita, item: ItemTarefaView, kind: ContatoFeito) {
+  // Só as tarefas que são grupo desta tela (`first_contact` é o "Feito" da Entrada).
+  function agendarFeito(task: Extract<TarefaFeita, TipoTarefa>, item: ItemTarefaView, kind: ContatoFeito) {
     const opcao = OPCOES_FEITO.find((o) => o.kind === kind);
     if (!opcao) return;
     const input = { lead_id: item.lead_id, task, kind };
@@ -236,7 +237,7 @@ function TelaTarefas({ hoje, subtitulo }: { hoje: string; subtitulo: ReactNode }
               ? { onFeito: () => agendarEnviada(item), destaque: abriu || !linkWhatsApp(item.phone) }
               : {
                   opcoes: OPCOES_FEITO.map((o) => ({ id: o.kind, rotulo: o.rotulo, icone: ICONE_FEITO[o.kind] })),
-                  onEscolher: (kind) => agendarFeito(task as TarefaFeita, item, kind as ContatoFeito),
+                  onEscolher: (kind) => agendarFeito(task as Extract<TarefaFeita, TipoTarefa>, item, kind as ContatoFeito),
                 }
         }
         adiar={

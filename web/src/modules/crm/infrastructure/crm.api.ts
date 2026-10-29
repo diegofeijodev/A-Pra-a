@@ -9,7 +9,8 @@ import { api, configKeepalive } from '@/modules/shared/infrastructure/http';
 export const TIPOS_TAREFA = ['send', 'cadence_send', 'hot_visit', 'next_step', 'stalled', 'first_vacancy'] as const;
 export type TipoTarefa = (typeof TIPOS_TAREFA)[number];
 /** Tarefas que o "Feito" fecha por `POST /v1/crm/tasks/done` (a `send` usa `/v1/sends/:id/mark`; a `cadence_send` é só leitura). */
-export type TarefaFeita = 'hot_visit' | 'next_step' | 'stalled' | 'first_vacancy';
+/** `first_contact` não é grupo do `GET /v1/crm/tasks`: é o "Feito" da fila da Entrada (§47.3, ruling W2). */
+export type TarefaFeita = 'hot_visit' | 'next_step' | 'stalled' | 'first_vacancy' | 'first_contact';
 export type ContatoFeito = 'call' | 'msg_out' | 'msg_in' | 'visit';
 
 export const itemTarefaSchema = z.object({

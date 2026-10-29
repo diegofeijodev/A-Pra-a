@@ -6,8 +6,11 @@ import {
   paramsDaFila,
   contagemDaFila,
   eventoDoFeito,
+  feitoDaEntrada,
+  marcaDoContato,
   motivoDaFila,
   rotuloDoImportar,
+  saiDaFila,
   textosDesfazerImportacao,
   textoImportacaoDesfeita,
 } from '../entrada';
@@ -51,6 +54,38 @@ describe('textoImportacaoDesfeita', () => {
     expect(textoImportacaoDesfeita(10, 3)).toBe('Importação desfeita: 10 leads saíram, 3 ficaram por já terem contato.');
     expect(textoImportacaoDesfeita(10, 0)).toBe('Importação desfeita: 10 leads saíram.');
     expect(textoImportacaoDesfeita(1, 1)).toBe('Importação desfeita: 1 lead saiu, 1 ficou por já ter contato.');
+  });
+});
+
+describe('"Feito" da Entrada (ruling W2)', () => {
+  it('com CRM_TASKS_ENABLED: o "Feito" de Tarefas, como 1º contato, com o mesmo texto do evento de antes', () => {
+    expect(feitoDaEntrada({ crmTasks: true, leadId: 'l-1', kind: 'call' })).toEqual({
+      via: 'tarefas',
+      input: { lead_id: 'l-1', task: 'first_contact', kind: 'call', text: 'Ligação registrada pela fila do dia.' },
+    });
+  });
+  it('sem a chave: o evento de antes (`POST /v1/leads/:id/events`), sem mudar a etapa', () => {
+    expect(feitoDaEntrada({ crmTasks: false, leadId: 'l-1', kind: 'visit' })).toEqual({
+      via: 'evento',
+      kind: 'visit',
+      text: 'Visita registrada pela fila do dia.',
+    });
+  });
+  it('a linha só sai quando o lead sai da fila: com a chave e em "Lead novo" (vai a Contatado)', () => {
+    expect(saiDaFila({ crmTasks: true, stage: 1 })).toBe(true);
+    // Reaquecer: o servidor só grava o contato, o lead continua na fila.
+    expect(saiDaFila({ crmTasks: true, stage: 8 })).toBe(false);
+    // Sem a chave nada muda de etapa: a linha fica (UX final, achado 2).
+    expect(saiDaFila({ crmTasks: false, stage: 1 })).toBe(false);
+  });
+  it('a marca da linha que fica: só com contato hoje (gravado agora ou já no lead), dizendo onde o lead continua', () => {
+    const hoje = '2026-10-29';
+    expect(marcaDoContato({ last_contact_date: hoje, stage: 1 }, hoje, false)).toBe('✓ Contato registrado hoje · continua em “Lead novo”');
+    expect(marcaDoContato({ last_contact_date: null, stage: 8 }, hoje, true)).toBe(
+      '✓ Contato registrado hoje · continua em “Perdido / reaquecer”',
+    );
+    expect(marcaDoContato({ last_contact_date: '2026-10-28', stage: 1 }, hoje, false)).toBeNull();
+    expect(marcaDoContato({ last_contact_date: null, stage: 1 }, hoje, false)).toBeNull();
   });
 });
 
