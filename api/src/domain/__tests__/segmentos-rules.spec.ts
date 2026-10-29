@@ -74,8 +74,25 @@ describe('segmentos — montagem segura', () => {
       '  nwr["amenity"~"^(restaurant|fast_food)$"]["cuisine"~"(^|;) *(pizza) *(;|$)"](around:800,-23.6003,-46.665);',
     );
     expect(q).toContain('  nwr["craft"="caterer"](around:800,-23.6003,-46.665);');
-    expect(q).toContain('  nwr["craft"]["name"~"buffet",i](around:800,-23.6003,-46.665);');
-    expect(q).toContain('  nwr["amenity"]["name"~"buffet",i](around:800,-23.6003,-46.665);');
+    expect(q).toContain('  nwr.kb_craft["name"~"buffet",i];');
+    expect(q).toContain('  nwr.kb_amenity["name"~"buffet",i];');
+  });
+
+  it('palavras no nome filtram só a base JÁ recortada pelo raio (name~ direto varre os nomes do mundo e estoura o tempo)', () => {
+    const q = montarQuerySegmentos([porSlug('pizzaria'), porSlug('buffet')], seletorRaio(CENTRO, 800));
+    const [antes, depois] = q.split('\n(\n');
+    expect(antes).toBe(
+      '[out:json][timeout:25];\n' +
+        'nwr["craft"](around:800,-23.6003,-46.665)->.kb_craft;\n' +
+        'nwr["amenity"](around:800,-23.6003,-46.665)->.kb_amenity;',
+    );
+    expect(depois).not.toMatch(/nwr\["[a-z]+"\]\["name"~/);
+  });
+
+  it('sem palavras no nome, nenhum conjunto antes da união (a consulta é a de antes)', () => {
+    const q = montarQuerySegmentos([porSlug('pizzaria'), porSlug('bar')], seletorRaio(CENTRO, 800));
+    expect(q).not.toContain('->.kb_');
+    expect(q.startsWith('[out:json][timeout:25];\n(\n')).toBe(true);
   });
 
   const base: Segmento = {

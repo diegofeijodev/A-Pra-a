@@ -185,6 +185,15 @@ describe('consultas montadas no servidor', () => {
     );
     expect(montarQueryLojas(bar, { tipo: 'area', source_ref: 'relation/9' })).toContain('relation(9);map_to_area->.shop;');
   });
+  it('lojas com palavras no nome: a base é recortada pelo polígono antes do name~ (depois do map_to_area)', () => {
+    const buffet = SEGMENTOS_PADRAO.filter((s) => s.slug === 'buffet');
+    const q = montarQueryLojas(buffet, { tipo: 'area', source_ref: 'way/123' });
+    expect(q).toContain(
+      'way(123);map_to_area->.shop;\nnwr["craft"](area.shop)->.kb_craft;\nnwr["amenity"](area.shop)->.kb_amenity;\n(\n',
+    );
+    expect(q).toContain('  nwr.kb_amenity["name"~"buffet",i];');
+    expect(q).not.toMatch(/nwr\["[a-z]+"\]\["name"~/);
+  });
   it('lojas de shopping só como ponto: raio em volta (menos confiável), igual ao seletor da busca', () => {
     const bar = SEGMENTOS_PADRAO.filter((s) => s.slug === 'bar');
     expect(montarQueryLojas(bar, { tipo: 'raio', centro: { lat: -19.9, lng: -43.9 }, raio_m: 300 })).toBe(

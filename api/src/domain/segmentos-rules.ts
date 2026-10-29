@@ -320,18 +320,29 @@ function renderFiltro(x: FiltroSegmento): string {
   return ehBase(x.key) ? `["${x.key}"~"^(${x.value})$"]` : `["${x.key}"~"(^|;) *(${x.value}) *(;|$)"]`;
 }
 
+const conjuntoDaBase = (b: string) => `kb_${b}`;
+
+/** As palavras no nome filtram o conjunto da base (`conjuntosDasPalavras`), nunca o índice de nomes inteiro. */
 export function linhasDoSegmento(s: Segmento, seletor: string): string[] {
   const linhas = s.filters.map((g) => `  nwr${g.map(renderFiltro).join('')}${seletor};`);
   if (s.keywords.length > 0) {
-    for (const b of basesDoSegmento(s))
-      linhas.push(`  nwr["${b}"]["name"~"${s.keywords.join('|')}",i]${seletor};`);
+    for (const b of basesDoSegmento(s)) linhas.push(`  nwr.${conjuntoDaBase(b)}["name"~"${s.keywords.join('|')}",i];`);
   }
   return linhas;
 }
 
+/**
+ * Antes da união: cada chave de base que as palavras usam, já recortada pelo seletor. Um `name~` direto faz o Overpass varrer
+ * os nomes do mundo inteiro antes do raio e estourar o `[timeout:25]` (Jundiaí, 27 e 29/10, com o Buffet). Sem palavras, nada.
+ */
+export function conjuntosDasPalavras(segmentos: readonly Segmento[], seletor: string): string {
+  const bases = new Set(segmentos.filter((s) => s.keywords.length > 0).flatMap(basesDoSegmento));
+  return [...bases].map((b) => `nwr["${b}"]${seletor}->.${conjuntoDaBase(b)};\n`).join('');
+}
+
 export function montarQuerySegmentos(segmentos: readonly Segmento[], seletor: string): string {
   const linhas = segmentos.flatMap((s) => linhasDoSegmento(s, seletor));
-  return `[out:json][timeout:25];\n(\n${linhas.join('\n')}\n);\nout tags center ${MAX_ELEMENTOS_OVERPASS};`;
+  return `[out:json][timeout:25];\n${conjuntosDasPalavras(segmentos, seletor)}(\n${linhas.join('\n')}\n);\nout tags center ${MAX_ELEMENTOS_OVERPASS};`;
 }
 
 // ── classificação ────────────────────────────────────────────

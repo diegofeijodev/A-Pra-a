@@ -12,7 +12,7 @@ import { distanciaM, type Coordenada } from './campo-rules';
 import { norm } from './dedup';
 import { grupoConfig, inteiroEntre, umDe, type GrupoConfig } from './config-grupo';
 import { enderecoOsm, MAX_ELEMENTOS_OVERPASS, temMarcaDeFechado, type LugarNormalizado } from './places-rules';
-import { linhasDoSegmento, seletorRaio, type Segmento } from './segmentos-rules';
+import { conjuntosDasPalavras, linhasDoSegmento, seletorRaio, type Segmento } from './segmentos-rules';
 
 const RAIO_TERRA_M = 6_371_000;
 const rad = (g: number): number => (g * Math.PI) / 180;
@@ -335,5 +335,5 @@ export function montarQueryLojas(segmentos: readonly Segmento[], alvo: AlvoLojas
     seletor = seletorRaio(alvo.centro, alvo.raio_m);
   }
   const linhas = segmentos.flatMap((s) => linhasDoSegmento(s, seletor));
-  return `[out:json][timeout:25];\n${prelude}(\n${linhas.join('\n')}\n);\nout tags center ${MAX_ELEMENTOS_OVERPASS};`;
+  return `[out:json][timeout:25];\n${prelude}${conjuntosDasPalavras(segmentos, seletor)}(\n${linhas.join('\n')}\n);\nout tags center ${MAX_ELEMENTOS_OVERPASS};`;
 }
