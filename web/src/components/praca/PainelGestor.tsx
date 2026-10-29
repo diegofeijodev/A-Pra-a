@@ -132,7 +132,7 @@ export function PainelGestor() {
         </Link>
       )}
 
-      <CartaoComercialHoje pracaId={pracaId || null} />
+      <CartaoComercialHoje pracaId={pracaId || null} comPeriodo />
 
       {painel.isError ? (
         <div className={`${CARTAO} space-y-2`}>

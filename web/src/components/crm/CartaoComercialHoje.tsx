@@ -10,6 +10,7 @@ import { ROTA } from '@/modules/acesso/domain/enderecos';
 import { useResumoCrm } from '@/modules/crm/application/use-crm';
 import {
   TITULO_CARTAO,
+  estadoDoCartao,
   fonteDoCartao,
   linhaDeTarefas,
   linhasDoResumoCartao,
@@ -23,19 +24,21 @@ import { usePracas } from '@/modules/pracas/application/use-pracas';
  * "Comercial hoje" do Dashboard (UX §3.3): tarefas, leads novos e mudanças de etapa DO DIA, com a conta e a fonte. Só existe com
  * `features.commercial` E `features.crm_tasks` (desligado, nada é chamado). Segue o "Praça" do Dashboard (`pracaId` vazio = todas) e
  * NÃO segue o período. As tarefas vêm de uma consulta por praça (a rota exige `praca_id`), com as mesmas chaves da tela Tarefas; o
- * resumo, do `GET /v1/crm/summary` sem praça. Se falhar, só o cartão avisa: o resto do Dashboard continua.
+ * resumo, do `GET /v1/crm/summary` sem praça. Se falhar, só o cartão avisa: o resto do Dashboard continua. `comPeriodo`: há um seletor de
+ * período acima (o painel do gestor), e o subtítulo avisa que o cartão não o segue.
  */
-export function CartaoComercialHoje({ pracaId }: { pracaId: string | null }) {
+export function CartaoComercialHoje({ pracaId, comPeriodo = false }: { pracaId: string | null; comPeriodo?: boolean }) {
   const { features } = useFeaturesMenu();
   if (!features.commercial || !features.crm_tasks) return null;
-  return <Conteudo pracaId={pracaId || null} />;
+  return <Conteudo pracaId={pracaId || null} comPeriodo={comPeriodo} />;
 }
 
 const CARTAO = 'rounded-2xl bg-card p-5 shadow-card';
 
-function Conteudo({ pracaId }: { pracaId: string | null }) {
+function Conteudo({ pracaId, comPeriodo }: { pracaId: string | null; comPeriodo: boolean }) {
   const dia = todaySp();
-  const { data: pracas, isPending: lendoPracas } = usePracas();
+  const pracasQ = usePracas();
+  const pracas = pracasQ.data;
   const ids = pracaId ? [pracaId] : (pracas ?? []).map((p) => p.id);
   const resumo = useResumoCrm(pracaId, dia, { enabled: true });
   const tarefas = useQueries({
@@ -48,16 +51,20 @@ function Conteudo({ pracaId }: { pracaId: string | null }) {
 
   const nome = pracaId ? (pracas?.find((p) => p.id === pracaId)?.name ?? null) : null;
   const r = resumo.isPlaceholderData ? undefined : resumo.data;
-  const tarefasProntas = !lendoPracas && tarefas.every((t) => t.data);
-  const erro = resumo.isError || tarefas.some((t) => t.isError);
+  const estado = estadoDoCartao({
+    pracas: { pronta: !!pracas, erro: pracasQ.isError },
+    resumo: { pronto: !!r, erro: resumo.isError },
+    tarefas: tarefas.map((t) => ({ pronta: !!t.data, erro: t.isError })),
+  });
 
   const refazer = () => {
+    if (!pracas) void pracasQ.refetch();
     void resumo.refetch();
     tarefas.forEach((t) => void t.refetch());
   };
 
   let corpo;
-  if (erro && !(r && tarefasProntas)) {
+  if (estado === 'erro') {
     corpo = (
       <div className="mt-4 space-y-2">
         <p role="alert" className="text-sm text-destructive">
@@ -68,7 +75,7 @@ function Conteudo({ pracaId }: { pracaId: string | null }) {
         </Button>
       </div>
     );
-  } else if (!r || !tarefasProntas) {
+  } else if (estado === 'carregando' || !r) {
     corpo = <div aria-busy="true" className="mt-4 h-44 animate-pulse rounded-2xl bg-muted" />;
   } else {
     const linhas = [linhaDeTarefas(somarGrupos(tarefas.map((t) => t.data!.groups))), ...linhasDoResumoCartao(r)];
@@ -103,7 +110,7 @@ function Conteudo({ pracaId }: { pracaId: string | null }) {
         <ListTodo className="h-5 w-5 text-primary" aria-hidden />
         {TITULO_CARTAO}
       </h2>
-      <p className="text-sm text-muted-foreground">{subtituloDoCartao(dia, nome)}</p>
+      <p className="text-sm text-muted-foreground">{subtituloDoCartao(dia, nome, comPeriodo)}</p>
       {corpo}
     </section>
   );

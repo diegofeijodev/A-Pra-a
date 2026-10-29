@@ -19,9 +19,28 @@ export interface LinhaCartao {
 export const TITULO_CARTAO = 'Comercial hoje';
 export const SEM_PERIODO = 'não segue o período acima';
 
-/** "qua 28/10 · todas as praças · não segue o período acima". */
-export const subtituloDoCartao = (dia: string, pracaNome: string | null): string =>
-  `${diaCurto(dia)} · ${pracaNome ?? 'todas as praças'} · ${SEM_PERIODO}`;
+/**
+ * "qua 28/10 · todas as praças · não segue o período acima". O aviso do período só onde há um seletor de período acima (o painel do
+ * gestor); na `/inicio` sem o painel não há período nenhum.
+ */
+export const subtituloDoCartao = (dia: string, pracaNome: string | null, comPeriodo: boolean): string =>
+  `${diaCurto(dia)} · ${pracaNome ?? 'todas as praças'}${comPeriodo ? ` · ${SEM_PERIODO}` : ''}`;
+
+export type EstadoCartao = 'carregando' | 'erro' | 'pronto';
+
+/**
+ * Número só com tudo lido (a lista de praças, o resumo e as tarefas de cada praça). Sem a lista de praças nenhuma consulta de tarefas
+ * sai, e a soma vazia viraria um "0 · Nenhuma tarefa para hoje." falso. Lido uma vez, uma releitura que falhou não apaga os números.
+ */
+export function estadoDoCartao(p: {
+  pracas: { pronta: boolean; erro: boolean };
+  resumo: { pronto: boolean; erro: boolean };
+  tarefas: { pronta: boolean; erro: boolean }[];
+}): EstadoCartao {
+  if (p.pracas.pronta && p.resumo.pronto && p.tarefas.every((t) => t.pronta)) return 'pronto';
+  if (p.pracas.erro || p.resumo.erro || p.tarefas.some((t) => t.erro)) return 'erro';
+  return 'carregando';
+}
 
 /** Soma os grupos de várias praças (uma consulta de Tarefas por praça) numa lista só. */
 export function somarGrupos(listas: { task: TipoTarefa; total: number }[][]): { task: TipoTarefa; total: number }[] {
