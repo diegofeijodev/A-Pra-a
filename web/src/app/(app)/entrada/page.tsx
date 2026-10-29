@@ -46,6 +46,7 @@ import {
 import { addLeadEvent } from '@/modules/leads/infrastructure/leads.api';
 import {
   acaoDoLinkWhatsApp,
+  avisoDoLimite,
   contaDaFila,
   contagemDaFila,
   eventoDoFeito,
@@ -635,7 +636,9 @@ function FilaDoDia() {
   const hoje = todaySp();
   const [focoDepois, setFocoDepois] = useState<string | null>(null);
   const acoes = useAcoesAdiadas<Espera>({ antesDeSumir: (chave) => setFocoDepois(proximoFoco(chave, "#fila-vazia")) });
-  const { data: queue, isError, error, refetch } = useLeadQueue(who);
+  // A fila da praça ativa (UX final, achado 1), a mesma do cartão "Primeiro contato" de Tarefas; espera a praça chegar.
+  const { praca, isPending: lendoPracas } = useActivePraca();
+  const { data: queue, isError, error, refetch } = useLeadQueue(who, praca?.id, { enabled: !lendoPracas });
 
   // A cota é do servidor (`app_settings.daily_quota`) e corta a fila lá; o
   // estado local é só para digitar sem mandar um PATCH por tecla. O DTO é
@@ -676,6 +679,7 @@ function FilaDoDia() {
   const total = queue?.total ?? 0;
   const grandes = queue?.grandes ?? 0;
   const shown = (queue?.items ?? []).filter((l) => !acoes.feitas.has(`entrada:${l.id}`));
+  const aviso = avisoDoLimite({ total, quota, porPessoa: who !== "all" });
   const classLabel = (id: string) => catalog?.classes.find((c) => c.id === id)?.label ?? id;
 
   function agendarFeito(l: QueueItemView, kind: ContatoDaFila) {
@@ -744,7 +748,9 @@ function FilaDoDia() {
               Primeiro contato de hoje
             </h2>
             <p className="text-sm">{contagemDaFila(shown.length)}</p>
-            <p className="text-xs text-muted-foreground">{contaDaFila({ total, grandes, mostrando: shown.length, quota })}</p>
+            <p className="text-xs text-muted-foreground">
+              {contaDaFila({ total, grandes, mostrando: shown.length, quota, porPraca: !!praca, porPessoa: who !== "all" })}
+            </p>
           </div>
           <div className="w-full sm:w-auto">
             <label htmlFor="fila-de-quem" className="sr-only">De quem</label>
@@ -754,9 +760,9 @@ function FilaDoDia() {
             </select>
           </div>
         </div>
-        {total > quota && (
+        {aviso && (
           <p className="flex items-center gap-1.5 text-sm text-warning">
-            <AlertTriangle aria-hidden className="size-4 shrink-0" /> {total - quota} leads ficaram para outro dia pelo limite de {quota} por pessoa.
+            <AlertTriangle aria-hidden className="size-4 shrink-0" /> {aviso}
           </p>
         )}
         <details className="text-sm">

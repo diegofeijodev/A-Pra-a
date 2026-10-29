@@ -45,16 +45,40 @@ export function motivoDaFila(
 export const contagemDaFila = (n: number): string => `${n} ${plural(n, 'lead', 'leads')} para o 1º contato hoje`;
 
 /**
- * A conta do número da fila, sempre visível (regra do dono 08/10): o que é, de onde vem e como ordena. "o limite por pessoa" só quando a
- * fila passa do limite (`quota`): cabendo tudo, "mostrando" é a fila inteira.
+ * Os parâmetros de `GET /v1/leads/queue` (UX final, achado 1): com a praça ativa, a fila vem só dela (e sem os leads de teste, como em
+ * Tarefas); sem praça, o pedido de antes, sem a chave `praca_id` (a API responde igual ao de antes).
  */
-export function contaDaFila(p: { total: number; grandes: number; mostrando: number; quota: number }): string {
-  const limite = p.total > p.quota ? ', o limite por pessoa' : '';
+export const paramsDaFila = (person: string, pracaId: string | null | undefined): { person: string; praca_id?: string } =>
+  pracaId ? { person, praca_id: pracaId } : { person };
+
+/**
+ * A conta do número da fila, sempre visível (regra do dono 08/10): o que é, de onde vem e como ordena. O limite só aparece quando a fila
+ * passa dele (cabendo tudo, "mostrando" é a fila inteira) e diz de quem é: com uma pessoa escolhida, "o limite por pessoa"; com "Todos os
+ * donos", a API corta a lista INTEIRA no mesmo número, então é "o limite da fila" (UX final, achado 4). "nesta praça" só quando a fila
+ * veio filtrada pela praça ativa (`porPraca`; achado 1).
+ */
+export function contaDaFila(p: {
+  total: number;
+  grandes: number;
+  mostrando: number;
+  quota: number;
+  porPraca: boolean;
+  porPessoa: boolean;
+}): string {
+  const limite = p.total > p.quota ? (p.porPessoa ? ', o limite por pessoa' : ' (o limite da fila)') : '';
+  const onde = p.porPraca ? 'nesta praça, sem os de teste' : 'em todas as praças';
   return (
     `${p.total} na fila (${p.grandes} ${plural(p.grandes, 'casa grande', 'casas grandes')}); mostrando ${p.mostrando}${limite}. ` +
-    'Fonte: leads em “Lead novo” e os de reaquecer com data vencida, nesta praça. ' +
+    `Fonte: leads em “Lead novo” e os de reaquecer com data vencida, ${onde}. ` +
     'Ordem: casa grande, depois alvo, depois o resto; os mais antigos na frente.'
   );
+}
+
+/** O aviso de quem ficou de fora pelo limite (UX final, achados 4 e 17); `null` quando cabe tudo. */
+export function avisoDoLimite(p: { total: number; quota: number; porPessoa: boolean }): string | null {
+  const fora = p.total - p.quota;
+  if (fora <= 0) return null;
+  return `${fora} ${plural(fora, 'lead ficou', 'leads ficaram')} para outro dia pelo limite de ${p.quota} ${p.porPessoa ? 'por pessoa' : 'da fila'}.`;
 }
 
 /**

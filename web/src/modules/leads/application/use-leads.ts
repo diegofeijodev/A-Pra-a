@@ -109,11 +109,15 @@ export function useLead(id: string | null | undefined) {
   });
 }
 
-/** Fila do dia. `person` é `'all'` ou o id de uma pessoa (§9). */
-export function useLeadQueue(person: string) {
+/**
+ * Fila do dia. `person` é `'all'` ou o id de uma pessoa; `pracaId`, a praça ativa (§9: só a fila dela, sem os de teste). `enabled` pelo
+ * mesmo motivo do `useLeads`: a praça ativa chega DEPOIS do primeiro render, e sem ele sairia antes a fila de todas as praças.
+ */
+export function useLeadQueue(person: string, pracaId?: string | null, options: { enabled?: boolean } = {}) {
   return useQuery({
-    queryKey: ['lead-queue', person],
-    queryFn: () => fetchLeadQueue(person),
+    queryKey: ['lead-queue', person, pracaId ?? null],
+    queryFn: () => fetchLeadQueue(person, pracaId),
+    enabled: options.enabled ?? true,
     // Trocar de dono muda a chave: sem isto a fila esvazia e repinta.
     placeholderData: keepPreviousData,
   });

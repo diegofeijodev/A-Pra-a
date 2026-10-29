@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   acaoDoLinkWhatsApp,
+  avisoDoLimite,
   contaDaFila,
+  paramsDaFila,
   contagemDaFila,
   eventoDoFeito,
   motivoDaFila,
@@ -70,15 +72,56 @@ describe('motivoDaFila', () => {
 });
 
 describe('contaDaFila', () => {
-  it('a conta do número, com a fonte; "o limite por pessoa" só quando a fila passa do limite', () => {
-    expect(contaDaFila({ total: 34, grandes: 6, mostrando: 20, quota: 20 })).toBe(
-      '34 na fila (6 casas grandes); mostrando 20, o limite por pessoa. Fonte: leads em “Lead novo” e os de reaquecer com data vencida, nesta praça. Ordem: casa grande, depois alvo, depois o resto; os mais antigos na frente.',
+  it('a conta do número, com a fonte; "o limite por pessoa" só quando a fila passa do limite e há uma pessoa escolhida', () => {
+    expect(contaDaFila({ total: 34, grandes: 6, mostrando: 20, quota: 20, porPraca: true, porPessoa: true })).toBe(
+      '34 na fila (6 casas grandes); mostrando 20, o limite por pessoa. Fonte: leads em “Lead novo” e os de reaquecer com data vencida, nesta praça, sem os de teste. Ordem: casa grande, depois alvo, depois o resto; os mais antigos na frente.',
     );
     // Cabe tudo: mostrando é a fila inteira, não o limite.
-    expect(contaDaFila({ total: 12, grandes: 2, mostrando: 12, quota: 20 })).toMatch(/^12 na fila \(2 casas grandes\); mostrando 12\. Fonte:/);
-    expect(contaDaFila({ total: 20, grandes: 0, mostrando: 20, quota: 20 })).not.toContain('o limite por pessoa');
-    expect(contaDaFila({ total: 1, grandes: 1, mostrando: 1, quota: 20 })).toMatch(/^1 na fila \(1 casa grande\); mostrando 1\./);
+    expect(contaDaFila({ total: 12, grandes: 2, mostrando: 12, quota: 20, porPraca: true, porPessoa: true })).toMatch(
+      /^12 na fila \(2 casas grandes\); mostrando 12\. Fonte:/,
+    );
+    expect(contaDaFila({ total: 20, grandes: 0, mostrando: 20, quota: 20, porPraca: true, porPessoa: true })).not.toContain('o limite');
+    expect(contaDaFila({ total: 1, grandes: 1, mostrando: 1, quota: 20, porPraca: true, porPessoa: false })).toMatch(
+      /^1 na fila \(1 casa grande\); mostrando 1\./,
+    );
   });
+  it('UX final, achado 4: com "Todos os donos" o corte é da fila inteira, não por pessoa', () => {
+    const t = contaDaFila({ total: 34, grandes: 6, mostrando: 20, quota: 20, porPraca: true, porPessoa: false });
+    expect(t).toMatch(/^34 na fila \(6 casas grandes\); mostrando 20 \(o limite da fila\)\. Fonte:/);
+    expect(t).not.toContain('por pessoa');
+  });
+  it('UX final, achado 1: "nesta praça" só quando a fila veio filtrada pela praça; sem praça, "em todas as praças"', () => {
+    expect(contaDaFila({ total: 3, grandes: 0, mostrando: 3, quota: 20, porPraca: true, porPessoa: false })).toContain(
+      'com data vencida, nesta praça, sem os de teste.',
+    );
+    const todas = contaDaFila({ total: 3, grandes: 0, mostrando: 3, quota: 20, porPraca: false, porPessoa: false });
+    expect(todas).toContain('com data vencida, em todas as praças.');
+    expect(todas).not.toContain('nesta praça');
+  });
+});
+
+describe('paramsDaFila (UX final, achado 1)', () => {
+  it('com a praça ativa, a fila vem só dela; sem praça, o pedido de antes (sem a chave)', () => {
+    expect(paramsDaFila('all', 'p-1')).toEqual({ person: 'all', praca_id: 'p-1' });
+    expect(paramsDaFila('u-1', 'p-1')).toEqual({ person: 'u-1', praca_id: 'p-1' });
+    expect(paramsDaFila('all', null)).toStrictEqual({ person: 'all' });
+    expect(Object.keys(paramsDaFila('all', undefined))).toEqual(['person']);
+  });
+});
+
+describe('avisoDoLimite (UX final, achados 4 e 17)', () => {
+  it('quantos ficaram de fora, no singular e no plural, e de quem é o limite', () => {
+    expect(avisoDoLimite({ total: 34, quota: 20, porPessoa: true })).toBe('14 leads ficaram para outro dia pelo limite de 20 por pessoa.');
+    expect(avisoDoLimite({ total: 21, quota: 20, porPessoa: true })).toBe('1 lead ficou para outro dia pelo limite de 20 por pessoa.');
+    expect(avisoDoLimite({ total: 34, quota: 20, porPessoa: false })).toBe('14 leads ficaram para outro dia pelo limite de 20 da fila.');
+  });
+  it('cabendo tudo, nada a avisar', () => {
+    expect(avisoDoLimite({ total: 20, quota: 20, porPessoa: true })).toBeNull();
+    expect(avisoDoLimite({ total: 3, quota: 20, porPessoa: false })).toBeNull();
+  });
+});
+
+describe('contagemDaFila', () => {
   it('a linha de apoio do cartão "Primeiro contato de hoje" (desenho U6)', () => {
     expect(contagemDaFila(20)).toBe('20 leads para o 1º contato hoje');
     expect(contagemDaFila(1)).toBe('1 lead para o 1º contato hoje');

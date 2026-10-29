@@ -1,4 +1,5 @@
 import { api, configKeepalive } from '@/modules/shared/infrastructure/http';
+import { paramsDaFila } from '../domain/entrada';
 
 /**
  * `LeadListView` (§9 do contrato). Os campos calculados (`stalled_days`,
@@ -189,8 +190,9 @@ export async function snoozeLead(id: string, until: string, opcoes?: { keepalive
   return data as LeadView;
 }
 
-export async function fetchLeadQueue(person: string): Promise<QueueView> {
-  const { data } = await api.get('/v1/leads/queue', { params: { person } });
+/** `pracaId` (contrato §9, opcional): só a fila daquela praça, sem os leads de teste; ausente = todas as praças, como antes. */
+export async function fetchLeadQueue(person: string, pracaId?: string | null): Promise<QueueView> {
+  const { data } = await api.get('/v1/leads/queue', { params: paramsDaFila(person, pracaId) });
   return data as QueueView;
 }
 
