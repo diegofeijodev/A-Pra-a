@@ -20,6 +20,11 @@
 //    `Casa Browser-Check …`, disparo, lançamento de indicador, conclusão de
 //    ação) é apagado no começo, com aviso.
 //
+// O CRM automático (contrato §47, bloco 14) segue o `features` do servidor:
+// com `CRM_TASKS_ENABLED`, Tarefas ("Feito" num lead criado aqui), Automações,
+// o cartão "Comercial hoje" e os selos do Funil; sem ela, o aviso pelo
+// endereço e NENHUM pedido a `/v1/crm/*` na rodada inteira.
+//
 // Qualquer erro de console, qualquer `pageerror`, qualquer falha de rede
 // (`requestfailed`) e qualquer resposta HTTP ≥ 400 derrubam a rodada. Não há
 // exceção esperada: `GET /v1/freela/status` responde 200 com
@@ -210,9 +215,22 @@ page.on('requestfailed', (r) => {
 });
 /** Toda chamada a `/v1/freela/*` — sem conexão só `GET /status` pode sair. */
 const freelaReqs = [];
+/** Toda chamada a `/v1/crm/*` (contrato §47): com `CRM_TASKS_ENABLED` desligada nenhuma tela pode chamar (nunca sondar 404). */
+const crmReqs = [];
 page.on('request', (r) => {
   if (r.url().startsWith(`${API}/v1/freela/`)) freelaReqs.push(r.url());
+  if (r.url().startsWith(`${API}/v1/crm/`)) crmReqs.push(`${r.method()} ${r.url().replace(API, '')}`);
 });
+
+/**
+ * Cartão "Comercial hoje" do Dashboard (§47, só com `commercial` E `crm_tasks`): ele pede `pracas` → N× `GET /v1/crm/tasks` + o
+ * `summary` sozinho, e sair de `/inicio` com um `goto` no meio cancela os pedidos (`ERR_ABORTED` derruba a rodada, como o GET do painel
+ * do gestor na E8). Espera o cartão PRONTO (o botão "Abrir tarefas" só existe com os números) antes de sair. Sem as chaves, volta na hora.
+ */
+async function esperarComercialHoje(p, f) {
+  if (!f?.commercial || !f?.crm_tasks) return;
+  await p.locator('section[aria-labelledby="comercial-hoje-titulo"]').getByRole('link', { name: 'Abrir tarefas' }).waitFor({ timeout: 20000 });
+}
 
 /** Chamada direta à API com o token da sessão do navegador (limpeza e conferência). */
 let token = '';
@@ -364,12 +382,13 @@ try {
   await page.locator('#senha').fill(SENHA);
   check('formulário de entrada preenchido', (await page.locator('#email').inputValue()) === EMAIL);
   // Casca da Lovable (E2, arquitetura §2.3): a página inicial da equipe é SEMPRE o Dashboard (sem o painel ligado, ele mostra o
-  // aviso e a "Atenção agora"); `/hoje` (Ações) é do Comercial e continua abrindo pelo endereço. As `features` ficam guardadas:
-  // as seções do Comercial nas Configurações (passo 10) dependem da chave.
+  // aviso e a "Atenção agora"); `/hoje` ("Ações da praça") é do Comercial e continua abrindo pelo endereço. As `features` ficam guardadas:
+  // as seções do Comercial nas Configurações (passo 10) e o que o CRM automático muda (passos 2, 5 e 6) dependem da chave.
   const featIni = (await api('GET', '/v1/consultores/settings/config')).features ?? {};
   await page.getByRole('button', { name: 'Entrar', exact: true }).click();
   await page.waitForURL('**/inicio', { timeout: 20000 });
   await espera(1500);
+  await esperarComercialHoje(page, featIni);
   const tokenDoNavegador = await page.evaluate(() => JSON.parse(localStorage.getItem('authUser')).access_token);
   check('login leva ao Dashboard com sessão guardada', new URL(page.url()).pathname === '/inicio' && tokenDoNavegador.length > 20);
   check('login da equipe pela tela única não grava sessão do campo', (await page.evaluate(() => localStorage.getItem('campoSession'))) === null);
@@ -398,6 +417,7 @@ try {
   await page.goto(`${BASE}/campo`, { waitUntil: 'networkidle' });
   await page.waitForURL('**/inicio', { timeout: 20000 });
   check('equipe que abre /campo volta ao Dashboard, sem laço', new URL(page.url()).pathname === '/inicio');
+  await esperarComercialHoje(page, featIni);
   await page.goto(`${BASE}/hoje`, { waitUntil: 'networkidle' });
   await espera(1000);
   token = tokenDoNavegador;
@@ -417,15 +437,22 @@ try {
     check(`${antigo} → 307 ${novo}`, r.status === 307 && !!destino && new URL(destino, BASE).pathname === novo, `${r.status} ${destino}`);
   }
 
-  // ── 2. Hoje ───────────────────────────────────────────────────
+  // ── 2. Hoje ("Ações da praça") ────────────────────────────────
   console.log('-- Hoje --');
   const hoje = await corpo(page);
+  // CRM (Task 19, UX §3.7): cabeçalho comum "Ações da praça", com o seletor de praça e o "Nova ação" no topo.
+  check('título "Ações da praça" com o seletor de praça', (await page.getByRole('heading', { name: 'Ações da praça', exact: true }).count()) === 1 && (await page.locator('#praca-ativa').count()) === 1);
   check('seletor de pessoa com "Todos"', hoje.includes('todos'));
   check('barra de carga do dia', hoje.includes('ações hoje'));
   check('seção "Atrasado"', hoje.includes('atrasado'));
   check('seção "Para hoje"', hoje.includes('para hoje'));
   check('seção "Próximos 7 dias"', hoje.includes('próximos 7 dias'));
-  check('bloco do funil de contratantes', hoje.includes('funil — contratantes'));
+  // Com as tarefas do CRM (§47) o "Funil — contratantes" sai e entra o link para Tarefas; sem a chave, a tela de antes.
+  if (featIni.crm_tasks) {
+    check('com as tarefas do CRM: link "Os contatos com leads estão em Tarefas" no lugar do funil', hoje.includes('os contatos com leads estão em tarefas') && !hoje.includes('funil — contratantes'));
+  } else {
+    check('bloco do funil de contratantes', hoje.includes('funil — contratantes'));
+  }
   check('botão de nova ação', hoje.includes('nova ação'));
 
   // Ação pendente de verdade: concluir e desfazer. A linha é escolhida pelo
@@ -504,7 +531,8 @@ try {
   console.log('-- Calendário --');
   await page.goto(`${BASE}/calendario`, { waitUntil: 'networkidle' });
   await espera(1200);
-  check('mês e ano no título', /\b(janeiro|fevereiro|março|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\b/.test(await corpo(page)));
+  // Task 19: o h1 virou "Calendário" e o mês/semana foi para o subtítulo do cabeçalho comum.
+  check('mês e ano no cabeçalho', /\b(janeiro|fevereiro|março|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\b/.test(await corpo(page)));
   check('botões de navegação do calendário', (await page.getByRole('button', { name: 'Hoje', exact: true }).count()) === 1);
   await page.getByRole('button', { name: 'Semana', exact: true }).click();
   await espera(900);
@@ -539,10 +567,12 @@ try {
   check('lead nasce na etapa 1', novo?.stage === 1, `etapa ${novo?.stage}`);
   check(`o dono escolhido (${DONO_SEM_LEADS}) foi gravado`, !!mkt && novo?.owner_id === mkt.id);
 
-  await page.locator('button').filter({ hasText: LEAD_NOME }).first().click();
+  // Task 22: o cartão do lead fica no DOM duas vezes (quadro no `md+`, acordeão no celular; o CSS esconde um): clica no do quadro.
+  await page.getByRole('region', { name: 'Quadro do funil' }).locator('button').filter({ hasText: LEAD_NOME }).first().click();
   await espera(1200);
   check('painel do lead abriu', (await corpo(page)).includes('mover para etapa'));
-  await page.locator('aside').last().getByRole('button', { name: '2. Contatado', exact: true }).click();
+  // Task 19: o painel do lead é um `Sheet` do Radix (portal, `role="dialog"`), não mais o último `<aside>` (que agora é o menu).
+  await page.getByRole('dialog').first().getByRole('button', { name: '2. Contatado', exact: true }).click();
   await espera(600);
   check('diálogo de mudança de etapa abriu', (await corpo(page)).includes('mudança de etapa'));
   await page.getByPlaceholder('Ex.: ligar para o gerente na quinta').fill('Ligar para o gerente amanhã');
@@ -556,7 +586,7 @@ try {
     movido.events.some((e) => e.kind === 'stage' || (e.text ?? '').toLowerCase().includes('etapa')),
   );
   check('painel mostra a etapa nova', (await corpo(page)).includes('2. contatado'));
-  await page.locator('aside').last().getByRole('button', { name: 'Fechar' }).click();
+  await page.getByRole('dialog').first().getByRole('button', { name: 'Fechar' }).click();
   await espera(600);
 
   // ── 6. Entrada de leads ───────────────────────────────────────
@@ -565,9 +595,10 @@ try {
   await espera(1400);
   const entrada = await corpo(page);
   check('título "Entrada de leads"', entrada.includes('entrada de leads'));
-  check('caixa de importar arquivo', entrada.includes('1. importar arquivo') && entrada.includes('.csv'));
-  check('formulário público de captura com o endereço da praça', entrada.includes('2. formulário de captura') && entrada.includes(`/formulario/${PRACA}`));
-  check('fila "Para tocar hoje" e histórico de importações', entrada.includes('para tocar hoje') && entrada.includes('histórico de importações'));
+  // Task 23 + correção final: "Importar planilha", "Formulário de captura" (sem números) e a fila "Primeiro contato de hoje".
+  check('caixa de importar planilha', entrada.includes('importar planilha') && entrada.includes('.csv'));
+  check('formulário público de captura com o endereço da praça', entrada.includes('formulário de captura') && entrada.includes(`/formulario/${PRACA}`));
+  check('fila "Primeiro contato de hoje" e histórico de importações', entrada.includes('primeiro contato de hoje') && entrada.includes('histórico de importações'));
 
   // ── 7. Mensagens: modelos e disparo em fila ───────────────────
   console.log('-- Mensagens --');
@@ -1237,11 +1268,15 @@ console.log('-- Campo: GPS negado --');
   if (lov.dashboard) {
     await page.getByText('Painel ao vivo da operação').first().waitFor({ timeout: 20000 });
     await page.getByText('Visitas concluídas').first().waitFor({ timeout: 20000 });
-    check('Painel: os 8 cartões, cada um com "De onde vem"', (await page.getByText('ⓘ De onde vem').count()) === 8);
+    // CRM (§47, Task 21): com o Comercial e as tarefas ligados, o cartão "Comercial hoje" traz o 9º "De onde vem" (espera ele ficar pronto).
+    const comCartao = !!lov.commercial && !!lov.crm_tasks;
+    await esperarComercialHoje(page, lov);
+    check(`Painel: os 8 cartões${comCartao ? ' e o "Comercial hoje"' : ''}, cada um com "De onde vem"`, (await page.getByText('ⓘ De onde vem').count()) === 8 + (comCartao ? 1 : 0));
     // E5.1 (UX §4.1): o período abre em "7 dias" (Lovable) e o ranking leva o nome da Lovable.
     check('Dashboard: abre em "7 dias", com "Ranking dos representantes"', (await page.getByRole('button', { name: '7 dias', exact: true }).getAttribute('aria-pressed')) === 'true' && (await page.getByText('Ranking dos representantes').count()) === 1);
   } else {
     check('Painel desligado: avisa, sem chamar a rota', (await corpo(page)).includes('ainda não está ligado neste servidor'));
+    await esperarComercialHoje(page, lov);
   }
   // Lote B (contrato §35.2/§37.2): as seções de configuração só existem com as flags (a leitura é a mesma, 200 sempre).
   // E5.4 (D6): com os planos ligados, Rotas abre em "Clientes"; as seções de configuração ficam em "Dia de cada representante".
@@ -1304,6 +1339,7 @@ console.log('-- Campo: GPS negado --');
     await page.goto(`${BASE}/inicio`, { waitUntil: 'networkidle' });
     await page.getByText('Visitas concluídas').first().waitFor({ timeout: 20000 });
     check('Painel: cartão "Vouchers" com número só com os cupons ligados ("Não ligado" sem eles)', (await corpo(page)).includes('não ligado neste servidor') === !lov.vouchers);
+    await esperarComercialHoje(page, lov);
   }
   await page.goto(`${BASE}/configuracoes`, { waitUntil: 'networkidle' });
   await page.getByText('Configurações').first().waitFor({ timeout: 20000 });
@@ -1320,6 +1356,9 @@ console.log('-- Campo: GPS negado --');
   await page.getByRole('button', { name: lov.segments ? 'Pizzaria' : 'Bares', exact: true }).waitFor({ timeout: 20000 });
   const chips = await page.locator('fieldset', { hasText: '2. O que buscar' }).locator('button[aria-pressed]').count();
   check(`Buscar estabelecimentos: ${lov.segments ? '10 segmentos (Lovable + nossos)' : 'os 5 tipos de hoje'} (${chips})`, chips === (lov.segments ? 10 : 5));
+  // CRM A1 (§47, Task 23): o aviso de que os achados entram sozinhos no funil só com `CRM_AUTO_LEADS_FROM_SEARCH_ENABLED`.
+  if (lov.crm_auto_leads) await page.getByText('Os achados entram no funil sozinhos quando a busca termina').first().waitFor({ timeout: 20000 });
+  check('Buscar estabelecimentos: aviso "Os achados entram no funil sozinhos" só com a A1 ligada', ((await page.getByText('Os achados entram no funil sozinhos quando a busca termina').count()) >= 1) === !!lov.crm_auto_leads);
 
   // ── Lote D (contrato §39/§40): só leitura e presença; NADA gera plano nem busca shopping (a busca chamaria o Overpass) ──
   console.log('-- Equipe: lote D da Lovable (dividir em rotas e shoppings) --');
@@ -1381,7 +1420,14 @@ console.log('-- Campo: GPS negado --');
   const menuEsperado = [
     'Dashboard', 'Praças', ...(lov.map_pins ? ['Clientes', 'Mapa'] : []), ...(lov.routes ? ['Rotas'] : []), 'Representantes',
     ...(lov.vouchers ? ['Vouchers'] : []), ...(lov.payouts ? ['Financeiro'] : []), 'Configurações', 'Usuários',
-    ...(lov.commercial ? ['Funil', 'Entrada', 'Buscar estabelecimentos', 'Mensagens', 'Campanhas', 'Calendário', 'Indicadores', 'Ações', 'Freela'] : []),
+    // CRM (§47): "Ações" virou "Ações da praça"; com as tarefas, "Tarefas" abre o Comercial e "Automações" fecha.
+    ...(lov.commercial
+      ? [
+          ...(lov.crm_tasks ? ['Tarefas'] : []),
+          'Funil', 'Entrada', 'Buscar estabelecimentos', 'Mensagens', 'Campanhas', 'Calendário', 'Indicadores', 'Ações da praça', 'Freela',
+          ...(lov.crm_tasks ? ['Automações'] : []),
+        ]
+      : []),
   ];
   // Os itens com flag chegam depois de `features` (o `goto` zera o cache): espera a contagem antes de ler (se não bater, o check mostra o que veio).
   await page.waitForFunction((n) => document.querySelectorAll('aside nav a').length === n, menuEsperado.length, { timeout: 20000 }).catch(() => {});
@@ -1441,6 +1487,7 @@ console.log('-- Campo: GPS negado --');
       // O Dashboard pede o painel ao montar (E5.1): espera os cartões com os dados antes de sair da página, senão o próximo `goto`
       // aborta o GET do painel no meio (`ERR_ABORTED`, achado na E8). "ⓘ De onde vem" só aparece depois da resposta.
       if (lov.dashboard) await g.getByText('ⓘ De onde vem').first().waitFor({ timeout: 20000 });
+      await esperarComercialHoje(g, lov);
       check('gestor: entra no Dashboard', true);
       // A busca é do grupo Comercial (contrato §46): no menu só com a chave; sem ela, o endereço continua abrindo (abaixo).
       if (lov.commercial) {
@@ -1849,6 +1896,174 @@ try {
   }
 }
 
+// ── 14. CRM automático (contrato §47; UX §3.1–§3.3; Tasks 18–23) ──
+// Bloco próprio, pela sessão da equipe (`page`): uma falha aqui não pula a limpeza. O ramo vem do `features` do servidor (nunca sondar
+// 404). Com `crm_tasks`: menu, Tarefas (um lead criado AQUI com o passo para hoje sai da lista depois do "Feito" e dos 5 s do Desfazer),
+// Automações (só leitura), o cartão "Comercial hoje" do Dashboard e o Funil com `GET /v1/crm/badges` (o selo em si não tem como ser
+// disparado pela tela: ele se prova no vitest da Task 22). Sem ela: Tarefas e Automações pelo endereço mostram o aviso, o Dashboard fica
+// sem o cartão e NENHUMA tela chamou `/v1/crm/*` na rodada inteira. Nos dois ramos, o Funil no celular (acordeão, sem rolagem lateral).
+// "Precisa da conexão com o Freela." é a linha "No Freela" do resumo de Tarefas (o local não tem o Freela): em Automações, com a A3
+// desligada, a tela não fala do Freela (o selo da A3 é "Desligada" antes de olhar a conexão).
+/** Lead da tarefa (prefixo da faxina de entrada): sai na limpeza. */
+let leadTarefaId = null;
+const LEAD_TAREFA = `${LEAD_PREFIXO} Tarefa ${CARIMBO}`;
+try {
+  console.log('-- CRM automático (Tarefas, Automações, Comercial hoje, Funil) --');
+  const crm = (await api('GET', '/v1/consultores/settings/config')).features ?? {};
+  // As tarefas e o Funil são da praça ATIVA da conta: o passo das duas praças devolve a de antes; aqui a do seed é garantida (e devolvida).
+  const ativaAntesCrm = (await api('GET', '/v1/auth/me').catch(() => null))?.user?.active_praca_id ?? null;
+  if (ativaAntesCrm !== PRACA) await api('PATCH', '/v1/users/me', { active_praca_id: PRACA });
+  try {
+    if (crm.crm_tasks) {
+      // Lead novo na etapa 2 com o próximo passo PARA HOJE: cai em "Próximo passo vencido" (T3; nada de envio nem visita na frente).
+      const mktCrm = (await api('GET', '/v1/users')).find((u) => u.name === DONO_SEM_LEADS);
+      const criadoT = await api('POST', '/v1/leads', {
+        praca_id: PRACA,
+        name: LEAD_TAREFA,
+        phone: `(31) 9${CARIMBO.slice(-4)}-0002`,
+        classe: 'alvo',
+        origem: 'prospecção',
+        owner_id: mktCrm.id,
+        stage: 2,
+      });
+      leadTarefaId = criadoT?.id ?? null;
+      await api('PUT', `/v1/leads/${leadTarefaId}/next-step`, { what: 'Ligar para o dono (browser-check)', date: HOJE });
+
+      await page.goto(`${BASE}/tarefas`, { waitUntil: 'networkidle' });
+      await page.getByRole('heading', { name: 'Tarefas', exact: true }).waitFor({ timeout: 20000 });
+      if (crm.commercial) {
+        // Task 18 (UX §2.1): no menu, "Tarefas" abre o grupo Comercial (acesa aqui) e "Automações" fecha.
+        await page.locator('aside nav').getByRole('link', { name: 'Automações', exact: true }).waitFor({ timeout: 20000 });
+        const itensComercial = (await page.locator('aside nav').getByRole('group', { name: 'Comercial' }).locator('a').allInnerTexts()).map((t) => t.trim());
+        check(
+          'Menu: "Tarefas" abre o Comercial, "Automações" fecha e "Ações" virou "Ações da praça"',
+          itensComercial[0] === 'Tarefas' && itensComercial.at(-1) === 'Automações' && itensComercial.includes('Ações da praça') && !itensComercial.includes('Ações'),
+          itensComercial.join(' | '),
+        );
+        check('Menu: "Tarefas" acesa em /tarefas', (await page.locator('aside nav a[aria-current="page"]').allInnerTexts()).map((t) => t.trim()).join() === 'Tarefas');
+      }
+      // O grupo mostra 10 linhas e ordena pela data do passo: os passos vencidos do seed vêm antes do de hoje ("Ver mais N" abre o resto).
+      const grupoPasso = page.locator('section[data-grupo="next_step"]');
+      await grupoPasso.waitFor({ timeout: 20000 });
+      const linhaT = page.locator(`li[data-chave="next_step:${leadTarefaId}"]`);
+      if ((await linhaT.count()) === 0) {
+        const verMais = grupoPasso.getByRole('button', { name: /^Ver mais \d+$/ });
+        if (await verMais.count()) await verMais.click();
+      }
+      await linhaT.waitFor({ timeout: 20000 });
+      const deQuem = page.getByRole('group', { name: 'De quem' });
+      check(
+        'Tarefas: abre em "Todas" (pílulas "De quem"), com a contagem do dia e os grupos',
+        (await deQuem.getByRole('button', { name: /Todas/ }).getAttribute('aria-pressed')) === 'true' && /\d+ tarefas? para hoje/.test(await corpo(page)) && (await page.locator('section[data-grupo]').count()) >= 1,
+      );
+      check(
+        'Tarefas: o lead criado com o passo para hoje aparece em "Próximo passo vencido"',
+        (await grupoPasso.locator('h2').innerText()).trim() === 'Próximo passo vencido' && (await linhaT.getByRole('button', { name: LEAD_TAREFA, exact: true }).count()) === 1,
+      );
+      const resumo = page.locator('section#resumo-do-dia');
+      await resumo.locator('dt').first().waitFor({ timeout: 20000 });
+      const rotulosResumo = (await resumo.locator('dt').allInnerTexts()).map((t) => t.trim());
+      check(
+        'Tarefas: "Resumo do dia" com as 5 linhas e "No Freela" = "—" ("Precisa da conexão com o Freela.", o local não tem o Freela)',
+        ['Leads novos', 'Mudanças de etapa', 'No Freela', 'Mensagens enviadas', 'Respostas registradas'].every((r) => rotulosResumo.includes(r)) &&
+          (await resumo.innerText()).includes('Precisa da conexão com o Freela.'),
+        rotulosResumo.join(' | '),
+      );
+      // "Feito" → "Liguei": a linha mostra a confirmação com "Desfazer" e o pedido SÓ sai depois dos 5 s; gravado, a linha some.
+      await linhaT.getByRole('button', { name: `Feito: ${LEAD_TAREFA}`, exact: true }).click();
+      const liguei = page.getByRole('menuitem', { name: 'Liguei' });
+      await liguei.waitFor({ timeout: 10000 });
+      const feitoResp = page.waitForResponse((r) => r.url().endsWith('/v1/crm/tasks/done') && r.request().method() === 'POST', { timeout: 20000 });
+      const inicioFeito = Date.now();
+      await liguei.click();
+      await linhaT.getByText('Ligação registrada').waitFor({ timeout: 4000 });
+      check('Tarefas: "Feito" → "Liguei" mostra "✓ Ligação registrada" com "Desfazer" na linha', (await linhaT.getByRole('button', { name: `Desfazer: ${LEAD_TAREFA}`, exact: true }).count()) === 1);
+      const respFeito = await feitoResp;
+      const decorrido = Date.now() - inicioFeito;
+      check(`Tarefas: o registro só sai depois dos 5 s do Desfazer (POST /v1/crm/tasks/done ${respFeito.status()} em ${decorrido} ms)`, respFeito.status() === 201 && decorrido >= 4500);
+      await linhaT.waitFor({ state: 'detached', timeout: 10000 });
+      check('Tarefas: gravado, o lead some da lista', (await linhaT.count()) === 0);
+      const leadDepois = await api('GET', `/v1/leads/${leadTarefaId}`);
+      check('Tarefas: a ligação ficou no histórico do lead e o passo de hoje foi limpo', leadDepois.events.some((e) => e.kind === 'call') && leadDepois.next_step === null, JSON.stringify(leadDepois.next_step));
+
+      // Automações (Task 21, UX §3.2): só leitura; aqui só a A1 (busca) está ligada — as do relógio ficam desligadas no browser-check.
+      await page.goto(`${BASE}/automacoes`, { waitUntil: 'networkidle' });
+      await page.getByRole('heading', { name: 'Automações', exact: true }).waitFor({ timeout: 20000 });
+      await page.locator('section[data-job]').first().waitFor({ timeout: 20000 });
+      const cartaoJob = async (k) => page.locator(`section[data-job="${k}"]`).innerText();
+      check('Automações: os 4 trabalhos do Comercial, só leitura (nenhum interruptor)', (await page.locator('section[data-job]').count()) === 4 && (await page.getByRole('switch').count()) === 0);
+      const a1 = await cartaoJob('auto_leads_busca');
+      const doRelogio = await Promise.all(['etapas_cadastro', 'quadro_freela', 'sem_resposta'].map(cartaoJob));
+      check(
+        'Automações: "Achados da busca entram no funil" ligada e as três do relógio "Desligada"',
+        a1.includes('Achados da busca entram no funil') && /Ligada/.test(a1) && !a1.includes('Desligada') && doRelogio.every((t) => t.includes('Desligada')),
+      );
+      const modo = (await api('GET', '/v1/crm/automations')).send_mode;
+      check(
+        `Automações: "Modo de envio: ${modo === 'freela' ? 'Via Freela' : 'Fila manual'}" (o modo das Configurações)`,
+        (await page.getByRole('heading', { name: `Modo de envio: ${modo === 'freela' ? 'Via Freela' : 'Fila manual'}`, exact: true }).count()) === 1,
+      );
+
+      // Dashboard (Task 21, UX §3.3): o cartão "Comercial hoje" (só com o Comercial e as tarefas).
+      await page.goto(`${BASE}/inicio`, { waitUntil: 'networkidle' });
+      if (crm.commercial) {
+        await esperarComercialHoje(page, crm);
+        const textoCartao = await page.locator('section[aria-labelledby="comercial-hoje-titulo"]').innerText();
+        check(
+          'Dashboard: cartão "Comercial hoje" com "Tarefas para hoje", "Leads novos", "Mudanças de etapa" e "Abrir tarefas"',
+          ['Comercial hoje', 'Tarefas para hoje', 'Leads novos', 'Mudanças de etapa', 'Abrir tarefas'].every((t) => textoCartao.includes(t)),
+          textoCartao.replace(/\s+/g, ' ').slice(0, 200),
+        );
+      }
+
+      // Funil (Task 22): os selos vêm de `GET /v1/crm/badges` (200; qualquer ≥ 400 já derrubaria a rodada).
+      const selos = page
+        .waitForResponse((r) => r.url().includes('/v1/crm/badges') && r.request().method() === 'GET', { timeout: 20000 })
+        .then((r) => r.status(), () => 0);
+      await page.goto(`${BASE}/funil`, { waitUntil: 'networkidle' });
+      await page.getByRole('region', { name: 'Quadro do funil' }).waitFor({ timeout: 20000 });
+      check('Funil: carrega com os selos do CRM (GET /v1/crm/badges 200)', (await selos) === 200);
+    } else {
+      // Sem a chave: a rodada inteira (Hoje, Funil, Entrada, Dashboard, Prospecção, Configurações…) não chamou `/v1/crm/*`.
+      check('CRM desligado: nenhuma tela chamou /v1/crm/* até aqui', crmReqs.length === 0, crmReqs.slice(0, 3).join(' '));
+      for (const [rota, titulo] of [['/tarefas', 'Tarefas'], ['/automacoes', 'Automações']]) {
+        await page.goto(`${BASE}${rota}`, { waitUntil: 'networkidle' });
+        await page.getByText('Este recurso ainda não está ligado neste servidor.').waitFor({ timeout: 20000 });
+        check(
+          `${titulo} pelo endereço com a chave desligada: o aviso "não está ligado", sem pedido a /v1/crm`,
+          (await page.getByRole('heading', { name: titulo, exact: true }).count()) === 1 && crmReqs.length === 0,
+          crmReqs.join(' '),
+        );
+      }
+      await page.goto(`${BASE}/inicio`, { waitUntil: 'networkidle' });
+      await page.getByText(crm.dashboard ? 'Visitas concluídas' : 'ainda não está ligado neste servidor').first().waitFor({ timeout: 20000 });
+      check('Dashboard sem as tarefas do CRM: sem o cartão "Comercial hoje"', (await page.locator('section[aria-labelledby="comercial-hoje-titulo"]').count()) === 0 && crmReqs.length === 0);
+      await page.goto(`${BASE}/funil`, { waitUntil: 'networkidle' });
+      await page.getByRole('region', { name: 'Quadro do funil' }).waitFor({ timeout: 20000 });
+      check('Funil sem as tarefas do CRM: carrega sem pedir /v1/crm/badges', crmReqs.length === 0, crmReqs.join(' '));
+    }
+
+    // Funil no celular (Task 22, UX §3.6; os dois ramos): uma etapa aberta por vez, o quadro escondido e nada de rolagem lateral.
+    // Mesma sessão, outra largura (um contexto novo seria outro login, contra o teto de 40/min); volta a 1500 px no `finally`.
+    console.log('-- Funil no celular (390 px) --');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${BASE}/funil`, { waitUntil: 'networkidle' });
+    const etapasCelular = page.locator('details[name="etapas-funil"]');
+    await etapasCelular.first().locator('summary').waitFor({ state: 'visible', timeout: 20000 });
+    check(
+      'Funil no celular: as 8 etapas no acordeão, uma aberta, e o quadro escondido',
+      (await etapasCelular.count()) === 8 && (await page.locator('details[name="etapas-funil"][open]').count()) === 1 && !(await page.getByRole('region', { name: 'Quadro do funil' }).isVisible()),
+    );
+    const largura = await page.evaluate(() => ({ conteudo: document.documentElement.scrollWidth, tela: document.documentElement.clientWidth }));
+    check(`Funil no celular: sem rolagem lateral (${largura.conteudo} ≤ ${largura.tela} px)`, largura.conteudo <= largura.tela);
+  } finally {
+    await page.setViewportSize({ width: 1500, height: 1200 }).catch(() => undefined);
+    if (ativaAntesCrm && ativaAntesCrm !== PRACA) await tentar('praça ativa do admin devolvida (CRM)', () => api('PATCH', '/v1/users/me', { active_praca_id: ativaAntesCrm }));
+  }
+} catch (e) {
+  ko('roteiro do CRM interrompido', String(e).slice(0, 300));
+}
+
 // ── limpeza: o banco volta ao seed ──────────────────────────────
 // CADA passo no seu próprio `try`: com um `try` só, um erro no primeiro
 // `DELETE` pulava todos os outros e as afirmações de resíduo — que é como a
@@ -1881,6 +2096,12 @@ if (disparoId) {
 if (leadId) {
   await tentar('lead de teste apagado', async () =>
     check('lead de teste apagado', (await api('DELETE', `/v1/leads/${leadId}`)).ok === true),
+  );
+}
+// O lead da tarefa do CRM leva junto a ligação registrada pelo "Feito" (os eventos caem em cascata).
+if (leadTarefaId) {
+  await tentar('lead da tarefa do CRM apagado', async () =>
+    check('lead da tarefa do CRM apagado', (await api('DELETE', `/v1/leads/${leadTarefaId}`)).ok === true),
   );
 }
 if (consultorId) {

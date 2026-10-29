@@ -187,20 +187,21 @@ npm run start:smoke                # sobe sem watcher (ts-node --transpile-only)
 npm run smoke                      # scripts/smoke.sh contra a API viva — 923 checagens com as flags desligadas (928 só com FIELD_EARNINGS_ENABLED), repetível sem resíduo
                                    # (menos sem o container `praca-postgres`: a limpeza final é por psql)
                                    # os outros, nos cabeçalhos de cada um (E8, 27/10): smoke-lovable-a 38, -b 34, -c 42, -d 40, -e 68 (com LOG_API),
-                                   # -f1 39, -f2 38, smoke-modo-chefe 28, -s3 43
-npm test                           # jest maxWorkers 1 — 142 suítes, 2169 testes, 80 snapshots (suíte inteira na E8, 27/10)
+                                   # -f1 39, -f2 38, smoke-modo-chefe 28, -s3 43; smoke-crm 36 (29/10, só com TEAM_COMMERCIAL_ENABLED,
+                                   # CRM_TASKS_ENABLED e CRM_AUTO_LEADS_FROM_SEARCH_ENABLED — nunca as do relógio, que mexeriam no seed)
+npm test                           # jest maxWorkers 1 — 162 suítes, 2457 testes, 84 snapshots (suíte inteira no CRM automático, 29/10)
 npm run prisma:migrate:dev | prisma:generate | prisma:studio
 
 # web/
 yarn dev | typecheck | lint        # `build` só se o dono pedir (ver abaixo)
-yarn test                          # vitest run (fork único) — 43 arquivos, 469 testes (E8, 27/10)
-yarn browser-check                 # scripts/browser-check.mjs — rodado na E8 (27/10): 226 checagens na configuração de produção antiga (ROUTES, VISIT_FLOW_SELECT, EARNINGS, DECLARED_SIGNUPS, PAYOUTS; fluxo simples e completo); 288 com as flags dos lotes A–F ligadas (menos VOUCHER_COUPONS), com um passo logado como gestor e um consultor em duas praças; 288 também com TEAM_COMMERCIAL_ENABLED (mesmas checagens, outro ramo). Nas três, `OVERPASS_URL` num endereço morto
+yarn test                          # vitest run (fork único) — 52 arquivos, 601 testes (CRM automático, 29/10)
+yarn browser-check                 # scripts/browser-check.mjs — rodado no CRM automático (29/10): 297 checagens na configuração de produção de hoje (lotes A–F menos VOUCHER_COUPONS + ROUTES, VISIT_FLOW_SELECT, EARNINGS, DECLARED_SIGNUPS, PAYOUTS; Comercial desligado: o bloco 14 confere que nenhuma tela chamou `/v1/crm/*`); 307 com essas + TEAM_COMMERCIAL_ENABLED, CRM_TASKS_ENABLED e CRM_AUTO_LEADS_FROM_SEARCH_ENABLED (Tarefas com "Feito", Automações, "Comercial hoje", selos do Funil; nunca CRM_AUTO_STAGES/AUTO_LOST/FREELA_PIPELINE). Nas duas, `OVERPASS_URL` num endereço morto. Antes, na E8 (27/10): 226 na produção antiga (só as 5 de campo), 288 com os lotes A–F, 288 também com TEAM_COMMERCIAL_ENABLED
                                    # precisa da API na 3014 (start:smoke) e do web na 3024 (yarn dev)
                                    # conta: PRACA_CHECK_EMAIL/PASSWORD (padrão = seed), login pelo formulário
 ```
 
 O `browser-check` cria coisas de verdade (ação concluída, lead, disparo,
-lançamento de indicador) e **apaga tudo no fim** — inclusive desfazendo a
+lançamento de indicador e, com o CRM ligado, o lead da tarefa que leva o "Feito") e **apaga tudo no fim** — inclusive desfazendo a
 conclusão da ação pela API (`POST /v1/actions/:id/uncomplete`), cada passo do
 teardown no seu próprio `try`. Antes de começar ele afirma as pré-condições do
 seed de que depende e faz uma faxina do que uma rodada interrompida possa ter
