@@ -224,6 +224,11 @@ model leads {
   // lead existente e com a flag desligada.
   place_kind         String?
   parent_lead_id     String?             @db.Uuid
+  // CRM automático: usuário do Freela casado com o cartão (NÃO único: rede com várias lojas
+  // pode ter um usuário), contratações vistas e maior etapa já aplicada pelo automático.
+  freela_user_id     String?
+  freela_hirings     Int?
+  auto_stage_applied Int?
   created_at         DateTime            @default(now())
   praca              pracas?             @relation(fields: [praca_id], references: [id], onDelete: SetNull)
   place_candidates   place_candidates[]
@@ -251,6 +256,7 @@ model leads {
   @@index([import_batch_id])
   @@index([parent_lead_id])
   @@index([praca_id, place_kind])
+  @@index([freela_user_id])
   // Prova social do render (`{{estabelecimento_vizinho}}`): os primeiros por
   // nome de cada cidade, numa consulta só para o lote inteiro.
   @@index([city, name])
@@ -265,9 +271,25 @@ model lead_events {
   kind         String
   text         String
   stage_to     Int?
+  // Idempotência dos eventos do automático (`a2:etapa:<lead>:<alvo>`...); NULLs convivem.
+  auto_key     String?  @unique
   lead         leads    @relation(fields: [lead_id], references: [id], onDelete: Cascade)
 
   @@index([lead_id, at])
+}
+
+// Rodadas dos trabalhos do CRM automático (A2, A3, A4): uma linha por execução.
+model crm_automation_runs {
+  id          String    @id @default(uuid()) @db.Uuid
+  job         String
+  ref         String?
+  started_at  DateTime
+  finished_at DateTime?
+  ok          Boolean
+  summary     Json      @default("{}")
+  error       String?
+
+  @@index([job, started_at(sort: Desc)])
 }
 
 model lead_vagas {
@@ -1063,6 +1085,7 @@ model field_signups {
   @@index([consultant_id, first_job_day])
   @@index([signup_id])
   @@index([lead_id])
+  @@index([freela_user_id])
 }
 
 model field_signup_sync_state {
