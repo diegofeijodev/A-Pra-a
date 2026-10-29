@@ -5597,16 +5597,17 @@ Guard de 404 na classe (`CRM_TASKS_DISABLED`), `@Equipe()` em cada método. A mi
 | Rota | Entrada | Saída |
 |---|---|---|
 | `GET /v1/crm/tasks` | `praca_id` (obrigatório; não-UUID/inexistente = 404 `NOT_FOUND`), `person?: 'all' \| 'me'` (padrão `all`; `me` = `owner_id` do token **ou** nulo) | ver abaixo |
-| `POST /v1/crm/tasks/done` | `{ lead_id (IsUUID), task (IsIn hot_visit\|next_step\|stalled\|first_vacancy), kind (IsIn call\|msg_out\|msg_in\|visit), text? (≤ 2000), next_step? (NextStepDto) }` | `{ ok: true, lead_id }` |
-| `GET /v1/crm/summary` | `praca_id?` (**opcional**; ausente = todas as praças), `day?` (`IsDayString`; padrão `todaySp()`) | `{ day, praca_id, freela_configured, freela_read_at, numbers: [{ key, value, parts: [{ label, value }], formula, source }] }` — janela do dia `[atSpHour(day,0), atSpHour(addDays(day,1),0))` |
-| `GET /v1/crm/automations` | — | `{ freela_configured, send_mode, jobs: [{ key, enabled, needs_freela, blocked_by, last_run, last_7d }], cadences: [{ id, name, entry, paused, active_enrollments }], warnings: [] }` — nunca o e-mail da conta; `send_mode` = `app_settings.mode` |
-| `GET /v1/crm/badges` | `praca_id` | `{ items: [{ lead_id, last_stage_auto, freela_hirings }] }` |
+| `POST /v1/crm/tasks/done` | `{ lead_id (IsUUID), task (IsIn hot_visit\|next_step\|stalled\|first_vacancy), kind (IsIn call\|msg_out\|msg_in\|visit), text? (≤ 2000), next_step? (NextStepDto) }` | **201** `{ ok: true, lead_id }` |
+| `GET /v1/crm/summary` | `praca_id?` (**opcional**; ausente = todas as praças; UUID válido de praça que não existe = **200 com zeros**, sem 404), `day?` (`IsDayString`; padrão `todaySp()`) | `{ day, praca_id, freela_configured, freela_read_at, numbers: [{ key, value, parts: [{ label, value }], formula, source }] }` — janela do dia `[atSpHour(day,0), atSpHour(addDays(day,1),0))` |
+| `GET /v1/crm/automations` | — | `{ freela_configured, send_mode, jobs: [{ key, enabled, needs_freela, blocked_by, last_run, last_7d }], cadences: [{ id, name, entry, paused, active_enrollments }], warnings: [] }` — nunca o e-mail da conta; `send_mode` = `app_settings.mode`; ver abaixo |
+| `GET /v1/crm/badges` | `praca_id` (obrigatório: ausente = **400**; não-UUID ou praça inexistente = **404 `NOT_FOUND`**) | `{ items: [{ lead_id, last_stage_auto, freela_hirings }] }` — só leads não arquivados e não de teste, e só os que têm algo a mostrar |
 
 **`GET /v1/crm/tasks`** devolve
 `{ day, praca_id, person, counts: { me, all }, entrada: { novos }, freela_configured, groups: [{ task, total, items }] }`.
 `task` ∈ `send`, `cadence_send` (só leitura), `hot_visit`, `next_step`, `stalled`, `first_vacancy`; até 50 itens por grupo (`ITENS_POR_GRUPO`), `total` com todos.
 Item = `{ lead_id, lead_name, owner_id, stage, phone, send_id?, text?, scheduled_at?, origin_label?, visit?: { consultant_name, day, interest },
-next_step?: { what, date, from_cadence }, last_contact_day?, stage_since?, readonly? }`. A `send` só traz disparos (`status: 'fila'`); as mensagens
+next_step?: { what, date, from_cadence }, last_contact_day?, stage_since?, readonly? }`. `from_cadence` é uma **heurística de texto**: `true` quando
+`next_step_what` é igual ao texto de um passo de cadência (os passos-padrão ou a tarefa de um nó de cadência); não há vínculo gravado com a cadência. A `send` só traz disparos (`status: 'fila'`); as mensagens
 das cadências do dia vão em `cadence_send`, com `readonly: true` (abrir WhatsApp, sem "Feito"). `hot_visit` olha visitas encerradas de 1 a 14 dias atrás;
 `stalled` usa 5 dias de conversa parada; `first_vacancy` espera 3 dias sem contato da equipe.
 
@@ -5617,10 +5618,22 @@ das cadências do dia vão em `cadence_send`, com `readonly: true` (abrir WhatsA
 
 **`GET /v1/crm/summary`**: `numbers` (nesta ordem) = `leads_novos` (partes: busca `pesquisa automática`, visitas `visita de campo`, formulário `orgânico`/`tráfego pago`, outras origens; sem teste e **sem arquivados**), `mudancas_etapa` (evento com `stage_to` não nulo, de qualquer `kind`; partes por autoria: automáticas, equipe, visitas, formulário, cadências, outra origem), `mudancas_etapa_destino` (partes por etapa de destino), `freela` (cadastros →5, primeiras contratações →6, clientes ativos →7, só de autor `Automático · Freela` ou `Freela (sincronização)`; **`value: null`, `parts: []`** sem o Freela configurado), `mensagens_enviadas` (`sent_at` no dia; `mode = 'freela'` x demais), `respostas` (`replied_at` no dia). `freela_read_at` = `finished_at` da última rodada `quadro_freela` ok e com leitura de verdade (sem `summary.nao_configurado`), senão `null`. `praca_id` informado precisa ser UUID (400 se não for).
 
+**`GET /v1/crm/automations`**: `jobs` traz os quatro trabalhos (`auto_leads_busca`, `etapas_cadastro`, `quadro_freela`, `sem_resposta`). `enabled` = a chave
+do trabalho; `needs_freela` = `true` em `etapas_cadastro` e `quadro_freela`; `blocked_by` ∈ `'freela'` (conta do Freela não configurada; A2 e A3) \|
+`'signup_sync'` (A2 com a leitura de cadastros, `FIELD_SIGNUP_SYNC_ENABLED`, desligada) \| `null` — quem decide é o servidor. `last_run` = a rodada mais
+recente do trabalho, `{ at, ok, summary, error? }` (`at` = `finished_at`, ou `started_at` se não terminou; `error` saneado e **só para admin**), ou `null`.
+`last_7d` = soma, chave a chave, dos campos **numéricos** do `summary` das rodadas dos últimos 7 dias (objeto aninhado vira `pai.filho`, ex.: `etapas.6`),
+sem as rodadas `nao_configurado`; texto e booleano ficam fora.
+
 ### 47.4 Trabalhos (instância única)
 
-Um relógio só (`CrmScheduler`, a cada 5 min). Jobs: `auto_leads_busca`, `etapas_cadastro` (A2), `quadro_freela` (A3, de 2 em 2 horas, das 08h às 20h) e
-`sem_resposta` (A4, uma vez por dia). Cada rodada grava uma linha em `crm_automation_runs`; as com mais de 30 dias saem na rodada diária (só se alguma chave CRM estiver ligada).
+Um relógio só (`CrmScheduler`, a cada 5 min, Brasília; o `@Cron` não lê configuração, decide a cada batida): `etapas_cadastro` (A2) de hora em hora
+das 06h às 23h; `quadro_freela` (A3) nas horas pares das 08h às 20h; `sem_resposta` (A4) uma vez por dia a partir das 06:10 — decidida pela rodada ok do
+dia no banco (sobrevive a reinício); depois de uma tentativa que falhou, a próxima espera 60 min. **`auto_leads_busca` (A1) não é do relógio:** é um gancho
+no fim de uma busca de `lugares` que ESTA execução concluiu com a chave ligada (uma linha por busca, `ref` = a busca); a busca servida do cache de 7 dias,
+ou concluída com a chave desligada, fica manual ("Adicionar"). Cada rodada grava uma linha em `crm_automation_runs`; as com mais de 30 dias saem uma vez por
+dia, no primeiro tique do dia, com **qualquer** chave entre `CRM_AUTO_LEADS_FROM_SEARCH_ENABLED`, `CRM_AUTO_STAGES_ENABLED`, `CRM_AUTO_LOST_ENABLED` e
+`CRM_FREELA_PIPELINE_ENABLED` ligada (com todas desligadas, nada roda e nada é apagado).
 
 ### 47.5 `GET /v1/leads/metrics` (só ganha campos)
 
