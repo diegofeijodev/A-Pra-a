@@ -54,6 +54,7 @@ import {
   type ContatoDaFila,
 } from '@/modules/leads/domain/entrada';
 import { useAcoesAdiadas } from '@/modules/crm/application/use-acoes-adiadas';
+import { useAnuncio } from '@/modules/crm/application/use-anuncio';
 import { enviosAoFecharAba, useAdiarLead } from '@/modules/crm/application/use-crm';
 import { OPCOES_FEITO, anuncioDaAcao, opcoesAdiar, textoAdiado } from '@/modules/crm/domain/tarefas';
 import { useSettings, useUpdateSettings } from '@/modules/messages/application/use-settings';
@@ -630,7 +631,7 @@ function FilaDoDia() {
   const [who, setWho] = useState(hojePerson);
   // O que está DIGITADO (pode estar vazio); `null` = mostrar o valor do servidor.
   const [quotaInput, setQuotaInput] = useState<string | null>(null);
-  const [anuncio, setAnuncio] = useState("");
+  const [anuncio, anunciar] = useAnuncio();
   const [whatsAbertos, setWhatsAbertos] = useState<ReadonlySet<string>>(() => new Set());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hoje = todaySp();
@@ -686,7 +687,7 @@ function FilaDoDia() {
       enviar: (urgente) =>
         urgente ? addLeadEvent(l.id, ev.kind, ev.text, { keepalive: true }) : addEvent.mutateAsync({ id: l.id, kind: ev.kind, text: ev.text }),
     });
-    setAnuncio(anuncioDaAcao(ev.confirmacao, l.name, shown.length - 1));
+    anunciar(anuncioDaAcao(ev.confirmacao, l.name, shown.length - 1));
   }
 
   function agendarAdiar(l: QueueItemView, ate: string) {
@@ -694,7 +695,7 @@ function FilaDoDia() {
       meta: { texto: textoAdiado(ate) },
       enviar: (urgente) => (urgente ? enviosAoFecharAba.adiar(l.id, ate) : adiar.mutateAsync({ id: l.id, until: ate })),
     });
-    setAnuncio(`${textoAdiado(ate)}.`);
+    anunciar(`${textoAdiado(ate)}.`);
   }
 
   function linha(l: QueueItemView) {
@@ -726,7 +727,7 @@ function FilaDoDia() {
           s && s.tipo !== "erro"
             ? {
                 texto: s.meta.texto,
-                onDesfazer: s.tipo === "pendente" ? () => { if (acoes.desfazer(chave)) setAnuncio("Desfeito."); } : undefined,
+                onDesfazer: s.tipo === "pendente" ? () => { if (acoes.desfazer(chave)) anunciar("Desfeito."); } : undefined,
               }
             : null
         }

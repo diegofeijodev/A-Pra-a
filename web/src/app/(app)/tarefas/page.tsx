@@ -28,6 +28,7 @@ import { useFeaturesMenu } from '@/modules/acesso/application/use-acesso';
 import { ROTA } from '@/modules/acesso/domain/enderecos';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { useAcoesAdiadas } from '@/modules/crm/application/use-acoes-adiadas';
+import { useAnuncio } from '@/modules/crm/application/use-anuncio';
 import { enviosAoFecharAba, useAdiarLead, useFeito, useMarcarEnviada, useTarefas } from '@/modules/crm/application/use-crm';
 import {
   AVISO_T5_SEM_FREELA,
@@ -116,7 +117,7 @@ function TelaTarefas({ hoje, subtitulo }: { hoje: string; subtitulo: ReactNode }
   const { data: users } = useUsers();
   const person = pessoaDaConsulta(hojePerson, user?.id);
 
-  const [anuncio, setAnuncio] = useState('');
+  const [anuncio, anunciar] = useAnuncio();
   const [menuAberto, setMenuAberto] = useState<string | null>(null);
   const [whatsAbertos, setWhatsAbertos] = useState<ReadonlySet<string>>(() => new Set());
   const [expandidos, setExpandidos] = useState<ReadonlySet<TipoTarefa>>(() => new Set());
@@ -161,7 +162,7 @@ function TelaTarefas({ hoje, subtitulo }: { hoje: string; subtitulo: ReactNode }
       meta: { texto: `✓ ${CONFIRMACAO_ENVIADA}` },
       enviar: (urgente) => (urgente ? enviosAoFecharAba.marcarEnviada(sendId) : marcar.mutateAsync(sendId)),
     });
-    setAnuncio(anuncioDaAcao(CONFIRMACAO_ENVIADA, item.lead_name, faltamDepois()));
+    anunciar(anuncioDaAcao(CONFIRMACAO_ENVIADA, item.lead_name, faltamDepois()));
   }
 
   function agendarFeito(task: TarefaFeita, item: ItemTarefaView, kind: ContatoFeito) {
@@ -177,7 +178,7 @@ function TelaTarefas({ hoje, subtitulo }: { hoje: string; subtitulo: ReactNode }
       },
       enviar: (urgente) => (urgente ? enviosAoFecharAba.feito(input) : feito.mutateAsync(input)),
     });
-    setAnuncio(anuncioDaAcao(opcao.confirmacao, item.lead_name, faltamDepois()));
+    anunciar(anuncioDaAcao(opcao.confirmacao, item.lead_name, faltamDepois()));
   }
 
   function agendarAdiar(task: TipoTarefa, item: ItemTarefaView, ate: string) {
@@ -185,7 +186,7 @@ function TelaTarefas({ hoje, subtitulo }: { hoje: string; subtitulo: ReactNode }
       meta: { texto: textoAdiado(ate) },
       enviar: (urgente) => (urgente ? enviosAoFecharAba.adiar(item.lead_id, ate) : adiar.mutateAsync({ id: item.lead_id, until: ate })),
     });
-    setAnuncio(`${textoAdiado(ate)}.`);
+    anunciar(`${textoAdiado(ate)}.`);
   }
 
   function copiar(texto: string) {
@@ -252,7 +253,7 @@ function TelaTarefas({ hoje, subtitulo }: { hoje: string; subtitulo: ReactNode }
                 onDesfazer:
                   s.tipo === 'pendente'
                     ? () => {
-                        if (acoes.desfazer(chave)) setAnuncio('Desfeito.');
+                        if (acoes.desfazer(chave)) anunciar('Desfeito.');
                       }
                     : undefined,
                 // Abrir o lead aceita o que foi marcado: manda já (o painel pode marcar um passo novo, que o envio atrasado limparia).
@@ -416,7 +417,8 @@ function TelaTarefas({ hoje, subtitulo }: { hoje: string; subtitulo: ReactNode }
 
           <div className="grid gap-6 lg:grid-cols-3">
             <div className="min-w-0 space-y-4 lg:col-span-2">
-              <div aria-live="polite">
+              {/* Sem `aria-live`: a região do fim da página já diz "Faltam N tarefas" (dois anúncios por toque cansam). */}
+              <div>
                 {r && conta.total > 0 && (
                   <>
                     <p className="text-lg font-semibold">{tituloDaContagem(conta.total)}</p>
