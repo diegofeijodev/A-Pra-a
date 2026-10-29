@@ -1,0 +1,94 @@
+'use client';
+
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
+import { snoozeLead } from '@/modules/leads/infrastructure/leads.api';
+import {
+  fetchAutomacoes,
+  fetchResumoCrm,
+  fetchSelosFunil,
+  fetchTarefas,
+  marcarTarefaFeita,
+  type AutomacoesView,
+  type ResumoCrmView,
+  type SelosView,
+  type TarefasView,
+} from '../infrastructure/crm.api';
+
+export type { AutomacoesView, ResumoCrmView, SelosView, TarefasView };
+
+/**
+ * Cada leitura tem `enabled` (a tela passa `features.crm_tasks`): com a chave desligada o servidor responde 404, então nunca
+ * se chama `/v1/crm/*` sem ela. O padrão é desligado de propósito.
+ */
+interface Opcoes {
+  enabled?: boolean;
+}
+
+export function useTarefas(pracaId: string | null | undefined, person: 'all' | 'me', { enabled = false }: Opcoes = {}) {
+  return useQuery({
+    queryKey: ['crm-tasks', pracaId, person],
+    queryFn: () => fetchTarefas(pracaId as string, person),
+    enabled: enabled && !!pracaId,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useResumoCrm(pracaId: string | null, day: string | undefined, { enabled = false }: Opcoes = {}) {
+  return useQuery({
+    queryKey: ['crm-summary', pracaId, day ?? null],
+    queryFn: () => fetchResumoCrm(pracaId, day),
+    enabled,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useAutomacoes({ enabled = false }: Opcoes = {}) {
+  return useQuery({ queryKey: ['crm-automations'], queryFn: fetchAutomacoes, enabled });
+}
+
+export function useSelosFunil(pracaId: string | null | undefined, { enabled = false }: Opcoes = {}) {
+  return useQuery({
+    queryKey: ['crm-badges', pracaId],
+    queryFn: () => fetchSelosFunil(pracaId as string),
+    enabled: enabled && !!pracaId,
+  });
+}
+
+/** O que muda com um "Feito"/"Adiar": as tarefas, o resumo, os selos e os retratos do funil (mesmos prefixos de `use-leads`). */
+function invalidarCrm(queryClient: ReturnType<typeof useQueryClient>) {
+  for (const key of [
+    ['crm-tasks'],
+    ['crm-summary'],
+    ['crm-badges'],
+    ['leads'],
+    ['lead'],
+    ['lead-queue'],
+    ['lead-metrics'],
+    ['indicators'],
+    ['notifications'],
+  ]) {
+    void queryClient.invalidateQueries({ queryKey: key });
+  }
+}
+
+/** "Feito" de uma tarefa (`POST /v1/crm/tasks/done`). A `send` usa o "marcar enviada" que já existe. */
+export function useFeito() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: marcarTarefaFeita,
+    onSuccess: () => invalidarCrm(queryClient),
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível marcar como feito.')),
+  });
+}
+
+/** "Adiar" uma tarefa: reaproveita `POST /v1/leads/:id/snooze { until }`. */
+export function useAdiarLead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, until }: { id: string; until: string }) => snoozeLead(id, until),
+    onSuccess: () => invalidarCrm(queryClient),
+    onError: (e) => toast.error(apiErrorMessage(e, 'Não foi possível adiar.')),
+  });
+}

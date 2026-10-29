@@ -30,6 +30,10 @@ export const featuresMenuSchema = z.object({
   payouts: z.boolean().default(false),
   /** §46: link "Declarados" do Financeiro (só com a remuneração). */
   declared_signups: z.boolean().default(false),
+  /** CRM automático (contrato §47.1): telas Tarefas e Automações, cartão do Dashboard, selos do Funil (`CRM_TASKS_ENABLED`). */
+  crm_tasks: z.boolean().default(false),
+  /** §47.1: achados da busca entram sozinhos no funil (`CRM_AUTO_LEADS_FROM_SEARCH_ENABLED`). */
+  crm_auto_leads: z.boolean().default(false),
 });
 export type FeaturesMenu = z.infer<typeof featuresMenuSchema>;
 export const SEM_FEATURES_MENU: FeaturesMenu = featuresMenuSchema.parse({});
@@ -52,7 +56,7 @@ export const ROTULO_PERFIL: Record<Perfil, string> = { admin: 'Admin', gestor: '
 
 export type ChaveIcone =
   | 'inicio' | 'praca' | 'clientes' | 'mapa' | 'rotas' | 'consultores' | 'cupons' | 'financeiro' | 'config' | 'usuarios'
-  | 'funil' | 'entrada' | 'busca' | 'mensagens' | 'campanhas' | 'calendario' | 'indicadores' | 'hoje' | 'freela';
+  | 'funil' | 'entrada' | 'busca' | 'mensagens' | 'campanhas' | 'calendario' | 'indicadores' | 'hoje' | 'freela' | 'tarefas' | 'automacoes';
 export interface ItemMenu {
   to: string;
   label: string;
@@ -90,7 +94,10 @@ export function montarMenu(f: FeaturesMenu, u: { is_admin: boolean; is_gestor?: 
     ...(admin ? [{ to: ROTA.usuarios, label: 'Usuários', icon: 'usuarios' as const }] : []),
   ];
   if (!f.commercial) return [{ titulo: null, itens: principal }];
+  const crm = f.crm_tasks;
   const comercial: ItemMenu[] = [
+    // Com as tarefas do CRM (§47): "Tarefas" abre o Comercial e "Automações" fecha; "Ações" vira "Ações da praça" nos dois casos.
+    ...(crm ? [{ to: ROTA.tarefas, label: 'Tarefas', icon: 'tarefas' as const }] : []),
     { to: '/funil', label: 'Funil', icon: 'funil' },
     { to: '/entrada', label: 'Entrada', icon: 'entrada' },
     // Como sempre: a busca é de quem opera (admin e gestor; o gestor só no mapa aberto, no servidor).
@@ -99,8 +106,9 @@ export function montarMenu(f: FeaturesMenu, u: { is_admin: boolean; is_gestor?: 
     { to: '/campanhas', label: 'Campanhas', icon: 'campanhas' },
     { to: '/calendario', label: 'Calendário', icon: 'calendario' },
     { to: '/indicadores', label: 'Indicadores', icon: 'indicadores' },
-    { to: '/hoje', label: 'Ações', icon: 'hoje' },
+    { to: '/hoje', label: 'Ações da praça', icon: 'hoje' },
     { to: '/freela', label: 'Freela', icon: 'freela' },
+    ...(crm ? [{ to: ROTA.automacoes, label: 'Automações', icon: 'automacoes' as const }] : []),
   ];
   return [
     { titulo: null, itens: principal },

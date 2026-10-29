@@ -24,6 +24,9 @@ export const ROTA = {
   configuracoes: '/configuracoes',
   // Usuários saiu de Configurações > Pessoas (E5.8).
   usuarios: '/usuarios',
+  // Comercial com o CRM automático (contrato §47): tarefas do dia e o que roda sozinho.
+  tarefas: '/tarefas',
+  automacoes: '/automacoes',
   // Fora do menu: a troca da própria senha (E3), aberta pelo rodapé da casca.
   trocarSenha: '/trocar-senha',
 } as const;

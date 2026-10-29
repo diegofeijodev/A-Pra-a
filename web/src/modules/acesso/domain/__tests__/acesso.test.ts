@@ -31,7 +31,7 @@ describe('perfis', () => {
 describe('menu da equipe (casca da Lovable)', () => {
   const rotulos = (m: ReturnType<typeof montarMenu>, i = 0) => m[i]!.itens.map((x) => x.label);
   const LOVABLE = ['Dashboard', 'Praças', 'Clientes', 'Mapa', 'Rotas', 'Representantes', 'Vouchers', 'Financeiro', 'Configurações', 'Usuários'];
-  const COMERCIAL = ['Funil', 'Entrada', 'Buscar estabelecimentos', 'Mensagens', 'Campanhas', 'Calendário', 'Indicadores', 'Ações', 'Freela'];
+  const COMERCIAL = ['Funil', 'Entrada', 'Buscar estabelecimentos', 'Mensagens', 'Campanhas', 'Calendário', 'Indicadores', 'Ações da praça', 'Freela'];
 
   it('admin com os módulos ligados e o Comercial desligado: um grupo sem título, nomes e ordem da Lovable', () => {
     const m = montarMenu(tudo, ADMIN);
@@ -67,7 +67,30 @@ describe('menu da equipe (casca da Lovable)', () => {
     }
     expect(rotulos(montarMenu(comCom, ADMIN))).toEqual(LOVABLE);
     expect(rotulos(montarMenu(comCom, EQUIPE), 1)).toEqual(COMERCIAL.filter((l) => l !== 'Buscar estabelecimentos'));
-    expect(montarMenu(comCom, ADMIN)[1]!.itens.find((i) => i.label === 'Ações')!.to).toBe('/hoje');
+    expect(montarMenu(comCom, ADMIN)[1]!.itens.find((i) => i.label === 'Ações da praça')!.to).toBe('/hoje');
+  });
+  it('Comercial com as tarefas do CRM: "Tarefas" no começo e "Automações" no fim; "Buscar" só para quem opera', () => {
+    const comCrm = { ...tudo, commercial: true, crm_tasks: true };
+    const TODOS = ['Tarefas', 'Funil', 'Entrada', 'Buscar estabelecimentos', 'Mensagens', 'Campanhas', 'Calendário', 'Indicadores', 'Ações da praça', 'Freela', 'Automações'];
+    expect(rotulos(montarMenu(comCrm, ADMIN), 1)).toEqual(TODOS);
+    expect(rotulos(montarMenu(comCrm, GESTOR), 1)).toEqual(TODOS);
+    expect(rotulos(montarMenu(comCrm, EQUIPE), 1)).toEqual(TODOS.filter((l) => l !== 'Buscar estabelecimentos'));
+    const g = montarMenu(comCrm, ADMIN)[1]!.itens;
+    expect(g[0]).toEqual({ to: ROTA.tarefas, label: 'Tarefas', icon: 'tarefas' });
+    expect(g.at(-1)).toEqual({ to: ROTA.automacoes, label: 'Automações', icon: 'automacoes' });
+    expect(ROTA.tarefas).toBe('/tarefas');
+    expect(ROTA.automacoes).toBe('/automacoes');
+  });
+  it('crm_tasks sem o Comercial não mostra nada; sem a chave o grupo é o de hoje (com "Ações da praça")', () => {
+    expect(montarMenu({ ...tudo, crm_tasks: true }, ADMIN)).toHaveLength(1);
+    expect(rotulos(montarMenu({ ...tudo, crm_tasks: true }, ADMIN))).toEqual(LOVABLE);
+    expect(rotulos(montarMenu({ ...tudo, commercial: true }, ADMIN), 1)).not.toContain('Tarefas');
+  });
+  it('features sem as chaves do CRM (servidor antigo) = desligadas', () => {
+    const f = featuresMenuSchema.parse({ commercial: true });
+    expect(f.crm_tasks).toBe(false);
+    expect(f.crm_auto_leads).toBe(false);
+    expect(featuresMenuSchema.parse({ crm_tasks: true, crm_auto_leads: true })).toMatchObject({ crm_tasks: true, crm_auto_leads: true });
   });
   it('item ativo: um só, o de prefixo mais longo; Clientes e Mapa em páginas próprias (E5.3)', () => {
     const itens = montarMenu({ ...tudo, commercial: true }, ADMIN).flatMap((g) => g.itens);

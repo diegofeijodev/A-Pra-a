@@ -9,6 +9,7 @@ import {
   KeyRound,
   LayoutDashboard,
   ListChecks,
+  ListTodo,
   LogOut,
   Map as MapIcon,
   MapPin,
@@ -23,6 +24,7 @@ import {
   UserCheck,
   Users,
   Wallet,
+  Zap,
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -63,6 +65,8 @@ const ICONE: Record<ChaveIcone, LucideIcon> = {
   calendario: Calendar,
   indicadores: BarChart3,
   hoje: ListChecks,
+  tarefas: ListTodo,
+  automacoes: Zap,
   freela: Plug,
 };
 
