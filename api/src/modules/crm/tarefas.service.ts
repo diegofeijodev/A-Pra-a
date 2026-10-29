@@ -3,13 +3,16 @@
  *
  * `listar` carrega as linhas da praça em LOTE (sem N+1) e entrega tudo à `montarTarefas` (regras puras, Task 13).
  * `concluir` ("Feito" das tarefas que não são disparo): uma transação grava o evento de contato, `last_contact_at`, o próximo passo
- * e, se o lead não tinha dono, faz de quem fez o dono (desenho §12.2 U3).
+ * e, se o lead não tinha dono, faz de quem fez o dono (desenho §12.2 U3). Lead em "Lead novo" (1) passa a "Contatado" (2) na mesma
+ * transação, com os campos e o evento de etapa do `LeadsService.move()` (ruling A5: 1º contato = Contatado); o reaquecer (8) e as
+ * outras etapas não mudam. O "Feito" do disparo (`POST /v1/sends/:id/mark`) segue sem mexer na etapa.
  */
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthUser } from '../../common/auth/auth-user';
 import { PrismaService } from '../../common/database/prisma.service';
 import { isUuid } from '../../common/ids/uuid';
 import { addDays, todaySp } from '../../common/time/dates';
+import { FUNNEL_STAGES } from '../../domain/catalog/funnel';
 import { atSpHour } from '../../domain/send-schedule';
 import {
   montarTarefas,
@@ -26,6 +29,10 @@ const DIAS_VISITAS = 15;
 /** Passo próprio que o motor de cadência grava em `next_step_what` quando a tarefa da cadência não tem texto. */
 const PASSOS_PADRAO_CADENCIA = ['Ligação da cadência', 'Ligar para confirmar presença'];
 const CONTATOS = ['call', 'msg_out', 'msg_in', 'visit'];
+const ETAPA_LEAD_NOVO = 1;
+const ETAPA_CONTATADO = 2;
+/** O mesmo nome que o `LeadsService.move()` escreve no evento de etapa. */
+const nomeDaEtapa = (n: number): string => FUNNEL_STAGES.find((s) => s.n === n)?.name ?? '?';
 const TEXTO_PADRAO: Record<TarefaFeitaDto['kind'], string> = {
   call: 'Ligação feita (tarefa do dia).',
   msg_out: 'Mensagem enviada (tarefa do dia).',
@@ -169,7 +176,10 @@ export class TarefasService {
   async concluir(dto: TarefaFeitaDto, user: AuthUser): Promise<{ ok: true; lead_id: string }> {
     if (!isUuid(dto.lead_id)) throw this.leadNaoEncontrado();
     await this.prisma.$transaction(async (tx) => {
-      const lead = await tx.leads.findUnique({ where: { id: dto.lead_id }, select: { id: true, archived: true, owner_id: true } });
+      const lead = await tx.leads.findUnique({
+        where: { id: dto.lead_id },
+        select: { id: true, archived: true, owner_id: true, stage: true },
+      });
       if (!lead) throw this.leadNaoEncontrado();
       if (lead.archived) throw new ConflictException({ code: 'LEAD_ARCHIVED', message: 'Este lead está arquivado.' });
       const at = new Date();
@@ -189,6 +199,25 @@ export class TarefasService {
       await tx.leads.update({ where: { id: lead.id }, data: dados });
       // Sem dono, quem fez vira dono (condicional: se alguém assumiu entre a leitura e aqui, não pisa).
       if (lead.owner_id === null) await tx.leads.updateMany({ where: { id: lead.id, owner_id: null }, data: { owner_id: user.id } });
+      // 1º contato: "Lead novo" → "Contatado", com os campos do `move()` para 1 → 2 (condicional: quem moveu no meio vence).
+      if (lead.stage === ETAPA_LEAD_NOVO) {
+        const m = await tx.leads.updateMany({
+          where: { id: lead.id, stage: ETAPA_LEAD_NOVO, archived: false },
+          data: { stage: ETAPA_CONTATADO, stage_since: todaySp(at), lost_reason: null, reheat_at: null },
+        });
+        if (m.count === 1) {
+          await tx.lead_events.create({
+            data: {
+              lead_id: lead.id,
+              at,
+              author_id: user.id,
+              kind: 'stage',
+              text: `Mudou de etapa: ${nomeDaEtapa(ETAPA_LEAD_NOVO)} → ${nomeDaEtapa(ETAPA_CONTATADO)}`,
+              stage_to: ETAPA_CONTATADO,
+            },
+          });
+        }
+      }
     });
     return { ok: true, lead_id: dto.lead_id };
   }

@@ -110,22 +110,27 @@ describe('TarefasService.listar', () => {
   });
 });
 
-function concluir(l: Row | null) {
+function concluir(l: Row | null, o: { etapaCount?: number } = {}) {
   const eventos: Row[] = [];
   const updates: Row[] = [];
   const donos: Row[] = [];
+  const etapas: Row[] = [];
   let emTx = false;
   const tx: any = {
     leads: {
       findUnique: jest.fn(async () => l),
       update: jest.fn(async (a: Row) => (updates.push(a), {})),
-      updateMany: jest.fn(async (a: Row) => (donos.push(a), { count: 1 })),
+      // Duas escritas condicionais: o dono (`owner_id: null`) e a passagem 1 → 2 (`stage` no where).
+      updateMany: jest.fn(async (a: Row) => {
+        if ('stage' in a.where) return etapas.push(a), { count: o.etapaCount ?? 1 };
+        return donos.push(a), { count: 1 };
+      }),
     },
     lead_events: { create: jest.fn(async (a: Row) => (eventos.push(a.data), {})) },
   };
   const prisma: any = { $transaction: jest.fn(async (fn: (t: any) => Promise<unknown>) => ((emTx = true), fn(tx))) };
   const svc = new TarefasService(prisma as PrismaService, { isConfigured: () => true } as unknown as FreelaClient);
-  return { svc, eventos, updates, donos, prisma, tx, emTx: () => emTx };
+  return { svc, eventos, updates, donos, etapas, prisma, tx, emTx: () => emTx };
 }
 const USER = { id: EU, email: 'a@b.c', name: 'Ana', is_admin: false };
 const base = { lead_id: L1, task: 'stalled', kind: 'call' } as const;
@@ -179,5 +184,57 @@ describe('TarefasService.concluir', () => {
     const t = concluir(null);
     await expect(t.svc.concluir(base, USER)).rejects.toBeInstanceOf(NotFoundException);
     await expect(t.svc.concluir({ ...base, lead_id: 'x' }, USER)).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('TarefasService.concluir: 1º contato leva o lead de 1 a 2 (ruling A5)', () => {
+  beforeEach(() => jest.useFakeTimers({ now: AGORA, doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] }));
+  afterEach(() => jest.useRealTimers());
+
+  it('lead em "Lead novo": na mesma transação, os campos e o evento de etapa do move() (autor = quem fez)', async () => {
+    const t = concluir({ id: L1, archived: false, owner_id: EU, stage: 1 });
+    await t.svc.concluir(base, USER);
+    expect(t.emTx()).toBe(true);
+    expect(t.prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(t.etapas).toEqual([
+      {
+        where: { id: L1, stage: 1, archived: false },
+        data: { stage: 2, stage_since: '2026-10-29', lost_reason: null, reheat_at: null },
+      },
+    ]);
+    expect(t.eventos).toEqual([
+      expect.objectContaining({ lead_id: L1, author_id: EU, kind: 'call' }),
+      { lead_id: L1, at: t.eventos[0]!.at, author_id: EU, kind: 'stage', text: 'Mudou de etapa: Lead novo → Contatado', stage_to: 2 },
+    ]);
+    expect(t.updates[0]!.data.last_contact_at).toBe(t.eventos[0]!.at);
+  });
+
+  it('lead sem dono em "Lead novo": vira dono e vai a Contatado', async () => {
+    const t = concluir({ id: L1, archived: false, owner_id: null, stage: 1 });
+    await t.svc.concluir({ ...base, kind: 'msg_out' }, USER);
+    expect(t.donos).toEqual([{ where: { id: L1, owner_id: null }, data: { owner_id: EU } }]);
+    expect(t.etapas).toHaveLength(1);
+    expect(t.eventos.map((e) => e.kind)).toEqual(['msg_out', 'stage']);
+  });
+
+  it('alguém mudou a etapa entre a leitura e a escrita (count 0): só o contato, sem evento de etapa', async () => {
+    const t = concluir({ id: L1, archived: false, owner_id: EU, stage: 1 }, { etapaCount: 0 });
+    await t.svc.concluir(base, USER);
+    expect(t.etapas).toHaveLength(1);
+    expect(t.eventos.map((e) => e.kind)).toEqual(['call']);
+  });
+
+  it.each([2, 3, 8])('lead na etapa %i (8 = reaquecer): grava só o contato, a etapa não muda', async (stage) => {
+    const t = concluir({ id: L1, archived: false, owner_id: EU, stage });
+    await t.svc.concluir(base, USER);
+    expect(t.etapas).toEqual([]);
+    expect(t.eventos.map((e) => e.kind)).toEqual(['call']);
+    expect(t.updates[0]!.data).not.toHaveProperty('stage');
+  });
+
+  it('lê a etapa junto com o lead', async () => {
+    const t = concluir({ id: L1, archived: false, owner_id: EU, stage: 1 });
+    await t.svc.concluir(base, USER);
+    expect(t.tx.leads.findUnique.mock.calls[0][0].select).toMatchObject({ stage: true });
   });
 });
