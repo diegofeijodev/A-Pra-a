@@ -294,6 +294,8 @@ function TelaTarefas({ hoje, subtitulo }: { hoje: string; subtitulo: ReactNode }
   } else {
     const deOutros = r.counts.all - r.counts.me;
     const vazio = conta.total === 0;
+    // As mensagens da cadência (só leitura) não contam como tarefa, mas ainda pedem o WhatsApp: com elas na tela, nada de "Tudo em dia".
+    const comCadencia = grupos.some((g) => g.task === 'cadence_send' && g.visiveis.length > 0);
     lista = (
       <>
         {vazio &&
@@ -306,7 +308,7 @@ function TelaTarefas({ hoje, subtitulo }: { hoje: string; subtitulo: ReactNode }
                 Ver todas
               </Button>
             </div>
-          ) : (
+          ) : comCadencia ? null : (
             <section aria-labelledby="tudo-em-dia" className={`${CARTAO} space-y-3 p-8 text-center`}>
               <CheckCircle2 className="mx-auto h-8 w-8 text-success" aria-hidden />
               <h2 id="tudo-em-dia" tabIndex={-1} className="text-lg font-semibold">
@@ -361,7 +363,7 @@ function TelaTarefas({ hoje, subtitulo }: { hoje: string; subtitulo: ReactNode }
             );
           })}
 
-        {!vazio && r.entrada.novos > 0 && (
+        {(!vazio || comCadencia) && r.entrada.novos > 0 && (
           <section aria-labelledby="primeiro-contato" className={`${CARTAO} space-y-3 p-5`}>
             <div className="flex items-center gap-2">
               <Inbox className="h-5 w-5 shrink-0 text-primary" aria-hidden />
