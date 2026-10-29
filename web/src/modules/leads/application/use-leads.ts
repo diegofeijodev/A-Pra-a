@@ -61,9 +61,12 @@ export const isCritical = (lead: LeadListView) =>
 /**
  * Toda escrita num lead mexe em cinco retratos que o servidor calcula: a lista
  * do quadro, a ficha aberta no painel, a fila do dia, as métricas do funil e a
- * lista de órfãos — mais os indicadores (que contam lead por etapa) e o sino.
- * Invalidação por PREFIXO porque cada tela monta a lista com um filtro
- * diferente.
+ * lista de órfãos — mais os indicadores (que contam lead por etapa), o sino e
+ * os do CRM automático: tarefas, resumo do dia e selos do funil (mesmas chaves
+ * de `modules/crm/application/use-crm.ts`, escritas aqui para `leads` não
+ * importar `crm`; com a chave desligada essas consultas nem existem e a
+ * invalidação não chama nada). Invalidação por PREFIXO porque cada tela monta a
+ * lista com um filtro diferente.
  */
 function invalidateLead(queryClient: QueryClient) {
   for (const key of [
@@ -74,6 +77,9 @@ function invalidateLead(queryClient: QueryClient) {
     ['orphan-leads'],
     ['indicators'],
     ['notifications'],
+    ['crm-tasks'],
+    ['crm-summary'],
+    ['crm-badges'],
   ]) {
     void queryClient.invalidateQueries({ queryKey: key });
   }
