@@ -29,10 +29,10 @@ Denner; os marcados "(Claude)" eu faço depois do ok dele.
    `ssh ubuntu@56.124.127.54 "docker exec praca-postgres pg_dump -U praca praca | gzip > /opt/praca/backup-pre-crm-\$(date +%Y%m%d-%H%M).sql.gz && ls -la /opt/praca/backup-pre-crm-*"`
 2. **master + GitHub (Denner, `!`), sem tocar no working tree:**
    `cd /home/doutor/coding/freela/praca && git merge-base --is-ancestor master feat/crm-automatizado && git branch -f master feat/crm-automatizado && git push origin master:stack-freela`
-3. **Código da API a partir de uma CÓPIA LIMPA (Denner, `!`).** O working tree tem arquivos reformatados por um formatador externo. A API de qualquer commit de docs depois de `38f4a6f` é idêntica:
-   `C=~/praca-deploy-api && rm -rf $C && mkdir -p $C && git -C /home/doutor/coding/freela/praca archive 38f4a6f api | tar -x -C $C`
+3. **Código da API a partir de uma CÓPIA LIMPA (Denner, `!`).** O working tree tem arquivos reformatados por um formatador externo. A API de qualquer commit de docs depois de `fa58ff8` é idêntica:
+   `C=~/praca-deploy-api && rm -rf $C && mkdir -p $C && git -C /home/doutor/coding/freela/praca archive fa58ff8 api | tar -x -C $C`
    `rsync -a --delete --exclude node_modules --exclude dist --exclude .env --exclude '.env.*' --exclude coverage --exclude uploads $C/api/ ubuntu@56.124.127.54:/opt/praca/api/ && echo RSYNC_OK`
-4. **Imagem (Claude):** `docker tag praca-api:latest praca-api:pre-crm`, depois `docker build -t praca-api:38f4a6f -t praca-api:latest .` no EC2.
+4. **Imagem (Claude):** `docker tag praca-api:latest praca-api:pre-crm`, depois `docker build -t praca-api:fa58ff8 -t praca-api:latest .` no EC2.
 5. **Subir a API (Denner, `!`):**
    `ssh ubuntu@56.124.127.54 "cd /opt/praca && docker compose -f docker-compose.prod.yml up -d --no-deps --no-build api"`
 6. **Conferir (Claude):**
@@ -41,7 +41,7 @@ Denner; os marcados "(Claude)" eu faço depois do ok dele.
    - `settings/config` com `features.crm_tasks: false` e `features.crm_auto_leads: false`;
    - `GET /v1/crm/tasks` 404 `CRM_TASKS_DISABLED`;
    - log sem erro.
-7. **Web (Claude):** cópia sem git do `38f4a6f`, depois `vercel deploy --prod`. Conferir aberturademercado.com.br/entrar.
+7. **Web (Claude):** cópia sem git do `fa58ff8`, depois `vercel deploy --prod`. Conferir aberturademercado.com.br/entrar.
 
 **Volta:**
 - API: `docker tag praca-api:pre-crm praca-api:latest` e o mesmo `compose up`. A migração é aditiva, então pode ficar.
@@ -194,3 +194,54 @@ precisa da conta do Freela, e com a conta o motor de cadências e o outbox da c�
    a "Contatado"?
 3. **Pílula "Tarefas" logo depois de "Dashboard" no celular?** (Hoje ela fica no grupo Comercial.)
 4. **Lead criado direto em 5 ou mais e depois perdido** não entra na "Perda mensal", porque não há histórico de etapa. Tudo bem?
+
+## Apêndice: todas as decisões que tomei durante a noite (o registro completo)
+
+Essas decisões estavam no registro de trabalho, `.superpowers/sdd/2026-10-28-crm-automatizado/progress.md`, que é ignorado pelo git
+e fica guardado até a subida. Cada uma traz o que custa se estiver errada.
+
+**Desenho e regras**
+1. O tipo do cartão do Freela (`CartaoFreela`) mora em `domain/freela-cartao.ts`, porque `domain/` nunca importa de `modules/`.
+   Custo: mover um arquivo.
+2. **"Cliente ativo" (D2):** quem tinha 2 ou mais vagas pagas na primeira leitura do Praça, ou quem voltou a contratar num dia depois do
+   dia em que o Praça viu a primeira vaga paga. Duas vagas no mesmo dia ficam em 6. Custo: um cliente que recontrata de verdade espera a
+   3ª vaga para aparecer como ativo.
+3. A rodada do Freela "sem conta configurada" fica gravada como `ok` com a marca `nao_configurado`. O resumo e a página Automações
+   ignoram essa rodada. Custo: nenhum.
+4. Criar um lead pelo Freela também pega a trava do formulário público (`praça:telefone`), para não duplicar. Custo: espera desprezível.
+5. **O relógio do CRM** roda cada trabalho no primeiro tique da hora-alvo, e não só nos minutos 0 a 4, para um deploy às 08h01 não pular
+   a rodada. Depois de uma falha, a A4 espera 60 minutos antes de tentar de novo. Custo: uma chamada a mais ao Freela depois de reiniciar.
+6. O evento automático é gravado com `createMany(skipDuplicates)`, e não por captura de erro: no Postgres, um erro aborta a transação.
+   Custo: nenhum.
+7. A contagem de tarefas (o selo) não conta as mensagens da cadência, que são só leitura. Custo: nenhum.
+8. "Feito" registra só contato de verdade (Liguei, Mandei mensagem, Visitei). O "Só anotar" saiu. Custo: um item a menos no menu.
+9. O contato registrado pela tela grava o autor pelo `author_id`, como os outros contatos manuais. Custo: nenhum.
+10. **Etapa por cadastro (I2):** o automático nunca empurra para 5 um lead abaixo de 5. O sync, com a chave ligada, pula o lead que já
+    esteve em 5–7 e foi voltado por alguém. Custo: um cadastro confirmado de um lead voltado à mão fica onde a pessoa deixou.
+11. **Indicadores (I4):** um perdido só conta na "Perda mensal" se já esteve em 5–7 pela história de etapas. Custo: um lead criado
+    direto em 5+ e depois perdido não entra na perda (pergunta 5).
+12. **A4 exige 21 dias EM "Contatado"** e 21 dias sem contato. Custo: o lead demora mais para ir a Perdido.
+13. **Cadastro assistido nunca vira lead novo pelo quadro,** esteja ou não ligado a um lead. Custo: um assistido sem lead não aparece no
+    funil pelo quadro.
+14. **Primeiro contato leva o lead a "Contatado":**
+    - vale para o "Feito" em Tarefas e na Entrada, com `CRM_TASKS_ENABLED`;
+    - sem a chave, a linha da Entrada fica com a marca "Contato registrado hoje";
+    - o "Feito" de uma mensagem de disparo e a fila de Mensagens não mudam a etapa (pergunta).
+
+    Custo: reverter uma regra.
+15. A fila da Entrada é por praça (`praca_id` opcional; sem ele, a resposta é igual à de antes). Custo: nenhum.
+
+**Como o trabalho foi feito**
+16. Os arquivos que o formatador externo reformatou de madrugada, inclusive os novos, foram conferidos como idênticos fora espaços e
+    vírgulas e restaurados com `git checkout --`. Os 6 arquivos antigos dele ficaram como estavam. Custo: nenhum.
+17. A revisão final e uma leva de correções vieram antes da verificação final, para o `browser-check` provar o código final. Custo:
+    nenhum.
+18. As correções da revisão final foram em duas levas, uma da API e outra do web, e não uma por achado. Custo: tempo.
+19. O `browser-check` e o `smoke-crm` sobem a API **sem** A2, A3 e A4, porque a A4 mexeria nos leads do seed. Essas três se provam no
+    jest e na 1ª rodada vigiada, conforme este roteiro. Custo: as guardas desses três no banco de verdade só se veem na produção.
+
+**Ficaram estacionados (reais, pequenos):**
+- a corrida estreita da etapa 5 (I2a);
+- o alvo máximo bloqueado pela guarda do 8 quando dois usuários do Freela apontam para o mesmo lead;
+- o foco que cai no `body` se o "Desfazer importação" responder em menos de 200 ms;
+- o envio urgente da Entrada que não atualiza a contagem da fila até a próxima escrita.
