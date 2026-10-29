@@ -208,6 +208,9 @@ export function LinhaTarefa(p: LinhaTarefaProps) {
                     onSelect={() => {
                       gatilho.current = 'feito';
                       escolheuNoMenu.current = true;
+                      // O Radix chama isto num `flushSync`: a linha vira a confirmação e o menu desmonta ANTES de avisar que fechou
+                      // (o `onOpenChange(false)` nunca chega). Solta aqui, senão a releitura da tela fica parada.
+                      p.onMenu?.(false);
                       feito.onEscolher(o.id);
                     }}
                   >
@@ -235,6 +238,7 @@ export function LinhaTarefa(p: LinhaTarefaProps) {
                   onSelect={() => {
                     gatilho.current = 'adiar';
                     escolheuNoMenu.current = true;
+                    p.onMenu?.(false); // mesmo motivo do "Feito ▾"
                     p.adiar?.onEscolher(o.id);
                   }}
                 >

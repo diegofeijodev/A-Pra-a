@@ -39,6 +39,8 @@ import {
   chaveDaTarefa,
   contaDasTarefas,
   linkWhatsApp,
+  menuDepois,
+  menuQueFica,
   motivoDaTarefa,
   notaDoPassoLimpo,
   opcoesAdiar,
@@ -130,7 +132,10 @@ function TelaTarefas({ hoje, subtitulo }: { hoje: string; subtitulo: ReactNode }
   const r = tarefas.isPlaceholderData ? undefined : tarefas.data;
   const { esquecerAusentes } = acoes;
   useEffect(() => {
-    if (r) esquecerAusentes(new Set(r.groups.flatMap((g) => g.items.map((i) => chaveDaTarefa(g.task, i)))));
+    if (!r) return;
+    const presentes = new Set(r.groups.flatMap((g) => g.items.map((i) => chaveDaTarefa(g.task, i))));
+    esquecerAusentes(presentes);
+    setMenuAberto((m) => menuQueFica(m, presentes));
   }, [r, esquecerAusentes]);
 
   // A linha saiu: o foco vai ao nome da seguinte, ao h2 do próximo grupo ou ao "Tudo em dia" (UX §3.1.8). Nunca cai no `body`.
@@ -147,7 +152,7 @@ function TelaTarefas({ hoje, subtitulo }: { hoje: string; subtitulo: ReactNode }
   const conta = contaDasTarefas(grupos);
   totalRef.current = conta.total;
 
-  const marcarMenu = useCallback((chave: string, aberto: boolean) => setMenuAberto((m) => (aberto ? chave : m === chave ? null : m)), []);
+  const marcarMenu = useCallback((chave: string, aberto: boolean) => setMenuAberto((m) => menuDepois(m, chave, aberto)), []);
   const faltamDepois = () => conta.total - acoes.esperando - 1;
 
   function agendarEnviada(item: ItemTarefaView) {

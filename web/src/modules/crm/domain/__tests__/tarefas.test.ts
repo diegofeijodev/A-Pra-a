@@ -12,6 +12,8 @@ import {
   linhasDoResumo,
   linkLigar,
   linkWhatsApp,
+  menuDepois,
+  menuQueFica,
   motivoDaTarefa,
   notaDoPassoLimpo,
   opcoesAdiar,
@@ -413,5 +415,22 @@ describe('de quem e o apoio da linha (UX §3.1.2 item 2, §3.1.3)', () => {
     expect(textoPrimeiroContato(1)).toBe('1 lead novo esperando o 1º contato nesta praça.');
     expect(textoNadaSeu(5)).toBe('Nada seu agora. Há 5 tarefas de outras pessoas.');
     expect(textoNadaSeu(1)).toBe('Nada seu agora. Há 1 tarefa de outra pessoa.');
+  });
+});
+
+describe('menu aberto segura a releitura (UX §3.1.5)', () => {
+  it('abrir marca a linha; fechar só solta se for a mesma linha', () => {
+    expect(menuDepois(null, 'send:s1', true)).toBe('send:s1');
+    expect(menuDepois('send:s1', 'send:s1', false)).toBeNull();
+    // O fechamento de um menu pode chegar depois de abrir o de outra linha: não solta a outra.
+    expect(menuDepois('stalled:l2', 'send:s1', false)).toBe('stalled:l2');
+    expect(menuDepois(null, 'send:s1', false)).toBeNull();
+  });
+
+  it('releitura sem a linha do menu solta a releitura (o Radix desmonta sem avisar que fechou)', () => {
+    const presentes = new Set(['send:s1', 'stalled:l2']);
+    expect(menuQueFica('send:s1', presentes)).toBe('send:s1');
+    expect(menuQueFica('next_step:l9', presentes)).toBeNull();
+    expect(menuQueFica(null, presentes)).toBeNull();
   });
 });

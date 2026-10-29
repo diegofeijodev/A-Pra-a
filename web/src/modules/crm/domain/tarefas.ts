@@ -201,6 +201,17 @@ export const OPCOES_FEITO: readonly { kind: Extract<ContatoFeito, 'call' | 'msg_
 /** A confirmação da T1 ("Feito" de 1 toque = `POST /v1/sends/:id/mark`). */
 export const CONFIRMACAO_ENVIADA = 'Marcada como enviada';
 
+/**
+ * Qual linha está com o menu "Feito ▾"/"Adiar ▾" aberto (a releitura espera enquanto houver uma, UX §3.1.5). Fechar só solta a mesma
+ * linha: o aviso de fechamento de um menu pode chegar depois de abrir o de outra.
+ */
+export const menuDepois = (atual: string | null, chave: string, aberto: boolean): string | null =>
+  aberto ? chave : atual === chave ? null : atual;
+
+/** Depois de uma releitura: a linha que sumiu leva o menu junto (o Radix desmonta o menu sem avisar que fechou). */
+export const menuQueFica = (atual: string | null, presentes: ReadonlySet<string>): string | null =>
+  atual !== null && !presentes.has(atual) ? null : atual;
+
 /** "Adiar até" (UX §3.1.5): amanhã, 3 dias e 1 semana, pelo dia de Brasília. */
 export function opcoesAdiar(hoje: string): { dias: number; ate: string; rotulo: string }[] {
   return [
