@@ -1,7 +1,8 @@
 # CRM do Praça de volta, automático, no visual da Lovable
 
-**Data:** 28/10/2026 · **Branch:** `feat/crm-automatizado` (a partir de `master` = `9652376`) · **Status:** rascunho para o
-arquiteto e o designer revisarem antes de implementar (regra do dono).
+**Data:** 28/10/2026 · **Branch:** `feat/crm-automatizado` (a partir de `master` = `9652376`) · **Status:** revisado pelo
+arquiteto (`2026-10-28-crm-automatizado-arquitetura.md`) e pela designer (`2026-10-28-crm-automatizado-ux.md`) antes de implementar
+(regra do dono). **Onde as §1–§11 abaixo e as revisões divergem, vale a §12** (as correções aceitas e as decisões tomadas).
 
 > Pedido do Denner (28/10): "trazer de volta o CRM do Praça antigo, agora TODO AUTOMATIZADO, dentro do Praça novo".
 > No meio da conversa ele pediu para seguir sem perguntas ("pode ir seguindo automático, vou dormir"). Por isso tomei as
@@ -257,3 +258,62 @@ rotas `/v1/crm/*` dão **404**, e o web só as chama com `features.crm_tasks` (n
 - `browser-check` com `TEAM_COMMERCIAL_ENABLED` + as chaves novas ligadas: confere Tarefas, Automações, o Funil novo e o cartão do
   Dashboard. O script se atualiza onde o texto mudou; nenhuma checagem sai.
 - Sem `nest build`, `next build` nem `npm run build`.
+
+## 12. Depois das revisões (28/10, noite): o que mudou e o que decidi
+
+As duas revisões foram aceitas por inteiro. Para implementar, a arquitetura vale como está escrita na revisão do arquiteto (§2 dela:
+chaves, fronteiras, gancho do A1, `subirEtapaAutomatica`, A3, migração, contrato, trabalhos; §3 dela: ordem). As telas valem como
+estão escritas na revisão da designer (§2 e §3 dela). Abaixo ficam só as correções do desenho e as decisões abertas, cada uma
+**minha, tomada com o dono dormindo**: o dono revê de manhã.
+
+### 12.1 Correções do desenho (o código desmentia)
+
+1. **T1 só vê disparos.** No modo "Fila manual", a cadência já grava a mensagem como `enviada`, com o evento `msg_out`. Só o disparo
+   deixa `status: 'fila'`. Então a T1 é a das mensagens de disparo (com "Feito" = `POST /v1/sends/:id/mark`), e as mensagens das
+   cadências do dia entram num grupo **só de leitura** ("Mensagens das cadências de hoje", com "Abrir WhatsApp" e sem "Feito"). O
+   motor de cadências não muda neste lote.
+2. **A1 sem dono e com autor "Automático"** por `opcoes` novas em `criarLeadsDeBusca`. Sem `opcoes`, nada muda. O lote fica com
+   `by` = quem pediu a busca. A separação entre automático e manual vem do `author_label` do evento, não da origem. O teto de 300 hoje
+   só morde no Apify (a busca OSM já devolve até 300). A1 também alimenta os roteiros do campo; isso fica escrito na tela.
+3. **A3 não põe em 5 o cadastro assistido** que o Praça conhece (o 5 continua do sync, pela regra de confirmação). A3 só aplica 6 e 7 a
+   esses.
+4. **O automático move cada lead uma vez por fato**: `leads.auto_stage_applied`. Se alguém volta o cartão, ele não é empurrado de novo.
+   Um lead só sai de "Perdido" por fato do mesmo dia ou posterior à marcação.
+5. **Sair de "Perdido" limpa `lost_reason` e `reheat_at`** (sem isso, o cliente cairia na trilha de reaquecimento).
+6. **Telefone:** casa só com o número de 10 ou 11 dígitos, e só com o mesmo DDD+número ou com um lead na praça da cidade do cartão.
+   Dois ou mais candidatos contam como ambíguo e não casam.
+7. **A2:** fica fora do `processarItem`, numa passada local sobre `field_signups`. Com a chave, o sync relê os cadastros sem serviço
+   concluído (o `since` mais largo, dentro da janela de 45 dias).
+8. **Cinco chaves**, não quatro: `CRM_TASKS_ENABLED`, `CRM_AUTO_LEADS_FROM_SEARCH_ENABLED`, `CRM_AUTO_STAGES_ENABLED`,
+   `CRM_AUTO_LOST_ENABLED` (A4) e `CRM_FREELA_PIPELINE_ENABLED`. O `features` ganha só `crm_tasks` e `crm_auto_leads`.
+9. **A4** exclui também quem está em cadência `aguardando`, adiado (`snooze_until` futuro) ou com próximo passo futuro, e usa a mesma
+   trava do motor de cadências.
+10. **A3 de 2 em 2 horas, das 08h às 20h**, e grava no lead só o que mudou (sem `freela_synced_at`). A data da leitura fica na rodada.
+11. **Um relógio só** (`CrmScheduler`, a cada 5 min, "bate e decide"); a A4 roda uma vez por dia, controlada pela tabela de rodadas.
+12. **Eventos do automático não duplicam:** `lead_events.auto_key` único.
+13. **"Feito"** aceita só contato de verdade (`call`, `msg_out`, `msg_in`, `visit`). A T5 ganha "e sem contato da equipe há 3 dias".
+    A T2 olha só visitas encerradas entre 1 e 14 dias atrás. "Adiar" usa a rota que já existe (`POST /v1/leads/:id/snooze`).
+14. **Selos do Funil** por rota própria (`GET /v1/crm/badges`): o `GET /v1/leads` não muda.
+15. **Bug das métricas do Funil** (a designer achou): a etapa 8 contava como "contatado" e "cadastrado". Corrigido **antes** de ligar a
+    A4, e cada taxa passa a vir com a conta (`{ n, de }`).
+
+### 12.2 Decisões abertas, decididas por mim (o dono pode trocar)
+
+| # | Pergunta | Decidi | Por quê |
+|---|---|---|---|
+| D1 | Dono do lead que a busca cria sozinha | nenhum (nulo); "Minhas" mostra os sem dono | o rodízio entregaria 300 leads de uma vez a quem nem pediu |
+| D2 | Quando o lead vira "Cliente ativo" | 2 vagas pagas ou mais; quando o Praça **vê** a contagem passar de 1 para 2, o 2 precisa ser de um dia diferente do dia em que viu o 1 | aproxima "recontratou" sem as datas do Freela; duas funções no mesmo evento não viram cliente ativo |
+| D3 | Gravar o telefone do Freela no lead novo da A3 | sim, **só no lead novo**; nunca sobrescreve, nunca vai para log | sem telefone, a equipe não tem como falar com a empresa |
+| D4 | A1 ligada junto com a cadência "Lead novo" | permitido, com aviso em Automações | ligar a cadência já é um clique consciente de gente |
+| D5 | Etapa 6 por vaga paga (quadro) ou serviço concluído (assistido) | os dois; o evento diz qual | são os dois fatos que o Freela dá |
+| D6 | Fazer a cadência gravar `status: 'fila'` no modo manual | **não** neste lote | muda o motor; fica para outra decisão |
+| U1 | Na Entrada, o link do WhatsApp deixar de gravar "Mensagem enviada" | sim: só o "Feito" grava | quem abre e desiste não fez contato |
+| U2 | "Ações" vira "Ações da praça" | sim | fica claro que é o plano de abertura, não as tarefas com leads |
+| U3 | "Feito" num lead sem dono torna dono quem fez | sim | evita duas pessoas ligarem para o mesmo lugar |
+| U4 | O cartão do Funil perde "último contato" e o valor | sim (continuam no painel e na soma da coluna) | cartão mais limpo |
+| U5 | "Valor estimado": por mês ou por vaga? | **não sei**: a tela diz "estimativa pela classificação" e explica a conta | pergunta para o dono |
+| U6 | "Para tocar hoje" vira "Primeiro contato de hoje" | sim | diz o que é |
+| U7 | Pílula "Tarefas" logo depois de "Dashboard" no celular | depois | muda a ordem da Lovable |
+| A10 | `praca_id` opcional (ausente = todas) | só no resumo (para o cartão do Dashboard seguir "Praça: todas"); nas tarefas fica obrigatório, e "Todas as praças" fica para depois | menos coisa nesta leva |
+| A13 | Qual modo de envio Automações mostra | o de `app_settings.mode` | é o que as cadências usam |
+| A14 | Desfazer | o web espera 5 s antes de mandar; sem rota de desfazer. `done` num lead que já saiu da regra grava o contato assim mesmo | contato feito é contato feito |
