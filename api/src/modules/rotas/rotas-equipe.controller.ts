@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthUser } from '../../common/auth/auth-user';
 import { AdminOnly, GestorOuAdmin } from '../../common/decorators/admin-only.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CRM_FLAGS, type FlagsCrm } from '../../common/flags/crm.flags';
 import { LOVABLE_E_FLAGS, type FlagsLovableE } from '../../common/flags/lovable-e.flags';
 import { MULTI_PRACA_LIGADO } from '../../common/flags/multi-praca.flags';
 import { UI_FLAGS, type FlagsUi } from '../../common/flags/ui.flags';
@@ -78,8 +79,9 @@ export class RotasConfigController {
     @Optional() @Inject(LOVABLE_D_FLAGS) private readonly flagsD?: FlagsLovableD,
     @Optional() @Inject(LOVABLE_E_FLAGS) private readonly flagsE?: FlagsLovableE,
     @Optional() @Inject(MULTI_PRACA_LIGADO) private readonly multiPraca?: boolean,
-    // Por último: os testes montam o controller por posição.
     @Optional() @Inject(UI_FLAGS) private readonly flagsUi?: FlagsUi,
+    // Por último: os testes montam o controller por posição.
+    @Optional() @Inject(CRM_FLAGS) private readonly crm?: FlagsCrm,
   ) {}
 
   /** `features` (contrato §33.1): o web mostra os links novos sem sondar rota desligada. Só no GET. */
@@ -114,6 +116,9 @@ export class RotasConfigController {
         earnings: this.flagsUi?.earnings ?? false,
         payouts: this.flagsUi?.payouts ?? false,
         declared_signups: this.flagsUi?.declared_signups ?? false,
+        // CRM automático (contrato §47.1): tarefas/automações/selos e leads automáticos da busca.
+        crm_tasks: this.crm?.tasks ?? false,
+        crm_auto_leads: this.crm?.auto_leads ?? false,
       },
     };
   }

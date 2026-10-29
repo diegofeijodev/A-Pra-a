@@ -4,11 +4,12 @@ import { AuthUser } from '../../common/auth/auth-user';
 import { Equipe } from '../../common/decorators/admin-only.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CrmLigadoGuard } from './crm.guard';
-import { ResumoQueryDto, TarefaFeitaDto, TarefasQueryDto } from './dto/crm.dto';
+import { AutomacoesService } from './automacoes.service';
+import { ResumoQueryDto, SelosQueryDto, TarefaFeitaDto, TarefasQueryDto } from './dto/crm.dto';
 import { ResumoService } from './resumo.service';
 import { TarefasService } from './tarefas.service';
 
-/** Tarefas do dia do Comercial (contrato §47.3). Só rotas estáticas; `@Equipe()` em cada método. */
+/** Tarefas do dia, resumo, automações e selos do Comercial (contrato §47.3). Só rotas estáticas; `@Equipe()` em cada método. */
 @ApiTags('CRM automático')
 @ApiBearerAuth()
 @UseGuards(CrmLigadoGuard)
@@ -17,6 +18,7 @@ export class CrmController {
   constructor(
     private readonly tarefas: TarefasService,
     private readonly resumo: ResumoService,
+    private readonly automacoes: AutomacoesService,
   ) {}
 
   @Equipe()
@@ -35,5 +37,17 @@ export class CrmController {
   @Get('summary')
   resumoDoDia(@Query() q: ResumoQueryDto) {
     return this.resumo.resumo(q.praca_id, q.day);
+  }
+
+  @Equipe()
+  @Get('automations')
+  automacoesDoCrm(@CurrentUser() user: AuthUser) {
+    return this.automacoes.automacoes(user.is_admin);
+  }
+
+  @Equipe()
+  @Get('badges')
+  selos(@Query() q: SelosQueryDto) {
+    return this.automacoes.selos(q.praca_id);
   }
 }

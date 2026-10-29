@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { FreelaClientModule } from '../freela/freela-client.module';
 import { GeoModule } from '../geo/geo.module';
 import { RotasModule } from '../rotas/rotas.module';
+import { AutomacoesService } from './automacoes.service';
 import { CrmController } from './crm.controller';
 import { CrmScheduler } from './crm.scheduler';
 import { EtapasAutomaticasService } from './etapas-automaticas.service';
@@ -18,7 +19,7 @@ import { TarefasService } from './tarefas.service';
 @Module({
   imports: [RotasModule, FreelaClientModule, GeoModule],
   controllers: [CrmController],
-  providers: [EtapasAutomaticasService, SemRespostaService, QuadroFreelaService, TarefasService, ResumoService, CrmScheduler],
+  providers: [AutomacoesService, EtapasAutomaticasService, SemRespostaService, QuadroFreelaService, TarefasService, ResumoService, CrmScheduler],
   exports: [EtapasAutomaticasService, SemRespostaService, QuadroFreelaService],
 })
 export class CrmModule {}

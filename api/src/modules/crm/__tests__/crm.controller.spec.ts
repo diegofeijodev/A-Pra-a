@@ -1,5 +1,6 @@
 import { BadRequestException, NotFoundException, ValidationPipe } from '@nestjs/common';
 import { CRM_DESLIGADAS } from '../../../common/flags/crm.flags';
+import type { AutomacoesService } from '../automacoes.service';
 import { CrmController } from '../crm.controller';
 import { CrmLigadoGuard } from '../crm.guard';
 import { ResumoQueryDto, TarefaFeitaDto, TarefasQueryDto } from '../dto/crm.dto';
@@ -32,7 +33,7 @@ describe('CrmLigadoGuard', () => {
 describe('CrmController', () => {
   const tarefas = { listar: jest.fn(async () => ({ ok: 1 })), concluir: jest.fn(async () => ({ ok: true, lead_id: L1 })) };
   const resumoSvc = { resumo: jest.fn(async () => ({ numbers: [] })) };
-  const ctrl = new CrmController(tarefas as unknown as TarefasService, resumoSvc as unknown as ResumoService);
+  const ctrl = new CrmController(tarefas as unknown as TarefasService, resumoSvc as unknown as ResumoService, {} as AutomacoesService);
   beforeEach(() => jest.clearAllMocks());
 
   it('person=me usa o id do token (sub); padrão all', async () => {

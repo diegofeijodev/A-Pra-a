@@ -47,3 +47,9 @@ export class TarefaFeitaDto {
   @Type(() => NextStepDto)
   next_step?: NextStepDto;
 }
+
+/** Selos do funil (§47.3): `praca_id` é string de propósito, como em `TarefasQueryDto` (malformado ou inexistente = 404). */
+export class SelosQueryDto {
+  @IsString()
+  praca_id!: string;
+}
