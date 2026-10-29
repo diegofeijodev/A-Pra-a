@@ -125,6 +125,38 @@ describe('CrmScheduler', () => {
     expect(prisma.crm_automation_runs.deleteMany).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ['só auto_stages', { auto_stages: true }],
+    ['só freela_pipeline', { freela_pipeline: true }],
+    ['só auto_leads (sem trabalho no relógio)', { auto_leads: true }],
+  ])('limpeza das rodadas antigas com %s ligada: uma vez por dia, a qualquer hora', async (_n, ligadas) => {
+    const { s, prisma, semResposta } = montar({ ...CRM_DESLIGADAS, ...ligadas });
+    await s.bater(sp('2026-10-28T03:00:00'));
+    expect(prisma.crm_automation_runs.deleteMany).toHaveBeenCalledTimes(1);
+    await s.bater(sp('2026-10-28T09:00:00'));
+    expect(prisma.crm_automation_runs.deleteMany).toHaveBeenCalledTimes(1);
+    await s.bater(sp('2026-10-29T00:05:00'));
+    expect(prisma.crm_automation_runs.deleteMany).toHaveBeenCalledTimes(2);
+    expect(semResposta.rodar).not.toHaveBeenCalled();
+  });
+
+  it('limpeza não depende da A4: reinício num dia em que a A4 já rodou ok ainda limpa', async () => {
+    const { s, prisma, semResposta } = montar(TODAS, { okHoje: true });
+    await s.bater(sp('2026-10-28T10:30:00'));
+    expect(semResposta.rodar).not.toHaveBeenCalled();
+    expect(prisma.crm_automation_runs.deleteMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('limpeza que falha: bater resolve, os trabalhos seguem e o log leva só o nome da classe', async () => {
+    const { s, prisma, etapas } = montar();
+    class Banco extends Error {}
+    prisma.crm_automation_runs.deleteMany.mockRejectedValue(new Banco('delete from ... 11999999999'));
+    await expect(s.bater(sp('2026-10-28T09:00:00'))).resolves.toBeUndefined();
+    expect(etapas.passadaCadastros).toHaveBeenCalledTimes(1);
+    expect(erro.mock.calls.map((c) => String(c[0])).join('|')).toContain('limpeza');
+    expect(erro.mock.calls.map((c) => String(c[0])).join('|')).not.toContain('11999999999');
+  });
+
   it('rodar que lança: bater resolve, erro no log só com o nome da classe, e os outros seguem', async () => {
     const { s, etapas, quadro, semResposta } = montar();
     class Boom extends Error {}
