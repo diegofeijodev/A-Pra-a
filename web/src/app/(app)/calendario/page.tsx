@@ -12,6 +12,7 @@ import {
   useSteps,
   type ActionView,
 } from '@/modules/actions/application/use-actions';
+import { CabecalhoPagina } from '@/components/praca/CabecalhoPagina';
 import { useActivePraca } from '@/modules/pracas/application/use-pracas';
 import { useUsers } from '@/modules/users/application/use-users';
 
@@ -105,18 +106,19 @@ export default function CalendarioPage() {
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2">
-        <h1 className="font-display text-xl font-extrabold">
-          {view === "month" ? `${MONTHS[parse(cursor).getMonth()]} ${parse(cursor).getFullYear()}` : `Semana de ${fmtBR(days[0]!)}`}
-        </h1>
-        <div className="ml-auto flex gap-1">
+      <CabecalhoPagina
+        titulo="Calendário"
+        subtitulo={view === "month" ? `${MONTHS[parse(cursor).getMonth()]} ${parse(cursor).getFullYear()}` : `Semana de ${fmtBR(days[0]!)}`}
+        acoes={
+        <div className="flex gap-1">
           <button onClick={() => move(-1)} className="rounded-md border border-border px-3 py-1.5 text-sm">←</button>
           <button onClick={() => setCursor(todaySp().slice(0, 8) + "01")} className="tag rounded-md border border-border px-3 py-1.5">Hoje</button>
           <button onClick={() => move(1)} className="rounded-md border border-border px-3 py-1.5 text-sm">→</button>
           <button onClick={() => setView("month")} className={`tag rounded-md px-3 py-1.5 ${view === "month" ? "bg-primary text-primary-foreground" : "border border-border text-muted-foreground"}`}>Mês</button>
           <button onClick={() => setView("week")} className={`tag rounded-md px-3 py-1.5 ${view === "week" ? "bg-primary text-primary-foreground" : "border border-border text-muted-foreground"}`}>Semana</button>
         </div>
-      </div>
+        }
+      />
 
       {view === "week" && milestones.length > 0 && (
         <div className="relative mt-3 space-y-1">

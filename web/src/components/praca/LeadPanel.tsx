@@ -14,6 +14,7 @@ import {
 } from '@/modules/leads/application/use-leads';
 import { usePracas } from '@/modules/pracas/application/use-pracas';
 import { useUsers } from '@/modules/users/application/use-users';
+import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { Avatar } from './bits';
 import { MoveLeadDialog } from './MoveLeadDialog';
 
@@ -81,27 +82,29 @@ export function LeadPanel() {
   const quick = (kind: string, text: string) => addEvent.mutate({ id: lead.id, kind, text });
 
   return (
-    <>
-      <div className="no-print fixed inset-0 z-40 bg-black/50" onClick={close} />
-      <aside className="no-print fixed right-0 top-0 z-50 h-full w-full max-w-md overflow-y-auto border-l border-border bg-popover p-4 shadow-2xl sm:max-w-lg">
+    <Sheet open onOpenChange={(aberto) => { if (!aberto) close(); }}>
+      {/* Casca do `Sheet` (Radix Dialog): foco preso, Esc fecha, aria-modal e foco devolvido (UX achado 8). */}
+      <SheetContent side="right" botaoFechar={false} className="no-print w-full overflow-y-auto p-4 sm:max-w-lg">
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
-            {/* Sem o catálogo ainda, `${def?.color}33` viraria "undefined33" — CSS
-                inválido que o navegador descarta. */}
-            <span
-              className="tag rounded-sm px-1.5 py-0.5"
-              style={def ? { backgroundColor: `${def.color}33`, color: def.color } : undefined}
-            >
+            {/* A cor da etapa fica só na bolinha; o texto é sempre `text-foreground` (achado 9).
+                Sem o catálogo ainda, não há cor — a bolinha some. */}
+            <span className="inline-flex items-center gap-1.5 rounded-sm bg-secondary px-1.5 py-0.5 text-xs text-foreground">
+              {def && <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: def.color }} />}
               {lead.stage}. {def?.name}
             </span>
-            <h2 className="mt-2 font-display text-lg font-extrabold leading-tight">{lead.name}</h2>
+            <SheetTitle className="mt-2 font-display font-extrabold leading-tight">{lead.name}</SheetTitle>
+            <SheetDescription className="sr-only">Ficha do lead: próximo passo, dados, etapa, vagas e linha do tempo.</SheetDescription>
             <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
               <MapPin size={12} /> {lead.city} · {pracas?.find((p) => p.id === lead.praca_id)?.name ?? "sem praça"}
             </p>
           </div>
-          <button onClick={close} className="rounded-md border border-border p-1.5 text-muted-foreground hover:text-foreground" aria-label="Fechar">
+          <SheetClose
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-md border border-border text-muted-foreground hover:text-foreground md:min-h-9 md:min-w-9"
+            aria-label="Fechar"
+          >
             <X size={14} />
-          </button>
+          </SheetClose>
         </div>
 
         {/* próximo passo */}
@@ -181,9 +184,9 @@ export function LeadPanel() {
               <button
                 key={st.n}
                 onClick={() => setMoveTo(st.n)}
-                className="tag rounded-sm border px-2 py-1"
-                style={{ borderColor: `${st.color}88`, color: st.color }}
+                className="tag inline-flex min-h-11 items-center gap-1.5 rounded-sm border border-border px-2 py-1 text-foreground md:min-h-0"
               >
+                <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: st.color }} />
                 {st.n}. {st.name}
               </button>
             ))}
@@ -260,12 +263,14 @@ export function LeadPanel() {
             <Archive size={13} /> Arquivar lead (mantém histórico)
           </button>
         )}
-      </aside>
 
-      {moveTo != null && (
-        <MoveLeadDialog leadId={lead.id} leadName={lead.name} to={moveTo} onClose={() => setMoveTo(null)} />
-      )}
-    </>
+        {/* Dentro do conteúdo do `Sheet`: o diálogo de etapa não é Radix, e fora dele o foco preso e o
+            `pointer-events: none` do corpo o deixariam sem clique. */}
+        {moveTo != null && (
+          <MoveLeadDialog leadId={lead.id} leadName={lead.name} to={moveTo} onClose={() => setMoveTo(null)} />
+        )}
+      </SheetContent>
+    </Sheet>
   );
 }
 

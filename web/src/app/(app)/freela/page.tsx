@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { fmtDateTime, WD_SHORT } from '@/lib/dates';
 import { Switch } from '@/components/ui/switch';
+import { CabecalhoPagina } from '@/components/praca/CabecalhoPagina';
 import { FreelaCampaignDetail } from '@/components/praca/FreelaCampaignDetail';
 import { FreelaCampaignDialog } from '@/components/praca/FreelaCampaignDialog';
 import { FreelaTemplateDialog } from '@/components/praca/FreelaTemplateDialog';
@@ -60,18 +61,13 @@ export default function FreelaPage() {
   const configured = status?.configured === true;
 
   return (
-    <>
-      <div>
-        <p className="tag text-muted-foreground">Integração</p>
-        <h1 className="font-display text-2xl font-black tracking-tight">Freela</h1>
-        <p className="mt-1 text-xs text-muted-foreground">
-          As campanhas de WhatsApp saem pelo chip de campanha do Freela: ritmo baixo, janela
-          comercial e opt-out (“responda SAIR”). Aqui ficam as campanhas normais, as automáticas e o
-          estado da conexão.
-        </p>
-      </div>
+    <div className="space-y-6">
+      <CabecalhoPagina
+        titulo="Freela"
+        subtitulo="As campanhas de WhatsApp saem pelo chip de campanha do Freela: ritmo baixo, janela comercial e opt-out (“responda SAIR”). Aqui ficam as campanhas normais, as automáticas e o estado da conexão."
+      />
 
-      <div className="mt-4 flex w-fit gap-1 rounded-lg border border-border bg-card/60 p-1">
+      <div className="flex w-fit gap-1 rounded-2xl bg-card p-1 shadow-card">
         {TABS.map((t) => (
           <button
             key={t}
@@ -88,7 +84,7 @@ export default function FreelaPage() {
       {tab === 'campanhas' && <Campanhas configured={configured} />}
       {tab === 'automáticas' && <Automaticas configured={configured} />}
       {tab === 'conexão' && <Conexao status={status} />}
-    </>
+    </div>
   );
 }
 

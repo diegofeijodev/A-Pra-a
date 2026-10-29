@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useMemo } from 'react';
+import { useFeaturesMenu } from '@/modules/acesso/application/use-acesso';
 import { ROTA } from '@/modules/acesso/domain/enderecos';
 import { addDays, fmtBR, fmtShort, todaySp, WD_SHORT, wdOf } from '@/lib/dates';
 import { dueDateOf } from '@/lib/recurrence';
@@ -12,6 +13,7 @@ import { isStalled, useLeads, type LeadListView } from '@/modules/leads/applicat
 import { useActivePraca } from '@/modules/pracas/application/use-pracas';
 import { useUsers } from '@/modules/users/application/use-users';
 import { ActionRow, Avatar, NewActionButton, SectionHead } from '@/components/praca/bits';
+import { CabecalhoPagina } from '@/components/praca/CabecalhoPagina';
 
 /**
  * Hoje — porte de `.prototype/src/routes/index.tsx`.
@@ -27,6 +29,7 @@ export default function HojePage() {
   const hojePerson = useUiStore((s) => s.hojePerson);
   const setHojePerson = useUiStore((s) => s.setHojePerson);
   const today = todaySp();
+  const { features } = useFeaturesMenu();
 
   const { data: users } = useUsers();
   const { data: actions } = useActions(praca?.id);
@@ -76,6 +79,15 @@ export default function HojePage() {
 
   return (
     <>
+      <div className="mb-4">
+        <CabecalhoPagina
+          titulo="Ações da praça"
+          subtitulo="Ações do plano de abertura: atrasadas, de hoje e dos próximos 7 dias."
+          comPraca
+          acoes={<NewActionButton />}
+        />
+      </div>
+
       {/* seletor de pessoa */}
       <div className="flex flex-wrap items-center gap-1.5">
         {["all", ...people.map((p) => p.id)].map((id) => {
@@ -137,7 +149,8 @@ export default function HojePage() {
         </div>
       </section>
 
-      <FunilHoje />
+      {/* Com o CRM automático, o que era o "Funil — contratantes" mora em Tarefas (UX achado 7). */}
+      {features.crm_tasks ? <LinkParaTarefas /> : <FunilHoje />}
 
       {/* próximos 7 dias */}
       <section className="mt-6">
@@ -154,10 +167,18 @@ export default function HojePage() {
         ))}
       </section>
 
-      <div className="mt-8">
-        <NewActionButton />
-      </div>
     </>
+  );
+}
+
+/** Substitui a seção do funil quando `features.crm_tasks` está ligada. */
+function LinkParaTarefas() {
+  return (
+    <p className="mt-6 text-sm">
+      <Link href={ROTA.tarefas} className="inline-flex min-h-11 items-center text-primary hover:underline md:min-h-0">
+        Os contatos com leads estão em Tarefas ›
+      </Link>
+    </p>
   );
 }
 

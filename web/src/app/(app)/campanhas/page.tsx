@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { ROTA } from '@/modules/acesso/domain/enderecos';
+import { CabecalhoPagina } from '@/components/praca/CabecalhoPagina';
 import { CampCalendario } from '@/components/praca/CampCalendario';
 import { CampCriativos } from '@/components/praca/CampCriativos';
 import { CampEstrategia } from '@/components/praca/CampEstrategia';
@@ -34,16 +35,13 @@ export default function CampanhasPage() {
   }
 
   return (
-    <>
-      <div>
-        <p className="tag text-muted-foreground">Mídia</p>
-        <h1 className="font-display text-2xl font-black tracking-tight">Campanhas</h1>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Do briefing ao número que importa: quantos cadastraram, quantos viraram cliente ativo e a que custo.
-        </p>
-      </div>
+    <div className="space-y-6">
+      <CabecalhoPagina
+        titulo="Campanhas"
+        subtitulo="Do briefing ao número que importa: quantos cadastraram, quantos viraram cliente ativo e a que custo."
+      />
 
-      <div className="mt-4 flex w-fit gap-1 rounded-lg border border-border bg-card/60 p-1">
+      <div className="flex w-fit gap-1 rounded-2xl bg-card p-1 shadow-card">
         {TABS.map((t) => (
           <button
             key={t}
@@ -59,6 +57,6 @@ export default function CampanhasPage() {
       {tab === "criativos" && <CampCriativos campanhaId={campanhaId} setCampanhaId={setCampanhaId} />}
       {tab === "tráfego" && <CampTrafego />}
       {tab === "calendário" && <CampCalendario />}
-    </>
+    </div>
   );
 }

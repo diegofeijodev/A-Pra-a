@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Paperclip, Plus } from 'lucide-react';
+import { CabecalhoPagina } from '@/components/praca/CabecalhoPagina';
 import { Cadencias } from '@/components/praca/Cadencias';
 import { Disparos } from '@/components/praca/Disparos';
 import {
@@ -10,6 +12,7 @@ import {
   toDraft,
   type TemplateDraft,
 } from '@/components/praca/TemplateEditor';
+import { abaDeMensagens } from '@/modules/mensagens/domain/aba';
 import { useCatalog } from '@/modules/catalog/application/use-catalog';
 import { pct, useTemplates } from '@/modules/messages/application/use-messages';
 
@@ -23,18 +26,26 @@ import { pct, useTemplates } from '@/modules/messages/application/use-messages';
  * layout de `(app)`, então a página não o monta de novo.
  */
 export default function MensagensPage() {
-  const [tab, setTab] = useState<"modelos" | "disparos" | "cadências">("modelos");
+  // `useSearchParams` obriga uma fronteira de Suspense (Next 15).
   return (
-    <>
-      <div>
-        <p className="tag text-muted-foreground">Comunicação</p>
-        <h1 className="font-display text-2xl font-black tracking-tight">Mensagens</h1>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Biblioteca de modelos com variação A/B, disparos em lote e cadências que rodam sozinhas ao longo de dias.
-        </p>
-      </div>
+    <Suspense fallback={null}>
+      <Mensagens />
+    </Suspense>
+  );
+}
 
-      <div className="mt-4 flex gap-1 rounded-lg border border-border bg-card/60 p-1 w-fit">
+function Mensagens() {
+  // `?aba=cadencias|disparos` abre na aba certa (links de Automações); sem ele, "modelos".
+  const aba = abaDeMensagens(useSearchParams().toString());
+  const [tab, setTab] = useState<"modelos" | "disparos" | "cadências">(aba === "cadencias" ? "cadências" : aba);
+  return (
+    <div className="space-y-6">
+      <CabecalhoPagina
+        titulo="Mensagens"
+        subtitulo="Biblioteca de modelos com variação A/B, disparos em lote e cadências que rodam sozinhas ao longo de dias."
+      />
+
+      <div className="flex w-fit gap-1 rounded-2xl bg-card p-1 shadow-card">
         {(["modelos", "disparos", "cadências"] as const).map((t) => (
           <button
             key={t}
@@ -47,7 +58,7 @@ export default function MensagensPage() {
       </div>
 
       {tab === "modelos" ? <Modelos /> : tab === "disparos" ? <Disparos /> : <Cadencias />}
-    </>
+    </div>
   );
 }
 
@@ -74,11 +85,11 @@ function Modelos() {
           const m = t.metrics;
           const st = t.stage ? (catalog?.funnel_stages ?? []).find((s) => s.n === t.stage) : null;
           return (
-            <div key={t.id} className="rounded-lg border border-border bg-card/60 p-3">
+            <div key={t.id} className="rounded-2xl bg-card p-3 shadow-card">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-display text-sm font-extrabold">{t.name || "sem nome"}</span>
+                    <span className="text-sm font-semibold">{t.name || "sem nome"}</span>
                     <span className="rounded bg-secondary/70 px-1.5 py-0.5 text-[10px] uppercase tracking-wide">{t.audience}</span>
                     <span className="rounded bg-secondary/70 px-1.5 py-0.5 text-[10px]">{(catalog?.channels ?? []).find((c) => c.id === t.channel)?.label ?? t.channel}</span>
                     <span

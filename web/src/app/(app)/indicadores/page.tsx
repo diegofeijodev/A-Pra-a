@@ -23,6 +23,7 @@ import {
 } from '@/modules/pracas/application/use-pracas';
 import { useUsers } from '@/modules/users/application/use-users';
 import { Avatar } from '@/components/praca/bits';
+import { CabecalhoPagina } from '@/components/praca/CabecalhoPagina';
 import { Bars, Cell, HeroCard, Line, SEM_DOT, SEM_TEXT } from '@/components/praca/IndBits';
 
 /**
@@ -78,17 +79,15 @@ export default function IndicadoresPage() {
 
   return (
     <>
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="font-display text-xl font-extrabold">Indicadores</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Praças, funil, mensagens e campanhas em um só painel. Verde bateu a meta · amarelo até 15% fora · vermelho abaixo disso.
-          </p>
-        </div>
-        <button onClick={() => window.print()} className="no-print rounded-md bg-primary px-3 py-2 text-xs font-bold text-primary-foreground">
-          Exportar PDF
-        </button>
-      </div>
+      <CabecalhoPagina
+        titulo="Indicadores"
+        subtitulo="Praças, funil, mensagens e campanhas em um só painel. Verde bateu a meta · amarelo até 15% fora · vermelho abaixo disso."
+        acoes={
+          <button onClick={() => window.print()} className="no-print rounded-md bg-primary px-3 py-2 text-xs font-bold text-primary-foreground">
+            Exportar PDF
+          </button>
+        }
+      />
 
       <div className="no-print mt-4 flex flex-wrap items-center gap-2">
         <div className="flex rounded-lg border border-border p-0.5">
