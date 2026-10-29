@@ -11,13 +11,14 @@ import type { ContatoFeito, ItemTarefaView, ResumoCrmView, TipoTarefa } from '..
 // ── grupos ──────────────────────────────────────────────────
 
 /**
- * Título e explicação de cada grupo (UX §3.1.4). `cadence_send` não está na UX: é o grupo só de leitura do desenho §12.1 item 1 (no
- * modo "Fila manual" a cadência grava a mensagem já como enviada; quem manda de verdade é a pessoa, pelo WhatsApp).
+ * Título e explicação de cada grupo (UX §3.1.4). A T1 (`send`) é só de disparos, e `cadence_send` (fora da UX) é o grupo só de leitura
+ * do desenho §12.1 item 1: no modo "Fila manual" a cadência grava a mensagem já como enviada; quem manda de verdade é a pessoa, pelo
+ * WhatsApp.
  */
 export const TEXTOS_GRUPO: Record<TipoTarefa, { titulo: string; explicacao: string }> = {
   send: {
     titulo: 'Mandar mensagem',
-    explicacao: 'Mensagens das cadências e dos disparos marcadas para hoje. Você manda pelo WhatsApp e marca como feito.',
+    explicacao: 'Mensagens dos disparos marcadas para hoje. Você manda pelo WhatsApp e marca como feito.',
   },
   cadence_send: {
     titulo: 'Mensagens das cadências de hoje',

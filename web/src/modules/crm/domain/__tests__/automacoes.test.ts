@@ -101,6 +101,11 @@ describe('textoUltimaRodada', () => {
     const j = job({ key: 'quadro_freela', last_run: { at: '2026-10-28T17:01:00Z', ok: true, summary: { nao_configurado: true } } });
     expect(textoUltimaRodada(j, AGORA)).toBe('não rodou: falta a conexão com o Freela (conferido às 14h01)');
   });
+  it('Freela sem conexão conferido em outro dia: o dia junto da hora', () => {
+    const sem = (at: string) => job({ key: 'quadro_freela', last_run: { at, ok: true, summary: { nao_configurado: true } } });
+    expect(textoUltimaRodada(sem('2026-10-28T01:00:00Z'), AGORA)).toBe('não rodou: falta a conexão com o Freela (conferido ontem às 22h00)');
+    expect(textoUltimaRodada(sem('2026-10-26T20:05:00Z'), AGORA)).toBe('não rodou: falta a conexão com o Freela (conferido seg 26/10 às 17h05)');
+  });
   it('A4 conta os que foram para Perdido', () => {
     const j = job({ key: 'sem_resposta', last_run: { at: '2026-10-28T09:10:00Z', ok: true, summary: { candidatos: 3, perdidos: 1 } } });
     expect(textoUltimaRodada(j, AGORA)).toBe('hoje 06h10 · 1 lead foi para Perdido / reaquecer');
@@ -220,7 +225,11 @@ describe('modoDeEnvio', () => {
   it('fila manual', () => {
     const m = modoDeEnvio('fila', true);
     expect(m.titulo).toBe('Modo de envio: Fila manual');
-    expect(m.texto).toContain('viram a tarefa “Mandar mensagem”');
+    // Desenho §12.1 item 1: a cadência grava a mensagem já como enviada (grupo só de leitura); só o disparo vira "Mandar mensagem".
+    expect(m.texto).toBe(
+      'As mensagens não saem sozinhas: quem manda é a equipe, pelo WhatsApp. As das cadências aparecem em Tarefas, em “Mensagens das ' +
+        'cadências de hoje”, já marcadas como enviadas. As dos disparos viram a tarefa “Mandar mensagem”, com o texto pronto.',
+    );
     expect(m.acao).toEqual({ rotulo: 'Ver as tarefas', href: '/tarefas' });
   });
   it('via Freela', () => {
@@ -233,7 +242,11 @@ describe('modoDeEnvio', () => {
   it('via Freela sem a conexão', () => {
     const m = modoDeEnvio('freela', false);
     expect(m.selo).toBe('Parada: falta o Freela');
-    expect(m.texto).toBe('Sem a conexão com o Freela, as mensagens viram a tarefa “Mandar mensagem”.');
+    // `freela-outbox.service.ts`: sem a conexão a fila do modo `freela` fica esperando (não vira tarefa: a T1 só lê o modo `fila`).
+    expect(m.texto).toBe(
+      'Sem a conexão com o Freela, nenhuma mensagem sai: as das cadências e dos disparos ficam esperando na fila e saem quando a ' +
+        'conexão voltar. Elas não viram tarefa.',
+    );
   });
 });
 

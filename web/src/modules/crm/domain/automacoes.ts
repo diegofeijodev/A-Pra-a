@@ -160,13 +160,22 @@ export function situacaoDoJob(j: Job, agora: Date): Situacao {
   return { tipo: 'ligada', rotulo: 'Ligada' };
 }
 
+/** "às 14h01" (hoje), "ontem às 22h00", "seg 26/10 às 17h05": a hora sozinha só quando é de hoje. */
+function conferidoEm(iso: string, agora: Date): string {
+  const quando = quandoDito(iso, agora);
+  if (!quando) return '';
+  const hora = horaDita(new Date(iso));
+  const dia = quando.slice(0, -hora.length).trim();
+  return dia === 'hoje' ? `às ${hora}` : `${dia} às ${hora}`;
+}
+
 /** "Última rodada": quando e o que fez. */
 export function textoUltimaRodada(j: Job, agora: Date): string {
   const r = j.last_run;
   if (!r) return 'ainda não rodou';
   const quando = quandoDito(r.at, agora);
   if (!r.ok) return `${quando} · não terminou`;
-  if (semConexao(j)) return `não rodou: falta a conexão com o Freela (conferido às ${quando.split(' ').pop()})`;
+  if (semConexao(j)) return `não rodou: falta a conexão com o Freela (conferido ${conferidoEm(r.at, agora)})`;
   const s = r.summary;
   let o: string;
   switch (j.key) {
@@ -301,13 +310,22 @@ export function modoDeEnvio(modo: string, freelaConfigurado: boolean): ModoEnvio
               'As mensagens saem sozinhas pelo número de campanhas do Freela. Se o WhatsApp do Freela parar, elas não chegam, e o Praça não fica ' +
               'sabendo: confira em Mensagens, aba Disparos.',
           }
-        : { texto: 'Sem a conexão com o Freela, as mensagens viram a tarefa “Mandar mensagem”.', selo: 'Parada: falta o Freela' }),
+        : {
+            // `freela-outbox.service.ts`: sem a conexão, os envios do modo `freela` ficam em `fila` esperando; a T1 só lê o modo `fila`.
+            texto:
+              'Sem a conexão com o Freela, nenhuma mensagem sai: as das cadências e dos disparos ficam esperando na fila e saem quando a ' +
+              'conexão voltar. Elas não viram tarefa.',
+            selo: 'Parada: falta o Freela',
+          }),
       acao: { rotulo: 'Abrir os disparos', href: `${MENSAGENS}?aba=disparos` },
     };
   }
   return {
     titulo: 'Modo de envio: Fila manual',
-    texto: 'As mensagens das cadências não saem sozinhas: viram a tarefa “Mandar mensagem”, com o texto pronto.',
+    // Desenho §12.1 item 1: a cadência grava a mensagem já como enviada (grupo só de leitura); só o disparo fica para o "Feito".
+    texto:
+      'As mensagens não saem sozinhas: quem manda é a equipe, pelo WhatsApp. As das cadências aparecem em Tarefas, em “Mensagens das ' +
+      'cadências de hoje”, já marcadas como enviadas. As dos disparos viram a tarefa “Mandar mensagem”, com o texto pronto.',
     acao: { rotulo: 'Ver as tarefas', href: ROTA.tarefas },
   };
 }

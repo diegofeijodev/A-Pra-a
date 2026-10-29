@@ -41,7 +41,8 @@ describe('textos dos grupos (UX §3.1.4)', () => {
   it('títulos e explicações exatos', () => {
     expect(TEXTOS_GRUPO.send).toEqual({
       titulo: 'Mandar mensagem',
-      explicacao: 'Mensagens das cadências e dos disparos marcadas para hoje. Você manda pelo WhatsApp e marca como feito.',
+      // Só disparos (desenho §12.1 item 1): no modo "Fila manual" a cadência já grava a mensagem como enviada (grupo só de leitura).
+      explicacao: 'Mensagens dos disparos marcadas para hoje. Você manda pelo WhatsApp e marca como feito.',
     });
     expect(TEXTOS_GRUPO.hot_visit).toEqual({
       titulo: 'Lead quente da visita',
