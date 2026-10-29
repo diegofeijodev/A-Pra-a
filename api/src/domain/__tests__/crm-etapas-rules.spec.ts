@@ -34,11 +34,20 @@ describe('alvoDoCadastro', () => {
 });
 
 describe('candidatoSemResposta', () => {
-  const base = { stage: 2, archived: false, is_test: false, snooze_until: null, next_step_date: null, stalled_days: 21, em_cadencia: false };
+  const base = {
+    stage: 2, stage_since: '2026-10-01', archived: false, is_test: false, snooze_until: null, next_step_date: null, stalled_days: 21, em_cadencia: false,
+  };
   const hoje = '2026-10-28';
   it('21 dias na etapa 2 é candidato; 20 não', () => {
     expect(candidatoSemResposta(base, hoje)).toBe(true);
     expect(candidatoSemResposta({ ...base, stalled_days: 20 }, hoje)).toBe(false);
+  });
+  it('arquitetura final, achado 2: movido para a etapa 2 ontem, com o último contato há 40 dias, NÃO é candidato', () =>
+    expect(candidatoSemResposta({ ...base, stage_since: '2026-10-27', stalled_days: 40 }, hoje)).toBe(false));
+  it('21 dias ou mais NA etapa 2 e 21 ou mais sem contato é candidato; 20 dias na etapa não', () => {
+    expect(candidatoSemResposta({ ...base, stage_since: '2026-10-07', stalled_days: 21 }, hoje)).toBe(true);
+    expect(candidatoSemResposta({ ...base, stage_since: '2026-09-01', stalled_days: 40 }, hoje)).toBe(true);
+    expect(candidatoSemResposta({ ...base, stage_since: '2026-10-08', stalled_days: 21 }, hoje)).toBe(false);
   });
   it('etapa 1 (nunca contatado) não é candidato', () => expect(candidatoSemResposta({ ...base, stage: 1 }, hoje)).toBe(false));
   it('etapa 3 não é candidato', () => expect(candidatoSemResposta({ ...base, stage: 3 }, hoje)).toBe(false));

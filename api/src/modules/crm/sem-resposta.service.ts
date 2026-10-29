@@ -1,9 +1,9 @@
 /**
  * CRM automático — A4: lead sem resposta vira Perdido (arquitetura achado 10, contrato §47.2).
  *
- * Uma vez por dia (o agendador é a Task 11): lead na etapa 2 "Contatado" parado há `DIAS_SEM_RESPOSTA` dias, sem inscrição
- * `ativo|aguardando`, sem adiamento e sem próximo passo de hoje em diante, vai para a etapa 8 com o motivo "não respondeu"
- * e volta para a fila em `DIAS_REAQUECER` dias — os mesmos campos do `LeadsService.move()`.
+ * Uma vez por dia (o agendador é a Task 11): lead na etapa 2 "Contatado" há `DIAS_SEM_RESPOSTA` dias (`stage_since`) e parado
+ * outros tantos (último contato), sem inscrição `ativo|aguardando`, sem adiamento e sem próximo passo de hoje em diante, vai para
+ * a etapa 8 com o motivo "não respondeu" e volta para a fila em `DIAS_REAQUECER` dias — os mesmos campos do `LeadsService.move()`.
  *
  * Uma transação por lead: a trava por pessoa é a MESMA do `autoEnroll` (a matrícula automática não entra no meio), as
  * inscrições são relidas já com a trava, e o `updateMany` carrega `stage: 2`, o `stage_since` e o `last_contact_at` lidos (quem

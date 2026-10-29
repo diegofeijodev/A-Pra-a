@@ -165,6 +165,21 @@ describe('SemRespostaService (A4)', () => {
     expect(await svc.rodar(AGORA)).toEqual({ candidatos: 0, perdidos: 0 });
   });
 
+  it('arrastado para Contatado ontem com o último contato há 40 dias: fica (arquitetura final, achado 2)', async () => {
+    const velho = [{ at: new Date('2026-09-18T15:00:00.000Z'), kind: 'call' }];
+    const { svc, updates, eventos } = montar([lead({ stage_since: '2026-10-27', events: velho })]);
+    expect(await svc.rodar(AGORA)).toEqual({ candidatos: 0, perdidos: 0 });
+    expect(updates).toHaveLength(0);
+    expect(eventos).toHaveLength(0);
+  });
+
+  it('21 dias NA etapa 2 e 40 sem contato: vai, e o where leva o stage_since lido', async () => {
+    const velho = [{ at: new Date('2026-09-18T15:00:00.000Z'), kind: 'call' }];
+    const { svc, updates } = montar([lead({ stage_since: '2026-10-07', events: velho })]);
+    expect(await svc.rodar(AGORA)).toEqual({ candidatos: 1, perdidos: 1 });
+    expect(updates[0].where).toMatchObject({ id: L1, stage: 2, stage_since: '2026-10-07' });
+  });
+
   it('o where da escrita carrega o last_contact_at lido (um contato registrado no meio salva o lead)', async () => {
     const sem = montar([lead()]);
     await sem.svc.rodar(AGORA);

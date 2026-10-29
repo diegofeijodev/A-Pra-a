@@ -2,6 +2,7 @@
  * CRM automático — regras PURAS de etapa (A2, A4 e a guarda do achado 4/5/10 da arquitetura).
  * Sem banco, relógio ou log: "hoje" e o dia do fato chegam por parâmetro ("YYYY-MM-DD", comparação lexicográfica = cronológica).
  */
+import { daysBetween } from '../common/time/dates';
 import { DIAS_SEM_RESPOSTA } from './catalog/crm';
 
 export type DecisaoEtapa = 'aplicar' | 'ja_satisfeito' | 'ignorar';
@@ -36,12 +37,15 @@ export function alvoDoCadastro(s: {
 }
 
 /**
- * A4: lead parado SÓ na etapa 2 (Contatado; etapa 1 nunca foi contatada) há `DIAS_SEM_RESPOSTA` dias ou mais, fora de cadência, sem adiamento nem próximo passo
- * de hoje em diante (hoje conta como futuro).
+ * A4: lead SÓ na etapa 2 (Contatado; etapa 1 nunca foi contatada) há `DIAS_SEM_RESPOSTA` dias ou mais NA etapa (`stage_since`) E parado
+ * (`stalled_days`, desde o último contato em qualquer etapa) há outros tantos, fora de cadência, sem adiamento nem próximo passo de hoje
+ * em diante (hoje conta como futuro). Sem a conta na etapa, um lead com contato antigo arrastado hoje para "Contatado" viraria Perdido
+ * amanhã (arquitetura final, achado 2).
  */
 export function candidatoSemResposta(
   l: {
     stage: number;
+    stage_since: string;
     archived: boolean;
     is_test: boolean;
     snooze_until: string | null;
@@ -55,5 +59,6 @@ export function candidatoSemResposta(
   if (l.stage !== 2) return false;
   if (l.snooze_until && l.snooze_until > hoje) return false;
   if (l.next_step_date && l.next_step_date >= hoje) return false;
+  if (daysBetween(l.stage_since, hoje) < DIAS_SEM_RESPOSTA) return false;
   return l.stalled_days >= DIAS_SEM_RESPOSTA;
 }
