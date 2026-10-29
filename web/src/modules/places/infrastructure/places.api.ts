@@ -111,6 +111,8 @@ export interface StartSearchInput {
   types: TipoLugar[];
   source?: FonteLugar;
   refresh?: boolean;
+  /** Só quando difere do raio da área (`raioParaEnviar`); 1.000 a 15.000. */
+  radius_m?: number;
 }
 
 export async function listSources(): Promise<SourceView[]> {

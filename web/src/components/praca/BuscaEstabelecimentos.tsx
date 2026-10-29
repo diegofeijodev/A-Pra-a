@@ -21,7 +21,6 @@ import { ehGestor, podeOperar } from '@/modules/acesso/domain/acesso';
 import { rotaDaPraca } from '@/modules/acesso/domain/enderecos';
 import { useAuth } from '@/modules/auth/application/use-auth';
 import { useAreas } from '@/modules/areas/application/use-areas';
-import { rotuloRaio } from '@/modules/areas/domain/area-form';
 import {
   useAddLeads,
   useCancelSearch,
@@ -51,6 +50,8 @@ import {
   textoConfirmacao,
   MAX_TIPOS_SEGMENTOS,
   opcoesDeTipo,
+  opcoesDeRaio,
+  raioParaEnviar,
   type ModoLista,
 } from '@/modules/places/domain/busca';
 import { useSegmentos } from '@/modules/places/application/use-places';
@@ -91,6 +92,8 @@ export function BuscaEstabelecimentos({ praca }: { praca: PracaView }) {
 
   const ativas = useMemo(() => (areas ?? []).filter((a) => a.active), [areas]);
   const [areaId, setAreaId] = useState('');
+  // Raio escolhido na busca; `null` = o da área (trocar de área volta a ele).
+  const [raio, setRaio] = useState<number | null>(null);
   const [tipos, setTipos] = useState<TipoLugar[]>(['bar', 'restaurante']);
   const [fonte, setFonte] = useState<FonteLugar>('osm');
   const [runId, setRunId] = useState<string | null>(null);
@@ -110,6 +113,7 @@ export function BuscaEstabelecimentos({ praca }: { praca: PracaView }) {
   useEffect(() => {
     if (!areaId && ativas[0]) setAreaId(ativas[0].id);
   }, [areaId, ativas]);
+  useEffect(() => setRaio(null), [areaId]);
 
   const { data: run, isError: erroRun, refetch: refazerRun } = useSearch(runId, praca.id);
   const pronto = run?.status === 'done';
@@ -141,7 +145,7 @@ export function BuscaEstabelecimentos({ praca }: { praca: PracaView }) {
     setFeito(null);
     setSel(new Set());
     iniciar.mutate(
-      { praca_id: praca.id, area_id: area.id, types: tipos, source: fonte, refresh },
+      { praca_id: praca.id, area_id: area.id, types: tipos, source: fonte, refresh, radius_m: raioParaEnviar(raio, area.radius_m) },
       { onSuccess: (r) => setRunId(r.id) },
     );
   };
@@ -194,9 +198,25 @@ export function BuscaEstabelecimentos({ praca }: { praca: PracaView }) {
                 className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground"
               >
                 {ativas.map((a) => (
-                  <option key={a.id} value={a.id}>{a.name} · raio {rotuloRaio(a.radius_m)}</option>
+                  <option key={a.id} value={a.id}>{a.name}</option>
                 ))}
               </select>
+            </label>
+          )}
+          {area && (
+            <label className="mt-2 block text-xs text-muted-foreground">
+              Raio da busca
+              <select
+                value={raio ?? area.radius_m}
+                onChange={(e) => setRaio(Number(e.target.value))}
+                disabled={ocupada}
+                className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground"
+              >
+                {opcoesDeRaio(area.radius_m).map((o) => (
+                  <option key={o.valor} value={o.valor}>{o.rotulo}</option>
+                ))}
+              </select>
+              <span className="mt-1 block">Em volta do centro da área. Raio maior demora mais.</span>
             </label>
           )}
         </div>

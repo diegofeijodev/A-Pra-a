@@ -180,6 +180,26 @@ describe('start — cache de 7 dias e fila', () => {
     expect(data.cache_key).toMatch(/^[0-9a-f]{40}$/);
     await service.aguardarFila();
   });
+  it('raio escolhido na busca vale para a busca e para a chave do cache; ausente = o da área', async () => {
+    const a = setup();
+    await a.service.start(dto, ADMIN);
+    await a.service.aguardarFila();
+    const b = setup();
+    await b.service.start({ ...dto, radius_m: 8000 }, ADMIN);
+    await b.service.aguardarFila();
+    const daArea = a.place_import_runs.create.mock.calls[0]![0].data;
+    const escolhido = b.place_import_runs.create.mock.calls[0]![0].data;
+    expect(daArea.radius_m).toBe(1500);
+    expect(escolhido).toMatchObject({ radius_m: 8000, lat: -23.6003, lng: -46.665, area_name: 'Moema' });
+    expect(escolhido.cache_key).not.toBe(daArea.cache_key);
+  });
+  it('raio acima de 15 km na busca de estabelecimentos = 400, nada criado', async () => {
+    const { service, place_import_runs } = setup();
+    await expect(service.start({ ...dto, radius_m: 20000 }, ADMIN)).rejects.toMatchObject({
+      response: { code: 'VALIDATION_ERROR', message: 'radius_m: na busca de estabelecimentos, de 1 a 15 km.' },
+    });
+    expect(place_import_runs.create).not.toHaveBeenCalled();
+  });
 });
 
 describe('execução em segundo plano (provedor fake)', () => {

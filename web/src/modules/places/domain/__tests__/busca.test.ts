@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { CandidateView, SearchRunView, SourceView } from '../../infrastructure/places.api';
 import {
   AVISO_AUTO_LEADS,
+  opcoesDeRaio,
+  raioParaEnviar,
   aberturaDoResultado,
   alternar,
   avisoPago,
@@ -150,5 +152,20 @@ describe('UX final, achado 9: o aviso da busca automática não promete sobra', 
     expect(aberturaDoResultado(false)).toBe(
       'Escolha uma área e o que buscar. Os resultados aparecem aqui para você revisar antes de adicionar.',
     );
+  });
+});
+
+describe('raio da busca (29/10)', () => {
+  it('opções de 1 a 15 km, com o raio da área marcado; o da área entra na lista se não estiver nela', () => {
+    expect(opcoesDeRaio(5000).map((o) => o.rotulo)).toEqual([
+      '1 km', '2 km', '3 km', '5 km (o da área)', '8 km', '10 km', '15 km',
+    ]);
+    expect(opcoesDeRaio(1500).map((o) => o.valor)).toEqual([1000, 1500, 2000, 3000, 5000, 8000, 10000, 15000]);
+    expect(opcoesDeRaio(800)[0]).toEqual({ valor: 800, rotulo: '800 m (o da área)' });
+  });
+  it('só manda radius_m quando o raio é diferente do da área (a busca de antes continua igual, inclusive no cache)', () => {
+    expect(raioParaEnviar(null, 5000)).toBeUndefined();
+    expect(raioParaEnviar(5000, 5000)).toBeUndefined();
+    expect(raioParaEnviar(10000, 5000)).toBe(10000);
   });
 });

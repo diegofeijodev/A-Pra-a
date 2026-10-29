@@ -3184,9 +3184,15 @@ Toda leitura/escrita filtra por `id` **e** `praca_id`: busca de outra praça é 
 - `types`: 1 a 5 valores distintos de §22.1 (`400 VALIDATION_ERROR`). `area_id` precisa ser da
   praça e estar `active` (`404` / `409 AREA_INACTIVE`).
 - (L8, §40.3) `kind` opcional: ausente ou `lugares` = tudo acima; `shoppings`/`lojas` só com `FIELD_MALLS_ENABLED` (senão `404 MALLS_DISABLED`).
-- Cache: chave = hash de `lat`, `lng`, `radius_m` **da área no momento do pedido**, tipos
-  ordenados e fonte. Só reaproveita busca `done` com `finished_at` < 7 dias. `refresh: true`
-  ignora o cache. Mudar o centro/raio da área gera chave nova.
+- (29/10) `radius_m` opcional em `lugares`: inteiro de **1.000 a 15.000** (acima de 15.000 =
+  `400 VALIDATION_ERROR` "radius_m: na busca de estabelecimentos, de 1 a 15 km."); ausente = o raio
+  da área. O centro é sempre o da área; o raio da busca não muda a área (que segue 200–5.000).
+- Cache: chave = hash de `lat`, `lng` **da área no momento do pedido**, `radius_m` (o escolhido
+  ou o da área), tipos ordenados e fonte. Só reaproveita busca `done` com `finished_at` < 7 dias.
+  `refresh: true` ignora o cache. Mudar o centro/raio da área ou o raio da busca gera chave nova.
+- (29/10) Palavras no nome de um segmento (§36) filtram só a chave de base já recortada pelo raio
+  (`nwr["amenity"](around:…)->.kb_amenity;` antes da união, `nwr.kb_amenity["name"~"…",i];` dentro):
+  `name~` direto faz o Overpass varrer os nomes do mundo inteiro e estourar o `[timeout:25]`.
 - Uma busca por vez no servidor (fila em memória, instância única). No boot, `queued`/`running`
   viram `error` com `"Interrompida: o servidor foi reiniciado."`.
 - Overpass: `User-Agent` identificado (`PLACES_USER_AGENT`), timeout, 1 requisição por vez,

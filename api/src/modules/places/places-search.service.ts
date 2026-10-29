@@ -173,6 +173,8 @@ const naoEncontrada = () => new NotFoundException({ code: 'NOT_FOUND', message: 
 const shoppingsDesligado = () => new NotFoundException({ code: 'MALLS_DISABLED', message: 'Os shoppings não estão ligados neste servidor.' });
 /** Lote D (§40.3): raio padrão da busca de shoppings em volta do centro (até 30 km). */
 const RAIO_SHOPPINGS_PADRAO_M = 15_000;
+/** Teto do raio escolhido na busca de estabelecimentos: raio maior pesa no Overpass público e passa do corte de 2.000 achados. */
+const RAIO_LUGARES_MAX_M = 15_000;
 const pracaNaoEncontrada = () => new NotFoundException({ code: 'NOT_FOUND', message: 'Praça não encontrada.' });
 
 /**
@@ -235,6 +237,9 @@ export class PlacesSearchService implements OnApplicationBootstrap {
       if (!this.shoppingsLigado) throw shoppingsDesligado();
       return kind === 'shoppings' ? this.startShoppings(dto, user) : this.startLojas(dto, user);
     }
+    if (dto.radius_m != null && dto.radius_m > RAIO_LUGARES_MAX_M) {
+      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'radius_m: na busca de estabelecimentos, de 1 a 15 km.' });
+    }
     await this.assertPraca(dto.praca_id);
     if (!isUuid(dto.area_id)) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Área não encontrada.' });
     const area = await this.prisma.field_areas.findFirst({ where: { id: dto.area_id, praca_id: dto.praca_id } });
@@ -255,11 +260,12 @@ export class PlacesSearchService implements OnApplicationBootstrap {
     let types = this.segmentos?.ligado ? [] : [...dto.types].sort();
     if (this.segmentos?.ligado) ({ types, foto } = await this.segmentos.fotoDaBusca(dto.types));
 
-    // A geometria é a da área AGORA: editar a área depois gera outra chave.
+    // O centro é o da área AGORA e o raio, o escolhido na busca ou o da área: mudar qualquer um gera outra chave.
+    const raio = dto.radius_m ?? area.radius_m;
     const cacheKey = chaveCache({
       lat: area.lat,
       lng: area.lng,
-      radius_m: area.radius_m,
+      radius_m: raio,
       types,
       source,
       ...(foto ? { segmentos_hash: hashSegmentos(foto) } : {}),
@@ -291,7 +297,7 @@ export class PlacesSearchService implements OnApplicationBootstrap {
         types,
         lat: area.lat,
         lng: area.lng,
-        radius_m: area.radius_m,
+        radius_m: raio,
         cache_key: cacheKey,
         requested_by: user.id,
         ...(foto ? { segments_snapshot: foto as unknown as Prisma.InputJsonValue } : {}),

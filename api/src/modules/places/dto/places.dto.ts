@@ -52,7 +52,7 @@ export class StartPlaceSearchDto {
   @IsIn(KINDS_BUSCA)
   kind?: string | null;
 
-  /** Só em `shoppings`: raio em volta do centro, até 30 km (padrão 15 km). */
+  /** `shoppings`: raio em volta do centro, até 30 km (padrão 15 km). `lugares`: raio em volta do centro da área, até 15 km (padrão = o da área; o serviço barra acima). */
   @IsOptional()
   @IsInt()
   @Min(1000)

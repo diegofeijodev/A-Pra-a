@@ -146,3 +146,19 @@ export function mensagemVazia(r: SearchRunView): string | null {
   if (r.found === 0) return 'Nenhum estabelecimento nessa área. Aumente o raio ou tire algum tipo.';
   return null;
 }
+
+/** Raios da busca de estabelecimentos (a API aceita até 15 km; o centro é sempre o da área). */
+const RAIOS_BUSCA_M = [1000, 2000, 3000, 5000, 8000, 10000, 15000] as const;
+
+const rotuloMetros = (m: number): string =>
+  m >= 1000 ? `${(m / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} km` : `${m} m`;
+
+/** As opções do seletor, com o raio da área marcado (e incluído, se não for um dos de sempre). */
+export function opcoesDeRaio(raioDaArea: number): { valor: number; rotulo: string }[] {
+  const valores = [...new Set<number>([...RAIOS_BUSCA_M, raioDaArea])].sort((a, b) => a - b);
+  return valores.map((v) => ({ valor: v, rotulo: v === raioDaArea ? `${rotuloMetros(v)} (o da área)` : rotuloMetros(v) }));
+}
+
+/** `radius_m` só quando difere do da área: sem ele a busca (e a chave do cache) é a de antes. */
+export const raioParaEnviar = (escolhido: number | null, raioDaArea: number): number | undefined =>
+  escolhido == null || escolhido === raioDaArea ? undefined : escolhido;
