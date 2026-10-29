@@ -6,7 +6,7 @@
  *   fato do dia de entrada em "Perdido" ou depois, e só se a marca `auto_stage_applied` ainda não cobre o alvo (quem voltou
  *   o cartão para trás vence: cada fato move o lead uma vez só);
  * - sair da 8 limpa `lost_reason` e `reheat_at` (sem isso o lead cairia na trilha de reaquecimento);
- * - o evento vai na MESMA transação, com `auto_key` (rodada repetida ou duas instâncias não duplicam).
+ * - o evento vai na MESMA transação, com `auto_key` e `ON CONFLICT DO NOTHING` (rodada repetida ou duas instâncias não duplicam).
  *
  * `passadaCadastros()` é o A2: uma passada local sobre `field_signups`. O sync dos cadastros (`campo/signup-sync.service.ts`)
  * não muda; a passada só acrescenta o que ele não faz: a etapa 6 pelo primeiro serviço concluído, a saída do 8, a marca, a
@@ -55,10 +55,21 @@ const TEXTO_REGRA: Record<RegraConfirmacao, string> = {
 
 const nomeEtapa = (n: number): string => FUNNEL_STAGES.find((s) => s.n === n)?.name ?? String(n);
 const diaMes = (dia: string): string => `${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
-const ehP2002 = (e: unknown): boolean => (e as { code?: unknown } | null)?.code === 'P2002';
 /** A marca do automático ainda não cobre o alvo (NULL nunca casa com `lt` no SQL, daí o OR). */
 const marcaNaoCobre = (alvo: number): Prisma.leadsWhereInput[] => [{ auto_stage_applied: null }, { auto_stage_applied: { lt: alvo } }];
 const chaveVaga = (signupId: string): string => `a2:vaga1:${signupId}`;
+
+export type EventoAuto = Prisma.lead_eventsCreateManyInput & { auto_key: string };
+
+/**
+ * Evento do automático com `auto_key`, por `INSERT … ON CONFLICT DO NOTHING` (`skipDuplicates`): `true` = gravou; `false` = a
+ * chave já existia (rodada repetida ou outra instância). Nunca um `create` com `catch` do P2002: no Postgres o INSERT que falha
+ * ABORTA a transação (o que vem depois falha e o COMMIT vira ROLLBACK). Usado pela A2, pela A3 e pela A4.
+ */
+export async function criarEventoAuto(tx: Tx, data: EventoAuto): Promise<boolean> {
+  const r = await tx.lead_events.createMany({ data: [data], skipDuplicates: true });
+  return r.count === 1;
+}
 
 interface LeadLido {
   stage: number;
@@ -132,7 +143,7 @@ export class EtapasAutomaticasService {
         data: { stage: a.alvo, stage_since: todaySp(a.agora), lost_reason: null, reheat_at: null, auto_stage_applied: a.alvo },
       });
       if (r.count === 1) {
-        await this.criarEvento(tx, {
+        await criarEventoAuto(tx, {
           lead_id: a.lead_id,
           at: a.agora,
           kind: 'stage',
@@ -234,7 +245,7 @@ export class EtapasAutomaticasService {
             let novas = 0;
             for (const s of vagas) {
               const dia = s.first_vacancy_day ?? diaBrasilia(s.first_vacancy_at!);
-              const criada = await this.criarEvento(tx, {
+              const criada = await criarEventoAuto(tx, {
                 lead_id: leadId,
                 at: agora,
                 kind: 'note',
@@ -257,7 +268,12 @@ export class EtapasAutomaticasService {
         }
       }
     } catch (e) {
-      await registrarRodada(this.prisma, { job: 'etapas_cadastro', started_at: agora, ok: false, summary: resumo(), error: erroDaRodada(e) });
+      // A gravação da rodada tem o seu próprio `catch`: se ela falhar também, sobe o erro ORIGINAL.
+      try {
+        await registrarRodada(this.prisma, { job: 'etapas_cadastro', started_at: agora, ok: false, summary: resumo(), error: erroDaRodada(e) });
+      } catch (e2) {
+        this.log.error(`A2: rodada não gravada: ${erroDaRodada(e2)}`);
+      }
       throw e;
     }
     await registrarRodada(this.prisma, {
@@ -268,22 +284,6 @@ export class EtapasAutomaticasService {
       ...(primeiroErro ? { error: erroDaRodada(primeiroErro) } : {}),
     });
     return r;
-  }
-
-  /**
-   * Evento com `auto_key`. A consulta antes do INSERT existe porque, no Postgres, um P2002 dentro da transação a ABORTA (o
-   * que vem depois falha e o COMMIT vira ROLLBACK). O `catch` cobre só a corrida entre a consulta e o INSERT (outra
-   * instância gravou antes): o evento já existe, e isso conta como "já existe".
-   */
-  private async criarEvento(tx: Tx, data: Prisma.lead_eventsUncheckedCreateInput & { auto_key: string }): Promise<boolean> {
-    if (await tx.lead_events.findUnique({ where: { auto_key: data.auto_key }, select: { id: true } })) return false;
-    try {
-      await tx.lead_events.create({ data });
-      return true;
-    } catch (e) {
-      if (ehP2002(e)) return false;
-      throw e;
-    }
   }
 
   /** Quais destas `auto_key` já existem (uma consulta por lote): a rodada não abre transação para anotação já feita. */

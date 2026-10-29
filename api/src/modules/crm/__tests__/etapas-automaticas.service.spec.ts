@@ -3,7 +3,7 @@ import type { PrismaService } from '../../../common/database/prisma.service';
 import { CRM_DESLIGADAS, type FlagsCrm } from '../../../common/flags/crm.flags';
 import type { RotasConfigService } from '../../rotas/rotas-config.service';
 import { EtapasAutomaticasService } from '../etapas-automaticas.service';
-import { limparRodadasAntigas, registrarRodada, rodadaOkNoDia, ultimaRodada } from '../rodadas';
+import { erroDaRodada, limparRodadasAntigas, registrarRodada, rodadaOkNoDia, ultimaRodada } from '../rodadas';
 
 const L1 = 'dddddddd-0000-4000-8000-000000000001';
 const L2 = 'dddddddd-0000-4000-8000-000000000002';
@@ -65,12 +65,19 @@ function montar(opts: { flags?: FlagsCrm | undefined; regra?: 'activated' | 'fir
       }),
     },
     lead_events: {
-      findUnique: jest.fn(async ({ where }: any) => eventos.find((e) => e.auto_key === where.auto_key) ?? null),
       findMany: jest.fn(async ({ where }: any) => eventos.filter((e) => where.auto_key.in.includes(e.auto_key)).map((e) => ({ auto_key: e.auto_key }))),
-      create: jest.fn(async ({ data }: any) => {
-        if (data.auto_key && eventos.some((e) => e.auto_key === data.auto_key)) throw erroP2002();
-        eventos.push(data);
-        return data;
+      // INSERT … ON CONFLICT DO NOTHING: com `skipDuplicates` a linha repetida some da conta; sem ele, o Postgres lançaria (e abortaria a transação).
+      createMany: jest.fn(async ({ data, skipDuplicates }: any) => {
+        let count = 0;
+        for (const d of data) {
+          if (d.auto_key && eventos.some((e) => e.auto_key === d.auto_key)) {
+            if (!skipDuplicates) throw erroP2002();
+            continue;
+          }
+          eventos.push(d);
+          count++;
+        }
+        return { count };
       }),
     },
     crm_automation_runs: { create: jest.fn(async ({ data }: any) => void rodadas.push(data)) },
@@ -353,29 +360,38 @@ describe('EtapasAutomaticasService.passadaCadastros (A2)', () => {
     await expect(t.svc.passadaCadastros(AGORA)).rejects.toThrow('banco fora');
     expect(t.rodadas).toEqual([expect.objectContaining({ job: 'etapas_cadastro', ok: false, error: 'CRM_ERROR: A rodada falhou.' })]);
   });
+
+  it('erro antes do laço e a rodada também não grava: sobe o erro ORIGINAL, não o da gravação', async () => {
+    const t = montar();
+    t.prisma.field_signups.findMany.mockRejectedValueOnce(new Error('banco fora'));
+    t.prisma.crm_automation_runs.create.mockRejectedValueOnce(new Error('tabela trancada'));
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    await expect(t.svc.passadaCadastros(AGORA)).rejects.toThrow('banco fora');
+    expect(t.rodadas).toHaveLength(0);
+  });
 });
 
 describe('EtapasAutomaticasService.subir', () => {
   const base = { lead_id: L1, fato_dia: '2026-10-20', autor_label: 'Automático · Freela', texto: 'Fato.', agora: AGORA };
 
-  it('auto_key já gravado por outra instância (P2002 na criação): trata como "já existe", sem lançar', async () => {
+  it('auto_key já gravada (outra instância chegou antes): createMany devolve 0, a etapa sobe e nada lança', async () => {
     const t = montar();
     t.leads.push(lead({ stage: 5 }));
     t.eventos.push({ lead_id: L1, auto_key: `a2:etapa:${L1}:6` });
-    // A consulta prévia não viu (corrida entre consulta e INSERT).
-    t.prisma.lead_events.findUnique.mockResolvedValueOnce(null);
     const d = await t.svc.subir(t.prisma, { ...base, alvo: 6, auto_key: `a2:etapa:${L1}:6` });
     expect(d).toBe('aplicar');
+    expect(t.leads[0]).toMatchObject({ stage: 6, auto_stage_applied: 6 });
     expect(t.eventos).toHaveLength(1);
+    expect(await t.prisma.lead_events.createMany.mock.results[0]!.value).toEqual({ count: 0 });
   });
 
-  it('evento com a mesma auto_key já existe: não tenta criar (a consulta evita abortar a transação)', async () => {
+  it('o evento entra por INSERT … ON CONFLICT DO NOTHING (skipDuplicates): um P2002 abortaria a transação do lead', async () => {
     const t = montar();
     t.leads.push(lead({ stage: 5 }));
-    t.eventos.push({ lead_id: L1, auto_key: `a2:etapa:${L1}:6` });
-    const d = await t.svc.subir(t.prisma, { ...base, alvo: 6, auto_key: `a2:etapa:${L1}:6` });
-    expect(d).toBe('aplicar');
-    expect(t.prisma.lead_events.create).not.toHaveBeenCalled();
+    await t.svc.subir(t.prisma, { ...base, alvo: 6, auto_key: `a2:etapa:${L1}:6` });
+    expect(t.prisma.lead_events.createMany).toHaveBeenCalledTimes(1);
+    expect(t.prisma.lead_events.createMany.mock.calls[0]![0]).toMatchObject({ skipDuplicates: true, data: [expect.objectContaining({ auto_key: `a2:etapa:${L1}:6` })] });
+    expect(t.eventos).toHaveLength(1);
   });
 
   it('lead que não existe: ignorar', async () => {
@@ -426,6 +442,15 @@ describe('rodadas (crm_automation_runs)', () => {
     };
     return { prisma, linhas };
   }
+
+  it('erroDaRodada guarda o código do Prisma (P1234) e nunca a mensagem; o resto vira o genérico', () => {
+    const prisma = Object.assign(new Error('Transaction failed: lead phone 11987654321'), { code: 'P2034' });
+    expect(erroDaRodada(prisma)).toBe('CRM_ERROR: A rodada falhou (P2034).');
+    expect(erroDaRodada(Object.assign(new Error('x 11987654321'), { code: 'ECONNRESET' }))).toBe('CRM_ERROR: A rodada falhou.');
+    expect(erroDaRodada(Object.assign(new Error('x'), { code: 'P20345' }))).toBe('CRM_ERROR: A rodada falhou.');
+    expect(erroDaRodada(new Error('11987654321'))).toBe('CRM_ERROR: A rodada falhou.');
+    expect(erroDaRodada(null)).toBe('CRM_ERROR: A rodada falhou.');
+  });
 
   it('registrarRodada grava uma linha com fim, resumo e erro', async () => {
     const t = db();

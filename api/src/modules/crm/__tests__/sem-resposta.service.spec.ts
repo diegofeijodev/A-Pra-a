@@ -26,7 +26,7 @@ function lead(extra: Row = {}): Row {
   };
 }
 
-function montar(leads: Row[], opts: { flags?: FlagsCrm | undefined; inscricoesNaTrava?: number; count?: number } = {}) {
+function montar(leads: Row[], opts: { flags?: FlagsCrm | undefined; inscricoesNaTrava?: number; count?: number; eventosAntes?: Row[] } = {}) {
   const eventos: Row[] = [];
   const rodadas: Row[] = [];
   const ordem: string[] = [];
@@ -51,10 +51,18 @@ function montar(leads: Row[], opts: { flags?: FlagsCrm | undefined; inscricoesNa
       }),
     },
     lead_events: {
-      findUnique: jest.fn(async () => null),
-      create: jest.fn(async ({ data }: Row) => {
-        eventos.push(data);
-        return data;
+      // INSERT … ON CONFLICT DO NOTHING (skipDuplicates): a `auto_key` repetida some da conta, sem lançar.
+      createMany: jest.fn(async ({ data, skipDuplicates }: Row) => {
+        let count = 0;
+        for (const d of data) {
+          if (eventos.some((e) => e.auto_key === d.auto_key)) {
+            if (!skipDuplicates) throw Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+            continue;
+          }
+          eventos.push(d);
+          count++;
+        }
+        return { count };
       }),
     },
   };
@@ -63,6 +71,7 @@ function montar(leads: Row[], opts: { flags?: FlagsCrm | undefined; inscricoesNa
     $transaction: jest.fn(async (fn: (t: any) => unknown) => fn(tx)),
     crm_automation_runs: { create: jest.fn(async ({ data }: Row) => rodadas.push(data)) },
   };
+  for (const e of opts.eventosAntes ?? []) eventos.push(e);
   const svc = new SemRespostaService(
     prisma as PrismaService,
     ('flags' in opts ? opts.flags : LIGADA) as FlagsCrm | undefined,
@@ -106,6 +115,24 @@ describe('SemRespostaService (A4)', () => {
     expect(eventos[0].text).toContain('último contato em 07/10, 21 dias sem resposta');
     expect(rodadas).toHaveLength(1);
     expect(rodadas[0]).toMatchObject({ job: 'sem_resposta', ok: true, summary: { candidatos: 1, perdidos: 1 } });
+  });
+
+  it('o evento entra por INSERT … ON CONFLICT DO NOTHING (skipDuplicates): um P2002 abortaria a transação', async () => {
+    const { svc, tx } = montar([lead()]);
+    await svc.rodar(AGORA);
+    expect(tx.lead_events.createMany).toHaveBeenCalledTimes(1);
+    expect(tx.lead_events.createMany.mock.calls[0][0]).toMatchObject({
+      skipDuplicates: true,
+      data: [expect.objectContaining({ auto_key: `a4:${L1}:2026-09-20` })],
+    });
+  });
+
+  it('evento com a mesma auto_key já gravado (count 0): o lead conta como perdido, nada lança e a rodada fica ok', async () => {
+    const { svc, eventos, rodadas, tx } = montar([lead()], { eventosAntes: [{ lead_id: L1, auto_key: `a4:${L1}:2026-09-20` }] });
+    expect(await svc.rodar(AGORA)).toEqual({ candidatos: 1, perdidos: 1 });
+    expect(await tx.lead_events.createMany.mock.results[0].value).toEqual({ count: 0 });
+    expect(eventos).toHaveLength(1);
+    expect(rodadas[0]).toMatchObject({ ok: true, summary: { candidatos: 1, perdidos: 1 } });
   });
 
   it('antes de reler as inscrições, pega a trava da pessoa (a mesma do autoEnroll)', async () => {

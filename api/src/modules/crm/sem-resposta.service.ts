@@ -7,7 +7,7 @@
  *
  * Uma transação por lead: a trava por pessoa é a MESMA do `autoEnroll` (a matrícula automática não entra no meio), as
  * inscrições são relidas já com a trava, e o `updateMany` carrega `stage: 2` e o `stage_since` lido (quem mexeu no lead
- * entre a leitura e a escrita vence). Evento com `auto_key`, consultada antes do INSERT (um P2002 aborta a transação).
+ * entre a leitura e a escrita vence). Evento com `auto_key` por `ON CONFLICT DO NOTHING` (`criarEventoAuto`: um P2002 abortaria a transação).
  * `rodar` nunca lança: a falha de um lead não derruba os outros e a rodada registra o primeiro erro, saneado.
  */
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
@@ -18,6 +18,7 @@ import { AUTOR_AUTOMATICO, DIAS_REAQUECER } from '../../domain/catalog/crm';
 import { candidatoSemResposta } from '../../domain/crm-etapas-rules';
 import { lastContactDate, stalledDays } from '../../domain/lead-rules';
 import { PARA_LISTA } from '../leads/leads.service';
+import { criarEventoAuto } from './etapas-automaticas.service';
 import { erroDaRodada, registrarRodada } from './rodadas';
 
 const ETAPA_CONTATADO = 2;
@@ -26,7 +27,6 @@ const MOTIVO = 'não respondeu';
 const EM_CADENCIA = ['ativo', 'aguardando'];
 
 const diaMes = (dia: string): string => `${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
-const ehP2002 = (e: unknown): boolean => (e as { code?: unknown } | null)?.code === 'P2002';
 
 @Injectable()
 export class SemRespostaService {
@@ -136,26 +136,19 @@ export class SemRespostaService {
         },
       });
       if (m.count !== 1) return false;
-      const auto_key = `a4:${l.id}:${l.stage_since}`;
-      if (await tx.lead_events.findUnique({ where: { auto_key }, select: { id: true } })) return true;
-      try {
-        await tx.lead_events.create({
-          data: {
-            lead_id: l.id,
-            at: agora,
-            kind: 'stage',
-            author_id: null,
-            author_label: AUTOR_AUTOMATICO,
-            stage_to: ETAPA_PERDIDO,
-            auto_key,
-            text:
-              `Mudou de etapa: Contatado → Perdido / reaquecer · motivo: ${MOTIVO} ` +
-              `(último contato em ${diaMes(ultimo)}, ${parados} dias sem resposta).`,
-          },
-        });
-      } catch (e) {
-        if (!ehP2002(e)) throw e;
-      }
+      // Evento já gravado (mesma `auto_key`) = nada a fazer; o lead moveu do mesmo jeito.
+      await criarEventoAuto(tx, {
+        lead_id: l.id,
+        at: agora,
+        kind: 'stage',
+        author_id: null,
+        author_label: AUTOR_AUTOMATICO,
+        stage_to: ETAPA_PERDIDO,
+        auto_key: `a4:${l.id}:${l.stage_since}`,
+        text:
+          `Mudou de etapa: Contatado → Perdido / reaquecer · motivo: ${MOTIVO} ` +
+          `(último contato em ${diaMes(ultimo)}, ${parados} dias sem resposta).`,
+      });
       return true;
     });
   }

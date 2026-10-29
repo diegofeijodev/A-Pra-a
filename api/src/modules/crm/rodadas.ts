@@ -34,11 +34,14 @@ export interface Rodada {
 
 /**
  * Texto de erro que pode ir para o banco e para a tela Automações: o do Freela (`sanitizarErroSync`) ou, para qualquer outro,
- * um genérico sem a mensagem original (que pode trazer telefone, SQL ou URL).
+ * um genérico sem a mensagem original (que pode trazer telefone, SQL ou URL). O código do Prisma (`P2034`…) fica: ajuda a
+ * achar a causa e não carrega dado de ninguém.
  */
 export function erroDaRodada(e: unknown): string {
   const s = sanitizarErroSync(e);
-  return s.code === 'SYNC_ERROR' ? 'CRM_ERROR: A rodada falhou.' : `${s.code}: ${s.message}`;
+  if (s.code !== 'SYNC_ERROR') return `${s.code}: ${s.message}`;
+  const code = (e as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && /^P\d{4}$/.test(code) ? `CRM_ERROR: A rodada falhou (${code}).` : 'CRM_ERROR: A rodada falhou.';
 }
 
 export async function registrarRodada(db: Db, r: RodadaNova): Promise<void> {
