@@ -36,7 +36,7 @@ export function alvoDoCadastro(s: {
 }
 
 /**
- * A4: lead parado em etapa 1-2 há `DIAS_SEM_RESPOSTA` dias ou mais, fora de cadência, sem adiamento nem próximo passo
+ * A4: lead parado SÓ na etapa 2 (Contatado; etapa 1 nunca foi contatada) há `DIAS_SEM_RESPOSTA` dias ou mais, fora de cadência, sem adiamento nem próximo passo
  * de hoje em diante (hoje conta como futuro).
  */
 export function candidatoSemResposta(
@@ -52,7 +52,7 @@ export function candidatoSemResposta(
   hoje: string,
 ): boolean {
   if (l.archived || l.is_test || l.em_cadencia) return false;
-  if (l.stage !== 1 && l.stage !== 2) return false;
+  if (l.stage !== 2) return false;
   if (l.snooze_until && l.snooze_until > hoje) return false;
   if (l.next_step_date && l.next_step_date >= hoje) return false;
   return l.stalled_days >= DIAS_SEM_RESPOSTA;

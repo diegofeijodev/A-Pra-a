@@ -40,12 +40,13 @@ describe('candidatoSemResposta', () => {
     expect(candidatoSemResposta(base, hoje)).toBe(true);
     expect(candidatoSemResposta({ ...base, stalled_days: 20 }, hoje)).toBe(false);
   });
-  it('etapa 3, cadência, arquivado e teste não', () => {
-    expect(candidatoSemResposta({ ...base, stage: 3 }, hoje)).toBe(false);
-    expect(candidatoSemResposta({ ...base, em_cadencia: true }, hoje)).toBe(false);
-    expect(candidatoSemResposta({ ...base, archived: true }, hoje)).toBe(false);
-    expect(candidatoSemResposta({ ...base, is_test: true }, hoje)).toBe(false);
-  });
+  it('etapa 1 (nunca contatado) não é candidato', () => expect(candidatoSemResposta({ ...base, stage: 1 }, hoje)).toBe(false));
+  it('etapa 3 não é candidato', () => expect(candidatoSemResposta({ ...base, stage: 3 }, hoje)).toBe(false));
+  it('em cadência não é candidato', () => expect(candidatoSemResposta({ ...base, em_cadencia: true }, hoje)).toBe(false));
+  it('arquivado não é candidato', () => expect(candidatoSemResposta({ ...base, archived: true }, hoje)).toBe(false));
+  it('teste não é candidato', () => expect(candidatoSemResposta({ ...base, is_test: true }, hoje)).toBe(false));
+  it('adiado até hoje já venceu (só adiamento estritamente futuro exclui)', () =>
+    expect(candidatoSemResposta({ ...base, snooze_until: hoje }, hoje)).toBe(true));
   it('adiado ou próximo passo de hoje em diante não', () => {
     expect(candidatoSemResposta({ ...base, snooze_until: '2026-10-29' }, hoje)).toBe(false);
     expect(candidatoSemResposta({ ...base, next_step_date: '2026-10-28' }, hoje)).toBe(false);
