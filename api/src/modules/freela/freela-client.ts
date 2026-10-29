@@ -34,6 +34,8 @@ import {
   type LinkReemitido,
 } from './freela-registrations';
 import { cupomSchema, listaContratantesSchema, listaCuponsSchema, type ContratanteCrm } from './freela-coupons';
+import { quadroSchema } from './freela-pipeline';
+import type { CartaoFreela } from '../../domain/freela-cartao';
 import type { CorpoCupomFreela, CupomFreela } from '../../domain/voucher-rules';
 
 /** Mesma frase em todo lugar que fala de conexão com o Freela ausente. */
@@ -333,6 +335,12 @@ export class FreelaClient {
   async searchContractors(q: string): Promise<ContratanteCrm[]> {
     const r = await this.request('GET', `/v1/admin/crm/contractors/search?q=${encodeURIComponent(q)}`);
     return this.validar(listaContratantesSchema, r.data);
+  }
+
+  /** `GET /v1/admin/crm/pipeline` (sem query) — quadro inteiro de contratantes, achatado em cartões. */
+  async quadroDeContratantes(): Promise<CartaoFreela[]> {
+    const r = await this.request('GET', '/v1/admin/crm/pipeline');
+    return this.validar(quadroSchema, r.data).columns.flatMap((c) => c.cards);
   }
 
   /** A mensagem do Freela: `error.message`, `message` ou o status HTTP. */
