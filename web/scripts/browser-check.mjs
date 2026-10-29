@@ -23,7 +23,10 @@
 // O CRM automático (contrato §47, bloco 14) segue o `features` do servidor:
 // com `CRM_TASKS_ENABLED`, Tarefas ("Feito" num lead criado aqui), Automações,
 // o cartão "Comercial hoje" e os selos do Funil; sem ela, o aviso pelo
-// endereço e NENHUM pedido a `/v1/crm/*` na rodada inteira.
+// endereço e NENHUM pedido a `/v1/crm/*` na rodada inteira. Nos dois ramos, o
+// "Feito" da fila da Entrada num lead criado aqui em "Lead novo": com a chave é
+// o 1º contato (`task: 'first_contact'`; o lead vai a "Contatado" e sai da
+// fila); sem ela, só o contato, e a linha fica com "Contato registrado hoje".
 //
 // Qualquer erro de console, qualquer `pageerror`, qualquer falha de rede
 // (`requestfailed`) e qualquer resposta HTTP ≥ 400 derrubam a rodada. Não há
@@ -221,6 +224,27 @@ page.on('request', (r) => {
   if (r.url().startsWith(`${API}/v1/freela/`)) freelaReqs.push(r.url());
   if (r.url().startsWith(`${API}/v1/crm/`)) crmReqs.push(`${r.method()} ${r.url().replace(API, '')}`);
 });
+/** Pedidos da página da equipe à API ainda sem resposta (as releituras que uma mutação dispara). */
+const apiEmVoo = new Set();
+page.on('request', (r) => {
+  if (r.url().startsWith(API)) apiEmVoo.add(r);
+});
+page.on('requestfinished', (r) => apiEmVoo.delete(r));
+page.on('requestfailed', (r) => apiEmVoo.delete(r));
+/**
+ * Espera a página parar de falar com a API (nenhum pedido em voo por 400 ms). Depois de um "Feito", o TanStack relê a fila e o resto
+ * que a mutação invalidou; um `goto` no meio cancela essas releituras (`ERR_ABORTED` derruba a rodada sem o app ter quebrado).
+ */
+async function esperarApiParada(limite = 20000) {
+  const fim = Date.now() + limite;
+  let quieta = 0;
+  while (Date.now() < fim) {
+    quieta = apiEmVoo.size === 0 ? quieta + 100 : 0;
+    if (quieta >= 400) return;
+    await espera(100);
+  }
+  throw new Error(`a página seguiu com ${apiEmVoo.size} pedido(s) à API em voo por ${limite} ms`);
+}
 
 /**
  * Cartão "Comercial hoje" do Dashboard (§47, só com `commercial` E `crm_tasks`): ele pede `pracas` → N× `GET /v1/crm/tasks` + o
@@ -1201,7 +1225,11 @@ console.log('-- Campo: GPS negado --');
     await page.getByLabel('Simular a semana').check();
     await page.getByText('o representante ganha').filter({ hasText: 'na semana' }).first().waitFor({ timeout: 15000 });
     check('Simulador: calcula a semana pela mesma função do servidor', (await corpo(page)).includes('dias, o representante ganha') || (await corpo(page)).includes('dia, o representante ganha'));
+    // Desmarcar refaz a simulação (com pausa de 400 ms) e o passo seguinte sai da página: espera a resposta antes (senão o POST é
+    // abortado — `ERR_ABORTED` em `earnings/simulate`, visto na verificação final de 29/10 na configuração de produção).
+    const simSemSemana = page.waitForResponse((r) => r.url().includes('/v1/consultores/earnings/simulate') && r.request().method() === 'POST', { timeout: 15000 });
     await page.getByLabel('Simular a semana').uncheck();
+    await simSemSemana;
 
     // A tela dos declarados só existe com FIELD_DECLARED_SIGNUPS_ENABLED, lida do `features` (sem sondar rota que dá 404). E5.5: o link
     // saiu do topo de Representantes (o Financeiro e a "Atenção agora" levam lá); E7: página própria em `/financeiro/declarados`.
@@ -1901,12 +1929,16 @@ try {
 // 404). Com `crm_tasks`: menu, Tarefas (um lead criado AQUI com o passo para hoje sai da lista depois do "Feito" e dos 5 s do Desfazer),
 // Automações (só leitura), o cartão "Comercial hoje" do Dashboard e o Funil com `GET /v1/crm/badges` (o selo em si não tem como ser
 // disparado pela tela: ele se prova no vitest da Task 22). Sem ela: Tarefas e Automações pelo endereço mostram o aviso, o Dashboard fica
-// sem o cartão e NENHUMA tela chamou `/v1/crm/*` na rodada inteira. Nos dois ramos, o Funil no celular (acordeão, sem rolagem lateral).
+// sem o cartão e NENHUMA tela chamou `/v1/crm/*` na rodada inteira. Nos dois ramos, o "Feito" da fila da Entrada (ruling W2) num lead
+// criado AQUI em "Lead novo" e o Funil no celular (acordeão, sem rolagem lateral).
 // "Precisa da conexão com o Freela." é a linha "No Freela" do resumo de Tarefas (o local não tem o Freela): em Automações, com a A3
 // desligada, a tela não fala do Freela (o selo da A3 é "Desligada" antes de olhar a conexão).
 /** Lead da tarefa (prefixo da faxina de entrada): sai na limpeza. */
 let leadTarefaId = null;
 const LEAD_TAREFA = `${LEAD_PREFIXO} Tarefa ${CARIMBO}`;
+/** Lead do "Feito" da Entrada (prefixo da faxina de entrada): sai na limpeza. */
+let leadEntradaId = null;
+const LEAD_ENTRADA = `${LEAD_PREFIXO} Entrada ${CARIMBO}`;
 try {
   console.log('-- CRM automático (Tarefas, Automações, Comercial hoje, Funil) --');
   const crm = (await api('GET', '/v1/consultores/settings/config')).features ?? {};
@@ -2043,6 +2075,78 @@ try {
       check('Funil sem as tarefas do CRM: carrega sem pedir /v1/crm/badges', crmReqs.length === 0, crmReqs.join(' '));
     }
 
+    // Entrada (ruling W2, os dois ramos): o "Feito" → "Liguei" da fila "Primeiro contato de hoje" num lead criado AQUI em "Lead novo".
+    // Com `crm_tasks` é o 1º contato de Tarefas (`POST /v1/crm/tasks/done`, `task: 'first_contact'`): o lead vai a "Contatado" e a linha
+    // sai; sem ela, o evento de antes (`POST /v1/leads/:id/events`), o lead fica em "Lead novo" e a linha FICA com a marca do contato.
+    // O filtro "De quem" = o dono sem leads no seed: a linha é a única da fila, seja qual for a cota.
+    console.log('-- Entrada: "Feito" como primeiro contato --');
+    const mktEntrada = (await api('GET', '/v1/users')).find((u) => u.name === DONO_SEM_LEADS);
+    const criadoE = await api('POST', '/v1/leads', {
+      praca_id: PRACA,
+      name: LEAD_ENTRADA,
+      phone: `(31) 9${CARIMBO.slice(-4)}-0003`,
+      classe: 'alvo',
+      origem: 'prospecção',
+      owner_id: mktEntrada.id,
+      stage: 1,
+    });
+    leadEntradaId = criadoE?.id ?? null;
+    await page.goto(`${BASE}/entrada`, { waitUntil: 'networkidle' });
+    await page.getByRole('heading', { name: 'Primeiro contato de hoje', exact: true }).waitFor({ timeout: 20000 });
+    await page.locator('#fila-de-quem').selectOption({ label: DONO_SEM_LEADS });
+    const linhaE = page.locator(`li[data-chave="entrada:${leadEntradaId}"]`);
+    await linhaE.waitFor({ timeout: 20000 });
+    check(
+      `Entrada: o lead criado em "Lead novo" está na fila "Primeiro contato de hoje" (De quem: ${DONO_SEM_LEADS})`,
+      criadoE?.stage === 1 && (await linhaE.getByRole('button', { name: `Feito: ${LEAD_ENTRADA}`, exact: true }).count()) === 1,
+      `etapa ${criadoE?.stage}`,
+    );
+    await linhaE.getByRole('button', { name: `Feito: ${LEAD_ENTRADA}`, exact: true }).click();
+    const ligueiE = page.getByRole('menuitem', { name: 'Liguei' });
+    await ligueiE.waitFor({ timeout: 10000 });
+    const caminhoE = crm.crm_tasks ? '/v1/crm/tasks/done' : `/v1/leads/${leadEntradaId}/events`;
+    const gravouE = page.waitForResponse((r) => r.url().endsWith(caminhoE) && r.request().method() === 'POST', { timeout: 20000 });
+    await ligueiE.click();
+    await linhaE.getByText('Ligação registrada').waitFor({ timeout: 4000 });
+    check('Entrada: "Feito" → "Liguei" mostra "✓ Ligação registrada" com "Desfazer" na linha', (await linhaE.getByRole('button', { name: `Desfazer: ${LEAD_ENTRADA}`, exact: true }).count()) === 1);
+    const respE = await gravouE;
+    const corpoE = respE.request().postDataJSON() ?? {};
+    if (crm.crm_tasks) {
+      check(
+        `Entrada com as tarefas do CRM: grava como 1º contato (POST /v1/crm/tasks/done ${respE.status()}, task "${corpoE.task}", kind "${corpoE.kind}")`,
+        respE.status() === 201 && corpoE.task === 'first_contact' && corpoE.kind === 'call' && corpoE.lead_id === leadEntradaId,
+      );
+      await linhaE.waitFor({ state: 'detached', timeout: 10000 });
+      check('Entrada com as tarefas do CRM: gravado, o lead sai da fila', (await linhaE.count()) === 0);
+      await esperarApiParada();
+      const leadE = await api('GET', `/v1/leads/${leadEntradaId}`);
+      const filaE = await api('GET', `/v1/leads/queue?person=${mktEntrada.id}&praca_id=${PRACA}`);
+      check(
+        'Entrada com as tarefas do CRM: na API o lead foi a "Contatado" (etapa 2), com a ligação e o evento de etapa, e não está mais na fila',
+        leadE.stage === 2 && leadE.events.some((e) => e.kind === 'call') && leadE.events.some((e) => e.kind === 'stage' && e.stage_to === 2) && filaE.items.every((l) => l.id !== leadEntradaId),
+        `etapa ${leadE.stage}`,
+      );
+    } else {
+      check(
+        `Entrada sem as tarefas do CRM: grava só o contato (POST /v1/leads/:id/events ${respE.status()}, kind "${corpoE.kind}"), sem pedido a /v1/crm`,
+        respE.status() === 201 && corpoE.kind === 'call' && crmReqs.length === 0,
+        crmReqs.join(' '),
+      );
+      await linhaE.getByText('Contato registrado hoje').waitFor({ timeout: 10000 });
+      check(
+        'Entrada sem as tarefas do CRM: a linha fica, com "✓ Contato registrado hoje · continua em “Lead novo”"',
+        (await linhaE.count()) === 1 && (await linhaE.innerText()).includes('✓ Contato registrado hoje · continua em “Lead novo”'),
+        (await linhaE.innerText()).replace(/\s+/g, ' ').slice(0, 200),
+      );
+      await esperarApiParada();
+      const leadE = await api('GET', `/v1/leads/${leadEntradaId}`);
+      check(
+        'Entrada sem as tarefas do CRM: na API o lead segue em "Lead novo" (etapa 1), com a ligação no histórico e nenhum pedido a /v1/crm',
+        leadE.stage === 1 && leadE.events.some((e) => e.kind === 'call') && crmReqs.length === 0,
+        `etapa ${leadE.stage}; ${crmReqs.join(' ')}`,
+      );
+    }
+
     // Funil no celular (Task 22, UX §3.6; os dois ramos): uma etapa aberta por vez, o quadro escondido e nada de rolagem lateral.
     // Mesma sessão, outra largura (um contexto novo seria outro login, contra o teto de 40/min); volta a 1500 px no `finally`.
     console.log('-- Funil no celular (390 px) --');
@@ -2102,6 +2206,12 @@ if (leadId) {
 if (leadTarefaId) {
   await tentar('lead da tarefa do CRM apagado', async () =>
     check('lead da tarefa do CRM apagado', (await api('DELETE', `/v1/leads/${leadTarefaId}`)).ok === true),
+  );
+}
+// O lead do "Feito" da Entrada leva junto a ligação (e, com o CRM, o evento de etapa) em cascata.
+if (leadEntradaId) {
+  await tentar('lead do "Feito" da Entrada apagado', async () =>
+    check('lead do "Feito" da Entrada apagado', (await api('DELETE', `/v1/leads/${leadEntradaId}`)).ok === true),
   );
 }
 if (consultorId) {
