@@ -42,6 +42,9 @@ describe('telefoneNacional', () => {
   it('9 dígitos (sem DDD) não é telefone nacional', () => expect(telefoneNacional('987654321')).toBeNull());
   it('fixo com DDD (10 dígitos) vale', () => expect(telefoneNacional('(31) 3333-4444')).toBe('3133334444'));
   it('DDD 55 sem o +55 não perde o DDD', () => expect(telefoneNacional('55987654321')).toBe('55987654321'));
+  it('com +, o 55 é sempre o país: "+55 98765-4321" (sem DDD) não vira DDD 55', () =>
+    expect(telefoneNacional('+55 98765-4321')).toBeNull());
+  it('com + e outro país → null', () => expect(telefoneNacional('+1 415 555 0123')).toBeNull());
   it('nulo ou vazio dá null', () => {
     expect(telefoneNacional(null)).toBeNull();
     expect(telefoneNacional('')).toBeNull();
@@ -124,12 +127,22 @@ describe('casarCartao', () => {
     expect(casarCartao(cartao(), idx, new Set([BH]))).toEqual({ ambiguo: true });
   });
 
-  it('chave igual com DDD diferente, lead numa praça de BH → casa por telefone', () => {
+  it('lead SEM DDD (9 dígitos) com a mesma chave, numa praça de BH → casa por telefone pela cidade', () => {
     const idx = indices({
       porChave: naChave({ lead_id: 'lead-bh', phone: '987654321', praca_id: BH, freela_user_id: null }),
     });
     expect(casarCartao(cartao({ whatsappPhone: '21987654321' }), idx, new Set([BH]))).toEqual({
       lead_id: 'lead-bh',
+      por: 'telefone',
+    });
+  });
+
+  it('chave igual com DDD diferente (lead 11…, cartão 31… de BH), lead único numa praça de BH → casa por telefone pela cidade', () => {
+    const idx = indices({
+      porChave: naChave({ lead_id: 'lead-11', phone: '11987654321', praca_id: BH, freela_user_id: null }),
+    });
+    expect(casarCartao(cartao({ whatsappPhone: '31987654321' }), idx, new Set([BH]))).toEqual({
+      lead_id: 'lead-11',
       por: 'telefone',
     });
   });
@@ -308,7 +321,9 @@ describe('alvoDasContratacoes', () => {
   it('1 → 2 no mesmo dia da 1ª vaga dá 6, e a rodada seguinte (antes: 2, sem subida) continua 6', () => {
     expect(alvoDasContratacoes(x({ hirings: 2, antes: 1, dia_viu_primeira: hoje }))).toBe(6);
     expect(alvoDasContratacoes(x({ hirings: 2, antes: 2, dia_viu_primeira: hoje }))).toBe(6);
-    expect(alvoDasContratacoes(x({ hirings: 2, antes: 2, dia_viu_primeira: '2026-10-27', hoje: '2026-10-29' }))).toBe(6);
+    expect(
+      alvoDasContratacoes(x({ hirings: 2, antes: 2, dia_viu_primeira: '2026-10-27', hoje: '2026-10-29' })),
+    ).toBe(6);
   });
   it('2 → 3 com a 1ª vaga vista num dia anterior → 7', () =>
     expect(alvoDasContratacoes(x({ hirings: 3, antes: 2, dia_viu_primeira: '2026-10-20' }))).toBe(7));

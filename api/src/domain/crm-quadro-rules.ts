@@ -3,13 +3,23 @@
  * Sem banco, relógio ou log: os índices, as praças e "hoje" ("YYYY-MM-DD", comparação lexicográfica = cronológica) chegam por
  * parâmetro. Casamento errado é para sempre (o automático nunca volta a etapa), então na dúvida é ambíguo, nunca um palpite.
  */
-import { phoneKey, toE164BR } from '../common/phone/phone';
+import { digits, phoneKey, toE164BR } from '../common/phone/phone';
 import { todaySp } from '../common/time/dates';
 import type { CartaoFreela } from './freela-cartao';
 
-/** DDD + número (10 ou 11 dígitos) sem o +55; qualquer outra coisa (sem DDD, curto, estrangeiro) = null. */
+/**
+ * DDD + número (10 ou 11 dígitos) sem o +55; qualquer outra coisa (sem DDD, curto, estrangeiro) = null. Com `+` na frente o 55 é
+ * SEMPRE o país (o `toE164BR` só o tira com 12+ dígitos, e "+55 98765-4321", sem DDD, viraria DDD 55); sem `+`, a regra de sempre.
+ */
 export function telefoneNacional(raw: string | null): string | null {
-  return toE164BR(raw)?.slice(3) ?? null;
+  const t = (raw ?? '').trim();
+  if (t.startsWith('+')) {
+    const d = digits(t);
+    if (!d.startsWith('55')) return null;
+    const nacional = d.slice(2);
+    return nacional.length === 10 || nacional.length === 11 ? nacional : null;
+  }
+  return toE164BR(t)?.slice(3) ?? null;
 }
 
 /**
