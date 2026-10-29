@@ -145,6 +145,8 @@ describe('AutomacoesService.selos', () => {
     const sql = prisma.$queryRaw.mock.calls[0][0];
     expect(sql.values).toEqual([PRACA]);
     expect(sql.sql).toContain('DISTINCT ON (e.lead_id)');
+    // Mesmo recorte do funil: lead arquivado ou de teste não ganha selo.
+    expect(sql.sql).toMatch(/l\.archived = false AND l\.is_test = false/);
   });
 
   it('nada a mostrar = lista vazia', async () => {

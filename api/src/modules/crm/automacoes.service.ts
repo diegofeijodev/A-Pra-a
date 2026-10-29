@@ -117,7 +117,7 @@ export class AutomacoesService {
       this.prisma.$queryRaw<{ lead_id: string; author_id: string | null; author_label: string | null }[]>(Prisma.sql`
         SELECT DISTINCT ON (e.lead_id) e.lead_id, e.author_id, e.author_label
         FROM lead_events e JOIN leads l ON l.id = e.lead_id
-        WHERE l.praca_id = ${pracaId}::uuid AND e.stage_to IS NOT NULL
+        WHERE l.praca_id = ${pracaId}::uuid AND l.archived = false AND l.is_test = false AND e.stage_to IS NOT NULL
         ORDER BY e.lead_id, e.at DESC, e.id DESC`),
       this.prisma.leads.findMany({
         where: { praca_id: pracaId, archived: false, is_test: false, freela_hirings: { gt: 0 } },
