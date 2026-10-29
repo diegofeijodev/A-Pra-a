@@ -5578,7 +5578,7 @@ mudam de valor, não de forma (§47.7).
 | `CRM_AUTO_LEADS_FROM_SEARCH_ENABLED` | `crm_auto_leads` | A1: achados da busca entram sozinhos no funil (teto de 300 por busca, sem dono, autor `Automático`) | nada |
 | `CRM_AUTO_STAGES_ENABLED` | — | A2 (etapa pelo cadastro do representante, autor `Automático · Freela`), e o `since` mais largo do sync | sync ligado e dados de `field_signups` |
 | `CRM_AUTO_LOST_ENABLED` | — | A4: lead há 21 dias **na etapa 2 "Contatado"** (`stage_since`) e há 21 dias sem contato vai para "Perdido / reaquecer" (autor `Automático`); quem acabou de entrar em "Contatado" com um contato antigo fica | nada |
-| `CRM_FREELA_PIPELINE_ENABLED` | — | A3: etapa e lead pelo quadro de contratantes do Freela (autor `Automático · Freela`) | conta do Freela |
+| `CRM_FREELA_PIPELINE_ENABLED` | — | A3: etapa e lead pelo quadro de contratantes do Freela (autor `Automático · Freela`); cadastro assistido (todo `freela_user_id` de `field_signups`, com **qualquer** `match_status`, e de `field_company_signups`) nunca vira lead novo nem vai a 5 por ela; só o `linked` casa pelo cadastro | conta do Freela |
 
 `features` (só no **GET** de `/v1/consultores/settings/config`, como no §46.2): `crm_tasks` e `crm_auto_leads`, booleans sempre presentes;
 servidor antigo = desligado no web. As outras três chaves não aparecem em `features` (o web não precisa delas). O `PUT` não aceita nenhuma.

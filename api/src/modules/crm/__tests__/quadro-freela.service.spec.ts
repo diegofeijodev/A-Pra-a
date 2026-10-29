@@ -302,6 +302,38 @@ describe('QuadroFreelaService.rodar (A3)', () => {
     expect(t.prisma.$transaction).not.toHaveBeenCalled();
   });
 
+  it.each(['none', 'ambiguous'])(
+    'cadastro assistido %s (não vinculado) de BH: não vira lead novo nem vai a 5 (arquitetura final, achado 1)',
+    async (status) => {
+      const t = montar({ cartoes: [cartao({ userId: 'u-novo' })] });
+      t.signups.push({ freela_user_id: 'u-novo', lead_id: null, match_status: status });
+      const r = await t.svc.rodar(AGORA);
+      expect(r).toEqual({ ...vazio, cartoes: 1 });
+      expect(t.leads).toHaveLength(0);
+      expect(t.eventos).toHaveLength(0);
+    },
+  );
+
+  it('cadastro assistido none casado pelo telefone com 0 vagas: assistido, não vai a 5 (o 5 é do sync)', async () => {
+    const t = montar({ cartoes: [cartao()] });
+    t.leads.push(lead());
+    t.signups.push({ freela_user_id: 'u-1', lead_id: null, match_status: 'none' });
+    const r = await t.svc.rodar(AGORA);
+    expect(r).toMatchObject({ casados_por_telefone: 1, criados: 0, etapas: { '5': 0, '6': 0, '7': 0 } });
+    expect(t.leads[0]).toMatchObject({ stage: 3, auto_stage_applied: null, freela_user_id: 'u-1', freela_hirings: 0 });
+    expect(t.eventos).toHaveLength(0);
+  });
+
+  it('cadastro do representante NÃO vinculado com lead_id: não casa por cadastro (só o linked casa)', async () => {
+    const t = montar({ cartoes: [cartao({ hiringsCount: 1, whatsappPhone: null })] });
+    t.leads.push(lead());
+    t.signups.push({ freela_user_id: 'u-1', lead_id: L1, match_status: 'ambiguous' });
+    const r = await t.svc.rodar(AGORA);
+    expect(r).toMatchObject({ casados_por_cadastro: 0, criados: 0 });
+    expect(t.leads).toHaveLength(1);
+    expect(t.leads[0]).toMatchObject({ stage: 3, freela_user_id: null });
+  });
+
   it('cartão novo de BH, cadastrado depois do início da praça: lead criado sem dono, com o telefone do cartão', async () => {
     const t = montar({ cartoes: [cartao({ userId: 'u-novo', hiringsCount: 1 })] });
     const r = await t.svc.rodar(AGORA);

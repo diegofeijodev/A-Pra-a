@@ -3,13 +3,14 @@
  * desenho §12.2 D2 e D3; contrato §47).
  *
  * De 2 em 2 horas (o relógio é a Task 11) lê o quadro inteiro (`FreelaClient.quadroDeContratantes`) e, para cada empresa:
- * - casa com um lead pelas regras puras (`casarCartao`: usuário do Freela, cadastro do representante, telefone com DDD); na
- *   dúvida é ambíguo e nada é gravado (casamento errado é para sempre: o automático nunca volta a etapa);
+ * - casa com um lead pelas regras puras (`casarCartao`: usuário do Freela, cadastro do representante `linked`, telefone com DDD);
+ *   na dúvida é ambíguo e nada é gravado (casamento errado é para sempre: o automático nunca volta a etapa);
  * - grava o vínculo (`freela_user_id`, só quando nulo) e as vagas pagas (`freela_hirings`, só quando mudam, com o evento
  *   "Freela: 1 → 2 vagas pagas"), e sobe a etapa pelo MESMO `subir()` da A2 (alvo 5/6/7 de `alvoDasContratacoes`; o cadastro
  *   assistido nunca vai a 5 por aqui, o 5 dele é do sync);
  * - a empresa que se cadastrou sozinha na cidade de uma praça aberta, depois do início dela, vira lead novo, sem dono, com o
- *   telefone do cartão (D3: o telefone do Freela vai SÓ para o lead novo, nunca sobrescreve o de um lead que já existe).
+ *   telefone do cartão (D3: o telefone do Freela vai SÓ para o lead novo, nunca sobrescreve o de um lead que já existe). Cadastro
+ *   assistido = todo `freela_user_id` de `field_signups` (qualquer `match_status`) ou de `field_company_signups`: nunca vira lead novo.
  *
  * Leituras em lote (`IN` em pedaços de 500), uma transação por lead, escrita só do que mudou. `rodar` nunca lança; o `summary`
  * da rodada só tem contagens e o erro é saneado (`erroDaRodada`): nunca nome, telefone ou e-mail.
@@ -404,14 +405,21 @@ export class QuadroFreelaService {
         comLead.add(l.freela_user_id!);
         if (!l.archived && !l.is_test) juntar(idx.porFreelaUserId, l.freela_user_id!, l.id);
       }
+      // SEM filtro de `match_status` (arquitetura final, achado 1): cadastro do representante `none` ou `ambiguous` também é
+      // assistido (nunca vira lead novo nem vai a 5 por aqui); só o `linked` com lead vivo casa por cadastro.
       const signups = await this.prisma.field_signups.findMany({
-        where: { freela_user_id: { in: lote }, match_status: 'linked' },
-        select: { freela_user_id: true, lead_id: true, lead: { select: { archived: true, is_test: true, freela_user_id: true } } },
+        where: { freela_user_id: { in: lote } },
+        select: {
+          freela_user_id: true,
+          lead_id: true,
+          match_status: true,
+          lead: { select: { archived: true, is_test: true, freela_user_id: true } },
+        },
       });
       for (const s of signups) {
         idx.assistidos.add(s.freela_user_id);
         const l = s.lead;
-        if (!s.lead_id || !l || l.archived || l.is_test) continue;
+        if (s.match_status !== 'linked' || !s.lead_id || !l || l.archived || l.is_test) continue;
         // Lead já ligado a OUTRO usuário do Freela não casa por aqui (o passo do telefone, se casar, dá ambíguo).
         if (l.freela_user_id !== null && l.freela_user_id !== s.freela_user_id) continue;
         juntar(idx.porCadastro, s.freela_user_id, s.lead_id);
