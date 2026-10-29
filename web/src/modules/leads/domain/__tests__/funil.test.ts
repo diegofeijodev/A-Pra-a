@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  SEM_DADO,
   corDaBolinha,
   diasParado,
+  estadoDoQuadro,
   nomeSeloFreela,
   textoConversao,
   textoDeSelos,
+  textosDasMetricas,
 } from '../funil';
 
 describe('textoConversao', () => {
@@ -50,5 +53,60 @@ describe('corDaBolinha', () => {
   it('devolve só a cor da etapa para a bolinha, nunca para texto', () => {
     expect(corDaBolinha({ n: 5, color: '#ECA826' })).toEqual({ backgroundColor: '#ECA826' });
     expect(corDaBolinha({ n: 5, color: '#ECA826' })).not.toHaveProperty('color');
+  });
+});
+
+describe('números do funil (UX §3.4)', () => {
+  it('sem as métricas (carregando ou erro): "—" nos seis, sem alerta (nunca um 0 que pareça resultado)', () => {
+    expect(SEM_DADO).toBe('—');
+    expect(textosDasMetricas(undefined)).toEqual({
+      total: '—',
+      contatado: '—',
+      ativo: '—',
+      dias: '—',
+      parados: '—',
+      valor: '—',
+      alertaParados: false,
+    });
+  });
+  it('com as métricas: o número, a conta das taxas e o alerta dos parados', () => {
+    const t = textosDasMetricas({
+      total: 84,
+      conv_contact: 30,
+      conv_active: 20,
+      conv_contact_n: 9,
+      conv_contact_de: 30,
+      conv_active_n: 2,
+      conv_active_de: 10,
+      avg_days: 12,
+      stalled: 5,
+      critical: 1,
+      lost: 3,
+      pipeline: 48000,
+    });
+    expect(t).toEqual({
+      total: '84',
+      contatado: '9 de 30 = 30%',
+      ativo: '2 de 10 = 20%',
+      dias: '12 dias',
+      parados: '5',
+      valor: 'R$ 48k',
+      alertaParados: true,
+    });
+    expect(textosDasMetricas({ total: 0, conv_contact: 0, conv_active: 0, avg_days: 0, stalled: 0, critical: 0, lost: 0, pipeline: 0 }).alertaParados).toBe(
+      false,
+    );
+  });
+});
+
+describe('estadoDoQuadro (UX §3.4, Estados)', () => {
+  it('erro vence; sem leitura é carregando', () => {
+    expect(estadoDoQuadro({ erro: true, lido: true, total: 3, filtrados: 3 })).toBe('erro');
+    expect(estadoDoQuadro({ erro: false, lido: false, total: 0, filtrados: 0 })).toBe('carregando');
+  });
+  it('praça sem lead, filtro sem resultado e o quadro', () => {
+    expect(estadoDoQuadro({ erro: false, lido: true, total: 0, filtrados: 0 })).toBe('sem-leads');
+    expect(estadoDoQuadro({ erro: false, lido: true, total: 4, filtrados: 0 })).toBe('sem-resultado');
+    expect(estadoDoQuadro({ erro: false, lido: true, total: 4, filtrados: 2 })).toBe('quadro');
   });
 });

@@ -20,10 +20,12 @@ import {
   type LeadListView,
 } from '@/modules/leads/application/use-leads';
 import {
+  SEM_DADO,
   corDaBolinha,
   diasParado,
+  estadoDoQuadro,
   nomeSeloFreela,
-  textoConversao,
+  textosDasMetricas,
   type SeloDoLead,
 } from '@/modules/leads/domain/funil';
 import { useActivePraca } from '@/modules/pracas/application/use-pracas';
@@ -50,7 +52,9 @@ function diaCurto(dia: string): string {
  * As seis métricas saem de `GET /v1/leads/metrics` (a média de dias até cadastrar
  * precisa da base inteira, não da página filtrada); o quadro lê `GET /v1/leads`.
  * Busca, dono e classificação continuam filtro de tela. Os selos do automático vêm
- * de `GET /v1/crm/badges`, só com `features.crm_tasks` (nunca sondar 404).
+ * de `GET /v1/crm/badges`, só com `features.crm_tasks` (nunca sondar 404). Estados
+ * (UX §3.4): sem praça, carregando, erro, praça sem lead e filtro sem resultado
+ * (`estadoDoQuadro`); os números ficam "—" até a resposta chegar e no erro.
  * A cor da etapa só vai para a bolinha (achado 9); abaixo de `md` o quadro vira
  * acordeão por etapa e o caminho de um toque é o "Mover para etapa" do painel
  * (WCAG 2.5.7, achado 10).
@@ -60,7 +64,8 @@ export default function FunilPage() {
   const openLead = useUiStore((s) => s.openLead);
   const { features } = useFeaturesMenu();
   const { data: users } = useUsers();
-  const { data: catalog } = useCatalog();
+  const catalogQ = useCatalog();
+  const catalog = catalogQ.data;
   const [q, setQ] = useState('');
   const [owner, setOwner] = useState('all');
   const [classe, setClasse] = useState('all');
@@ -70,7 +75,7 @@ export default function FunilPage() {
   const [pending, setPending] = useState<{ id: string; name: string; to: number } | null>(null);
   const [novo, setNovo] = useState(false);
 
-  const { data: metrics } = useLeadMetrics(praca?.id);
+  const metricsQ = useLeadMetrics(praca?.id);
   const leadsQuery = useLeads(
     { praca_id: praca?.id, archived: showArchived ? 'true' : 'false' },
     { enabled: !!praca?.id },
@@ -96,16 +101,22 @@ export default function FunilPage() {
     [all, q, owner, classe, showArchived],
   );
 
-  if (pracasPending) return <p className="text-sm text-muted-foreground">Carregando…</p>;
-  if (!praca) {
+  const subtitulo = 'Bares, restaurantes, hotéis, buffets e casas de evento da praça, etapa por etapa.';
+  if (pracasPending || !praca) {
     return (
-      <p className="text-sm text-muted-foreground">
-        Nenhuma praça ainda — abra a primeira em{' '}
-        <Link href={ROTA.pracas} className="text-primary hover:underline">
-          Praças
-        </Link>
-        .
-      </p>
+      <div className="space-y-6">
+        <CabecalhoPagina titulo="Funil" subtitulo={subtitulo} />
+        {pracasPending ? (
+          <div aria-busy="true" className="h-40 animate-pulse rounded-2xl bg-muted" />
+        ) : (
+          <div className={`${CARTAO} space-y-3 p-5`}>
+            <p className="text-sm">Nenhuma praça ainda. O funil é por praça.</p>
+            <Button variant="outline" asChild>
+              <Link href={ROTA.pracas}>Abrir Praças</Link>
+            </Button>
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -116,7 +127,19 @@ export default function FunilPage() {
     setPending({ id, name, to });
   };
   const hoje = todaySp();
-  const parados = metrics?.stalled ?? 0;
+  // No erro, "—" (nunca o número velho de uma leitura que falhou, nem 0).
+  const numeros = textosDasMetricas(metricsQ.isError ? undefined : metricsQ.data);
+  const estado = estadoDoQuadro({
+    erro: leadsQuery.isError || (catalogQ.isError && !catalog),
+    lido: !!all && !!catalog,
+    total: all?.length ?? 0,
+    filtrados: leads.length,
+  });
+  const limparFiltros = () => {
+    setQ('');
+    setOwner('all');
+    setClasse('all');
+  };
 
   const cartoesDa = (n: number, arrastavel: boolean) =>
     leads
@@ -143,7 +166,7 @@ export default function FunilPage() {
     <div className="space-y-6">
       <CabecalhoPagina
         titulo="Funil"
-        subtitulo="Bares, restaurantes, hotéis, buffets e casas de evento da praça, etapa por etapa."
+        subtitulo={subtitulo}
         comPraca
         acoes={
           <>
@@ -161,26 +184,28 @@ export default function FunilPage() {
 
       <section aria-label="Números do funil">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-          <Numero rotulo="Leads no funil" valor={String(metrics?.total ?? 0)} conta="sem os arquivados" />
-          <Numero
-            rotulo="Contatado → cadastrado"
-            valor={textoConversao(metrics?.conv_contact_n, metrics?.conv_contact_de, metrics?.conv_contact)}
-            conta="contatados que viraram cadastrados"
-          />
-          <Numero
-            rotulo="Cadastrado → ativo"
-            valor={textoConversao(metrics?.conv_active_n, metrics?.conv_active_de, metrics?.conv_active)}
-            conta="cadastrados que viraram clientes ativos"
-          />
-          <Numero rotulo="Dias até cadastrar" valor={`${metrics?.avg_days ?? 0} dias`} conta="média dos leads cadastrados, sem o tempo parado" />
+          <Numero rotulo="Leads no funil" valor={numeros.total} conta="sem os arquivados" />
+          <Numero rotulo="Contatado → cadastrado" valor={numeros.contatado} conta="contatados que viraram cadastrados" />
+          <Numero rotulo="Cadastrado → ativo" valor={numeros.ativo} conta="cadastrados que viraram clientes ativos" />
+          <Numero rotulo="Dias até cadastrar" valor={numeros.dias} conta="média dos leads cadastrados, sem o tempo parado" />
           <Numero
             rotulo="Parados há 7+ dias"
-            valor={String(parados)}
+            valor={numeros.parados}
             conta="sem contato há 7 dias ou mais"
-            alerta={parados > 0}
+            alerta={numeros.alertaParados}
           />
-          <Numero rotulo="Valor estimado" valor={fmtBRL(metrics?.pipeline ?? 0)} conta="estimativa pela classificação, etapas 1 a 6" />
+          <Numero rotulo="Valor estimado" valor={numeros.valor} conta="estimativa pela classificação, etapas 1 a 6" />
         </div>
+        {metricsQ.isError && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <p role="alert" className="text-sm text-destructive">
+              Não deu para carregar os números do funil.
+            </p>
+            <Button variant="outline" size="sm" onClick={() => void metricsQ.refetch()}>
+              Tentar de novo
+            </Button>
+          </div>
+        )}
         <details className="mt-3 text-sm text-muted-foreground">
           <summary className="flex min-h-11 cursor-pointer items-center md:min-h-0">ⓘ Como contamos</summary>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
@@ -233,13 +258,56 @@ export default function FunilPage() {
         </p>
       </div>
 
-      {leadsQuery.isError ? (
+      {estado === 'erro' ? (
         <div className={`${CARTAO} space-y-2 p-5`}>
           <p role="alert" className="text-sm text-destructive">
             Não deu para carregar os leads. Verifique a internet e tente de novo.
           </p>
-          <Button variant="outline" onClick={() => void leadsQuery.refetch()}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              void leadsQuery.refetch();
+              if (!catalog) void catalogQ.refetch();
+            }}
+          >
             Tentar de novo
+          </Button>
+        </div>
+      ) : estado === 'carregando' ? (
+        <div aria-busy="true">
+          <div className="hidden gap-4 overflow-hidden pb-4 md:flex">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="h-72 w-72 shrink-0 animate-pulse rounded-2xl bg-muted" />
+            ))}
+          </div>
+          <div className="space-y-3 md:hidden">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="h-14 animate-pulse rounded-2xl bg-muted" />
+            ))}
+          </div>
+        </div>
+      ) : estado === 'sem-leads' ? (
+        <div className={`${CARTAO} space-y-3 p-5`}>
+          <p className="font-medium">Nenhum lead nesta praça ainda.</p>
+          <p className="text-sm text-muted-foreground">
+            Os leads entram pela visita dos representantes, pelo formulário, pela busca de estabelecimentos ou por planilha.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" asChild>
+              <Link href="/entrada">
+                <Inbox aria-hidden /> Entrada de leads
+              </Link>
+            </Button>
+            <Button onClick={() => setNovo(true)}>
+              <Plus aria-hidden /> Novo lead
+            </Button>
+          </div>
+        </div>
+      ) : estado === 'sem-resultado' ? (
+        <div className={`${CARTAO} space-y-3 p-5`}>
+          <p className="text-sm">Nenhum lead com esses filtros.</p>
+          <Button variant="outline" onClick={limparFiltros}>
+            Limpar filtros
           </Button>
         </div>
       ) : (
@@ -319,7 +387,14 @@ function Numero({ rotulo, valor, conta, alerta }: { rotulo: string; valor: strin
       <p className="text-sm text-muted-foreground">{rotulo}</p>
       <p className={`mt-1 flex items-center gap-1.5 text-2xl font-semibold ${alerta ? 'text-warning' : ''}`}>
         {alerta ? <AlertTriangle className="h-5 w-5" aria-hidden /> : null}
-        {valor}
+        {valor === SEM_DADO ? (
+          <>
+            <span aria-hidden>{SEM_DADO}</span>
+            <span className="sr-only">sem dado</span>
+          </>
+        ) : (
+          valor
+        )}
       </p>
       <p className="mt-1 text-xs text-muted-foreground">{conta}</p>
     </div>
@@ -383,7 +458,7 @@ function LeadCard({
             </span>
           ) : null}
           {freela ? (
-            <span className={SELO} aria-label={freela}>
+            <span className={SELO}>
               <BriefcaseBusiness className="h-3 w-3" aria-hidden />
               {freela}
             </span>
