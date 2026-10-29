@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { RotasModule } from '../rotas/rotas.module';
 import { EtapasAutomaticasService } from './etapas-automaticas.service';
+import { SemRespostaService } from './sem-resposta.service';
 
 /**
  * CRM automático (contrato §47, arquitetura §2.2). Só importa módulos FOLHA (`RotasModule`: a regra de "cadastro confirmado"
@@ -8,7 +9,7 @@ import { EtapasAutomaticasService } from './etapas-automaticas.service';
  */
 @Module({
   imports: [RotasModule],
-  providers: [EtapasAutomaticasService],
-  exports: [EtapasAutomaticasService],
+  providers: [EtapasAutomaticasService, SemRespostaService],
+  exports: [EtapasAutomaticasService, SemRespostaService],
 })
 export class CrmModule {}

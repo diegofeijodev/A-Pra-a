@@ -5575,7 +5575,7 @@ passa por `isUuid()`. Nenhuma rota de §1–§46 muda de forma, exceto as métri
 |---|---|---|---|
 | `CRM_TASKS_ENABLED` | `crm_tasks` | rotas `/v1/crm/*` (desligada = `404 CRM_TASKS_DISABLED`), telas Tarefas e Automações, cartão do Dashboard, selos do Funil | nada (o web mostra só com `commercial` também) |
 | `CRM_AUTO_LEADS_FROM_SEARCH_ENABLED` | `crm_auto_leads` | A1: achados da busca entram sozinhos no funil (teto de 300 por busca, sem dono, autor `Automático`) | nada |
-| `CRM_AUTO_STAGES_ENABLED` | — | A2 (etapa pelo cadastro do representante, autor `Automático · Freela`), A4 do "sem resposta" para "Perdido / reaquecer" junto com `CRM_AUTO_LOST_ENABLED`, e o `since` mais largo do sync | sync ligado e dados de `field_signups` |
+| `CRM_AUTO_STAGES_ENABLED` | — | A2 (etapa pelo cadastro do representante, autor `Automático · Freela`), e o `since` mais largo do sync | sync ligado e dados de `field_signups` |
 | `CRM_AUTO_LOST_ENABLED` | — | A4: lead sem resposta há 21 dias vai para "Perdido / reaquecer" (autor `Automático`) | nada |
 | `CRM_FREELA_PIPELINE_ENABLED` | — | A3: etapa e lead pelo quadro de contratantes do Freela (autor `Automático · Freela`) | conta do Freela |
 
