@@ -238,3 +238,31 @@ describe('TarefasService.concluir: 1º contato leva o lead de 1 a 2 (ruling A5)'
     expect(t.tx.leads.findUnique.mock.calls[0][0].select).toMatchObject({ stage: true });
   });
 });
+
+describe('TarefasService.concluir: "first_contact", o "Feito" da Entrada (ruling W2)', () => {
+  beforeEach(() => jest.useFakeTimers({ now: AGORA, doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] }));
+  afterEach(() => jest.useRealTimers());
+
+  it('lead em "Lead novo": o contato com o texto da fila, quem fez vira dono e o lead vai a Contatado; o próximo passo fica', async () => {
+    const t = concluir({ id: L1, archived: false, owner_id: null, stage: 1 });
+    await t.svc.concluir({ lead_id: L1, task: 'first_contact', kind: 'call', text: 'Ligação registrada pela fila do dia.' }, USER);
+    expect(t.prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(t.eventos).toEqual([
+      { lead_id: L1, at: t.eventos[0]!.at, author_id: EU, kind: 'call', text: 'Ligação registrada pela fila do dia.' },
+      { lead_id: L1, at: t.eventos[0]!.at, author_id: EU, kind: 'stage', text: 'Mudou de etapa: Lead novo → Contatado', stage_to: 2 },
+    ]);
+    expect(t.updates).toEqual([{ where: { id: L1 }, data: { last_contact_at: t.eventos[0]!.at } }]);
+    expect(t.donos).toEqual([{ where: { id: L1, owner_id: null }, data: { owner_id: EU } }]);
+    expect(t.etapas).toEqual([
+      { where: { id: L1, stage: 1, archived: false }, data: { stage: 2, stage_since: '2026-10-29', lost_reason: null, reheat_at: null } },
+    ]);
+  });
+
+  it('reaquecer (etapa 8): só o contato; etapa, motivo e reaquecimento não mudam', async () => {
+    const t = concluir({ id: L1, archived: false, owner_id: EU, stage: 8 });
+    await t.svc.concluir({ lead_id: L1, task: 'first_contact', kind: 'msg_out' }, USER);
+    expect(t.etapas).toEqual([]);
+    expect(t.eventos.map((e) => e.kind)).toEqual(['msg_out']);
+    expect(t.updates).toEqual([{ where: { id: L1 }, data: { last_contact_at: t.eventos[0]!.at } }]);
+  });
+});

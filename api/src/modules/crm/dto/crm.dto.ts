@@ -3,7 +3,11 @@ import { IsIn, IsOptional, IsString, IsUUID, MaxLength, ValidateNested } from 'c
 import { IsDayString } from '../../../common/validation/is-day.decorator';
 import { NextStepDto } from '../../leads/dto/leads.dto';
 
-export const TAREFAS_FEITAS = ['hot_visit', 'next_step', 'stalled', 'first_vacancy'] as const;
+/**
+ * Tarefas que aceitam "Feito". `first_contact` não é grupo de `GET /v1/crm/tasks`: é o "Feito" da fila da Entrada (ruling W2), que grava o
+ * contato e, pela regra do 1º contato do `concluir`, leva o lead de "Lead novo" a "Contatado" (reaquecer: só o contato).
+ */
+export const TAREFAS_FEITAS = ['hot_visit', 'next_step', 'stalled', 'first_vacancy', 'first_contact'] as const;
 export const CONTATOS_FEITOS = ['call', 'msg_out', 'msg_in', 'visit'] as const;
 
 /** `praca_id` é string de propósito: id malformado ou inexistente vira 404 `NOT_FOUND` no serviço, não 400. */

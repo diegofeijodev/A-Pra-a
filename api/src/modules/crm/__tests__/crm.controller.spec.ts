@@ -71,6 +71,11 @@ describe('CrmController', () => {
     await expect(valida(TarefaFeitaDto, { ...ok, next_step: { what: 'Ligar', date: '2026-11-03' }, text: 'ok' })).resolves.toBeDefined();
   });
 
+  it("DTO do done aceita task 'first_contact' (o \"Feito\" da Entrada, ruling W2)", async () => {
+    const v = (await valida(TarefaFeitaDto, { lead_id: L1, task: 'first_contact', kind: 'visit' })) as TarefaFeitaDto;
+    expect(v).toMatchObject({ lead_id: L1, task: 'first_contact', kind: 'visit' });
+  });
+
   it('DTO da lista: praca_id obrigatório mas malformado passa (404 vem do serviço); person inválido = 400', async () => {
     await expect(valida(TarefasQueryDto, { praca_id: 'lixo' })).resolves.toMatchObject({ praca_id: 'lixo' });
     await expect(valida(TarefasQueryDto, {})).rejects.toBeInstanceOf(BadRequestException);

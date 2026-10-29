@@ -172,7 +172,10 @@ export class TarefasService {
     };
   }
 
-  /** "Feito" de uma tarefa (hot_visit, next_step, stalled, first_vacancy). Lead que já saiu da regra grava o contato assim mesmo. */
+  /**
+   * "Feito" de uma tarefa (hot_visit, next_step, stalled, first_vacancy) ou da fila da Entrada (first_contact, sem lógica própria: a regra
+   * do 1º contato abaixo vale para todas). Lead que já saiu da regra grava o contato assim mesmo.
+   */
   async concluir(dto: TarefaFeitaDto, user: AuthUser): Promise<{ ok: true; lead_id: string }> {
     if (!isUuid(dto.lead_id)) throw this.leadNaoEncontrado();
     await this.prisma.$transaction(async (tx) => {
