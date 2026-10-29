@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Phone, MapPin, MessageSquare, CalendarPlus, X, Archive } from 'lucide-react';
 import { fmtBR, fmtDateTime, todaySp } from '@/lib/dates';
 import { useUiStore } from '@/lib/ui-store';
@@ -50,6 +50,24 @@ export function LeadPanel() {
   const [nsWhat, setNsWhat] = useState("");
   const [nsDate, setNsDate] = useState(todaySp());
 
+  // O painel abre pelo `ui-store`, sem `SheetTrigger`: o Radix não sabe a quem devolver o foco ao fechar (caía no `body`). Guarda quem
+  // tinha o foco quando o painel abriu — num efeito de LAYOUT, antes de o `FocusScope` do `Sheet` (efeito comum) puxar o foco para dentro.
+  const voltarFoco = useRef<HTMLElement | null>(null);
+  const aberto = !!openLeadId;
+  useLayoutEffect(() => {
+    if (!aberto) return;
+    const ativo = document.activeElement;
+    voltarFoco.current = ativo instanceof HTMLElement && ativo !== document.body ? ativo : null;
+  }, [aberto]);
+  // Quem abriu pode ter saído da tela enquanto o painel estava aberto (a linha de Tarefas gravada, por exemplo): aí o foco vai ao h1
+  // da página (`CabecalhoPagina`, `tabIndex={-1}`), nunca ao `body`.
+  const devolverFoco = (e: Event) => {
+    e.preventDefault();
+    const alvo = voltarFoco.current;
+    voltarFoco.current = null;
+    (alvo?.isConnected ? alvo : document.querySelector<HTMLElement>('main h1[tabindex]'))?.focus();
+  };
+
   const leadId = lead?.id;
   const nextWhat = lead?.next_step?.what;
   const nextDate = lead?.next_step?.date;
@@ -83,8 +101,13 @@ export function LeadPanel() {
 
   return (
     <Sheet open onOpenChange={(aberto) => { if (!aberto) close(); }}>
-      {/* Casca do `Sheet` (Radix Dialog): foco preso, Esc fecha, aria-modal e foco devolvido (UX achado 8). */}
-      <SheetContent side="right" botaoFechar={false} className="no-print w-full overflow-y-auto p-4 sm:max-w-lg">
+      {/* Casca do `Sheet` (Radix Dialog): foco preso, Esc fecha e aria-modal (UX achado 8). O foco devolvido é o `devolverFoco`. */}
+      <SheetContent
+        side="right"
+        botaoFechar={false}
+        onCloseAutoFocus={devolverFoco}
+        className="no-print w-full overflow-y-auto p-4 sm:max-w-lg"
+      >
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
             {/* A cor da etapa fica só na bolinha; o texto é sempre `text-foreground` (achado 9).

@@ -8,7 +8,9 @@ describe('CabecalhoPagina', () => {
     const html = renderToStaticMarkup(
       createElement(CabecalhoPagina, { titulo: 'Mensagens', subtitulo: 'Modelos e disparos.' }),
     );
-    expect(html).toMatch(/<h1 class="[^"]*text-3xl font-semibold[^"]*">Mensagens<\/h1>/);
+    expect(html).toMatch(/<h1[^>]*class="[^"]*text-3xl font-semibold[^"]*"[^>]*>Mensagens<\/h1>/);
+    // Alvo do foco quando quem abriu o painel do lead saiu da tela (LeadPanel): focável só pelo código, fora do Tab.
+    expect(html).toMatch(/<h1[^>]*tabindex="-1"/);
     expect(html).toMatch(/<p class="[^"]*text-muted-foreground[^"]*">Modelos e disparos\.<\/p>/);
     expect(html).not.toContain('tag');
   });

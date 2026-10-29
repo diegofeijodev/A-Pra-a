@@ -73,8 +73,9 @@ export function LinhaTarefa(p: LinhaTarefaProps) {
     antes.current = recolhida;
     const ativo = document.activeElement;
     if (ativo && ativo !== document.body && !liRef.current?.contains(ativo)) return;
-    if (recolhida) confirmacaoRef.current?.focus();
-    else (gatilho.current === 'adiar' ? adiarRef : feitoRef).current?.focus();
+    // Sem rolar: a confirmação ocupa o lugar da linha (e o botão volta ao mesmo lugar).
+    if (recolhida) confirmacaoRef.current?.focus({ preventScroll: true });
+    else (gatilho.current === 'adiar' ? adiarRef : feitoRef).current?.focus({ preventScroll: true });
   }, [recolhida]);
 
   const whats = p.whatsapp ? linkWhatsApp(p.telefone, p.whatsapp.texto) : null;

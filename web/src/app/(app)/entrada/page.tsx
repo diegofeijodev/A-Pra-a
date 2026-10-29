@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Check, Link2, MapPin, MessageCircle, Phone, Plus, Trash2, Upload, type LucideIcon } from 'lucide-react';
 import { ROTA } from '@/modules/acesso/domain/enderecos';
 import { CabecalhoPagina } from '@/components/praca/CabecalhoPagina';
+import { focarSemPular, proximoFoco } from '@/components/crm/foco-da-lista';
 import { LinhaTarefa } from '@/components/crm/LinhaTarefa';
 import {
   AlertDialog,
@@ -633,7 +634,8 @@ function FilaDoDia() {
   const [whatsAbertos, setWhatsAbertos] = useState<ReadonlySet<string>>(() => new Set());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hoje = todaySp();
-  const acoes = useAcoesAdiadas<Espera>();
+  const [focoDepois, setFocoDepois] = useState<string | null>(null);
+  const acoes = useAcoesAdiadas<Espera>({ antesDeSumir: (chave) => setFocoDepois(proximoFoco(chave, "#fila-vazia")) });
   const { data: queue, isError, error, refetch } = useLeadQueue(who);
 
   // A cota é do servidor (`app_settings.daily_quota`) e corta a fila lá; o
@@ -663,6 +665,13 @@ function FilaDoDia() {
   useEffect(() => {
     if (queue) esquecerAusentes(new Set(queue.items.map((l) => `entrada:${l.id}`)));
   }, [queue, esquecerAusentes]);
+
+  // A linha saiu: o foco vai ao nome da seguinte (ou da anterior) ou ao aviso da fila vazia, como em Tarefas (UX §3.1.8).
+  useEffect(() => {
+    if (!focoDepois) return;
+    focarSemPular(focoDepois);
+    setFocoDepois(null);
+  }, [focoDepois, acoes.feitas]);
 
   const people = (users ?? []).filter((u) => u.active);
   const total = queue?.total ?? 0;
@@ -772,7 +781,7 @@ function FilaDoDia() {
         <div aria-busy="true" className="mx-5 mb-5 h-32 animate-pulse rounded-2xl bg-muted" />
       ) : shown.length === 0 ? (
         <div className="border-t border-border p-5 text-sm">
-          <p>Ninguém esperando o 1º contato hoje.</p>
+          <p id="fila-vazia" tabIndex={-1}>Ninguém esperando o 1º contato hoje.</p>
           <p className="text-muted-foreground">Os leads novos chegam pela visita, pelo formulário, pela busca e por planilha.</p>
         </div>
       ) : (
@@ -792,11 +801,22 @@ function HistoricoSection() {
   const undoImport = useUndoImport();
   const [msg, setMsg] = useState("");
   const [alvo, setAlvo] = useState<ImportBatchView | null>(null);
+  // O diálogo abre pelo estado, sem `AlertDialogTrigger`: o Radix não sabe a quem devolver o foco (caía no `body`). Guarda o botão.
+  const voltarFoco = useRef<HTMLElement | null>(null);
+  const avisoRef = useRef<HTMLParagraphElement>(null);
+  const [focarAviso, setFocarAviso] = useState(false);
+  // Desfeita, o lote perde o "Desfazer importação" na releitura: o foco que estava no botão vai ao aviso do resultado, não ao `body`.
+  useEffect(() => {
+    if (!focarAviso || !msg) return;
+    setFocarAviso(false);
+    const ativo = document.activeElement;
+    if (!ativo || ativo === document.body || ativo === voltarFoco.current) avisoRef.current?.focus();
+  }, [focarAviso, msg]);
   const lista = imports ?? [];
   const textos = alvo ? textosDesfazerImportacao(alvo.file_name, alvo.imported) : null;
   return (
     <Card title="Histórico de importações" sub="Dá para desfazer por 24 horas: saem só os leads do lote que ainda não tiveram contato.">
-      {msg && <p role="status" className="mb-3 rounded-lg bg-muted p-3 text-sm">{msg}</p>}
+      {msg && <p ref={avisoRef} tabIndex={-1} role="status" className="mb-3 rounded-lg bg-muted p-3 text-sm">{msg}</p>}
       {lista.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma importação ainda.</p>}
       <ul className="space-y-3">
         {lista.map((b) => (
@@ -806,7 +826,15 @@ function HistoricoSection() {
               <span className="text-sm text-muted-foreground">{fmtDateTime(b.at)} · por {users?.find((u) => u.id === b.by)?.name ?? b.by} · origem {b.origem}</span>
               <span className="text-sm sm:ml-auto">{b.imported} entraram · {b.ignored} ignorados</span>
               {b.can_undo && (
-                <Button variant="outline" size="sm" aria-haspopup="dialog" onClick={() => setAlvo(b)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-haspopup="dialog"
+                  onClick={(e) => {
+                    voltarFoco.current = e.currentTarget;
+                    setAlvo(b);
+                  }}
+                >
                   Desfazer importação
                 </Button>
               )}
@@ -823,7 +851,12 @@ function HistoricoSection() {
       <p className="mt-1 text-xs text-muted-foreground">Classificações usadas: {(catalog?.classes ?? []).map((c) => c.label).join(" · ")} · {fmtBR(todaySp())}</p>
 
       <AlertDialog open={!!alvo} onOpenChange={(aberto) => { if (!aberto) setAlvo(null); }}>
-        <AlertDialogContent>
+        <AlertDialogContent
+          onCloseAutoFocus={(e) => {
+            e.preventDefault();
+            if (voltarFoco.current?.isConnected) voltarFoco.current.focus();
+          }}
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>{textos?.titulo}</AlertDialogTitle>
             <AlertDialogDescription>{textos?.descricao}</AlertDialogDescription>
@@ -834,7 +867,12 @@ function HistoricoSection() {
               className="bg-destructive text-white hover:bg-destructive/90"
               onClick={() => {
                 if (!alvo) return;
-                undoImport.mutate(alvo.id, { onSuccess: (r) => setMsg(textoImportacaoDesfeita(r.removed, r.kept)) });
+                undoImport.mutate(alvo.id, {
+                  onSuccess: (r) => {
+                    setMsg(textoImportacaoDesfeita(r.removed, r.kept));
+                    setFocarAviso(true);
+                  },
+                });
               }}
             >
               {textos?.botao}

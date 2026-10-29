@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   CalendarClock,
   CheckCircle2,
@@ -16,6 +16,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { focarSemPular, proximoFoco } from '@/components/crm/foco-da-lista';
 import { LinhaTarefa } from '@/components/crm/LinhaTarefa';
 import { ResumoDoDia } from '@/components/crm/ResumoDoDia';
 import { CabecalhoPagina } from '@/components/praca/CabecalhoPagina';
@@ -120,9 +121,8 @@ function TelaTarefas({ hoje, subtitulo }: { hoje: string; subtitulo: ReactNode }
   const [whatsAbertos, setWhatsAbertos] = useState<ReadonlySet<string>>(() => new Set());
   const [expandidos, setExpandidos] = useState<ReadonlySet<TipoTarefa>>(() => new Set());
   const [focoDepois, setFocoDepois] = useState<string | null>(null);
-  const totalRef = useRef(0);
 
-  const acoes = useAcoesAdiadas<Espera>({ antesDeSumir: (chave) => setFocoDepois(proximoFoco(chave, totalRef.current)) });
+  const acoes = useAcoesAdiadas<Espera>({ antesDeSumir: (chave) => setFocoDepois(proximoFoco(chave, '#tudo-em-dia, #nada-seu')) });
   const tarefas = useTarefas(praca?.id, person, { enabled: true, pausado: acoes.esperando > 0 || menuAberto !== null });
   const feito = useFeito();
   const marcar = useMarcarEnviada();
@@ -141,7 +141,7 @@ function TelaTarefas({ hoje, subtitulo }: { hoje: string; subtitulo: ReactNode }
   // A linha saiu: o foco vai ao nome da seguinte, ao h2 do próximo grupo ou ao "Tudo em dia" (UX §3.1.8). Nunca cai no `body`.
   useEffect(() => {
     if (!focoDepois) return;
-    document.querySelector<HTMLElement>(focoDepois)?.focus();
+    focarSemPular(focoDepois);
     setFocoDepois(null);
   }, [focoDepois, acoes.feitas]);
 
@@ -150,7 +150,6 @@ function TelaTarefas({ hoje, subtitulo }: { hoje: string; subtitulo: ReactNode }
     return { ...g, visiveis, total: g.total - (g.items.length - visiveis.length) };
   });
   const conta = contaDasTarefas(grupos);
-  totalRef.current = conta.total;
 
   const marcarMenu = useCallback((chave: string, aberto: boolean) => setMenuAberto((m) => menuDepois(m, chave, aberto)), []);
   const faltamDepois = () => conta.total - acoes.esperando - 1;
@@ -444,23 +443,4 @@ function TelaTarefas({ hoje, subtitulo }: { hoje: string; subtitulo: ReactNode }
       </p>
     </div>
   );
-}
-
-/**
- * Para onde vai o foco quando a linha `chave` sair (UX §3.1.8): o nome da linha seguinte (ou da anterior), o h2 do próximo grupo (ou do
- * anterior), ou o "Tudo em dia". `null` = o foco não estava nesta linha: não mexe.
- */
-function proximoFoco(chave: string, totalAntes: number): string | null {
-  const li = document.querySelector<HTMLElement>(`li[data-chave="${CSS.escape(chave)}"]`);
-  const ativo = document.activeElement;
-  if (!li || (ativo && ativo !== document.body && !li.contains(ativo))) return null;
-  // Era a última tarefa (a cadência é só leitura e não conta): o "Tudo em dia" (ou o "Nada seu agora").
-  if (totalAntes <= 1) return '#tudo-em-dia, #nada-seu';
-  const vizinha = (li.nextElementSibling ?? li.previousElementSibling) as HTMLElement | null;
-  if (vizinha?.dataset.chave) return `li[data-chave="${CSS.escape(vizinha.dataset.chave)}"] [data-foco-linha]`;
-  const secao = li.closest<HTMLElement>('section[data-grupo]');
-  const irmas = [...document.querySelectorAll<HTMLElement>('section[data-grupo]')].filter((s) => s !== secao);
-  const depois = irmas.find((s) => secao && secao.compareDocumentPosition(s) & Node.DOCUMENT_POSITION_FOLLOWING);
-  const alvo = depois ?? irmas[irmas.length - 1];
-  return alvo ? `#grupo-${alvo.dataset.grupo}` : '#tudo-em-dia, #nada-seu';
 }

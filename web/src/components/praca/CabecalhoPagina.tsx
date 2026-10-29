@@ -22,7 +22,10 @@ export function CabecalhoPagina({
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div className="min-w-0">
-        <h1 className="text-3xl font-semibold">{titulo}</h1>
+        {/* `tabIndex={-1}`: o painel do lead devolve o foco aqui quando quem o abriu saiu da tela (fora do Tab). */}
+        <h1 tabIndex={-1} className="text-3xl font-semibold">
+          {titulo}
+        </h1>
         {subtitulo ? <p className="text-muted-foreground">{subtitulo}</p> : null}
       </div>
       {comPraca || acoes ? (
