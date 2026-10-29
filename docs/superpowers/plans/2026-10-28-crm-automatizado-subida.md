@@ -19,7 +19,9 @@ Denner; os marcados "(Claude)" eu faço depois do ok dele.
     o foco;
   - na Entrada, tocar no link do WhatsApp deixa de gravar "Mensagem enviada"; só o "Feito" grava;
   - na Entrada, a fila do 1º contato passa a ser só a da praça ativa, sem os leads de teste (antes: todas as praças), como o cartão
-    "Primeiro contato" de Tarefas.
+    "Primeiro contato" de Tarefas;
+  - na Entrada, depois do "Feito" a linha **fica** na fila com a marca "✓ Contato registrado hoje · continua em “Lead novo”" (antes ela
+    sumia e o lead voltava no dia seguinte, como se ninguém tivesse ligado). O lead só passa a "Contatado" com `CRM_TASKS_ENABLED`.
 
 ## Subida (nesta ordem: API antes do web)
 
@@ -53,7 +55,7 @@ Ligue uma chave por vez e olhe a página **Automações** antes da próxima.
 | Ordem | Chave | O que liga | Precisa de |
 |---|---|---|---|
 | 1 | `TEAM_COMMERCIAL_ENABLED=true` | o grupo Comercial no menu (as telas no visual novo) | nada |
-| 2 | `CRM_TASKS_ENABLED=true` | Tarefas, Automações, o cartão "Comercial hoje" no Dashboard e os selos do Funil | a 1 |
+| 2 | `CRM_TASKS_ENABLED=true` | Tarefas, Automações, o cartão "Comercial hoje" no Dashboard e os selos do Funil; o "Feito" da Entrada e o de Tarefas passam a levar o lead de "Lead novo" a "Contatado" | a 1 |
 | 3 | `CRM_AUTO_LEADS_FROM_SEARCH_ENABLED=true` (A1) | os achados da busca entram sozinhos no funil (até 300 por busca) e passam a alimentar os roteiros do campo | nada; **se a cadência "Lead novo" estiver ligada no modo "Via Freela", sai mensagem fria em massa** (a tela Automações avisa, numa faixa amarela) |
 | 4 | `CRM_AUTO_LOST_ENABLED=true` (A4) | lead há 21 dias **na etapa** "Contatado" e há 21 dias sem contato → Perdido (todo dia a partir das 06h10) | **a contagem de "Antes de ligar a 4" aceita por você** (nenhuma tela mostra esse número); de preferência depois de a equipe usar Tarefas por algumas semanas |
 | 5 | `FREELA_ADMIN_EMAIL/PASSWORD` + `FIELD_SIGNUP_SYNC_ENABLED=true` + `CRM_AUTO_STAGES_ENABLED=true` (A2) | o sync dos cadastros do representante, as etapas 5 e 6 por ele, e "publicou a 1ª vaga" | a conta de admin do Freela (segredo: num terminal seu, nunca pelo chat) e `FIELD_ASSISTED_SIGNUP_ENABLED` ligada **no Freela** |
@@ -171,11 +173,12 @@ precisa da conta do Freela, e com a conta o motor de cadências e o outbox da c�
 - **"Cliente ativo"** passa a ser quem tinha 2 ou mais vagas pagas na primeira leitura do Praça, ou quem voltou a contratar num dia
   depois da primeira vaga paga. Duas vagas no mesmo dia **não** contam.
 - O lead que a busca cria fica **sem dono**. "Feito" numa tarefa de lead sem dono torna dono quem fez.
-- **O 1º contato leva o lead a "Contatado"** (é o que "Contatado" quer dizer: o primeiro toque dado; e é o que faz a A4 alcançar esse
-  lead). Em Tarefas, "Feito" (Liguei, Mandei mensagem, Visitei) num lead em "Lead novo" o leva a "Contatado" na mesma hora, com o evento
-  de etapa de quem fez; lead em "Perdido / reaquecer" só grava o contato. Na Entrada, o "Feito" **ainda** só grava o contato (o lead
-  continua em "Lead novo" e volta à fila no dia seguinte): a mudança de etapa da Entrada está pendente, porque a mudança de etapa de hoje
-  pede um próximo passo, que o "Feito" da Entrada não tem. Pergunta 2.
+- **O 1º contato leva o lead a "Contatado", só com `CRM_TASKS_ENABLED`** (é o que "Contatado" quer dizer: o primeiro toque dado; e é o
+  que faz a A4 alcançar esse lead). Com a chave, o "Feito" (Liguei, Mandei mensagem, Visitei) num lead em "Lead novo", na Entrada ou em
+  Tarefas, grava o contato e o leva a "Contatado" na mesma hora, com o evento de etapa de quem fez; sem dono, quem fez vira dono. A linha
+  da Entrada sai e não volta. Lead em "Perdido / reaquecer" só grava o contato. **Sem a chave**, o "Feito" da Entrada só grava o contato,
+  como antes, mas a linha **fica** na fila com a marca "✓ Contato registrado hoje" (a marca vem do último contato do lead, então
+  continua depois de recarregar e aparece para quem mais abrir a fila). Pergunta 2.
 - O lead novo vindo do Freela leva o telefone do Freela (só o lead novo; nunca sobrescreve) e só entra se o cadastro for de depois do
   início da praça, na cidade da praça ou numa vizinha.
 - O automático nunca volta uma etapa, nunca toca em lead arquivado ou de teste, e só tira de "Perdido" por um fato do mesmo dia da
@@ -185,8 +188,9 @@ precisa da conta do Freela, e com a conta o motor de cadências e o outbox da c�
 ## Perguntas para você (nada disto bloqueia a subida)
 
 1. **"Valor estimado" do Funil:** é por mês ou por vaga? Hoje a tela diz "estimativa pela classificação" e explica a conta.
-2. **O 1º contato leva a "Contatado"** (decisão acima): concorda? E duas portas ainda deixam o lead em "Lead novo" depois do envio: o
-   "Feito" numa tarefa "Mandar mensagem" (disparo) e a fila de Mensagens. Elas gravam a mensagem como enviada, mas não mudam a etapa, e
-   o lead segue na Entrada. Quer que a mensagem marcada como enviada também leve o lead a "Contatado"?
+2. **O 1º contato leva a "Contatado"** (decisão acima, só com `CRM_TASKS_ENABLED`): concorda? E duas portas ainda deixam o lead em "Lead
+   novo" depois do envio, mesmo com a chave: o "Feito" numa tarefa "Mandar mensagem" (disparo) e a fila de Mensagens. Elas gravam a
+   mensagem como enviada, mas não mudam a etapa, e o lead segue na Entrada. Quer que a mensagem marcada como enviada também leve o lead
+   a "Contatado"?
 3. **Pílula "Tarefas" logo depois de "Dashboard" no celular?** (Hoje ela fica no grupo Comercial.)
 4. **Lead criado direto em 5 ou mais e depois perdido** não entra na "Perda mensal", porque não há histórico de etapa. Tudo bem?
