@@ -165,6 +165,16 @@ describe('SemRespostaService (A4)', () => {
     expect(await svc.rodar(AGORA)).toEqual({ candidatos: 0, perdidos: 0 });
   });
 
+  it('o where da escrita carrega o last_contact_at lido (um contato registrado no meio salva o lead)', async () => {
+    const sem = montar([lead()]);
+    await sem.svc.rodar(AGORA);
+    expect(sem.updates[0].where).toMatchObject({ last_contact_at: null });
+    const contato = new Date('2026-10-07T15:00:00.000Z');
+    const com = montar([lead({ last_contact_at: contato })]);
+    await com.svc.rodar(AGORA);
+    expect(com.updates[0].where.last_contact_at).toBe(contato);
+  });
+
   it('stage_since mudou entre a leitura e a escrita (count 0): fica, sem evento', async () => {
     const { svc, eventos, rodadas } = montar([lead()], { count: 0 });
     expect(await svc.rodar(AGORA)).toEqual({ candidatos: 1, perdidos: 0 });

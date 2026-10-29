@@ -6,8 +6,8 @@
  * e volta para a fila em `DIAS_REAQUECER` dias — os mesmos campos do `LeadsService.move()`.
  *
  * Uma transação por lead: a trava por pessoa é a MESMA do `autoEnroll` (a matrícula automática não entra no meio), as
- * inscrições são relidas já com a trava, e o `updateMany` carrega `stage: 2` e o `stage_since` lido (quem mexeu no lead
- * entre a leitura e a escrita vence). Evento com `auto_key` por `ON CONFLICT DO NOTHING` (`criarEventoAuto`: um P2002 abortaria a transação).
+ * inscrições são relidas já com a trava, e o `updateMany` carrega `stage: 2`, o `stage_since` e o `last_contact_at` lidos (quem
+ * mexeu no lead ou registrou contato entre a leitura e a escrita vence). Evento com `auto_key` por `ON CONFLICT DO NOTHING` (`criarEventoAuto`: um P2002 abortaria a transação).
  * `rodar` nunca lança: a falha de um lead não derruba os outros e a rodada registra o primeiro erro, saneado.
  */
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
@@ -109,7 +109,7 @@ export class SemRespostaService {
 
   /** Move um lead (uma transação). `true` = moveu; `false` = alguém chegou antes (inscrição nova ou lead mexido). */
   private async perder(
-    l: { id: string; stage_since: string; snooze_until: string | null; next_step_date: string | null },
+    l: { id: string; stage_since: string; snooze_until: string | null; next_step_date: string | null; last_contact_at: Date | null },
     ultimo: string,
     parados: number,
     hoje: string,
@@ -127,6 +127,8 @@ export class SemRespostaService {
           is_test: false,
           snooze_until: l.snooze_until,
           next_step_date: l.next_step_date,
+          // Contato registrado entre a leitura e a escrita (ligação, "Feito") salva o lead.
+          last_contact_at: l.last_contact_at,
         },
         data: {
           stage: ETAPA_PERDIDO,
