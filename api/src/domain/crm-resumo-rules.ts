@@ -58,6 +58,10 @@ export interface EntradaResumo {
   freelaLidoEm: string | null;
   /** Mensagens com `sent_at` no dia, por `msg_sends.mode`. */
   enviadas: { mode: string; n: number }[];
+  /** Das `enviadas` fora do modo `freela`: as da cadência (`cadence_id` não nulo; no modo Fila manual o motor marca sozinho). */
+  enviadasCadencia: number;
+  /** Das `enviadas` fora do modo `freela`: as dos disparos (`disparo_id` não nulo, sem `cadence_id`; alguém marcou à mão). */
+  enviadasDisparo: number;
   /** Mensagens com `replied_at` no dia. */
   respostas: number;
 }
@@ -168,20 +172,30 @@ export function montarResumo(e: EntradaResumo, day: string): { numbers: NumeroRe
     numbers.push({ key: 'freela', value: soma(f), parts: f, formula: conta(soma(f), f, 3), source: sourceFreela });
   }
 
-  // 4. Mensagens enviadas (por modo) e respostas registradas.
+  // 4. Mensagens enviadas (modo Via Freela x cadência x disparo; UX final, achado 3) e respostas registradas.
   const porModo = (m: string) => e.enviadas.filter((x) => x.mode === m).reduce((a, x) => a + x.n, 0);
   const viaFreela = porModo('freela');
   const totalEnviadas = e.enviadas.reduce((a, x) => a + x.n, 0);
+  const cadencia = e.enviadasCadencia;
+  const disparo = e.enviadasDisparo;
+  // Cadência e disparo são conjuntos separados fora do Freela: o resto (nenhum dos dois) fecha a soma.
+  const outra = totalEnviadas - viaFreela - cadencia - disparo;
   const env: ParteResumo[] = [
     { label: pl(viaFreela, 'entregue ao Freela', 'entregues ao Freela'), value: viaFreela },
-    { label: pl(totalEnviadas - viaFreela, 'marcada à mão', 'marcadas à mão'), value: totalEnviadas - viaFreela },
+    { label: pl(cadencia, 'marcada pela cadência', 'marcadas pela cadência'), value: cadencia },
+    { label: pl(disparo, 'marcada à mão (disparo)', 'marcadas à mão (disparos)'), value: disparo },
+    { label: pl(outra, 'de outra origem', 'de outras origens'), value: outra },
   ];
   numbers.push({
     key: 'mensagens_enviadas',
     value: totalEnviadas,
     parts: env,
-    formula: conta(totalEnviadas, env, 2),
-    source: `Fila de mensagens com envio registrado em ${d}. O Praça não sabe se as entregues ao Freela chegaram no WhatsApp.`,
+    formula: conta(totalEnviadas, env, 3),
+    source:
+      `Fila de mensagens com envio registrado em ${d}. “Entregues ao Freela” = modo Via Freela (cadência ou disparo); ` +
+      '“marcadas pela cadência” e “marcadas à mão” (disparos) = modo Fila manual. ' +
+      'No modo Fila manual, a cadência marca a mensagem como enviada no horário dela, mesmo que ninguém tenha mandado. ' +
+      'O Praça não sabe se as entregues ao Freela chegaram no WhatsApp.',
   });
   numbers.push({
     key: 'respostas',

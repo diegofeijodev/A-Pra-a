@@ -8,7 +8,9 @@ const AGORA = new Date('2026-10-28T15:00:00.000Z');
 
 type Row = Record<string, any>;
 
-function montar(o: { freela?: boolean; rodada?: Row | null; origens?: Row[]; eventos?: Row[]; enviadas?: Row[]; respostas?: number } = {}) {
+function montar(
+  o: { freela?: boolean; rodada?: Row | null; origens?: Row[]; eventos?: Row[]; enviadas?: Row[]; cadencia?: number; disparo?: number; respostas?: number } = {},
+) {
   const chamadas: Record<string, Row[]> = {};
   const reg = (k: string, a: Row) => (chamadas[k] = [...(chamadas[k] ?? []), a]);
   const prisma: any = {
@@ -16,7 +18,12 @@ function montar(o: { freela?: boolean; rodada?: Row | null; origens?: Row[]; eve
     lead_events: { findMany: jest.fn(async (a: Row) => (reg('events', a), o.eventos ?? [])) },
     msg_sends: {
       groupBy: jest.fn(async (a: Row) => (reg('envios', a), o.enviadas ?? [])),
-      count: jest.fn(async (a: Row) => (reg('respostas', a), o.respostas ?? 0)),
+      // Três contagens: respostas (`replied_at`), as da cadência (`cadence_id` não nulo) e as dos disparos fora do Freela.
+      count: jest.fn(async (a: Row) => {
+        if (a.where.replied_at) return reg('respostas', a), o.respostas ?? 0;
+        if (a.where.cadence_id?.not === null) return reg('cadencia', a), o.cadencia ?? 0;
+        return reg('disparo', a), o.disparo ?? 0;
+      }),
     },
     crm_automation_runs: { findFirst: jest.fn(async () => (o.rodada === undefined ? null : o.rodada)) },
   };
@@ -35,6 +42,19 @@ describe('ResumoService.resumo', () => {
     expect(chamadas.events![0]!.where).toEqual({ at: janela, stage_to: { not: null }, lead: { is_test: false } });
     expect(chamadas.envios![0]!.where).toEqual({ sent_at: janela, lead: { is_test: false } });
     expect(chamadas.respostas![0]!.where).toEqual({ replied_at: janela, lead: { is_test: false } });
+    expect(chamadas.cadencia![0]!.where).toEqual({
+      sent_at: janela,
+      mode: { not: 'freela' },
+      cadence_id: { not: null },
+      lead: { is_test: false },
+    });
+    expect(chamadas.disparo![0]!.where).toEqual({
+      sent_at: janela,
+      mode: { not: 'freela' },
+      cadence_id: null,
+      disparo_id: { not: null },
+      lead: { is_test: false },
+    });
   });
 
   it('com praca_id filtra as consultas por ela', async () => {
@@ -79,14 +99,18 @@ describe('ResumoService.resumo', () => {
         { origem: 'orgânico', _count: { _all: 1 } },
       ],
       eventos: [{ stage_to: 5, author_id: null, author_label: 'Automático · Freela' }, { stage_to: 3, author_id: 'u1', author_label: null }],
-      enviadas: [{ mode: 'freela', _count: { _all: 3 } }, { mode: 'fila', _count: { _all: 1 } }],
+      enviadas: [{ mode: 'freela', _count: { _all: 3 } }, { mode: 'fila', _count: { _all: 5 } }],
+      cadencia: 4,
+      disparo: 1,
       respostas: 2,
     });
     const r = await svc.resumo(PRACA, '2026-10-27', AGORA);
     expect(chave(r, 'leads_novos').formula).toBe('12 = 8 da busca + 3 de visitas + 1 do formulário');
     expect(chave(r, 'mudancas_etapa').formula).toBe('2 = 1 automática + 1 da equipe');
     expect(chave(r, 'freela').formula).toBe('1 = 1 cadastro + 0 primeiras contratações + 0 clientes ativos');
-    expect(chave(r, 'mensagens_enviadas').formula).toBe('4 = 3 entregues ao Freela + 1 marcada à mão');
+    expect(chave(r, 'mensagens_enviadas').formula).toBe(
+      '8 = 3 entregues ao Freela + 4 marcadas pela cadência + 1 marcada à mão (disparo)',
+    );
     expect(chave(r, 'respostas').value).toBe(2);
   });
 });

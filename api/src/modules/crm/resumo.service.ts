@@ -41,7 +41,9 @@ export class ResumoService {
     const doLead: Prisma.leadsWhereInput = { is_test: false, ...(pracaId ? { praca_id: pracaId } : {}) };
     const configurado = this.freela.isConfigured();
 
-    const [origens, eventos, enviadas, respostas, rodada] = await Promise.all([
+    // Fora do Freela, a cadência marca sozinha e o disparo é marcado à mão (UX final, achado 3): contagens separadas.
+    const foraDoFreela = { ...janela('sent_at'), mode: { not: 'freela' } };
+    const [origens, eventos, enviadas, respostas, rodada, enviadasCadencia, enviadasDisparo] = await Promise.all([
       this.prisma.leads.groupBy({
         by: ['origem'],
         where: { ...janela('created_at'), ...doLead, archived: false },
@@ -54,6 +56,8 @@ export class ResumoService {
       this.prisma.msg_sends.groupBy({ by: ['mode'], where: { ...janela('sent_at'), lead: doLead }, _count: { _all: true } }),
       this.prisma.msg_sends.count({ where: { ...janela('replied_at'), lead: doLead } }),
       ultimaRodada(this.prisma, 'quadro_freela'),
+      this.prisma.msg_sends.count({ where: { ...foraDoFreela, cadence_id: { not: null }, lead: doLead } }),
+      this.prisma.msg_sends.count({ where: { ...foraDoFreela, cadence_id: null, disparo_id: { not: null }, lead: doLead } }),
     ]);
 
     // Leitura "de verdade": rodada ok, terminada e que não foi o "sem conexão" (decisão do controlador).
@@ -70,6 +74,8 @@ export class ResumoService {
         freelaConfigurado: configurado,
         freelaLidoEm: lido ? horaCurta(lido) : null,
         enviadas: enviadas.map((m) => ({ mode: m.mode, n: m._count._all })),
+        enviadasCadencia,
+        enviadasDisparo,
         respostas,
       },
       dia,
