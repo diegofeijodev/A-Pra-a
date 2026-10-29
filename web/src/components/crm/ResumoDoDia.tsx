@@ -61,29 +61,28 @@ export function ResumoDoDia({ pracaId, pracaNome }: { pracaId: string; pracaNome
         </div>
       ) : (
         <>
+          {/* `dt`/`dd` filhos diretos do grupo (HTML válido): a grade põe o número à direita e a conta embaixo, na largura toda. */}
           <dl className="mt-3 divide-y">
             {linhasDoResumo(r, quando).map((l) => (
-              <div key={l.chave} className="py-3">
-                <div className="flex items-baseline justify-between gap-3">
-                  <dt className="text-sm text-muted-foreground">{l.rotulo}</dt>
-                  <dd className="text-2xl font-semibold">
-                    {l.numero === '—' ? (
-                      <>
-                        <span aria-hidden>—</span>
-                        <span className="sr-only">sem dado</span>
-                      </>
-                    ) : (
-                      l.numero
-                    )}
-                  </dd>
-                </div>
-                <dd className="break-words text-xs text-muted-foreground">{l.conta}</dd>
-                {l.extra && <dd className="break-words text-xs text-muted-foreground">{l.extra}</dd>}
+              <div key={l.chave} className="grid grid-cols-[1fr_auto] items-baseline gap-x-3 py-3">
+                <dt className="text-sm text-muted-foreground">{l.rotulo}</dt>
+                <dd className="text-right text-2xl font-semibold">
+                  {l.numero === '—' ? (
+                    <>
+                      <span aria-hidden>—</span>
+                      <span className="sr-only">sem dado</span>
+                    </>
+                  ) : (
+                    l.numero
+                  )}
+                </dd>
+                <dd className="col-span-2 break-words text-xs text-muted-foreground">{l.conta}</dd>
+                {l.extra && <dd className="col-span-2 break-words text-xs text-muted-foreground">{l.extra}</dd>}
               </div>
             ))}
           </dl>
           <details className="mt-1 text-xs text-muted-foreground">
-            <summary className="cursor-pointer py-1">ⓘ De onde vem</summary>
+            <summary className="min-h-11 cursor-pointer py-3 md:min-h-0 md:py-1">ⓘ De onde vem</summary>
             <ul className="space-y-1">
               {fontesDoResumo(r).map((f) => (
                 <li key={f.rotulo} className="break-words">
