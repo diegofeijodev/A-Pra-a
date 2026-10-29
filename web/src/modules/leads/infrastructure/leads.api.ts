@@ -164,8 +164,9 @@ export async function moveLead(id: string, input: MoveLeadInput): Promise<LeadVi
   return data as LeadView;
 }
 
-export async function addLeadEvent(id: string, kind: string, text: string): Promise<LeadView> {
-  const { data } = await api.post(`/v1/leads/${id}/events`, { kind, text });
+/** `keepalive`: só no envio adiado que sai quando a aba fecha (fila da Entrada, `configKeepalive`). */
+export async function addLeadEvent(id: string, kind: string, text: string, opcoes?: { keepalive?: boolean }): Promise<LeadView> {
+  const { data } = await api.post(`/v1/leads/${id}/events`, { kind, text }, configKeepalive(opcoes?.keepalive));
   return data as LeadView;
 }
 

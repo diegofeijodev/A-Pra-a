@@ -15,6 +15,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { Zap } from 'lucide-react';
+import { useFeaturesMenu } from '@/modules/acesso/application/use-acesso';
 import { ehGestor, podeOperar } from '@/modules/acesso/domain/acesso';
 import { rotaDaPraca } from '@/modules/acesso/domain/enderecos';
 import { useAuth } from '@/modules/auth/application/use-auth';
@@ -80,6 +82,7 @@ export function BuscaEstabelecimentos({ praca }: { praca: PracaView }) {
   const adicionar = useAddLeads(praca.id);
   // Segmentos editáveis (§36): com a flag, os chips são os segmentos ativos (até 10 por busca); sem ela, os 5 de hoje.
   const loteC = useFeaturesLoteC();
+  const { features } = useFeaturesMenu();
   const { data: segs } = useSegmentos(admin && loteC.segments);
   const opcoes = useMemo(() => opcoesDeTipo(loteC.segments ? segs?.segments : null), [loteC.segments, segs]);
   const maxTipos = loteC.segments ? MAX_TIPOS_SEGMENTOS : opcoes.length;
@@ -264,6 +267,14 @@ export function BuscaEstabelecimentos({ praca }: { praca: PracaView }) {
       {/* 3 — resultado e revisão */}
       <section aria-labelledby="busca-resultado" aria-live="polite" className="min-w-0">
         <h2 id="busca-resultado" className="text-sm font-semibold">3. Escolha quais entram</h2>
+
+        {/* A1 (UX §3.5): só com a chave ligada; o mesmo componente serve a /prospeccao e ao "Buscar clientes no mapa" da praça. */}
+        {features.crm_auto_leads && (
+          <p className="mt-3 flex items-start gap-2 rounded-xl bg-secondary p-4 text-sm">
+            <Zap aria-hidden className="mt-0.5 size-4 shrink-0" />
+            Os achados entram no funil sozinhos (até 300 por busca).
+          </p>
+        )}
 
         {!runId && (
           <p className="mt-3 text-sm text-muted-foreground">

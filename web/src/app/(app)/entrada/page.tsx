@@ -2,11 +2,24 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  AlertTriangle, Copy, Link2, Phone, Plus, SkipForward, Trash2, Undo2, Upload, MessageCircle,
-} from 'lucide-react';
+import { AlertTriangle, Check, Link2, MapPin, MessageCircle, Phone, Plus, Trash2, Upload, type LucideIcon } from 'lucide-react';
 import { ROTA } from '@/modules/acesso/domain/enderecos';
-import { addDays, diffDays, fmtBR, fmtDateTime, todaySp } from '@/lib/dates';
+import { CabecalhoPagina } from '@/components/praca/CabecalhoPagina';
+import { LinhaTarefa } from '@/components/crm/LinhaTarefa';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { fmtBR, fmtDateTime, todaySp } from '@/lib/dates';
 import { readFile, type ParsedFile } from '@/lib/intake';
 import { useUiStore } from '@/lib/ui-store';
 import { useCatalog } from '@/modules/catalog/application/use-catalog';
@@ -20,54 +33,69 @@ import {
   useUndoImport,
   type DupAction,
   type EvalRowView,
+  type ImportBatchView,
 } from '@/modules/imports/application/use-imports';
 import {
   useAddLeadEvent,
   useLeadQueue,
   useOrphanLeads,
-  useSnoozeLead,
   useUpdateLead,
   type QueueItemView,
 } from '@/modules/leads/application/use-leads';
+import { addLeadEvent } from '@/modules/leads/infrastructure/leads.api';
+import {
+  acaoDoLinkWhatsApp,
+  contaDaFila,
+  eventoDoFeito,
+  motivoDaFila,
+  textoImportacaoDesfeita,
+  textosDesfazerImportacao,
+  type ContatoDaFila,
+} from '@/modules/leads/domain/entrada';
+import { useAcoesAdiadas } from '@/modules/crm/application/use-acoes-adiadas';
+import { enviosAoFecharAba, useAdiarLead } from '@/modules/crm/application/use-crm';
+import { OPCOES_FEITO, anuncioDaAcao, opcoesAdiar, textoAdiado } from '@/modules/crm/domain/tarefas';
 import { useSettings, useUpdateSettings } from '@/modules/messages/application/use-settings';
 import { apiErrorMessage } from '@/modules/shared/infrastructure/http';
 import { useActivePraca, usePracas } from '@/modules/pracas/application/use-pracas';
 import { useUsers } from '@/modules/users/application/use-users';
-import { Avatar } from '@/components/praca/bits';
 import { NovoLeadDialog } from '@/components/praca/NovoLeadDialog';
 
 /**
- * Entrada de leads — porte de `.prototype/src/routes/entrada.tsx`.
+ * Entrada de leads (UX §3.6): visual da Lovable, mesma lógica de antes.
  *
  * Desvio §10: o arquivo continua sendo lido no navegador (`lib/intake.ts`), mas
  * a AVALIAÇÃO é do servidor (`POST /v1/imports/evaluate`) — duplicidade contra
  * a base inteira, adivinhação do mapeamento e contagem vêm de lá, e o `run`
  * avalia de novo na mesma transação em que grava. A fila do dia
  * (`GET /v1/leads/queue`) já chega ordenada e cortada pela cota.
+ *
+ * Exceção (decisão U1, achado 3): o link do WhatsApp da fila só abre a conversa; "Mensagem enviada" só é gravada pelo "Feito".
  */
-const inputCls = "rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none focus:border-primary";
+const CARTAO = 'rounded-2xl bg-card shadow-card';
+// `select` nativo no tamanho do `Input`: 44 px no celular, 36 no computador.
+const selectCls =
+  'h-11 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 md:h-9';
 
 export default function EntradaPage() {
   const [novo, setNovo] = useState(false);
   return (
-    <>
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="tag text-muted-foreground">Funil de contratantes</p>
-          <h1 className="font-display text-2xl font-black tracking-tight">Entrada de leads</h1>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Três formas de trazer lead: importar arquivo, formulário de captura e cadastro manual.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Link href="/funil" className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground">
-            Ver quadro
-          </Link>
-          <button onClick={() => setNovo(true)} className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-bold text-primary-foreground">
-            <Plus size={14} /> Novo lead
-          </button>
-        </div>
-      </div>
+    <div className="space-y-6">
+      <CabecalhoPagina
+        titulo="Entrada de leads"
+        subtitulo="Os leads novos para o 1º contato, a importação de planilha e o formulário de captura."
+        comPraca
+        acoes={
+          <>
+            <Button onClick={() => setNovo(true)}>
+              <Plus aria-hidden /> Novo lead
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href="/funil">Ver o funil</Link>
+            </Button>
+          </>
+        }
+      />
 
       <FilaDoDia />
       <ImportSection />
@@ -75,21 +103,21 @@ export default function EntradaPage() {
       <HistoricoSection />
 
       {novo && <NovoLeadDialog onClose={() => setNovo(false)} />}
-    </>
+    </div>
   );
 }
 
 function Card({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
   return (
-    <section className="mt-5 rounded-lg border border-border bg-card/60 p-4">
-      <h2 className="font-display text-base font-extrabold">{title}</h2>
-      {sub && <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>}
-      <div className="mt-3">{children}</div>
+    <section className={`${CARTAO} p-5`}>
+      <h2 className="text-lg font-semibold">{title}</h2>
+      {sub && <p className="mt-0.5 text-sm text-muted-foreground">{sub}</p>}
+      <div className="mt-4">{children}</div>
     </section>
   );
 }
 
-// ══════════════ 1. Importar arquivo ══════════════
+// ══════════════ Importar planilha ══════════════
 function ImportSection() {
   const { praca } = useActivePraca();
   const { data: pracas } = usePracas();
@@ -216,7 +244,7 @@ function ImportSection() {
       },
       {
         onSuccess: (res) => {
-          setDone(`${res.imported} leads importados · ${res.updated} atualizados · ${res.ignored} ignorados`);
+          setDone(`${res.imported} leads importados · ${res.updated} atualizados · ${res.ignored} ignorados.`);
           setParsed(null); setFileName(""); setMap({}); resetEval();
           evalSeq.current += 1;
           setPreviaVelha(false);
@@ -225,26 +253,31 @@ function ImportSection() {
     );
   };
 
+
   return (
-    <Card title="1. Importar arquivo" sub="Aceita XML e planilha separada por vírgulas (.csv). Arraste o arquivo ou escolha pelo botão.">
-      {done && <p className="mb-3 rounded-md bg-success/12 px-3 py-2 text-xs text-success">{done}</p>}
+    <Card title="Importar planilha" sub="Aceita planilha .csv e XML. Arraste o arquivo ou escolha pelo botão.">
+      {done && (
+        <p role="status" className="mb-3 rounded-lg bg-muted p-3 text-sm">
+          {done}
+        </p>
+      )}
       {!parsed && (
         <div
           onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
           onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) void take(f); }}
-          className={`flex flex-col items-center gap-2 rounded-lg border-2 border-dashed px-4 py-8 text-center ${dragging ? "border-primary bg-primary/5" : "border-border"}`}
+          className={`flex flex-col items-center gap-2 rounded-xl border-2 border-dashed p-8 text-center ${dragging ? "border-primary bg-primary/5" : "border-input"}`}
         >
-          <Upload size={20} className="text-muted-foreground" />
+          <Upload aria-hidden className="size-5 text-muted-foreground" />
           <p className="text-sm">Arraste o arquivo aqui</p>
-          <button onClick={() => fileRef.current?.click()} className="rounded-md border border-border px-3 py-1.5 text-xs font-bold">
+          <Button variant="outline" onClick={() => fileRef.current?.click()}>
             Escolher arquivo
-          </button>
+          </Button>
           <input
-            ref={fileRef} type="file" accept=".csv,.xml,text/csv,text/xml,application/xml" className="hidden"
+            ref={fileRef} type="file" accept=".csv,.xml,text/csv,text/xml,application/xml" className="hidden" aria-label="Arquivo da planilha"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) void take(f); e.target.value = ""; }}
           />
-          {err && <p className="text-xs text-danger">{err}</p>}
+          {err && <p role="alert" className="text-sm text-destructive">{err}</p>}
         </div>
       )}
 
@@ -252,109 +285,129 @@ function ImportSection() {
           (planilha larga demais, célula gigante, corpo acima de 8 MB, queda de
           rede) — a seção não pode ficar vazia: o "trocar arquivo" mora aqui. */}
       {parsed && !evalRes && (
-        <div className="flex flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border px-4 py-8 text-center">
-          <p className="text-xs text-muted-foreground">
+        <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-input p-8 text-center">
+          <p className="text-sm text-muted-foreground">
             <b className="text-foreground">{fileName}</b> · {parsed.kind.toUpperCase()} · {parsed.rows.length} linhas · {parsed.columns.length} colunas
           </p>
-          <p className={falhouAvaliar && !avaliando ? "text-xs text-danger" : "text-xs text-muted-foreground"}>
+          <p
+            role={falhouAvaliar && !avaliando ? "alert" : undefined}
+            className={falhouAvaliar && !avaliando ? "text-sm text-destructive" : "text-sm text-muted-foreground"}
+          >
             {falhouAvaliar && !avaliando
               ? apiErrorMessage(erroAvaliar, "Não foi possível avaliar o arquivo.")
               : "Avaliando o arquivo…"}
           </p>
-          <button onClick={cancel} className="rounded-md border border-border px-3 py-1.5 text-xs font-bold">
-            trocar arquivo
-          </button>
+          <Button variant="outline" onClick={cancel}>
+            Trocar arquivo
+          </Button>
         </div>
       )}
 
       {parsed && evalRes && (
-        <div className="space-y-4">
+        <div className="space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               <b className="text-foreground">{fileName}</b> · {parsed.kind.toUpperCase()} · {parsed.rows.length} linhas · {parsed.columns.length} colunas
             </p>
             <span className="ml-auto flex items-center gap-2">
               {previaVelha && (
-                <span className={falhouAvaliar && !avaliando ? "text-[11px] text-danger" : "text-[11px] text-muted-foreground"}>
+                <span
+                  role={falhouAvaliar && !avaliando ? "alert" : undefined}
+                  className={falhouAvaliar && !avaliando ? "text-xs text-destructive" : "text-xs text-muted-foreground"}
+                >
                   {falhouAvaliar && !avaliando
                     ? "Não consegui reavaliar — mude uma opção ou troque o arquivo."
                     : "Avaliando…"}
                 </span>
               )}
-              <button onClick={cancel} className="text-xs text-muted-foreground hover:text-danger">trocar arquivo</button>
+              <Button variant="outline" size="sm" onClick={cancel}>Trocar arquivo</Button>
             </span>
           </div>
 
           {/* mapeamento */}
           <div>
-            <p className="tag text-muted-foreground">Mapeamento de campos</p>
-            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            <h3 className="text-sm font-semibold">Mapeamento de campos</h3>
+            <div className="mt-2 grid gap-3 sm:grid-cols-2">
               {leadFields.map((f) => (
-                <label key={f.id} className="flex items-center gap-2 rounded-md border border-border bg-background/40 px-2 py-1.5">
-                  <span className="w-40 shrink-0 truncate text-xs text-muted-foreground">{f.label}</span>
+                <div key={f.id} className="space-y-1">
+                  <Label htmlFor={`map-${f.id}`}>{f.label}</Label>
                   <select
+                    id={`map-${f.id}`}
                     value={map[f.id] ?? ""}
                     onChange={(e) => setMap((m) => ({ ...m, [f.id]: e.target.value }))}
-                    className={`${inputCls} min-w-0 flex-1`}
+                    className={selectCls}
                   >
                     <option value="">— não usar —</option>
                     {parsed.columns.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
-                </label>
+                </div>
               ))}
             </div>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <input value={mapName} onChange={(e) => setMapName(e.target.value)} placeholder='Salvar como "Importação Google Maps"' className={`${inputCls} w-64`} />
-              <button
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Input
+                value={mapName}
+                onChange={(e) => setMapName(e.target.value)}
+                aria-label="Nome do mapeamento"
+                placeholder='Salvar como "Importação Google Maps"'
+                className="w-full sm:w-72"
+              />
+              <Button
+                variant="outline"
                 disabled={!mapName.trim()}
                 onClick={() => saveMapping.mutate({ name: mapName.trim(), map }, { onSuccess: () => setMapName("") })}
-                className="rounded-md border border-border px-2.5 py-1.5 text-xs font-bold disabled:opacity-40"
               >
                 Salvar mapeamento
-              </button>
+              </Button>
               {(mappings ?? []).map((m) => (
-                <span key={m.id} className="flex items-center gap-1 rounded-md bg-secondary/70 px-2 py-1 text-[11px]">
-                  <button onClick={() => setMap(m.map)} className="hover:text-primary">{m.name}</button>
-                  <button onClick={() => deleteMapping.mutate(m.id)} aria-label={`Excluir ${m.name}`} className="text-muted-foreground hover:text-danger"><Trash2 size={11} /></button>
+                <span key={m.id} className="flex items-center gap-1 rounded-full bg-secondary py-1 pl-3 pr-1 text-sm">
+                  <button type="button" onClick={() => setMap(m.map)} className="min-h-9 hover:underline">{m.name}</button>
+                  <button
+                    type="button"
+                    onClick={() => deleteMapping.mutate(m.id)}
+                    aria-label={`Excluir ${m.name}`}
+                    className="flex size-9 items-center justify-center rounded-full text-muted-foreground hover:text-destructive"
+                  >
+                    <Trash2 aria-hidden className="size-4" />
+                  </button>
                 </span>
               ))}
             </div>
           </div>
 
           {/* obrigatórios do lote */}
-          <div className="grid gap-3 sm:grid-cols-3">
-            <label className="text-xs text-muted-foreground">
-              Origem do lote (obrigatório)
-              <select value={origemValue} onChange={(e) => setOrigem(e.target.value)} className={`${inputCls} mt-1 w-full`}>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="space-y-1">
+              <Label htmlFor="lote-origem">Origem do lote (obrigatório)</Label>
+              <select id="lote-origem" value={origemValue} onChange={(e) => setOrigem(e.target.value)} className={selectCls}>
                 {(catalog?.import_origens ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
-            </label>
-            <label className="text-xs text-muted-foreground">
-              Praça
-              <select value={pracaMode} onChange={(e) => setPracaMode(e.target.value as "arquivo" | "lote")} className={`${inputCls} mt-1 w-full`}>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="lote-praca-modo">Praça</Label>
+              <select id="lote-praca-modo" value={pracaMode} onChange={(e) => setPracaMode(e.target.value as "arquivo" | "lote")} className={selectCls}>
                 <option value="lote">escolher para o lote</option>
                 <option value="arquivo">vem do arquivo (pela cidade)</option>
               </select>
               {pracaMode === "lote" && (
-                <select value={lotePraca} onChange={(e) => setLotePracaId(e.target.value)} className={`${inputCls} mt-1 w-full`}>
+                <select aria-label="Praça do lote" value={lotePraca} onChange={(e) => setLotePracaId(e.target.value)} className={`${selectCls} mt-2`}>
                   {(pracas ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               )}
-            </label>
-            <label className="text-xs text-muted-foreground">
-              Dono
-              <select value={ownerMode} onChange={(e) => setOwnerMode(e.target.value as "lote" | "rodizio")} className={`${inputCls} mt-1 w-full`}>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="lote-dono-modo">Dono</Label>
+              <select id="lote-dono-modo" value={ownerMode} onChange={(e) => setOwnerMode(e.target.value as "lote" | "rodizio")} className={selectCls}>
                 <option value="lote">um dono para o lote</option>
                 <option value="rodizio">rodízio entre pessoas</option>
               </select>
               {ownerMode === "lote" ? (
-                <select value={loteOwnerId} onChange={(e) => setLoteOwner(e.target.value)} className={`${inputCls} mt-1 w-full`}>
+                <select aria-label="Dono do lote" value={loteOwnerId} onChange={(e) => setLoteOwner(e.target.value)} className={`${selectCls} mt-2`}>
                   {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               ) : (
-                <span className="mt-1 flex flex-wrap gap-2">
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
                   {people.map((p) => (
-                    <label key={p.id} className="flex items-center gap-1 text-[11px]">
+                    <label key={p.id} className="flex min-h-11 items-center gap-2 text-sm md:min-h-0">
                       <input
                         type="checkbox"
                         checked={rodizioIds.includes(p.id)}
@@ -363,25 +416,30 @@ function ImportSection() {
                       {p.name}
                     </label>
                   ))}
-                </span>
+                </div>
               )}
-            </label>
+            </div>
           </div>
 
           {/* duplicidade */}
           <div>
-            <p className="tag text-muted-foreground">Duplicidade — mesmo telefone → mesmo CNPJ → mesmo nome e endereço</p>
-            <div className="mt-2 flex flex-wrap gap-2">
+            <h3 className="text-sm font-semibold">Duplicidade</h3>
+            <p className="text-xs text-muted-foreground">Mesmo telefone, depois mesmo CNPJ, depois mesmo nome e endereço.</p>
+            <div role="radiogroup" aria-label="Se a linha já existir" className="mt-2 flex flex-wrap gap-2">
               {([
-                ["ignorar", "ignorar a linha nova"],
-                ["completar", "atualizar campos vazios do lead existente"],
-                ["criar", "criar mesmo assim, marcando possível duplicado"],
+                ["ignorar", "Ignorar a linha nova"],
+                ["completar", "Completar os campos vazios do lead que já existe"],
+                ["criar", "Criar mesmo assim (marca como possível duplicado)"],
               ] as [DupAction, string][]).map(([id, label]) => (
                 <button
                   key={id}
+                  type="button"
+                  role="radio"
+                  aria-checked={dupAction === id}
                   onClick={() => setDupAction(id)}
-                  className={`rounded-md border px-2.5 py-1.5 text-xs ${dupAction === id ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}
+                  className={`flex min-h-11 items-center gap-2 rounded-full border px-3 py-1 text-left text-sm md:min-h-9 ${dupAction === id ? "border-primary bg-primary text-primary-foreground" : "border-input"}`}
                 >
+                  {dupAction === id && <Check aria-hidden className="size-4 shrink-0" />}
                   {label}
                 </button>
               ))}
@@ -389,23 +447,24 @@ function ImportSection() {
           </div>
 
           {/* resumo + prévia */}
-          <p className="rounded-md bg-secondary/60 px-3 py-2 text-xs">
-            <b>{evalRes.total} linhas lidas</b> · {evalRes.dups} duplicadas · {evalRes.no_phone} sem telefone
-            {evalRes.sem_praca ? ` · ${evalRes.sem_praca} sem praça` : ""} · <b className="text-primary">{evalRes.will_import} serão importadas</b>
+          <p className="rounded-lg bg-muted p-3 text-sm">
+            {evalRes.total} linhas lidas · {evalRes.dups} repetidas · {evalRes.no_phone} sem telefone
+            {evalRes.sem_praca ? ` · ${evalRes.sem_praca} sem praça` : ""} · <b>{evalRes.will_import} vão entrar</b>
           </p>
-          <div className="overflow-x-auto rounded-md border border-border">
-            <table className="w-full text-left text-[11px]">
-              <thead className="bg-secondary/60 text-muted-foreground">
+          <p className="text-sm text-muted-foreground md:hidden">A prévia linha a linha aparece no computador.</p>
+          <div className="hidden overflow-x-auto rounded-lg border border-border md:block">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-muted text-muted-foreground">
                 <tr>
                   {["Estabelecimento", "Cidade", "Telefone", "Decisor", "Classe", "Origem", "Praça", "Situação"].map((h) => (
-                    <th key={h} className="px-2 py-1.5 font-semibold whitespace-nowrap">{h}</th>
+                    <th key={h} className="whitespace-nowrap px-2 py-2 font-semibold">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {evalRes.rows.map((r, i) => (
                   <tr key={i} className="border-t border-border">
-                    <td className="px-2 py-1.5">{r.draft.name || <i className="text-danger">sem nome</i>}</td>
+                    <td className="px-2 py-1.5">{r.draft.name || <i className="text-destructive">sem nome</i>}</td>
                     <td className="px-2 py-1.5">{r.draft.city}</td>
                     <td className="px-2 py-1.5">{r.draft.phone}</td>
                     <td className="px-2 py-1.5">{r.draft.decisor}</td>
@@ -414,7 +473,7 @@ function ImportSection() {
                     <td className="px-2 py-1.5">{pracas?.find((p) => p.id === r.praca_id)?.name ?? <span className="text-warning">sem praça</span>}</td>
                     <td className="px-2 py-1.5">
                       {r.dup ? <span className="text-warning">duplicado ({r.dup.by})</span>
-                        : r.no_phone ? <span className="text-danger">sem telefone</span>
+                        : r.no_phone ? <span className="text-destructive">sem telefone</span>
                         : importable(r) ? <span className="text-success">entra no funil</span> : "—"}
                     </td>
                   </tr>
@@ -422,9 +481,9 @@ function ImportSection() {
               </tbody>
             </table>
           </div>
-          <div className="flex justify-end gap-2">
-            <button onClick={cancel} className="rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground">Cancelar</button>
-            <button
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" onClick={cancel}>Cancelar</Button>
+            <Button
               disabled={
                 (!evalRes.will_import && dupAction !== "completar") ||
                 !donoOk ||
@@ -433,10 +492,9 @@ function ImportSection() {
                 runImport.isPending
               }
               onClick={confirm}
-              className="rounded-md bg-primary px-3 py-1.5 text-sm font-bold text-primary-foreground disabled:opacity-40"
             >
-              Confirmar importação
-            </button>
+              Importar {evalRes.will_import} {evalRes.will_import === 1 ? "lead" : "leads"}
+            </Button>
           </div>
         </div>
       )}
@@ -453,18 +511,20 @@ function SemPracaList() {
   const updateLead = useUpdateLead();
   if (!orfaos?.length) return null;
   return (
-    <div className="mt-4 rounded-md border border-warning/40 bg-warning/8 p-3">
-      <p className="tag text-warning">Sem praça · {orfaos.length}</p>
-      <ul className="mt-2 space-y-1">
+    <div className="mt-4 rounded-xl border border-warning/40 bg-warning/10 p-4">
+      <h3 className="text-sm font-semibold">Sem praça ({orfaos.length})</h3>
+      <ul className="mt-2 space-y-2">
         {orfaos.slice(0, 12).map((l) => (
-          <li key={l.id} className="flex items-center gap-2 text-xs">
-            <button onClick={() => openLead(l.id)} className="flex-1 truncate text-left hover:text-primary">
+          <li key={l.id} className="flex flex-wrap items-center gap-2 text-sm">
+            <button type="button" onClick={() => openLead(l.id)} className="min-h-11 min-w-0 flex-1 truncate text-left hover:underline md:min-h-0">
               {l.name} · {l.city || "cidade não informada"}
             </button>
+            <label className="sr-only" htmlFor={`sem-praca-${l.id}`}>Praça de {l.name}</label>
             <select
+              id={`sem-praca-${l.id}`}
               value=""
               onChange={(e) => e.target.value && updateLead.mutate({ id: l.id, input: { praca_id: e.target.value } })}
-              className={`${inputCls} py-1 text-[11px]`}
+              className={`${selectCls} w-full sm:w-52`}
             >
               <option value="">atribuir praça…</option>
               {(pracas ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -476,7 +536,9 @@ function SemPracaList() {
   );
 }
 
-// ══════════════ 2. Formulário de captura ══════════════
+// ══════════════ Formulário de captura ══════════════
+const SUB_FORMULARIO = 'Endereço público por praça. Quem preencher entra direto em “Lead novo”. É o destino dos anúncios das campanhas.';
+
 function FormularioSection() {
   const { praca, isPending: pracasPending } = useActivePraca();
   const { data: pracas } = usePracas();
@@ -485,75 +547,94 @@ function FormularioSection() {
   const [copied, setCopied] = useState(false);
   const id = pracaId || praca?.id || "";
   const base = typeof window !== "undefined" ? window.location.origin : "";
-  const url = `${base}/formulario/${id}?origem=${origem === "tráfego pago" ? "pago" : "organico"}`;
+  const caminho = `/formulario/${id}?origem=${origem === "tráfego pago" ? "pago" : "organico"}`;
+  const url = `${base}${caminho}`;
 
   // Sem praça o endereço viraria `/formulario/?origem=pago` (404) e o "copiar"
   // copiaria um link quebrado — mesma guarda do funil e do Hoje.
   if (pracasPending) {
     return (
-      <Card title="2. Formulário de captura" sub="Endereço público por praça. Quem preencher entra direto na etapa Lead novo. É o destino dos anúncios do módulo de campanhas.">
+      <Card title="Formulário de captura" sub={SUB_FORMULARIO}>
         <p className="text-sm text-muted-foreground">Carregando…</p>
       </Card>
     );
   }
   if (!praca) {
     return (
-      <Card title="2. Formulário de captura" sub="Endereço público por praça. Quem preencher entra direto na etapa Lead novo. É o destino dos anúncios do módulo de campanhas.">
+      <Card title="Formulário de captura" sub={SUB_FORMULARIO}>
         <p className="text-sm text-muted-foreground">
-          Nenhuma praça ainda — abra a primeira em <Link href={ROTA.pracas} className="text-primary hover:underline">Praças</Link>.
+          Nenhuma praça ainda — abra a primeira em <Link href={ROTA.pracas} className="text-primary underline">Praças</Link>.
         </p>
       </Card>
     );
   }
 
   return (
-    <Card title="2. Formulário de captura" sub="Endereço público por praça. Quem preencher entra direto na etapa Lead novo. É o destino dos anúncios do módulo de campanhas.">
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="text-xs text-muted-foreground">
-          Praça
-          <select value={id} onChange={(e) => setPracaId(e.target.value)} className={`${inputCls} mt-1 block`}>
+    <Card title="Formulário de captura" sub={SUB_FORMULARIO}>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1">
+          <Label htmlFor="form-praca">Praça</Label>
+          <select id="form-praca" value={id} onChange={(e) => setPracaId(e.target.value)} className={selectCls}>
             {(pracas ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
-        </label>
-        <label className="text-xs text-muted-foreground">
-          Origem do endereço
-          <select value={origem} onChange={(e) => setOrigem(e.target.value as "tráfego pago" | "orgânico")} className={`${inputCls} mt-1 block`}>
-            <option value="tráfego pago">tráfego pago</option>
-            <option value="orgânico">orgânico</option>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="form-origem">Origem do link</Label>
+          <select id="form-origem" value={origem} onChange={(e) => setOrigem(e.target.value as "tráfego pago" | "orgânico")} className={selectCls}>
+            <option value="tráfego pago">Tráfego pago</option>
+            <option value="orgânico">Orgânico</option>
           </select>
-        </label>
+        </div>
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-border bg-background/50 px-3 py-2">
-        <Link2 size={14} className="text-muted-foreground" />
-        <code className="min-w-0 flex-1 truncate text-xs">{url}</code>
-        <button
+      <div className="mt-3 flex items-start gap-2 rounded-lg bg-muted p-3">
+        <Link2 aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        <code className="min-w-0 flex-1 break-all font-mono text-xs">{url}</code>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button
+          variant="outline"
           onClick={() => { void navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
-          className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-bold"
         >
-          <Copy size={11} /> {copied ? "copiado" : "copiar"}
-        </button>
-        <Link href={`/formulario/${id}?origem=${origem === "tráfego pago" ? "pago" : "organico"}`} className="rounded-md border border-border px-2 py-1 text-[11px] font-bold">
-          abrir
-        </Link>
+          Copiar link
+        </Button>
+        <Button variant="outline" asChild>
+          <Link href={caminho} target="_blank" rel="noopener noreferrer">Abrir o formulário</Link>
+        </Button>
+        <span role="status" className="self-center text-sm text-muted-foreground">{copied ? "Link copiado." : ""}</span>
       </div>
-      <p className="mt-2 text-[11px] text-muted-foreground">
+      <p className="mt-3 text-xs text-muted-foreground">
         Campos: nome do estabelecimento, cidade, telefone, nome do responsável e “quantas vezes por mês você fica sem gente?”.
       </p>
     </Card>
   );
 }
 
-// ══════════════ Fila do dia ══════════════
+// ══════════════ Primeiro contato de hoje (a fila do dia) ══════════════
+const ICONE_FEITO: Record<ContatoDaFila, LucideIcon> = { call: Phone, msg_out: MessageCircle, visit: MapPin };
+
+/** O que a linha mostra enquanto espera o prazo do Desfazer. */
+interface Espera {
+  texto: string;
+}
+
 function FilaDoDia() {
   const hojePerson = useUiStore((s) => s.hojePerson);
+  const abrirLead = useUiStore((s) => s.openLead);
   const { data: users } = useUsers();
+  const { data: catalog } = useCatalog();
   const { data: settings } = useSettings();
   const { mutate: saveSettings } = useUpdateSettings();
+  const addEvent = useAddLeadEvent();
+  const adiar = useAdiarLead();
   const [who, setWho] = useState(hojePerson);
   // O que está DIGITADO (pode estar vazio); `null` = mostrar o valor do servidor.
   const [quotaInput, setQuotaInput] = useState<string | null>(null);
+  const [anuncio, setAnuncio] = useState("");
+  const [whatsAbertos, setWhatsAbertos] = useState<ReadonlySet<string>>(() => new Set());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { data: queue } = useLeadQueue(who);
+  const hoje = todaySp();
+  const acoes = useAcoesAdiadas<Espera>();
+  const { data: queue, isError, error, refetch } = useLeadQueue(who);
 
   // A cota é do servidor (`app_settings.daily_quota`) e corta a fila lá; o
   // estado local é só para digitar sem mandar um PATCH por tecla. O DTO é
@@ -578,90 +659,127 @@ function FilaDoDia() {
   };
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
+  const { esquecerAusentes } = acoes;
+  useEffect(() => {
+    if (queue) esquecerAusentes(new Set(queue.items.map((l) => `entrada:${l.id}`)));
+  }, [queue, esquecerAusentes]);
+
   const people = (users ?? []).filter((u) => u.active);
   const total = queue?.total ?? 0;
   const grandes = queue?.grandes ?? 0;
-  const shown = queue?.items ?? [];
+  const shown = (queue?.items ?? []).filter((l) => !acoes.feitas.has(`entrada:${l.id}`));
+  const classLabel = (id: string) => catalog?.classes.find((c) => c.id === id)?.label ?? id;
+
+  function agendarFeito(l: QueueItemView, kind: ContatoDaFila) {
+    const ev = eventoDoFeito(kind);
+    acoes.agendar(`entrada:${l.id}`, {
+      meta: { texto: `✓ ${ev.confirmacao}` },
+      enviar: (urgente) =>
+        urgente ? addLeadEvent(l.id, ev.kind, ev.text, { keepalive: true }) : addEvent.mutateAsync({ id: l.id, kind: ev.kind, text: ev.text }),
+    });
+    setAnuncio(anuncioDaAcao(ev.confirmacao, l.name, shown.length - 1));
+  }
+
+  function agendarAdiar(l: QueueItemView, ate: string) {
+    acoes.agendar(`entrada:${l.id}`, {
+      meta: { texto: textoAdiado(ate) },
+      enviar: (urgente) => (urgente ? enviosAoFecharAba.adiar(l.id, ate) : adiar.mutateAsync({ id: l.id, until: ate })),
+    });
+    setAnuncio(`${textoAdiado(ate)}.`);
+  }
+
+  function linha(l: QueueItemView) {
+    const chave = `entrada:${l.id}`;
+    const s = acoes.situacao(chave);
+    const abriu = whatsAbertos.has(chave);
+    const dono = l.owner_id ? users?.find((u) => u.id === l.owner_id)?.name : null;
+    const apoio = [l.city, who === "all" ? (dono ? `de ${dono}` : "Sem dono") : null, l.phone ? null : "Sem telefone no cadastro: abra o lead para ver outro contato."]
+      .filter(Boolean)
+      .join(" · ");
+    return (
+      <LinhaTarefa
+        key={chave}
+        chave={chave}
+        nome={l.name}
+        onAbrirLead={() => abrirLead(l.id)}
+        motivo={motivoDaFila(l, classLabel(l.classe), hoje)}
+        apoio={apoio || null}
+        telefone={l.phone}
+        // O link só ABRE a conversa (decisão U1): quem grava "Mensagem enviada" é o Feito.
+        whatsapp={{ onAbrir: () => { if (acaoDoLinkWhatsApp() === "abrir") setWhatsAbertos((prev) => new Set(prev).add(chave)); } }}
+        aviso={abriu ? "Mandou? Toque em Feito e escolha “Mandei mensagem”." : null}
+        feito={{
+          opcoes: OPCOES_FEITO.map((o) => ({ id: o.kind, rotulo: o.rotulo, icone: ICONE_FEITO[o.kind] })),
+          onEscolher: (kind) => agendarFeito(l, kind as ContatoDaFila),
+        }}
+        adiar={{ opcoes: opcoesAdiar(hoje).map((o) => ({ id: o.ate, rotulo: o.rotulo })), onEscolher: (ate) => agendarAdiar(l, ate) }}
+        confirmacao={
+          s && s.tipo !== "erro"
+            ? {
+                texto: s.meta.texto,
+                onDesfazer: s.tipo === "pendente" ? () => { if (acoes.desfazer(chave)) setAnuncio("Desfeito."); } : undefined,
+              }
+            : null
+        }
+        erro={s?.tipo === "erro" ? { mensagem: s.mensagem, onTentarDeNovo: () => acoes.tentarDeNovo(chave) } : null}
+      />
+    );
+  }
 
   return (
-    <Card title="Para tocar hoje" sub="Leads na etapa “Lead novo” e leads de reaquecimento com data vencida. Casa grande primeiro, depois alvo, depois o resto — e os mais antigos na frente.">
-      <div className="flex flex-wrap items-center gap-2">
-        <p className="font-display text-sm font-extrabold">
-          {total} leads para tocar hoje · {grandes} casas grandes
-        </p>
-        <select value={who} onChange={(e) => setWho(e.target.value)} className={`${inputCls} ml-auto`}>
-          <option value="all">Todos os donos</option>
-          {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-        <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
-          leads por dia por pessoa
-          <input
-            type="number" min={1} max={10000} value={quotaInput ?? String(quotaServidor)}
-            onChange={(e) => changeQuota(e.target.value)}
-            className={`${inputCls} w-16 py-1`}
-          />
-        </label>
+    <section className={`${CARTAO} overflow-hidden`} aria-labelledby="primeiro-contato">
+      <div className="space-y-3 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 id="primeiro-contato" className="text-lg font-semibold">
+              {shown.length} {shown.length === 1 ? "lead" : "leads"} para o 1º contato hoje
+            </h2>
+            <p className="text-xs text-muted-foreground">{contaDaFila({ total, grandes, mostrando: shown.length })}</p>
+          </div>
+          <div className="w-full sm:w-auto">
+            <label htmlFor="fila-de-quem" className="sr-only">De quem</label>
+            <select id="fila-de-quem" value={who} onChange={(e) => setWho(e.target.value)} className={`${selectCls} sm:w-56`}>
+              <option value="all">Todos os donos</option>
+              {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+        </div>
+        {total > quota && (
+          <p className="flex items-center gap-1.5 text-sm text-warning">
+            <AlertTriangle aria-hidden className="size-4 shrink-0" /> {total - quota} leads ficaram para outro dia pelo limite de {quota} por pessoa.
+          </p>
+        )}
+        <details className="text-sm">
+          <summary className="cursor-pointer py-1 text-muted-foreground">Ajustar o limite</summary>
+          <div className="mt-2 max-w-md space-y-1">
+            <Label htmlFor="limite-diario">Limite de leads novos por pessoa, por dia (vale para toda a equipe)</Label>
+            <Input
+              id="limite-diario" type="number" inputMode="numeric" min={1} max={10000}
+              value={quotaInput ?? String(quotaServidor)}
+              onChange={(e) => changeQuota(e.target.value)}
+              className="w-32"
+            />
+          </div>
+        </details>
       </div>
-      {total > quota && (
-        <p className="mt-2 flex items-center gap-1.5 text-[11px] text-warning">
-          <AlertTriangle size={12} /> {total - quota} leads ficaram fora da fila de hoje pelo limite de {quota} por pessoa.
-        </p>
-      )}
-      <ul className="mt-3 divide-y divide-border rounded-md border border-border">
-        {shown.length === 0 && <li className="px-3 py-4 text-xs text-muted-foreground">Fila zerada. Bom trabalho.</li>}
-        {shown.map((l) => <FilaRow key={l.id} lead={l} />)}
-      </ul>
-    </Card>
-  );
-}
 
-function FilaRow({ lead }: { lead: QueueItemView }) {
-  const openLead = useUiStore((s) => s.openLead);
-  const { data: users } = useUsers();
-  const { data: catalog } = useCatalog();
-  const addEvent = useAddLeadEvent();
-  const snooze = useSnoozeLead();
-  const classLabel = catalog?.classes.find((c) => c.id === lead.classe)?.label ?? lead.classe;
-  const reaquecer = lead.is_reheat;
-  const wa = `https://wa.me/55${lead.phone.replace(/\D/g, "")}`;
-  return (
-    <li className="flex flex-wrap items-center gap-2 px-3 py-2">
-      <span
-        className="tag rounded-sm px-1.5 py-0.5"
-        style={{ backgroundColor: lead.classe === "grande" ? "#ECA82622" : "#8882", color: lead.classe === "grande" ? "#ECA826" : undefined }}
-      >
-        {classLabel}
-      </span>
-      <button onClick={() => openLead(lead.id)} className="min-w-0 flex-1 truncate text-left text-sm hover:text-primary">
-        {lead.name}
-        <span className="ml-2 text-[11px] text-muted-foreground">
-          {lead.city} · {lead.phone || "sem telefone"} · na base há {diffDays(todaySp(), lead.entered_at)}d
-          {reaquecer ? " · reaquecer" : ""}
-        </span>
-      </button>
-      <Avatar person={users?.find((u) => u.id === lead.owner_id)} size={18} />
-      <span className="flex gap-1">
-        <a
-          href={wa} target="_blank" rel="noreferrer"
-          onClick={() => addEvent.mutate({ id: lead.id, kind: "msg_out", text: "Mensagem enviada pela fila do dia." })}
-          className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] hover:border-primary"
-        >
-          <MessageCircle size={11} /> mensagem
-        </a>
-        <button
-          onClick={() => addEvent.mutate({ id: lead.id, kind: "call", text: "Ligação registrada pela fila do dia." })}
-          className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] hover:border-primary"
-        >
-          <Phone size={11} /> ligação
-        </button>
-        <button
-          onClick={() => snooze.mutate({ id: lead.id, until: addDays(todaySp(), 1) })}
-          className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:border-primary"
-        >
-          <SkipForward size={11} /> amanhã
-        </button>
-      </span>
-    </li>
+      {isError && !queue ? (
+        <div className="space-y-2 border-t border-border p-5">
+          <p role="alert" className="text-sm text-destructive">{apiErrorMessage(error, "Não deu para carregar a fila. Verifique a internet e tente de novo.")}</p>
+          <Button variant="outline" onClick={() => void refetch()}>Tentar de novo</Button>
+        </div>
+      ) : !queue ? (
+        <div aria-busy="true" className="mx-5 mb-5 h-32 animate-pulse rounded-2xl bg-muted" />
+      ) : shown.length === 0 ? (
+        <div className="border-t border-border p-5 text-sm">
+          <p>Ninguém esperando o 1º contato hoje.</p>
+          <p className="text-muted-foreground">Os leads novos chegam pela visita, pelo formulário, pela busca e por planilha.</p>
+        </div>
+      ) : (
+        <ul className="divide-y divide-border border-t border-border">{shown.map(linha)}</ul>
+      )}
+      <p role="status" aria-live="polite" className="sr-only">{anuncio}</p>
+    </section>
   );
 }
 
@@ -673,44 +791,57 @@ function HistoricoSection() {
   const { data: mappings } = useMappings();
   const undoImport = useUndoImport();
   const [msg, setMsg] = useState("");
+  const [alvo, setAlvo] = useState<ImportBatchView | null>(null);
   const lista = imports ?? [];
+  const textos = alvo ? textosDesfazerImportacao(alvo.file_name, alvo.imported) : null;
   return (
-    <Card title="Histórico de importações" sub="Desfazer disponível por 24 horas — remove apenas os leads do lote que ainda não tiveram nenhum contato.">
-      {msg && <p className="mb-2 rounded-md bg-secondary/60 px-3 py-2 text-xs">{msg}</p>}
-      {lista.length === 0 && <p className="text-xs text-muted-foreground">Nenhuma importação ainda.</p>}
-      <ul className="space-y-2">
+    <Card title="Histórico de importações" sub="Dá para desfazer por 24 horas: saem só os leads do lote que ainda não tiveram contato.">
+      {msg && <p role="status" className="mb-3 rounded-lg bg-muted p-3 text-sm">{msg}</p>}
+      {lista.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma importação ainda.</p>}
+      <ul className="space-y-3">
         {lista.map((b) => (
-          <li key={b.id} className="rounded-md border border-border p-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-sm font-semibold">{b.file_name}</p>
-              <span className="text-[11px] text-muted-foreground">{fmtDateTime(b.at)} · por {users?.find((u) => u.id === b.by)?.name ?? b.by} · origem {b.origem}</span>
-              <span className="ml-auto text-[11px]">
-                <b className="text-success">{b.imported} entraram</b> · <b className="text-warning">{b.ignored} ignorados</b>
-              </span>
+          <li key={b.id} className="rounded-xl border border-border p-4">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <p className="font-medium">{b.file_name}</p>
+              <span className="text-sm text-muted-foreground">{fmtDateTime(b.at)} · por {users?.find((u) => u.id === b.by)?.name ?? b.by} · origem {b.origem}</span>
+              <span className="text-sm sm:ml-auto">{b.imported} entraram · {b.ignored} ignorados</span>
               {b.can_undo && (
-                <button
-                  onClick={() =>
-                    undoImport.mutate(b.id, {
-                      onSuccess: (r) =>
-                        setMsg(`Importação desfeita: ${r.removed} leads removidos${r.kept ? `, ${r.kept} mantidos por já terem contato` : ""}.`),
-                    })
-                  }
-                  className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] hover:border-danger hover:text-danger"
-                >
-                  <Undo2 size={11} /> desfazer importação
-                </button>
+                <Button variant="outline" size="sm" aria-haspopup="dialog" onClick={() => setAlvo(b)}>
+                  Desfazer importação
+                </Button>
               )}
             </div>
             {b.reasons.length > 0 && (
-              <p className="mt-1 text-[11px] text-muted-foreground">Motivos: {b.reasons.join(" · ")}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Motivos: {b.reasons.join(" · ")}</p>
             )}
           </li>
         ))}
       </ul>
-      <p className="mt-3 text-[11px] text-muted-foreground">
+      <p className="mt-3 text-xs text-muted-foreground">
         Mapeamentos salvos: {mappings?.length ? mappings.map((m) => m.name).join(" · ") : "nenhum ainda"}.
       </p>
-      <p className="mt-1 text-[11px] text-muted-foreground">Classificações usadas: {(catalog?.classes ?? []).map((c) => c.label).join(" · ")} · {fmtBR(todaySp())}</p>
+      <p className="mt-1 text-xs text-muted-foreground">Classificações usadas: {(catalog?.classes ?? []).map((c) => c.label).join(" · ")} · {fmtBR(todaySp())}</p>
+
+      <AlertDialog open={!!alvo} onOpenChange={(aberto) => { if (!aberto) setAlvo(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{textos?.titulo}</AlertDialogTitle>
+            <AlertDialogDescription>{textos?.descricao}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={() => {
+                if (!alvo) return;
+                undoImport.mutate(alvo.id, { onSuccess: (r) => setMsg(textoImportacaoDesfeita(r.removed, r.kept)) });
+              }}
+            >
+              {textos?.botao}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
