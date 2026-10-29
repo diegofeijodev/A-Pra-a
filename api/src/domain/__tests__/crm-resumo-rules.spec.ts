@@ -86,6 +86,7 @@ describe('montarResumo', () => {
     expect(n.value).toBe(3);
     expect(n.formula).toBe('3 = 2 cadastros + 1 primeira contratação + 0 clientes ativos');
     expect(n.source).toContain('lido às 14h00');
+    expect(n.source).toContain('já tinha 2 ou mais vagas pagas quando o Praça leu o quadro pela primeira vez');
     expect(n.source).toContain('voltou a contratar num dia depois da primeira vaga paga');
     expect(n.source).not.toContain('2 contratações');
     expect(n.source).toContain('conta mudanças, não leads diferentes');

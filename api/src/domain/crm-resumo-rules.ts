@@ -156,7 +156,7 @@ export function montarResumo(e: EntradaResumo, day: string): { numbers: NumeroRe
   const lido = e.freelaLidoEm ? ` (quadro de contratantes lido às ${e.freelaLidoEm})` : '';
   const sourceFreela =
     `Mudanças de etapa em ${d} para Cadastrado, Primeira vaga rodada ou Cliente ativo feitas pelo Freela${lido}; conta mudanças, não leads diferentes. ` +
-    'Cliente ativo = voltou a contratar num dia depois da primeira vaga paga (como o Praça vê o quadro do Freela).';
+    'Cliente ativo = já tinha 2 ou mais vagas pagas quando o Praça leu o quadro pela primeira vez, ou voltou a contratar num dia depois da primeira vaga paga (como o Praça vê o quadro do Freela).';
   if (!e.freelaConfigurado) {
     numbers.push({ key: 'freela', value: null, parts: [], formula: 'Precisa da conexão com o Freela.', source: sourceFreela });
   } else {
