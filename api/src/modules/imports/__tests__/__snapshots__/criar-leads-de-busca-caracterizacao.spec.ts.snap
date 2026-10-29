@@ -1,0 +1,530 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`criarLeadsDeBusca — caracterização (sem opcoes = o de antes do A1) dono escolhido (owner_id) vale para todos; usuário da equipe no lote e nos eventos 1`] = `
+{
+  "import_batches_create": [
+    {
+      "data": {
+        "at": "<agora>",
+        "by": "00000000-0000-4000-8000-000000000022",
+        "file_name": "Busca 20/10 · Centro (Apify)",
+        "id": "<uuid-1>",
+        "ignored": 0,
+        "imported": 2,
+        "origem": "pesquisa automática",
+        "reasons": [],
+      },
+    },
+  ],
+  "lead_events_createMany": [
+    {
+      "data": [
+        {
+          "at": "<agora>",
+          "author_id": "00000000-0000-4000-8000-000000000022",
+          "kind": "note",
+          "lead_id": "<uuid-2>",
+          "text": "Lead criado por pesquisa automática · Busca 20/10 · Centro (Apify).",
+        },
+        {
+          "at": "<agora>",
+          "author_id": "00000000-0000-4000-8000-000000000022",
+          "kind": "note",
+          "lead_id": "<uuid-3>",
+          "text": "Lead criado por pesquisa automática · Busca 20/10 · Centro (Apify).",
+        },
+      ],
+    },
+  ],
+  "leads_createMany": [
+    {
+      "data": [
+        {
+          "address": "Rua 1",
+          "city": "São Paulo",
+          "classe": "alvo",
+          "entered_at": "<hoje>",
+          "id": "<uuid-2>",
+          "import_batch_id": "<uuid-1>",
+          "lat": -23.601000000000003,
+          "lng": -46.66,
+          "location_precision": "point",
+          "name": "Lugar 1",
+          "origem": "pesquisa automática",
+          "owner_id": "00000000-0000-4000-8000-000000000022",
+          "phone": "",
+          "phone_key": "",
+          "praca_id": "00000000-0000-4000-8000-0000000000aa",
+          "site": null,
+          "source": "apify",
+          "source_ref": "ChIJ1",
+          "stage": 1,
+          "stage_since": "<hoje>",
+        },
+        {
+          "address": "Rua 2",
+          "city": "São Paulo",
+          "classe": "alvo",
+          "entered_at": "<hoje>",
+          "id": "<uuid-3>",
+          "import_batch_id": "<uuid-1>",
+          "lat": -23.602,
+          "lng": -46.66,
+          "location_precision": "point",
+          "name": "Lugar 2",
+          "origem": "pesquisa automática",
+          "owner_id": "00000000-0000-4000-8000-000000000022",
+          "phone": "",
+          "phone_key": "",
+          "praca_id": "00000000-0000-4000-8000-0000000000aa",
+          "site": null,
+          "source": "apify",
+          "source_ref": "ChIJ2",
+          "stage": 1,
+          "stage_since": "<hoje>",
+        },
+      ],
+    },
+  ],
+  "leituras": {
+    "pracas_findUnique": [
+      {
+        "select": {
+          "city": true,
+        },
+        "where": {
+          "id": "00000000-0000-4000-8000-0000000000aa",
+        },
+      },
+    ],
+    "users_count": [
+      {
+        "where": {
+          "active": true,
+          "id": {
+            "in": [
+              "00000000-0000-4000-8000-000000000022",
+            ],
+          },
+        },
+      },
+    ],
+    "users_findMany": [],
+  },
+  "retorno": {
+    "batch_id": "<uuid-1>",
+    "leads": [
+      {
+        "lead_id": "<uuid-2>",
+        "source_ref": "ChIJ1",
+      },
+      {
+        "lead_id": "<uuid-3>",
+        "source_ref": "ChIJ2",
+      },
+    ],
+  },
+}
+`;
+
+exports[`criarLeadsDeBusca — caracterização (sem opcoes = o de antes do A1) lote D: shopping marcado (place_kind) e loja de dentro (parent_lead_id); um só ativo no rodízio: lojas 1`] = `
+{
+  "import_batches_create": [
+    {
+      "data": {
+        "at": "<agora>",
+        "by": "00000000-0000-4000-8000-000000000011",
+        "file_name": "Busca 21/10 · Lojas (OSM)",
+        "id": "<uuid-1>",
+        "ignored": 0,
+        "imported": 2,
+        "origem": "pesquisa automática",
+        "reasons": [],
+      },
+    },
+  ],
+  "lead_events_createMany": [
+    {
+      "data": [
+        {
+          "at": "<agora>",
+          "author_id": "00000000-0000-4000-8000-000000000011",
+          "kind": "note",
+          "lead_id": "<uuid-2>",
+          "text": "Lead criado por pesquisa automática · Busca 21/10 · Lojas (OSM).",
+        },
+        {
+          "at": "<agora>",
+          "author_id": "00000000-0000-4000-8000-000000000011",
+          "kind": "note",
+          "lead_id": "<uuid-3>",
+          "text": "Lead criado por pesquisa automática · Busca 21/10 · Lojas (OSM).",
+        },
+      ],
+    },
+  ],
+  "leads_createMany": [
+    {
+      "data": [
+        {
+          "address": "Rua 8",
+          "city": "São Paulo",
+          "classe": "alvo",
+          "entered_at": "<hoje>",
+          "id": "<uuid-2>",
+          "import_batch_id": "<uuid-1>",
+          "lat": -23.608,
+          "lng": -46.66,
+          "location_precision": "point",
+          "name": "Lugar 8",
+          "origem": "pesquisa automática",
+          "owner_id": "00000000-0000-4000-8000-000000000011",
+          "parent_lead_id": "00000000-0000-4000-8000-0000000000bb",
+          "phone": "",
+          "phone_key": "",
+          "praca_id": "00000000-0000-4000-8000-0000000000aa",
+          "site": null,
+          "source": "osm",
+          "source_ref": "node/8",
+          "stage": 1,
+          "stage_since": "<hoje>",
+        },
+        {
+          "address": "Rua 9",
+          "city": "São Paulo",
+          "classe": "alvo",
+          "entered_at": "<hoje>",
+          "id": "<uuid-3>",
+          "import_batch_id": "<uuid-1>",
+          "lat": -23.609,
+          "lng": -46.66,
+          "location_precision": "point",
+          "name": "Lugar 9",
+          "origem": "pesquisa automática",
+          "owner_id": "00000000-0000-4000-8000-000000000022",
+          "parent_lead_id": "00000000-0000-4000-8000-0000000000bb",
+          "phone": "",
+          "phone_key": "",
+          "praca_id": "00000000-0000-4000-8000-0000000000aa",
+          "site": null,
+          "source": "osm",
+          "source_ref": "node/9",
+          "stage": 1,
+          "stage_since": "<hoje>",
+        },
+      ],
+    },
+  ],
+  "leituras": {
+    "pracas_findUnique": [
+      {
+        "select": {
+          "city": true,
+        },
+        "where": {
+          "id": "00000000-0000-4000-8000-0000000000aa",
+        },
+      },
+    ],
+    "users_count": [],
+    "users_findMany": [
+      {
+        "orderBy": [
+          {
+            "sort": "asc",
+          },
+          {
+            "created_at": "asc",
+          },
+        ],
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "active": true,
+        },
+      },
+    ],
+  },
+  "retorno": {
+    "batch_id": "<uuid-1>",
+    "leads": [
+      {
+        "lead_id": "<uuid-2>",
+        "source_ref": "node/8",
+      },
+      {
+        "lead_id": "<uuid-3>",
+        "source_ref": "node/9",
+      },
+    ],
+  },
+}
+`;
+
+exports[`criarLeadsDeBusca — caracterização (sem opcoes = o de antes do A1) lote D: shopping marcado (place_kind) e loja de dentro (parent_lead_id); um só ativo no rodízio: shopping 1`] = `
+{
+  "import_batches_create": [
+    {
+      "data": {
+        "at": "<agora>",
+        "by": "00000000-0000-4000-8000-000000000011",
+        "file_name": "Busca 21/10 · Shoppings (OSM)",
+        "id": "<uuid-1>",
+        "ignored": 0,
+        "imported": 1,
+        "origem": "pesquisa automática",
+        "reasons": [],
+      },
+    },
+  ],
+  "lead_events_createMany": [
+    {
+      "data": [
+        {
+          "at": "<agora>",
+          "author_id": "00000000-0000-4000-8000-000000000011",
+          "kind": "note",
+          "lead_id": "<uuid-2>",
+          "text": "Lead criado por pesquisa automática · Busca 21/10 · Shoppings (OSM).",
+        },
+      ],
+    },
+  ],
+  "leads_createMany": [
+    {
+      "data": [
+        {
+          "address": "Rua 7",
+          "city": "São Paulo",
+          "classe": "alvo",
+          "entered_at": "<hoje>",
+          "id": "<uuid-2>",
+          "import_batch_id": "<uuid-1>",
+          "lat": -23.607000000000003,
+          "lng": -46.66,
+          "location_precision": "point",
+          "name": "Lugar 7",
+          "origem": "pesquisa automática",
+          "owner_id": "00000000-0000-4000-8000-000000000022",
+          "phone": "",
+          "phone_key": "",
+          "place_kind": "shopping",
+          "praca_id": "00000000-0000-4000-8000-0000000000aa",
+          "site": null,
+          "source": "osm",
+          "source_ref": "way/7",
+          "stage": 1,
+          "stage_since": "<hoje>",
+        },
+      ],
+    },
+  ],
+  "leituras": {
+    "pracas_findUnique": [
+      {
+        "select": {
+          "city": true,
+        },
+        "where": {
+          "id": "00000000-0000-4000-8000-0000000000aa",
+        },
+      },
+    ],
+    "users_count": [],
+    "users_findMany": [
+      {
+        "orderBy": [
+          {
+            "sort": "asc",
+          },
+          {
+            "created_at": "asc",
+          },
+        ],
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "active": true,
+        },
+      },
+    ],
+  },
+  "retorno": {
+    "batch_id": "<uuid-1>",
+    "leads": [
+      {
+        "lead_id": "<uuid-2>",
+        "source_ref": "way/7",
+      },
+    ],
+  },
+}
+`;
+
+exports[`criarLeadsDeBusca — caracterização (sem opcoes = o de antes do A1) rodízio de donos (todos os ativos), telefone com e sem número, site, evento com o author_id do usuário 1`] = `
+{
+  "import_batches_create": [
+    {
+      "data": {
+        "at": "<agora>",
+        "by": "00000000-0000-4000-8000-000000000011",
+        "file_name": "Busca 19/10 · Moema (OSM)",
+        "id": "<uuid-1>",
+        "ignored": 0,
+        "imported": 3,
+        "origem": "pesquisa automática",
+        "reasons": [],
+      },
+    },
+  ],
+  "lead_events_createMany": [
+    {
+      "data": [
+        {
+          "at": "<agora>",
+          "author_id": "00000000-0000-4000-8000-000000000011",
+          "kind": "note",
+          "lead_id": "<uuid-2>",
+          "text": "Lead criado por pesquisa automática · Busca 19/10 · Moema (OSM).",
+        },
+        {
+          "at": "<agora>",
+          "author_id": "00000000-0000-4000-8000-000000000011",
+          "kind": "note",
+          "lead_id": "<uuid-3>",
+          "text": "Lead criado por pesquisa automática · Busca 19/10 · Moema (OSM).",
+        },
+        {
+          "at": "<agora>",
+          "author_id": "00000000-0000-4000-8000-000000000011",
+          "kind": "note",
+          "lead_id": "<uuid-4>",
+          "text": "Lead criado por pesquisa automática · Busca 19/10 · Moema (OSM).",
+        },
+      ],
+    },
+  ],
+  "leads_createMany": [
+    {
+      "data": [
+        {
+          "address": "Rua 1",
+          "city": "São Paulo",
+          "classe": "alvo",
+          "entered_at": "<hoje>",
+          "id": "<uuid-2>",
+          "import_batch_id": "<uuid-1>",
+          "lat": -23.601000000000003,
+          "lng": -46.66,
+          "location_precision": "point",
+          "name": "Lugar 1",
+          "origem": "pesquisa automática",
+          "owner_id": "00000000-0000-4000-8000-000000000011",
+          "phone": "(11) 3333-4444",
+          "phone_key": "133334444",
+          "praca_id": "00000000-0000-4000-8000-0000000000aa",
+          "site": "https://x.test",
+          "source": "osm",
+          "source_ref": "node/1",
+          "stage": 1,
+          "stage_since": "<hoje>",
+        },
+        {
+          "address": "Rua 2",
+          "city": "São Paulo",
+          "classe": "alvo",
+          "entered_at": "<hoje>",
+          "id": "<uuid-3>",
+          "import_batch_id": "<uuid-1>",
+          "lat": -23.602,
+          "lng": -46.66,
+          "location_precision": "point",
+          "name": "Lugar 2",
+          "origem": "pesquisa automática",
+          "owner_id": "00000000-0000-4000-8000-000000000022",
+          "phone": "",
+          "phone_key": "",
+          "praca_id": "00000000-0000-4000-8000-0000000000aa",
+          "site": null,
+          "source": "osm",
+          "source_ref": "node/2",
+          "stage": 1,
+          "stage_since": "<hoje>",
+        },
+        {
+          "address": "Rua 3",
+          "city": "São Paulo",
+          "classe": "alvo",
+          "entered_at": "<hoje>",
+          "id": "<uuid-4>",
+          "import_batch_id": "<uuid-1>",
+          "lat": -23.603,
+          "lng": -46.66,
+          "location_precision": "point",
+          "name": "Lugar 3",
+          "origem": "pesquisa automática",
+          "owner_id": "00000000-0000-4000-8000-000000000011",
+          "phone": "11 98888-7777",
+          "phone_key": "988887777",
+          "praca_id": "00000000-0000-4000-8000-0000000000aa",
+          "site": null,
+          "source": "osm",
+          "source_ref": "node/3",
+          "stage": 1,
+          "stage_since": "<hoje>",
+        },
+      ],
+    },
+  ],
+  "leituras": {
+    "pracas_findUnique": [
+      {
+        "select": {
+          "city": true,
+        },
+        "where": {
+          "id": "00000000-0000-4000-8000-0000000000aa",
+        },
+      },
+    ],
+    "users_count": [],
+    "users_findMany": [
+      {
+        "orderBy": [
+          {
+            "sort": "asc",
+          },
+          {
+            "created_at": "asc",
+          },
+        ],
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "active": true,
+        },
+      },
+    ],
+  },
+  "retorno": {
+    "batch_id": "<uuid-1>",
+    "leads": [
+      {
+        "lead_id": "<uuid-2>",
+        "source_ref": "node/1",
+      },
+      {
+        "lead_id": "<uuid-3>",
+        "source_ref": "node/2",
+      },
+      {
+        "lead_id": "<uuid-4>",
+        "source_ref": "node/3",
+      },
+    ],
+  },
+}
+`;
