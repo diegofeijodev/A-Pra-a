@@ -6,6 +6,7 @@ import { CrmController } from './crm.controller';
 import { CrmScheduler } from './crm.scheduler';
 import { EtapasAutomaticasService } from './etapas-automaticas.service';
 import { QuadroFreelaService } from './quadro-freela.service';
+import { ResumoService } from './resumo.service';
 import { SemRespostaService } from './sem-resposta.service';
 import { TarefasService } from './tarefas.service';
 
@@ -17,7 +18,7 @@ import { TarefasService } from './tarefas.service';
 @Module({
   imports: [RotasModule, FreelaClientModule, GeoModule],
   controllers: [CrmController],
-  providers: [EtapasAutomaticasService, SemRespostaService, QuadroFreelaService, TarefasService, CrmScheduler],
+  providers: [EtapasAutomaticasService, SemRespostaService, QuadroFreelaService, TarefasService, ResumoService, CrmScheduler],
   exports: [EtapasAutomaticasService, SemRespostaService, QuadroFreelaService],
 })
 export class CrmModule {}

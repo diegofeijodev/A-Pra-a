@@ -5614,6 +5614,8 @@ das cadências do dia vão em `cadence_send`, com `readonly: true` (abrir WhatsA
 (o serviço decide; o DTO não tem default). Só contato de verdade conta (`call`, `msg_out`, `msg_in`, `visit`). Lead que já saiu da regra grava o contato assim mesmo.
 404 lead; 409 `LEAD_ARCHIVED`. "Feito" da `send` usa a rota que já existe, `POST /v1/sends/:id/mark { status: 'enviada' }`; "Adiar" usa `POST /v1/leads/:id/snooze { until }`.
 
+**`GET /v1/crm/summary`**: `numbers` (nesta ordem) = `leads_novos` (partes: busca `pesquisa automática`, visitas `visita de campo`, formulário `orgânico`/`tráfego pago`, outras origens; sem teste e **sem arquivados**), `mudancas_etapa` (evento com `stage_to` não nulo, de qualquer `kind`; partes por autoria: automáticas, equipe, visitas, formulário, cadências, outra origem), `mudancas_etapa_destino` (partes por etapa de destino), `freela` (cadastros →5, primeiras contratações →6, clientes ativos →7, só de autor `Automático · Freela` ou `Freela (sincronização)`; **`value: null`, `parts: []`** sem o Freela configurado), `mensagens_enviadas` (`sent_at` no dia; `mode = 'freela'` x demais), `respostas` (`replied_at` no dia). `freela_read_at` = `finished_at` da última rodada `quadro_freela` ok e com leitura de verdade (sem `summary.nao_configurado`), senão `null`. `praca_id` informado precisa ser UUID (400 se não for).
+
 ### 47.4 Trabalhos (instância única)
 
 Um relógio só (`CrmScheduler`, a cada 5 min). Jobs: `auto_leads_busca`, `etapas_cadastro` (A2), `quadro_freela` (A3, de 2 em 2 horas, das 08h às 20h) e

@@ -2,7 +2,8 @@ import { BadRequestException, NotFoundException, ValidationPipe } from '@nestjs/
 import { CRM_DESLIGADAS } from '../../../common/flags/crm.flags';
 import { CrmController } from '../crm.controller';
 import { CrmLigadoGuard } from '../crm.guard';
-import { TarefaFeitaDto, TarefasQueryDto } from '../dto/crm.dto';
+import { ResumoQueryDto, TarefaFeitaDto, TarefasQueryDto } from '../dto/crm.dto';
+import type { ResumoService } from '../resumo.service';
 import type { TarefasService } from '../tarefas.service';
 
 const USER = { id: 'bbbbbbbb-0000-4000-8000-000000000001', email: 'a@b.c', name: 'Ana', is_admin: false };
@@ -30,7 +31,8 @@ describe('CrmLigadoGuard', () => {
 
 describe('CrmController', () => {
   const tarefas = { listar: jest.fn(async () => ({ ok: 1 })), concluir: jest.fn(async () => ({ ok: true, lead_id: L1 })) };
-  const ctrl = new CrmController(tarefas as unknown as TarefasService);
+  const resumoSvc = { resumo: jest.fn(async () => ({ numbers: [] })) };
+  const ctrl = new CrmController(tarefas as unknown as TarefasService, resumoSvc as unknown as ResumoService);
   beforeEach(() => jest.clearAllMocks());
 
   it('person=me usa o id do token (sub); padrão all', async () => {
@@ -38,6 +40,15 @@ describe('CrmController', () => {
     expect(tarefas.listar).toHaveBeenCalledWith('p', 'me', USER.id);
     await ctrl.listar(USER, { praca_id: 'p' });
     expect(tarefas.listar).toHaveBeenLastCalledWith('p', 'all', USER.id);
+  });
+
+  it('summary repassa praca_id e day; DTO: praca_id malformado ou dia inexistente = 400, ambos opcionais', async () => {
+    await ctrl.resumoDoDia({ praca_id: 'p', day: '2026-10-27' });
+    expect(resumoSvc.resumo).toHaveBeenCalledWith('p', '2026-10-27');
+    await expect(valida(ResumoQueryDto, {})).resolves.toBeDefined();
+    await expect(valida(ResumoQueryDto, { praca_id: 'xx' })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(valida(ResumoQueryDto, { day: '2026-02-30' })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(valida(ResumoQueryDto, { praca_id: L1, day: '2026-10-27' })).resolves.toBeDefined();
   });
 
   it('done repassa o corpo e o usuário', async () => {

@@ -4,7 +4,8 @@ import { AuthUser } from '../../common/auth/auth-user';
 import { Equipe } from '../../common/decorators/admin-only.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CrmLigadoGuard } from './crm.guard';
-import { TarefaFeitaDto, TarefasQueryDto } from './dto/crm.dto';
+import { ResumoQueryDto, TarefaFeitaDto, TarefasQueryDto } from './dto/crm.dto';
+import { ResumoService } from './resumo.service';
 import { TarefasService } from './tarefas.service';
 
 /** Tarefas do dia do Comercial (contrato §47.3). Só rotas estáticas; `@Equipe()` em cada método. */
@@ -13,7 +14,10 @@ import { TarefasService } from './tarefas.service';
 @UseGuards(CrmLigadoGuard)
 @Controller('v1/crm')
 export class CrmController {
-  constructor(private readonly tarefas: TarefasService) {}
+  constructor(
+    private readonly tarefas: TarefasService,
+    private readonly resumo: ResumoService,
+  ) {}
 
   @Equipe()
   @Get('tasks')
@@ -25,5 +29,11 @@ export class CrmController {
   @Post('tasks/done')
   feita(@CurrentUser() user: AuthUser, @Body() dto: TarefaFeitaDto) {
     return this.tarefas.concluir(dto, user);
+  }
+
+  @Equipe()
+  @Get('summary')
+  resumoDoDia(@Query() q: ResumoQueryDto) {
+    return this.resumo.resumo(q.praca_id, q.day);
   }
 }
