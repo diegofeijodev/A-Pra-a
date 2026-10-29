@@ -1,5 +1,6 @@
 'use client';
 
+import { CartaoComercialHoje } from '@/components/crm/CartaoComercialHoje';
 import {
   CheckCircle2,
   Clock,
@@ -130,6 +131,8 @@ export function PainelGestor() {
           <span aria-hidden>›</span>
         </Link>
       )}
+
+      <CartaoComercialHoje pracaId={pracaId || null} />
 
       {painel.isError ? (
         <div className={`${CARTAO} space-y-2`}>

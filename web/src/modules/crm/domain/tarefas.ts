@@ -135,13 +135,21 @@ const NA_CONTA: Partial<Record<TipoTarefa, [string, string]>> = {
   first_vacancy: ['cadastrado sem vaga', 'cadastrados sem vaga'],
 };
 
+/** Total e "4 mensagens + 3 próximos passos": o que entra na conta (a cadência é só leitura e fica de fora). */
+export function somaDasTarefas(grupos: { task: TipoTarefa; total: number }[]): { total: number; partes: string; grupos: number } {
+  const partes = grupos.filter((g) => NA_CONTA[g.task] && g.total > 0);
+  return {
+    total: partes.reduce((a, g) => a + g.total, 0),
+    partes: partes.map((g) => `${g.total} ${plural(g.total, ...NA_CONTA[g.task]!)}`).join(' + '),
+    grupos: partes.length,
+  };
+}
+
 /** Total e conta da lista (UX §3.1.2 item 3). É o mesmo número do `counts` da API: `cadence_send` fica de fora nos dois. */
 export function contaDasTarefas(grupos: { task: TipoTarefa; total: number }[]): { total: number; texto: string } {
-  const partes = grupos.filter((g) => NA_CONTA[g.task] && g.total > 0);
-  const total = partes.reduce((a, g) => a + g.total, 0);
-  if (partes.length === 0) return { total, texto: '' };
-  const soma = partes.map((g) => `${g.total} ${plural(g.total, ...NA_CONTA[g.task]!)}`).join(' + ');
-  return { total, texto: `${soma}${partes.length > 1 ? ` = ${total}` : ''}. Cada lead aparece uma vez, na tarefa mais urgente.` };
+  const { total, partes, grupos: n } = somaDasTarefas(grupos);
+  if (n === 0) return { total, texto: '' };
+  return { total, texto: `${partes}${n > 1 ? ` = ${total}` : ''}. Cada lead aparece uma vez, na tarefa mais urgente.` };
 }
 
 export const tituloDaContagem = (n: number) => `${n} ${plural(n, 'tarefa', 'tarefas')} para hoje`;

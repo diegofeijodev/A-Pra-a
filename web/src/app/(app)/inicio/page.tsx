@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { CartaoComercialHoje } from '@/components/crm/CartaoComercialHoje';
 import { AtencaoAgora } from '@/components/praca/EquipeAtencao';
 import { PainelGestor } from '@/components/praca/PainelGestor';
 import { useFeaturesMenu } from '@/modules/acesso/application/use-acesso';
@@ -35,6 +36,7 @@ export default function PainelPage() {
         </div>
       </header>
       <AtencaoAgora />
+      <CartaoComercialHoje pracaId={null} />
     </div>
   );
 }
