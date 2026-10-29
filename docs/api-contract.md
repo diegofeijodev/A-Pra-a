@@ -679,12 +679,13 @@ casa grande, alvo, depois — e, dentro da classe, os mais antigos na frente
 ### Painel do funil — `GET /metrics?praca_id`
 
 ```json
-{ "total": 25, "conv_contact": 43, "conv_active": 33, "avg_days": 9, "stalled": 4, "critical": 2, "lost": 2, "pipeline": 52700 }
+{ "total": 25, "conv_contact": 43, "conv_contact_n": 3, "conv_contact_de": 7, "conv_active": 33, "conv_active_n": 1, "conv_active_de": 3, "avg_days": 9, "stalled": 4, "critical": 2, "lost": 2, "pipeline": 52700 }
 ```
 
 Sempre só sobre os **não arquivados** da praça (sem `praca_id`, sobre a base
-inteira). `conv_contact` = cadastrados (`stage >= 5`) sobre contatados
-(`stage >= 2`), em %; `conv_active` = clientes ativos (`stage 7`) sobre
+inteira). `conv_contact` = cadastrados (`stage` 5 a 7) sobre contatados
+(`stage` 2 a 7; a etapa 8 fica de fora, §47.5), em %; `conv_contact_n`/`conv_contact_de` são
+esse numerador e denominador (cadastrados e contatados, inteiros); `conv_active_n`/`conv_active_de` idem para `conv_active`; `conv_active` = clientes ativos (`stage 7`) sobre
 cadastrados; `avg_days` = média de dias da entrada até o último toque dos
 cadastrados (descontado o tempo parado); `stalled`/`critical` = parados há
 mais de 7 e de 15 dias; `lost` = etapa 8; `pipeline` = soma de `est_value`

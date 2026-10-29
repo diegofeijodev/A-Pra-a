@@ -108,6 +108,11 @@ export interface LeadsMetricsView {
   total: number;
   conv_contact: number;
   conv_active: number;
+  /** A conta de cada taxa (`n` de `de`); opcionais até a API nova estar no ar. */
+  conv_contact_n?: number;
+  conv_contact_de?: number;
+  conv_active_n?: number;
+  conv_active_de?: number;
   avg_days: number;
   stalled: number;
   critical: number;

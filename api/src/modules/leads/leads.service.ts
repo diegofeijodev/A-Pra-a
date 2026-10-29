@@ -89,6 +89,11 @@ export interface LeadsMetricsView {
   total: number;
   conv_contact: number;
   conv_active: number;
+  /** A conta de cada taxa: `n` de `de` (ex.: 2 de 4 = 50%). */
+  conv_contact_n: number;
+  conv_contact_de: number;
+  conv_active_n: number;
+  conv_active_de: number;
   avg_days: number;
   stalled: number;
   critical: number;
@@ -245,12 +250,14 @@ export class LeadsService {
       rules: this.toRules(r, r.events),
     }));
 
-    const contatados = leads.filter((l) => l.stage >= 2).length;
-    const cadastrados = leads.filter((l) => l.stage >= 5).length;
+    // A etapa 8 (Perdido / reaquecer) não é contato nem cadastro: fica fora das
+    // taxas (o funil vai de 2 a 7; só `lost` conta o 8).
+    const contatados = leads.filter((l) => l.stage >= 2 && l.stage <= 7).length;
+    const cadastrados = leads.filter((l) => l.stage >= 5 && l.stage <= 7).length;
     const ativos = leads.filter((l) => l.stage === 7).length;
     // Dias até cadastrar: da entrada até o último toque (tira o tempo parado).
     const tempos = leads
-      .filter((l) => l.stage >= 5)
+      .filter((l) => l.stage >= 5 && l.stage <= 7)
       .map((l) => daysSince(l.entered_at, hoje) - stalledDays(l.rules, hoje))
       .filter((n) => n > 0);
 
@@ -258,6 +265,10 @@ export class LeadsService {
       total: leads.length,
       conv_contact: contatados ? Math.round((cadastrados / contatados) * 100) : 0,
       conv_active: cadastrados ? Math.round((ativos / cadastrados) * 100) : 0,
+      conv_contact_n: cadastrados,
+      conv_contact_de: contatados,
+      conv_active_n: ativos,
+      conv_active_de: cadastrados,
       avg_days: tempos.length ? Math.round(tempos.reduce((a, b) => a + b, 0) / tempos.length) : 0,
       stalled: leads.filter((l) => isStalled(l.rules, hoje)).length,
       critical: leads.filter((l) => isCritical(l.rules, hoje)).length,
