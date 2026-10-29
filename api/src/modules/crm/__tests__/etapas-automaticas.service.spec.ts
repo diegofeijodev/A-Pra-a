@@ -58,6 +58,14 @@ function montar(opts: { flags?: FlagsCrm | undefined; regra?: 'activated' | 'fir
         const l = leads.find((x) => x.id === where.id);
         return l ? { ...l } : null;
       }),
+      // Leads (arquivados inclusive) que já têm um destes usuários do Freela.
+      findMany: jest.fn(async ({ where }: any) =>
+        leads.filter((l) => where.freela_user_id.in.includes(l.freela_user_id)).map((l) => ({ freela_user_id: l.freela_user_id })),
+      ),
+      findFirst: jest.fn(async ({ where }: any) => {
+        const l = leads.find((x) => x.freela_user_id === where.freela_user_id && x.id !== where.id.not);
+        return l ? { id: l.id } : null;
+      }),
       updateMany: jest.fn(async ({ where, data }: any) => {
         const alvo = leads.filter((l) => casa(l, where));
         alvo.forEach((l) => Object.assign(l, data));
@@ -244,6 +252,35 @@ describe('EtapasAutomaticasService.passadaCadastros (A2)', () => {
     expect(t.eventos).toHaveLength(0);
   });
 
+  it('lead abaixo de 5 (alguém voltou depois do 5 do sync) com cadastro confirmado: a passada não sobe nem marca', async () => {
+    const t = montar();
+    t.leads.push(lead({ stage: 3, stage_since: '2026-10-25', freela_user_id: 'u1' }));
+    t.signups.push(signup());
+    const r = await t.svc.passadaCadastros(AGORA);
+    expect(r).toEqual({ vistos: 1, subiram: { '5': 0, '6': 0 }, vagas: 0 });
+    expect(t.leads[0]).toMatchObject({ stage: 3, auto_stage_applied: null });
+    expect(t.eventos).toHaveLength(0);
+    expect(t.prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('lead abaixo de 5 com serviço concluído: o alvo 6 segue subindo', async () => {
+    const t = montar();
+    t.leads.push(lead({ stage: 3, freela_user_id: 'u1' }));
+    t.signups.push(signup({ first_job_completed_at: new Date('2026-10-20T15:00:00.000Z') }));
+    const r = await t.svc.passadaCadastros(AGORA);
+    expect(r.subiram).toEqual({ '5': 0, '6': 1 });
+    expect(t.leads[0]).toMatchObject({ stage: 6, auto_stage_applied: 6 });
+  });
+
+  it('lead abaixo de 5 sem vínculo: grava só o vínculo, nunca a etapa 5', async () => {
+    const t = montar();
+    t.leads.push(lead({ stage: 2 }));
+    t.signups.push(signup());
+    await t.svc.passadaCadastros(AGORA);
+    expect(t.leads[0]).toMatchObject({ stage: 2, auto_stage_applied: null, freela_user_id: 'u1' });
+    expect(t.eventos).toHaveLength(0);
+  });
+
   it('primeira vaga publicada: anotação com auto_key, etapa igual; repetir não duplica', async () => {
     const t = montar();
     t.leads.push(lead({ stage: 5, auto_stage_applied: 5 }));
@@ -324,6 +361,30 @@ describe('EtapasAutomaticasService.passadaCadastros (A2)', () => {
     await t.svc.passadaCadastros(AGORA);
     expect(t.leads.find((l) => l.id === L1)!.freela_user_id).toBeNull();
     expect(t.leads.find((l) => l.id === L2)!.freela_user_id).toBeNull();
+  });
+
+  it('usuário do Freela que já está em OUTRO lead (vínculo da A3 pelo telefone): não preenche', async () => {
+    const t = montar();
+    t.leads.push(lead({ id: L1, auto_stage_applied: 5 }), lead({ id: L2, auto_stage_applied: 5, freela_user_id: 'u1' }));
+    t.signups.push(signup({ lead_id: L1, freela_user_id: 'u1' }));
+    await t.svc.passadaCadastros(AGORA);
+    expect(t.leads.find((l) => l.id === L1)!.freela_user_id).toBeNull();
+    expect(t.prisma.leads.findMany.mock.calls[0]![0]).toEqual({ where: { freela_user_id: { in: ['u1'] } }, select: { freela_user_id: true } });
+    expect(t.rodadas[0]!.summary).toMatchObject({ vinculados: 0 });
+  });
+
+  it('outro lead ganhou o usuário entre a leitura e a transação: a reconferência não liga', async () => {
+    const t = montar();
+    t.leads.push(lead({ id: L1, auto_stage_applied: 5 }), lead({ id: L2, auto_stage_applied: 5 }));
+    t.signups.push(signup({ lead_id: L1, freela_user_id: 'u1' }));
+    const tx = t.prisma.$transaction.getMockImplementation()!;
+    t.prisma.$transaction.mockImplementationOnce(async (fn: any) => {
+      t.leads.find((l) => l.id === L2)!.freela_user_id = 'u1'; // a A3 ligou L2 pelo telefone
+      return tx(fn);
+    });
+    await t.svc.passadaCadastros(AGORA);
+    expect(t.leads.find((l) => l.id === L1)!.freela_user_id).toBeNull();
+    expect(t.rodadas[0]!.summary).toMatchObject({ vinculados: 0 });
   });
 
   it('dois cadastros no mesmo lead: vale o alvo maior, um evento só', async () => {

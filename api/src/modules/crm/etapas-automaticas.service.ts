@@ -9,8 +9,9 @@
  * - o evento vai na MESMA transação, com `auto_key` e `ON CONFLICT DO NOTHING` (rodada repetida ou duas instâncias não duplicam).
  *
  * `passadaCadastros()` é o A2: uma passada local sobre `field_signups`. O sync dos cadastros (`campo/signup-sync.service.ts`)
- * não muda; a passada só acrescenta o que ele não faz: a etapa 6 pelo primeiro serviço concluído, a saída do 8, a marca, a
- * anotação da primeira vaga e o `leads.freela_user_id` quando o vínculo é único. Chave desligada = nenhuma leitura.
+ * não muda (com a chave ligada, só o `since` e o lead que alguém voltou de 5–7); a passada só acrescenta o que ele não faz: a
+ * etapa 6 pelo primeiro serviço concluído, a saída do 8, a marca, a anotação da primeira vaga e o `leads.freela_user_id` quando
+ * o vínculo é único (e o usuário não está em outro lead). O alvo 5 nunca sobe lead abaixo de 5. Chave desligada = nenhuma leitura.
  */
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
@@ -193,6 +194,8 @@ export class EtapasAutomaticasService {
         orderBy: { id: 'asc' },
       });
       const unicos = vinculosUnicos(linhas);
+      // Usuário do Freela que já está em OUTRO lead (a A3 liga pelo telefone): ligar de novo deixaria os dois ambíguos para sempre.
+      const ocupados = await this.usuariosComLead([...new Set(unicos.values())]);
       const grupos = new Map<string, typeof linhas>();
       for (const s of linhas) {
         if (!s.lead_id || !s.lead || s.lead.archived || s.lead.is_test) continue;
@@ -214,8 +217,12 @@ export class EtapasAutomaticasService {
           const a = alvoDoCadastro({ confirmado_em: classificar(s, regra).em, first_job_completed_at: s.first_job_completed_at });
           if (a && (!melhor || a.alvo > melhor.alvo || (a.alvo === melhor.alvo && a.fato > melhor.fato))) melhor = a;
         }
-        const etapa = melhor && precisaEtapa(lead, melhor.alvo, diaBrasilia(melhor.fato)) ? melhor : null;
-        const vinculo = lead.freela_user_id === null ? unicos.get(leadId) : undefined;
+        // Alvo 5 nunca sobe lead abaixo de 5 (arquitetura §2.4: o 5 abaixo de 5 é do sync; abaixo de 5 com a confirmação já
+        // feita = alguém voltou o cartão). Aqui o 5 só tira do 8 (regra do fato) ou grava a marca de quem já está em 5–7.
+        const etapa =
+          melhor && (melhor.alvo !== 5 || lead.stage >= 5) && precisaEtapa(lead, melhor.alvo, diaBrasilia(melhor.fato)) ? melhor : null;
+        const candidato = lead.freela_user_id === null ? unicos.get(leadId) : undefined;
+        const vinculo = candidato && !ocupados.has(candidato) ? candidato : undefined;
         const vagas = cadastros.filter((s) => s.first_vacancy_at && !anotadas.has(chaveVaga(s.id)));
         if (!etapa && !vinculo && vagas.length === 0) continue;
 
@@ -238,7 +245,8 @@ export class EtapasAutomaticasService {
               });
             }
             let vinculou = false;
-            if (vinculo) {
+            // Reconfere na transação: a A3 roda junto nas horas pares e pode ter ligado outro lead a esse usuário agora.
+            if (vinculo && !(await tx.leads.findFirst({ where: { freela_user_id: vinculo, id: { not: leadId } }, select: { id: true } }))) {
               const v = await tx.leads.updateMany({
                 where: { id: leadId, freela_user_id: null, archived: false, is_test: false },
                 data: { freela_user_id: vinculo },
@@ -287,6 +295,16 @@ export class EtapasAutomaticasService {
       ...(primeiroErro ? { error: erroDaRodada(primeiroErro) } : {}),
     });
     return r;
+  }
+
+  /** Quais destes usuários do Freela já estão em algum lead (arquivados inclusive), em lote. */
+  private async usuariosComLead(usuarios: string[]): Promise<Set<string>> {
+    const out = new Set<string>();
+    for (let i = 0; i < usuarios.length; i += LOTE) {
+      const r = await this.prisma.leads.findMany({ where: { freela_user_id: { in: usuarios.slice(i, i + LOTE) } }, select: { freela_user_id: true } });
+      for (const l of r) if (l.freela_user_id) out.add(l.freela_user_id);
+    }
+    return out;
   }
 
   /** Quais destas `auto_key` já existem (uma consulta por lote): a rodada não abre transação para anotação já feita. */
