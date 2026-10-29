@@ -657,7 +657,7 @@ ficha sem um segundo GET).
   para limpar lead de teste e importação errada, e por isso é só de admin.
 - `:id` malformado → `404 NOT_FOUND` (nunca 500).
 
-### Fila do dia — `GET /queue?person=all|<uuid>`
+### Fila do dia — `GET /queue?person=all|<uuid>&praca_id?`
 
 ```json
 { "total": 5, "grandes": 1, "quota": 20, "items": [{ "…LeadListView": "…", "is_reheat": false }] }
@@ -675,6 +675,12 @@ casa grande, alvo, depois — e, dentro da classe, os mais antigos na frente
 - `is_reheat` marca o lead que voltou por reaquecimento (`stage 8`).
 - `person` é `"all"` (padrão) ou o id de uma pessoa; qualquer outra coisa →
   `400 VALIDATION_ERROR`.
+- `praca_id` é **opcional** (29/10, UX final do CRM automático, achado 1).
+  Presente: precisa ser UUID (`400 VALIDATION_ERROR`) de uma praça que existe
+  (`404 NOT_FOUND`), e a fila (itens, `total` e `grandes`) passa a ser só a
+  dessa praça e **sem os leads de teste** (`is_test`), como o "Primeiro
+  contato" de Tarefas (§47.3). Ausente: a fila de todas as praças, igual à de
+  antes (nada mais filtrado; os de teste continuam).
 
 ### Painel do funil — `GET /metrics?praca_id`
 

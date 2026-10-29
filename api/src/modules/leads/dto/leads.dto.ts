@@ -283,6 +283,12 @@ export class QueueQueryDto {
   @IsString()
   @MaxLength(40)
   person?: string;
+
+  // Opcional (UX final, achado 1): ausente = a fila de todas as praças, como
+  // sempre; presente = só a dessa praça, sem os leads de teste.
+  @IsOptional()
+  @IsUUID()
+  praca_id?: string;
 }
 
 export class LeadsMetricsQueryDto {
