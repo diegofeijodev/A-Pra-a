@@ -20,6 +20,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CadencesModule } from './modules/cadences/cadences.module';
 import { CampoModule } from './modules/campo/campo.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
+import { CrmModule } from './modules/crm/crm.module';
 import { DisparosModule } from './modules/disparos/disparos.module';
 import { FreelaModule } from './modules/freela/freela.module';
 import { GeoModule } from './modules/geo/geo.module';
@@ -71,6 +72,7 @@ import { UsersModule } from './modules/users/users.module';
     AreasModule,
     PlacesModule,
     RotasModule,
+    CrmModule,
   ],
   providers: [
     // Não é APP_GUARD: o `JwtAuthGuard` global delega para ele nas rotas
