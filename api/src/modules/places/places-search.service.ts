@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Inject,
   Injectable,
   Logger,
@@ -13,10 +14,12 @@ import {
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '../../common/auth/auth-user';
 import { PrismaService } from '../../common/database/prisma.service';
+import { CRM_FLAGS, type FlagsCrm } from '../../common/flags/crm.flags';
 import { isUuid } from '../../common/ids/uuid';
 import { phoneKey } from '../../common/phone/phone';
 import { todaySp } from '../../common/time/dates';
 import { caixaEnvolvente, RAIO_DUPLICADO_M } from '../../domain/campo-rules';
+import { AUTOR_AUTOMATICO, TETO_AUTO_LEADS_POR_BUSCA } from '../../domain/catalog/crm';
 import {
   acharLeadDuplicado,
   cacheValido,
@@ -196,6 +199,7 @@ export class PlacesSearchService implements OnApplicationBootstrap {
     @Inject(PLACES_LIMITS) private readonly limits: PlacesLimits,
     @Optional() private readonly segmentos?: PlacesSegmentsService,
     @Optional() @Inject(LOVABLE_D_FLAGS) private readonly flagsD?: FlagsLovableD,
+    @Optional() @Inject(CRM_FLAGS) private readonly crm?: FlagsCrm,
   ) {}
 
   /** Lote D (§40): shoppings e lojas de dentro (só valem com os segmentos e os planos de rota). */
@@ -514,11 +518,17 @@ export class PlacesSearchService implements OnApplicationBootstrap {
     }
   }
 
+  /**
+   * O "Adicionar" — o do botão e o do A1 (`automatico`): mesma deduplicação contra os leads de agora e a mesma reserva atômica.
+   * No A1 o lote se chama "Busca automática …", o lead fica sem dono e o evento sai com o autor "Automático"; do `user` só se usa o
+   * `id` (o `by` do lote = quem pediu a busca).
+   */
   private async adicionar(
     tx: Prisma.TransactionClient,
     run: RunRow,
     dto: AddPlaceLeadsDto,
-    user: AuthUser,
+    user: Pick<AuthUser, 'id'>,
+    automatico = false,
   ): Promise<AddLeadsView> {
     const rows = await tx.place_candidates.findMany({ where: { run_id: run.id, id: { in: dto.candidate_ids } } });
     const porId = new Map(rows.map((r) => [r.id, r]));
@@ -560,7 +570,7 @@ export class PlacesSearchService implements OnApplicationBootstrap {
     });
     if (count !== elegiveis.length) throw this.conflitoDeConcorrencia();
 
-    const rotulo = `Busca ${rotuloDia(todaySp())} · ${run.area_name} (${ROTULO_FONTE[run.source as FonteLugar] ?? run.source})`;
+    const rotulo = `${automatico ? 'Busca automática' : 'Busca'} ${rotuloDia(todaySp())} · ${run.area_name} (${ROTULO_FONTE[run.source as FonteLugar] ?? run.source})`;
     const criado = await this.imports.criarLeadsDeBusca(
       tx,
       {
@@ -584,6 +594,7 @@ export class PlacesSearchService implements OnApplicationBootstrap {
         })),
       },
       user,
+      automatico ? { sem_dono: true, autor_label: AUTOR_AUTOMATICO } : undefined,
     );
     const leadPorRef = new Map(criado.leads.map((l) => [l.source_ref, l.lead_id]));
     for (const r of elegiveis) {
@@ -654,10 +665,78 @@ export class PlacesSearchService implements OnApplicationBootstrap {
             .catch(() => undefined);
         },
       });
-      await this.concluir(run, lugares, parcial, alvo);
+      const concluida = await this.concluir(run, lugares, parcial, alvo);
+      // A1 (CRM automático, §47): só a busca que ESTA execução concluiu (a do cache de 7 dias não passa por aqui) e só `lugares`.
+      // `try` próprio: a busca já está `done`, e nada do A1 pode chegar ao `falhar`.
+      if (concluida && this.crm?.auto_leads === true && run.kind === 'lugares') {
+        try {
+          await this.adicionarSozinho(run.id);
+        } catch (e) {
+          this.log.error(`A1 da pesquisa ${run.id}: ${e instanceof Error ? e.name : 'erro'}`);
+        }
+      }
     } catch (e) {
       await this.falhar(run.id, e);
     }
+  }
+
+  /**
+   * A1 (CRM automático, contrato §47): os achados `novo` de uma busca de `lugares` concluída entram no funil sozinhos, pelo MESMO
+   * `adicionar` do botão (deduplicação contra os leads de agora + reserva atômica), sem dono e com autor "Automático"; os de menor
+   * `distance_m` primeiro, até `TETO_AUTO_LEADS_POR_BUSCA` (hoje só morde no Apify: a busca OSM já devolve até 300).
+   *
+   * Uma linha em `crm_automation_runs` por busca (`job = 'auto_leads_busca'`, `ref` = a busca), gravada aqui direto pelo Prisma
+   * (`places` não importa `crm/`). Conta: `adicionados` = leads criados; `ja_na_praca` = escolhidos que não viraram lead (já eram
+   * lead na praça agora, ou alguém os adicionou no meio); `acima_do_teto` = `novo` que ficaram de fora pelo teto.
+   * `NOTHING_TO_ADD` = rodada ok com 0; conflito (a reserva não bate ou o índice único estoura) = rodada com erro `CONFLITO`, e os
+   * candidatos continuam `novo` (a transação volta inteira; o "Adicionar" manual segue valendo).
+   */
+  async adicionarSozinho(runId: string): Promise<void> {
+    const run = await this.prisma.place_import_runs.findUnique({ where: { id: runId } });
+    if (!run || run.status !== 'done' || run.kind !== 'lugares') return;
+    const inicio = new Date();
+    const resumo = { adicionados: 0, ja_na_praca: 0, acima_do_teto: 0 };
+    let erro: string | null = null;
+    try {
+      const novos = await this.prisma.place_candidates.findMany({
+        where: { run_id: run.id, status: 'novo' },
+        orderBy: [{ distance_m: 'asc' }, { name: 'asc' }],
+        select: { id: true },
+      });
+      const escolhidos = novos.slice(0, TETO_AUTO_LEADS_POR_BUSCA).map((c) => c.id);
+      resumo.acima_do_teto = novos.length - escolhidos.length;
+      if (escolhidos.length > 0) {
+        try {
+          const r = await this.prisma.$transaction(
+            async (tx) => this.adicionar(tx, run, { praca_id: run.praca_id, candidate_ids: escolhidos }, { id: run.requested_by }, true),
+            { timeout: 60_000, maxWait: 20_000 },
+          );
+          resumo.adicionados = r.created;
+          resumo.ja_na_praca = escolhidos.length - r.created;
+        } catch (e) {
+          const code = e instanceof HttpException ? (e.getResponse() as { code?: unknown }).code : undefined;
+          if (code === 'NOTHING_TO_ADD') resumo.ja_na_praca = escolhidos.length;
+          else if (code === 'CANDIDATES_CHANGED' || violouUnico(e)) erro = 'CONFLITO';
+          else throw e;
+        }
+      }
+    } catch (e) {
+      // Nunca a mensagem original (pode trazer telefone, SQL ou URL): o código do Prisma ajuda a achar a causa e não carrega dado.
+      const code = (e as { code?: unknown } | null)?.code;
+      erro = typeof code === 'string' && /^P\d{4}$/.test(code) ? `CRM_ERROR: A rodada falhou (${code}).` : 'CRM_ERROR: A rodada falhou.';
+      this.log.error(`A1 da pesquisa ${run.id}: ${e instanceof Error ? e.name : 'erro'}`);
+    }
+    await this.prisma.crm_automation_runs.create({
+      data: {
+        job: 'auto_leads_busca',
+        ref: run.id,
+        started_at: inicio,
+        finished_at: new Date(),
+        ok: erro === null,
+        summary: resumo,
+        error: erro,
+      },
+    });
   }
 
   /** Lote D (§40.3): o modo do provedor nas buscas de shoppings/lojas; `lugares` = nenhum (a chamada de hoje). */
@@ -705,7 +784,8 @@ export class PlacesSearchService implements OnApplicationBootstrap {
     return soma._sum.reserved_places ?? 0;
   }
 
-  private async concluir(run: RunRow, lugares: LugarNormalizado[], parcial: boolean, alvo: 'area' | 'raio' | null = null): Promise<void> {
+  /** Grava os achados e marca `done`; devolve se ESTA chamada concluiu a busca (`false` = foi cancelada no meio). */
+  private async concluir(run: RunRow, lugares: LugarNormalizado[], parcial: boolean, alvo: 'area' | 'raio' | null = null): Promise<boolean> {
     const { achados, truncated: passouDoTeto } = classificarAchados(lugares, { lat: run.lat, lng: run.lng }, run.radius_m);
 
     const truncated = passouDoTeto || parcial;
@@ -757,7 +837,7 @@ export class PlacesSearchService implements OnApplicationBootstrap {
     });
     const conta = (s: string) => unicas.filter((l) => l.status === s).length;
 
-    await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       // Cancelada no meio? `status = running` no filtro: o cancelamento vence e nada é gravado.
       const { count } = await tx.place_import_runs.updateMany({
         where: { id: run.id, status: 'running' },
@@ -773,12 +853,13 @@ export class PlacesSearchService implements OnApplicationBootstrap {
           error: null,
         },
       });
-      if (count === 0) return;
+      if (count === 0) return false;
       await tx.place_candidates.createMany({ data: unicas });
       // Lote D (§40.3): busca dentro do polígono = quantas lojas o mapa aberto tem no shopping.
       if (run.kind === 'lojas' && alvo === 'area' && run.parent_lead_id) {
         await tx.lead_mall_metrics.updateMany({ where: { lead_id: run.parent_lead_id }, data: { pois_mapped: unicas.length, measured_at: new Date() } });
       }
+      return true;
     });
   }
 

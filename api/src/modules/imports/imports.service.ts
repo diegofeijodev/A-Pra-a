@@ -247,6 +247,12 @@ export class ImportsService {
    *
    * Roda dentro da transação de quem chama (o chamador reserva os candidatos e
    * cria os leads de uma vez só). A deduplicação é de quem chama.
+   *
+   * `opcoes` (A1 do CRM automático, contrato §47): `sem_dono` = lead com dono
+   * nulo, sem consultar o rodízio (e ignorando `owner_id`); `autor_label` =
+   * evento com `author_id` nulo e esse rótulo. Do `user` só se lê o `id`, que vai
+   * para o `by` do lote. Sem `opcoes`, nada muda (caracterização em
+   * `__tests__/criar-leads-de-busca-caracterizacao.spec.ts`).
    */
   async criarLeadsDeBusca(
     tx: Prisma.TransactionClient,
@@ -270,14 +276,19 @@ export class ImportsService {
         parent_lead_id?: string;
       }[];
     },
-    user: AuthUser,
+    user: Pick<AuthUser, 'id'>,
+    opcoes?: { sem_dono?: true; autor_label?: string },
   ): Promise<{ batch_id: string; leads: { source_ref: string; lead_id: string }[] }> {
     const praca = await tx.pracas.findUnique({ where: { id: input.praca_id }, select: { city: true } });
     if (!praca) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Praça não encontrada.' });
-    const pool = await this.poolDeDonos(
-      input.owner_id ? { owner_mode: 'lote', lote_owner_id: input.owner_id } : { owner_mode: 'rodizio' },
-      tx,
-    );
+    const pool = opcoes?.sem_dono
+      ? null
+      : await this.poolDeDonos(
+          input.owner_id ? { owner_mode: 'lote', lote_owner_id: input.owner_id } : { owner_mode: 'rodizio' },
+          tx,
+        );
+    // Sem `autor_label`, o evento é o de hoje (só `author_id`): nenhuma chave nova no `data`.
+    const autor = opcoes?.autor_label ? { author_id: null, author_label: opcoes.autor_label } : { author_id: user.id };
 
     const at = new Date();
     const hoje = todaySp();
@@ -300,7 +311,7 @@ export class ImportsService {
       ...(it.parent_lead_id ? { parent_lead_id: it.parent_lead_id } : {}),
       classe: 'alvo',
       origem: input.origem,
-      owner_id: pool[i % pool.length]!,
+      owner_id: pool ? pool[i % pool.length]! : null,
       stage: 1,
       entered_at: hoje,
       stage_since: hoje,
@@ -324,7 +335,7 @@ export class ImportsService {
       data: leads.map((l) => ({
         lead_id: l.id,
         at,
-        author_id: user.id,
+        ...autor,
         kind: 'note',
         text: `Lead criado por ${input.origem} · ${input.file_name}.`,
       })),
