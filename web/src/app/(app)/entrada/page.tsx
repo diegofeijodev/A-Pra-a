@@ -47,8 +47,10 @@ import { addLeadEvent } from '@/modules/leads/infrastructure/leads.api';
 import {
   acaoDoLinkWhatsApp,
   contaDaFila,
+  contagemDaFila,
   eventoDoFeito,
   motivoDaFila,
+  rotuloDoImportar,
   textoImportacaoDesfeita,
   textosDesfazerImportacao,
   type ContatoDaFila,
@@ -228,6 +230,8 @@ function ImportSection() {
   // `@IsUUID()`: melhor o botão dizer que não dá.
   const donoOk = ownerMode === "lote" ? !!loteOwnerId : rodizioIds.length > 0;
   const classLabel = (id: string) => catalog?.classes.find((c) => c.id === id)?.label ?? id;
+  // Nunca "Importar 0 leads": em "completar" sem linha nova o botão diz o que faz; sem nada a fazer, fica travado.
+  const botaoImportar = evalRes ? rotuloDoImportar({ vaoEntrar: evalRes.will_import, repetidos: evalRes.dups, modo: dupAction }) : null;
 
   const confirm = () => {
     if (!parsed || !evalRes || previaVelha || avaliando || !donoOk) return;
@@ -305,7 +309,7 @@ function ImportSection() {
         </div>
       )}
 
-      {parsed && evalRes && (
+      {parsed && evalRes && botaoImportar && (
         <div className="space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm text-muted-foreground">
@@ -486,16 +490,10 @@ function ImportSection() {
           <div className="flex flex-wrap justify-end gap-2">
             <Button variant="outline" onClick={cancel}>Cancelar</Button>
             <Button
-              disabled={
-                (!evalRes.will_import && dupAction !== "completar") ||
-                !donoOk ||
-                previaVelha ||
-                avaliando ||
-                runImport.isPending
-              }
+              disabled={!botaoImportar.pode || !donoOk || previaVelha || avaliando || runImport.isPending}
               onClick={confirm}
             >
-              Importar {evalRes.will_import} {evalRes.will_import === 1 ? "lead" : "leads"}
+              {botaoImportar.rotulo}
             </Button>
           </div>
         </div>
@@ -741,10 +739,12 @@ function FilaDoDia() {
       <div className="space-y-3 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
+            {/* O nome do cartão (desenho U6) no h2; a contagem é a linha de apoio. */}
             <h2 id="primeiro-contato" className="text-lg font-semibold">
-              {shown.length} {shown.length === 1 ? "lead" : "leads"} para o 1º contato hoje
+              Primeiro contato de hoje
             </h2>
-            <p className="text-xs text-muted-foreground">{contaDaFila({ total, grandes, mostrando: shown.length })}</p>
+            <p className="text-sm">{contagemDaFila(shown.length)}</p>
+            <p className="text-xs text-muted-foreground">{contaDaFila({ total, grandes, mostrando: shown.length, quota })}</p>
           </div>
           <div className="w-full sm:w-auto">
             <label htmlFor="fila-de-quem" className="sr-only">De quem</label>
@@ -760,7 +760,7 @@ function FilaDoDia() {
           </p>
         )}
         <details className="text-sm">
-          <summary className="cursor-pointer py-1 text-muted-foreground">Ajustar o limite</summary>
+          <summary className="min-h-11 cursor-pointer py-3 text-muted-foreground md:min-h-0 md:py-1">Ajustar o limite</summary>
           <div className="mt-2 max-w-md space-y-1">
             <Label htmlFor="limite-diario">Limite de leads novos por pessoa, por dia (vale para toda a equipe)</Label>
             <Input

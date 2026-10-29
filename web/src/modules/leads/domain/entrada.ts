@@ -41,13 +41,35 @@ export function motivoDaFila(
   return `Lead novo ${dias === 0 ? 'hoje' : `há ${dias} ${plural(dias, 'dia', 'dias')}`} · ${classe}`;
 }
 
-/** A conta do número da fila, sempre visível (regra do dono 08/10): o que é, de onde vem e como ordena. */
-export function contaDaFila(p: { total: number; grandes: number; mostrando: number }): string {
+/** A linha de apoio do cartão "Primeiro contato de hoje" (desenho U6): quantos estão na tela agora. */
+export const contagemDaFila = (n: number): string => `${n} ${plural(n, 'lead', 'leads')} para o 1º contato hoje`;
+
+/**
+ * A conta do número da fila, sempre visível (regra do dono 08/10): o que é, de onde vem e como ordena. "o limite por pessoa" só quando a
+ * fila passa do limite (`quota`): cabendo tudo, "mostrando" é a fila inteira.
+ */
+export function contaDaFila(p: { total: number; grandes: number; mostrando: number; quota: number }): string {
+  const limite = p.total > p.quota ? ', o limite por pessoa' : '';
   return (
-    `${p.total} na fila (${p.grandes} ${plural(p.grandes, 'casa grande', 'casas grandes')}); mostrando ${p.mostrando}, o limite por pessoa. ` +
+    `${p.total} na fila (${p.grandes} ${plural(p.grandes, 'casa grande', 'casas grandes')}); mostrando ${p.mostrando}${limite}. ` +
     'Fonte: leads em “Lead novo” e os de reaquecer com data vencida, nesta praça. ' +
     'Ordem: casa grande, depois alvo, depois o resto; os mais antigos na frente.'
   );
+}
+
+/**
+ * O botão de confirmar da importação (UX §3.6: o verbo com o número). Nunca "Importar 0 leads": em "completar" sem linha nova ele diz
+ * o que faz ("até" porque só o servidor sabe quais repetidos têm campo vazio para completar); sem nada a fazer, fica travado.
+ */
+export function rotuloDoImportar(p: { vaoEntrar: number; repetidos: number; modo: 'ignorar' | 'completar' | 'criar' }): {
+  rotulo: string;
+  pode: boolean;
+} {
+  if (p.vaoEntrar > 0) return { rotulo: `Importar ${p.vaoEntrar} ${plural(p.vaoEntrar, 'lead', 'leads')}`, pode: true };
+  if (p.modo === 'completar' && p.repetidos > 0) {
+    return { rotulo: `Completar até ${p.repetidos} ${plural(p.repetidos, 'lead', 'leads')}`, pode: true };
+  }
+  return { rotulo: 'Nada para importar', pode: false };
 }
 
 /**
