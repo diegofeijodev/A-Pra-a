@@ -107,7 +107,9 @@ describe('casarCartao', () => {
         { lead_id: 'lead-11', phone: '11987654321', praca_id: 'praca-contagem', freela_user_id: null },
       ),
     });
-    expect(casarCartao(cartao({ whatsappPhone: '21987654321' }), idx, new Set([BH, 'praca-contagem']))).toEqual({
+    expect(
+      casarCartao(cartao({ whatsappPhone: '21987654321' }), idx, new Set([BH, 'praca-contagem'])),
+    ).toEqual({
       ambiguo: true,
     });
   });
@@ -141,9 +143,21 @@ describe('casarCartao', () => {
 
   it('lead que já tem outro freela_user_id → ambíguo', () => {
     const idx = indices({
-      porChave: naChave({ lead_id: 'lead-31', phone: '31987654321', praca_id: BH, freela_user_id: 'u-outro' }),
+      porChave: naChave({
+        lead_id: 'lead-31',
+        phone: '31987654321',
+        praca_id: BH,
+        freela_user_id: 'u-outro',
+      }),
     });
     expect(casarCartao(cartao(), idx, new Set([BH]))).toEqual({ ambiguo: true });
+  });
+
+  it('único candidato do telefone que já é deste userId → casa por id', () => {
+    const idx = indices({
+      porChave: naChave({ lead_id: 'lead-31', phone: '31987654321', praca_id: BH, freela_user_id: 'u-1' }),
+    });
+    expect(casarCartao(cartao(), idx, new Set([BH]))).toEqual({ lead_id: 'lead-31', por: 'id' });
   });
 
   it('telefone do cartão sem DDD (9 dígitos) nem tenta o telefone', () => {
@@ -171,7 +185,12 @@ describe('leadsDisputados', () => {
 });
 
 describe('normalizarCidade', () => {
-  it('sem acento, minúscula, espaço único', () => expect(normalizarCidade('  São   João del-Rei ')).toBe('sao joao del-rei'));
+  it('sem acento, minúscula, espaço único, hífen vira espaço', () =>
+    expect(normalizarCidade('  São   João del-Rei ')).toBe('sao joao del rei'));
+  it('"Embu-Guaçu" = "Embu Guaçu"; o apóstrofo fica', () => {
+    expect(normalizarCidade('Embu-Guaçu')).toBe(normalizarCidade('Embu Guaçu'));
+    expect(normalizarCidade("Olho d'Água")).toBe("olho d'agua");
+  });
 });
 
 describe('pracaDoCartao', () => {
@@ -184,13 +203,25 @@ describe('pracaDoCartao', () => {
     ...o,
   });
 
-  it('"Belo Horizonte"/"MG" casa "belo horizonte"', () => expect(pracaDoCartao(cartao(), [praca()], hoje)).toBe('p-bh'));
+  it('"Belo Horizonte"/"MG" casa "belo horizonte"', () =>
+    expect(pracaDoCartao(cartao(), [praca()], hoje)).toBe('p-bh'));
 
   it('acento, caixa e UF minúscula não atrapalham', () =>
-    expect(pracaDoCartao(cartao({ city: 'São Paulo', state: 'sp' }), [praca({ id: 'p-sp', cidades: [{ cidade: 'Sao Paulo', uf: 'SP' }] })], hoje)).toBe('p-sp'));
+    expect(
+      pracaDoCartao(
+        cartao({ city: 'São Paulo', state: 'sp' }),
+        [praca({ id: 'p-sp', cidades: [{ cidade: 'Sao Paulo', uf: 'SP' }] })],
+        hoje,
+      ),
+    ).toBe('p-sp'));
 
   it('"Contagem" pela vizinha (resolvida com UF)', () => {
-    const p = praca({ cidades: [{ cidade: 'belo horizonte', uf: 'MG' }, { cidade: 'contagem', uf: 'MG' }] });
+    const p = praca({
+      cidades: [
+        { cidade: 'belo horizonte', uf: 'MG' },
+        { cidade: 'contagem', uf: 'MG' },
+      ],
+    });
     expect(pracaDoCartao(cartao({ city: 'Contagem' }), [p], hoje)).toBe('p-bh');
   });
 
@@ -198,10 +229,22 @@ describe('pracaDoCartao', () => {
     expect(pracaDoCartao(cartao({ city: 'Belo Horizonte', state: 'SP' }), [praca()], hoje)).toBeNull());
 
   it('registeredAt 2026-10-11T02:30:00Z = 10/10 em Brasília, antes do início 12/10 → null', () =>
-    expect(pracaDoCartao(cartao({ registeredAt: '2026-10-11T02:30:00Z' }), [praca({ start_date: '2026-10-12' })], hoje)).toBeNull());
+    expect(
+      pracaDoCartao(
+        cartao({ registeredAt: '2026-10-11T02:30:00Z' }),
+        [praca({ start_date: '2026-10-12' })],
+        hoje,
+      ),
+    ).toBeNull());
 
   it('2026-10-12T03:30:00Z = 00:30 de 12/10 em Brasília, no dia do início → casa', () =>
-    expect(pracaDoCartao(cartao({ registeredAt: '2026-10-12T03:30:00Z' }), [praca({ start_date: '2026-10-12' })], hoje)).toBe('p-bh'));
+    expect(
+      pracaDoCartao(
+        cartao({ registeredAt: '2026-10-12T03:30:00Z' }),
+        [praca({ start_date: '2026-10-12' })],
+        hoje,
+      ),
+    ).toBe('p-bh'));
 
   it('duas praças → a de start_date mais recente', () => {
     const antiga = praca({ id: 'p-antiga', start_date: '2026-09-01' });
@@ -260,6 +303,19 @@ describe('alvoDasContratacoes', () => {
     expect(alvoDasContratacoes(x({ hirings: 2, antes: 1, dia_viu_primeira: hoje }))).toBe(6));
   it('de 1 para 2 com dia_viu_primeira anterior → 7', () =>
     expect(alvoDasContratacoes(x({ hirings: 2, antes: 1, dia_viu_primeira: '2026-10-27' }))).toBe(7));
-  it('de 0 para 2 sem nunca ter visto 1 → 6', () => expect(alvoDasContratacoes(x({ hirings: 2, antes: 0 }))).toBe(6));
-  it('já tinha 2 ou mais → 7', () => expect(alvoDasContratacoes(x({ hirings: 3, antes: 2, dia_viu_primeira: hoje }))).toBe(7));
+  it('de 0 para 2 sem nunca ter visto 1 → 6', () =>
+    expect(alvoDasContratacoes(x({ hirings: 2, antes: 0 }))).toBe(6));
+  it('1 → 2 no mesmo dia da 1ª vaga dá 6, e a rodada seguinte (antes: 2, sem subida) continua 6', () => {
+    expect(alvoDasContratacoes(x({ hirings: 2, antes: 1, dia_viu_primeira: hoje }))).toBe(6);
+    expect(alvoDasContratacoes(x({ hirings: 2, antes: 2, dia_viu_primeira: hoje }))).toBe(6);
+    expect(alvoDasContratacoes(x({ hirings: 2, antes: 2, dia_viu_primeira: '2026-10-27', hoje: '2026-10-29' }))).toBe(6);
+  });
+  it('2 → 3 com a 1ª vaga vista num dia anterior → 7', () =>
+    expect(alvoDasContratacoes(x({ hirings: 3, antes: 2, dia_viu_primeira: '2026-10-20' }))).toBe(7));
+  it('2 → 3 no mesmo dia da 1ª vaga → 6', () =>
+    expect(alvoDasContratacoes(x({ hirings: 3, antes: 2, dia_viu_primeira: hoje }))).toBe(6));
+  it('salto 0 → 2 com a 1ª vaga vista hoje → 6', () =>
+    expect(alvoDasContratacoes(x({ hirings: 2, antes: 0, dia_viu_primeira: hoje }))).toBe(6));
+  it('contagem que caiu (3 → 2) não sobe a 7', () =>
+    expect(alvoDasContratacoes(x({ hirings: 2, antes: 3, dia_viu_primeira: '2026-10-20' }))).toBe(6));
 });

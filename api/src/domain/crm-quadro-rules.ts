@@ -20,7 +20,10 @@ export function telefoneNacional(raw: string | null): string | null {
 export interface IndicesQuadro {
   porFreelaUserId: Map<string, string[]>;
   porCadastro: Map<string, string[]>;
-  porChave: Map<string, { lead_id: string; phone: string; praca_id: string | null; freela_user_id: string | null }[]>;
+  porChave: Map<
+    string,
+    { lead_id: string; phone: string; praca_id: string | null; freela_user_id: string | null }[]
+  >;
   assistidos: Set<string>;
 }
 
@@ -60,7 +63,7 @@ export function casarCartao(c: CartaoFreela, idx: IndicesQuadro, pracasDaCidade:
   if (candidatos.size > 1) return AMBIGUO;
   const [[leadId, dono]] = [...candidatos];
   if (dono !== null && dono !== c.userId) return AMBIGUO;
-  return { lead_id: leadId, por: 'telefone' };
+  return { lead_id: leadId, por: dono === c.userId ? 'id' : 'telefone' };
 }
 
 /** Leads casados por dois cartões ou mais na mesma rodada: a rodada trata os dois como ambíguos (achado 6). */
@@ -75,14 +78,9 @@ export function leadsDisputados(casamentos: Casamento[]): Set<string> {
   return repetidos;
 }
 
-/** Sem acento, minúscula, espaços únicos (hífen e apóstrofo ficam: "Embu-Guaçu", "Olho d'Água"). */
+/** Sem acento, minúscula, hífen vira espaço ("Embu-Guaçu" = "Embu Guaçu"), espaços únicos; o apóstrofo fica ("Olho d'Água"). */
 export function normalizarCidade(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .trim();
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/-/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 /** Praça com o conjunto (cidade, UF) da cobertura: `cobertura_cidade/uf` + vizinhas já resolvidas com UF pelo chamador (achado 13). */
@@ -119,8 +117,11 @@ export function pracaDoCartao(c: CartaoFreela, pracas: PracaCobertura[], hoje: s
 
 /**
  * Alvo pelas vagas pagas (achados 3 e 19, D2). 0 → 5, menos no cadastro assistido (o 5 dele vem do sync, pela regra de confirmação);
- * 1 → 6; 2+ → 7 na 1ª observação ou quando já tinha 2+; vindo de 0/1, só se o Praça viu a 1ª vaga num dia ANTERIOR a hoje (duas
- * funções no mesmo evento não viram "Cliente ativo"). `dia_viu_primeira` = dia em que o Praça viu `hirings >= 1` pela 1ª vez.
+ * 1 → 6. 2+ → 7 só (a) na 1ª observação (`antes` nulo: sem histórico, vale a contagem) ou (b) quando o Praça VÊ a contagem subir
+ * (`hirings > antes`) num dia POSTERIOR ao `dia_viu_primeira`; o resto é 6: contagem parada, salto no mesmo dia da 1ª vaga, salto
+ * 0 → 2 sem dia anterior. Duas funções no mesmo evento nunca viram "Cliente ativo", nem na rodada seguinte (com `antes` já 2, sem
+ * subida, continua 6). Ninguém desce: lead já em 7 com alvo 6 é `ja_satisfeito` em `deveAplicar`. `dia_viu_primeira` = dia do evento
+ * `a3:contratacoes:<lead>:*` MAIS ANTIGO do lead, qualquer que seja o n (a Task 10 passa).
  */
 export function alvoDasContratacoes(x: {
   hirings: number;
@@ -131,6 +132,7 @@ export function alvoDasContratacoes(x: {
 }): 5 | 6 | 7 | null {
   if (x.hirings <= 0) return x.assistido ? null : 5;
   if (x.hirings === 1) return 6;
-  if (x.antes === null || x.antes >= 2) return 7;
-  return x.dia_viu_primeira !== null && x.dia_viu_primeira < x.hoje ? 7 : 6;
+  if (x.antes === null) return 7;
+  const subiuEmOutroDia = x.hirings > x.antes && x.dia_viu_primeira !== null && x.dia_viu_primeira < x.hoje;
+  return subiuEmOutroDia ? 7 : 6;
 }
