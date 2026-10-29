@@ -53,7 +53,7 @@ const TEXTO_REGRA: Record<RegraConfirmacao, string> = {
   first_job_completed: 'primeiro serviço concluído',
 };
 
-const nomeEtapa = (n: number): string => FUNNEL_STAGES.find((s) => s.n === n)?.name ?? String(n);
+export const nomeEtapa = (n: number): string => FUNNEL_STAGES.find((s) => s.n === n)?.name ?? String(n);
 const diaMes = (dia: string): string => `${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
 /** A marca do automático ainda não cobre o alvo (NULL nunca casa com `lt` no SQL, daí o OR). */
 const marcaNaoCobre = (alvo: number): Prisma.leadsWhereInput[] => [{ auto_stage_applied: null }, { auto_stage_applied: { lt: alvo } }];
@@ -71,7 +71,7 @@ export async function criarEventoAuto(tx: Tx, data: EventoAuto): Promise<boolean
   return r.count === 1;
 }
 
-interface LeadLido {
+export interface LeadLido {
   stage: number;
   stage_since: string;
   archived: boolean;
@@ -79,8 +79,8 @@ interface LeadLido {
   auto_stage_applied: number | null;
 }
 
-/** Há escrita a fazer? Mesma decisão do `subir`, sobre a leitura de fora da transação (evita abrir transação à toa). */
-function precisaEtapa(lead: LeadLido, alvo: 5 | 6, fatoDia: string): boolean {
+/** Há escrita a fazer? Mesma decisão do `subir`, sobre a leitura de fora da transação (evita abrir transação à toa). A2 e A3. */
+export function precisaEtapa(lead: LeadLido, alvo: 5 | 6 | 7, fatoDia: string): boolean {
   const d = deveAplicar(lead, alvo, fatoDia);
   return d === 'aplicar' || (d === 'ja_satisfeito' && (lead.auto_stage_applied ?? 0) < alvo);
 }
