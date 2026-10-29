@@ -43,6 +43,32 @@ describe('CrmScheduler', () => {
     expect(etapas.passadaCadastros).toHaveBeenCalledTimes(3);
   });
 
+  it('A2 roda no primeiro tick dentro da hora (deploy no meio dela) e não repete', async () => {
+    const { s, etapas } = montar();
+    await s.bater(sp('2026-10-28T06:07:00'));
+    expect(etapas.passadaCadastros).toHaveBeenCalledTimes(1);
+    await s.bater(sp('2026-10-28T06:12:00'));
+    expect(etapas.passadaCadastros).toHaveBeenCalledTimes(1);
+  });
+
+  it('A3 roda no primeiro tick da hora par e não repete', async () => {
+    const { s, quadro } = montar();
+    await s.bater(sp('2026-10-28T08:35:00'));
+    expect(quadro.rodar).toHaveBeenCalledTimes(1);
+    await s.bater(sp('2026-10-28T08:40:00'));
+    expect(quadro.rodar).toHaveBeenCalledTimes(1);
+  });
+
+  it('A4 que falhou só tenta de novo 60 min depois', async () => {
+    const { s, semResposta } = montar();
+    semResposta.rodar.mockRejectedValue(new Error('x'));
+    await s.bater(sp('2026-10-28T06:10:00'));
+    await s.bater(sp('2026-10-28T06:15:00'));
+    expect(semResposta.rodar).toHaveBeenCalledTimes(1);
+    await s.bater(sp('2026-10-28T07:10:00'));
+    expect(semResposta.rodar).toHaveBeenCalledTimes(2);
+  });
+
   it('A2 não repete na mesma hora-alvo nem em reticks', async () => {
     const { s, etapas } = montar();
     await s.bater(sp('2026-10-28T06:00:00'));

@@ -18,8 +18,8 @@ import { SemRespostaService } from './sem-resposta.service';
 
 type Trabalho = 'etapas' | 'quadro' | 'sem_resposta';
 
-/** O tick de 5 em 5 minutos que cai no início da hora (minutos 0..4). */
-const INICIO_DA_HORA_MIN = 5;
+/** Depois de uma tentativa da A4 que não fechou o dia (falha), espera isto antes de tentar de novo. */
+const A4_ESPERA_APOS_FALHA_MS = 60 * 60_000;
 /** A4 só a partir das 06:10 de Brasília. */
 const A4_A_PARTIR_DE_MIN = 6 * 60 + 10;
 
@@ -30,6 +30,7 @@ export class CrmScheduler {
   /** Última hora-alvo (`'2026-10-28T10'`, Brasília) em que o trabalho rodou. */
   private readonly ultimoSlot: Record<'etapas' | 'quadro', string | null> = { etapas: null, quadro: null };
   private limpezaNoDia: string | null = null;
+  private ultimaTentativaA4: Date | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -43,11 +44,10 @@ export class CrmScheduler {
   async bater(agora: Date = new Date()): Promise<void> {
     try {
       const hora = hourSp(agora);
-      const noInicio = minutesSp(agora) % 60 < INICIO_DA_HORA_MIN;
       const slot = `${todaySp(agora)}T${String(hora).padStart(2, '0')}`;
       await Promise.all([
-        this.rodarNaHora('etapas', !!this.crm?.auto_stages && noInicio && hora >= 6 && hora <= 23, slot, () => this.etapas.passadaCadastros(agora)),
-        this.rodarNaHora('quadro', !!this.crm?.freela_pipeline && noInicio && hora >= 8 && hora <= 20 && hora % 2 === 0, slot, () => this.quadro.rodar(agora)),
+        this.rodarNaHora('etapas', !!this.crm?.auto_stages && hora >= 6 && hora <= 23, slot, () => this.etapas.passadaCadastros(agora)),
+        this.rodarNaHora('quadro', !!this.crm?.freela_pipeline && hora >= 8 && hora <= 20 && hora % 2 === 0, slot, () => this.quadro.rodar(agora)),
         this.rodarSemResposta(agora),
       ]);
     } catch (e) {
@@ -70,10 +70,12 @@ export class CrmScheduler {
 
   private async rodarSemResposta(agora: Date): Promise<void> {
     if (!this.crm?.auto_lost || this.rodando.sem_resposta || minutesSp(agora) < A4_A_PARTIR_DE_MIN) return;
+    if (this.ultimaTentativaA4 && agora.getTime() - this.ultimaTentativaA4.getTime() < A4_ESPERA_APOS_FALHA_MS) return;
     this.rodando.sem_resposta = true;
     try {
       const dia = todaySp(agora);
       if (await rodadaOkNoDia(this.prisma, 'sem_resposta', dia)) return;
+      this.ultimaTentativaA4 = agora;
       try {
         await this.semResposta.rodar(agora);
       } catch (e) {
