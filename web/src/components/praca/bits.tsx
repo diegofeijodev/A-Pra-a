@@ -162,30 +162,44 @@ export function NewActionButton() {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="w-full rounded-lg bg-primary py-3 font-display text-sm font-extrabold tracking-wide text-primary-foreground uppercase transition-transform hover:scale-[1.01]"
+        className="min-h-11 w-full rounded-lg bg-primary px-4 py-3 font-display text-sm font-extrabold tracking-wide text-primary-foreground uppercase transition-transform hover:scale-[1.01]"
       >
         + Nova ação
       </button>
     );
 
+  // Aberto, ganha a linha inteira do cabeçalho (no celular) ou uma largura fixa (no computador): espremido ao lado do seletor de praça, o
+  // título e a data não cabiam. Campos e botões com 44 px no celular.
   return (
-    <div className="card-surface space-y-3 p-4">
+    <div className="card-surface w-full basis-full space-y-3 p-4 sm:w-96 sm:basis-auto">
       <input
         autoFocus
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder="Título da ação"
-        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+        aria-label="Título da ação"
+        className="min-h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary md:min-h-9"
       />
-      <div className="flex gap-2">
-        <select value={ownerId} onChange={(e) => setOwner(e.target.value)} className="flex-1 rounded-md border border-input bg-background px-2 py-2 text-sm">
+      <div className="flex flex-wrap gap-2">
+        <select
+          value={ownerId}
+          onChange={(e) => setOwner(e.target.value)}
+          aria-label="Dono da ação"
+          className="min-h-11 min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-2 text-sm md:min-h-9"
+        >
           {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="rounded-md border border-input bg-background px-2 py-2 text-sm" />
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          aria-label="Data da ação"
+          className="min-h-11 rounded-md border border-input bg-background px-2 py-2 text-sm md:min-h-9"
+        />
       </div>
       <div className="flex gap-2">
-        <button onClick={save} disabled={createAction.isPending} className="flex-1 rounded-md bg-primary py-2 text-sm font-bold text-primary-foreground">Adicionar</button>
-        <button onClick={() => setOpen(false)} className="rounded-md border border-border px-4 py-2 text-sm text-muted-foreground">Cancelar</button>
+        <button onClick={save} disabled={createAction.isPending} className="min-h-11 flex-1 rounded-md bg-primary py-2 text-sm font-bold text-primary-foreground md:min-h-9">Adicionar</button>
+        <button onClick={() => setOpen(false)} className="min-h-11 rounded-md border border-border px-4 py-2 text-sm text-muted-foreground md:min-h-9">Cancelar</button>
       </div>
     </div>
   );

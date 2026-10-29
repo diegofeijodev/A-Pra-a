@@ -29,7 +29,7 @@ export default function HojePage() {
   const hojePerson = useUiStore((s) => s.hojePerson);
   const setHojePerson = useUiStore((s) => s.setHojePerson);
   const today = todaySp();
-  const { features } = useFeaturesMenu();
+  const { features, carregando: lendoFeatures } = useFeaturesMenu();
 
   const { data: users } = useUsers();
   const { data: actions } = useActions(praca?.id);
@@ -149,8 +149,9 @@ export default function HojePage() {
         </div>
       </section>
 
-      {/* Com o CRM automático, o que era o "Funil — contratantes" mora em Tarefas (UX achado 7). */}
-      {features.crm_tasks ? <LinkParaTarefas /> : <FunilHoje />}
+      {/* Com o CRM automático, o que era o "Funil — contratantes" mora em Tarefas (UX achado 7). Lendo as chaves, nenhum dos dois: o
+          funil piscaria e sumiria (e dispararia a lista de leads à toa). */}
+      {lendoFeatures ? null : features.crm_tasks ? <LinkParaTarefas /> : <FunilHoje />}
 
       {/* próximos 7 dias */}
       <section className="mt-6">
